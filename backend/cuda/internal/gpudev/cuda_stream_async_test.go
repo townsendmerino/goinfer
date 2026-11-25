@@ -4,6 +4,7 @@ package gpudev
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 )
 
@@ -42,7 +43,7 @@ func TestCUDA_uploadAsyncAt_offsetsAndEvents(t *testing.T) {
 	if err := q.Sync(); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	want := append([]byte(nil), base...)
+	want := slices.Clone(base)
 	copy(want[1024:1536], s[2048:2560])
 	for i := 256; i < 384; i++ {
 		want[i] = 0

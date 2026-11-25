@@ -225,8 +225,7 @@ func TestKVFitDecision(t *testing.T) {
 		t.Errorf("explicit, exactly at the budget: %+v", d)
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: 8192, explicit: true, slotsReq: 1, layers: ls, margin: margin}, at-1, true)
-	var wf *kvWontFitError
-	if !errors.As(d.err, &wf) || d.ctxCap != 8192 {
+	if _, ok := errors.AsType[*kvWontFitError](d.err); !ok || d.ctxCap != 8192 {
 		t.Errorf("explicit, one byte under: %+v, want kvWontFitError at ctx 8192", d)
 	}
 
@@ -240,7 +239,7 @@ func TestKVFitDecision(t *testing.T) {
 
 	floor := uint64(one(cudaCtxCapDefault) + margin)
 	d = kvFitDecision(kvFitIn{ctxCap: 8192, slotsReq: 1, layers: ls, margin: margin}, floor-1, true)
-	if d.err == nil || !strings.Contains(d.err.Error(), "default resident context") || errors.As(d.err, &wf) {
+	if _, ok := errors.AsType[*kvWontFitError](d.err); d.err == nil || !strings.Contains(d.err.Error(), "default resident context") || ok {
 		t.Errorf("unpinned, under the floor: %+v, want the default-context decline (not kvWontFitError)", d)
 	}
 

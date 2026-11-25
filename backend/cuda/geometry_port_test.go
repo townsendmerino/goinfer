@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -55,7 +56,7 @@ func TestGeometryPortIsLive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("baseline forward pos %d: %v", i, err)
 		}
-		base = append([]float32(nil), lg...)
+		base = slices.Clone(lg)
 	}
 
 	// Poison layer 1's rotary width and re-run the last position.

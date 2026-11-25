@@ -209,7 +209,7 @@ func (r *cudaResident) streamBlocks(N, block int, pack func(st *packStage, r0, r
 	}
 	ready := make(chan done, len(r.pk.stages))
 	go func() {
-		for b := 0; b < nb; b++ {
+		for b := range nb {
 			if r.loadAborted() { // the tripwire fired: pack nothing more, but tell the consumer every remaining block is skipped
 				ready <- done{}
 				continue
@@ -467,9 +467,7 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 	var aborted, bad atomic.Bool
 	var wg sync.WaitGroup
 	for range min(packStackWorkers, runtime.GOMAXPROCS(0), n) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				i := int(next.Add(1)) - 1
 				if i >= n {
@@ -487,7 +485,7 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 				}
 				wpack.PackInt4Into(dw, ds, q4, s16)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if r.unpinnedExperts {

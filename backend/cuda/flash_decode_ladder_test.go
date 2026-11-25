@@ -5,7 +5,7 @@ package cuda
 import (
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -152,8 +152,8 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 }
 
 func median(x []float64) float64 {
-	y := append([]float64(nil), x...)
-	sort.Float64s(y)
+	y := slices.Clone(x)
+	slices.Sort(y)
 	return y[len(y)/2]
 }
 

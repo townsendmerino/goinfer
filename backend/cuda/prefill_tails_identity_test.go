@@ -15,7 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -576,8 +576,8 @@ func (t *launchTrace) addr(a uint64) string {
 	if a == 0 {
 		return "null"
 	}
-	for i := len(t.allocs) - 1; i >= 0; i-- {
-		if x := t.allocs[i]; x.live && a >= x.base && a < x.base+uint64(max(x.n, 1)) {
+	for i, x := range slices.Backward(t.allocs) {
+		if x.live && a >= x.base && a < x.base+uint64(max(x.n, 1)) {
 			return fmt.Sprintf("a%d+%d", i, a-x.base)
 		}
 	}
@@ -662,7 +662,7 @@ func traceSummary(lines []string) string {
 	for k := range counts {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var b strings.Builder
 	for _, k := range keys {
 		fmt.Fprintf(&b, "%s=%d ", k, counts[k])

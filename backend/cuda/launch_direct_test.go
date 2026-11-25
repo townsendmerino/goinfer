@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -39,7 +40,7 @@ func TestLaunchDirect_bitIdentical(t *testing.T) {
 					if err != nil {
 						t.Fatalf("forward (viaExecutor=%v) pos %d: %v", viaExecutor, i, err)
 					}
-					out[i] = append([]float32(nil), lg...)
+					out[i] = slices.Clone(lg)
 				}
 				return out
 			}

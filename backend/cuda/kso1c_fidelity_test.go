@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -83,14 +83,14 @@ func TestKSO1C_towardTheFile(t *testing.T) {
 			}
 			n := len(ids) + g3NewTokens
 			cache := mf.NewCache(n)
-			seq := append([]int(nil), ids...)
+			seq := slices.Clone(ids)
 			var ref [][]float32
 			for i := 0; i < n-1; i++ {
 				l, err := mf.ForwardForTest(seq[i], cache)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref = append(ref, append([]float32(nil), l...))
+				ref = append(ref, slices.Clone(l))
 				if i >= len(ids)-1 {
 					seq = append(seq, argmaxF(l))
 				}
@@ -280,7 +280,7 @@ func TestKSO1C_longContextQuality(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ref[p] = append([]float32(nil), l...)
+			ref[p] = slices.Clone(l)
 		}
 		var kl [2]float64 // int8, native
 		for a, native := range []bool{false, true} {
@@ -369,7 +369,7 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 		}
 		return out
 	}
@@ -394,7 +394,7 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 				cs = append(cs, cos(rows[p], ref[p]))
 				kl += kso1cKL(ref[p], rows[p])
 			}
-			sort.Float64s(cs)
+			slices.Sort(cs)
 			fmt.Fprintf(os.Stderr, "[diag] %s | %-26s positions %4d-%4d: cosine min %.6f p10 %.6f median %.6f; mean KL to f32 %.5f\n",
 				label, name, from, len(ids)-1, cs[0], cs[len(cs)/10], cs[len(cs)/2], kl/float64(len(cs)))
 		}
@@ -436,7 +436,7 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rows = append(rows, append([]float32(nil), l...))
+			rows = append(rows, slices.Clone(l))
 		}
 		report(a.name, rows)
 		ran++

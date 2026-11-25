@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -86,7 +87,7 @@ func cacheBitExact(t *testing.T, dir string) {
 			if err != nil {
 				t.Fatalf("forward pos %d (cache=%v): %v", i, cache, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}
@@ -164,7 +165,7 @@ func TestGemma4MoE_cacheResizeBitExact_tiny(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resident forward pos %d: %v", i, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}()

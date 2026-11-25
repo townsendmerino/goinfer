@@ -4,7 +4,7 @@ package cuda
 
 import (
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -115,7 +115,7 @@ func TestR14DrafterArgmaxAB(t *testing.T) {
 		sumD += d
 		t.Logf("pair %d: host %.0f ms | device %.0f ms | speedup %.3fx", p, h, d, h/d)
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	median := (ratios[len(ratios)/2-1] + ratios[len(ratios)/2]) / 2
 	verdict := "KILL (<1%)"
 	switch {

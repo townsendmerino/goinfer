@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -88,8 +89,8 @@ func TestRopePartial(t *testing.T) {
 			}
 
 			// --- CPU reference ---
-			wq := append([]float32(nil), q...)
-			wk := append([]float32(nil), k...)
+			wq := slices.Clone(q)
+			wk := slices.Clone(k)
 			wkc := make([]float32, cap*kvDim)
 			wvc := make([]float32, cap*kvDim)
 			rot := func(buf []float32, nHeads int) {

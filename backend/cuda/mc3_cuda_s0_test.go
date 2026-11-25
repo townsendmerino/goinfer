@@ -105,7 +105,7 @@ func TestMC3CUDAS0_batchedRowsVsDecode(t *testing.T) {
 		}
 		batched := make([][]float32, k)
 		for i := range outs {
-			batched[i] = append([]float32(nil), outs[i]...)
+			batched[i] = slices.Clone(outs[i])
 		}
 		diff := 0
 		for i := range k {

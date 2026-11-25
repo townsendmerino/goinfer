@@ -143,7 +143,7 @@ func TestKV16_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 	if _, err := r16.PrefillLast(ctx, embs, 0); err != nil {
 		t.Fatalf("f16 prefill: %v", err)
 	}
-	for i := 0; i < nDecode; i++ {
+	for i := range nDecode {
 		e := m16.EmbedResidentForTest(2000 + 11*i)
 		if _, err := r32.Forward(e, nPrompt+i); err != nil {
 			t.Fatalf("f32 decode %d: %v", i, err)
@@ -176,7 +176,7 @@ func TestKV16_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 	}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}} {
 		f, h := c.f, c.h
 		bad, nonzero := 0, 0
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if want := wpack.F32ToF16RNE(f[i]); h[i] != want {
 				if bad < 3 {
 					t.Errorf("layer 0 %s[%d]: f16 cache %#04x, f32 %g rounds to %#04x", c.name, i, h[i], f[i], want)
@@ -314,7 +314,7 @@ func TestKV16_everyAttentionPathStaysCloseToF32(t *testing.T) {
 				if argmaxF32(a) == argmaxF32(b) {
 					agree++
 				}
-				for i := 0; i < steps; i++ {
+				for i := range steps {
 					e := m32.EmbedResidentForTest(ids[K+i])
 					if a, err = r32.Forward(e, K+i); err != nil {
 						t.Fatal(err)
@@ -752,7 +752,7 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 				if argmaxF32(a) == argmaxF32(b) {
 					agree++
 				}
-				for i := 0; i < steps; i++ {
+				for i := range steps {
 					e := m32.EmbedResidentForTest(ids[K+i])
 					if a, err = r32.Forward(e, K+i); err != nil {
 						t.Fatal(err)
@@ -845,12 +845,12 @@ func kv8G2(t *testing.T, model, file string) kv8G2Read {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 			for i := range steps {
 				if lg, err = r.Forward(m.EmbedResidentForTest(ids[K+i]), K+i); err != nil {
 					t.Fatal(err)
 				}
-				out = append(out, append([]float32(nil), lg...))
+				out = append(out, slices.Clone(lg))
 			}
 			return out
 		}
@@ -859,12 +859,12 @@ func kv8G2(t *testing.T, model, file string) kv8G2Read {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 		for i := range steps {
 			if lg, err = m.ForwardForTest(ids[K+i], cache); err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 		}
 		return out
 	}
@@ -947,7 +947,7 @@ func TestKV8_verifyIsSequentialDecode(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						out = append(out, append([]float32(nil), lg...))
+						out = append(out, slices.Clone(lg))
 					}
 					return out
 				}
@@ -1043,7 +1043,7 @@ func TestKV8_G2Diag_amplification(t *testing.T) {
 								if err != nil {
 									t.Fatal(err)
 								}
-								arms[a] = append(arms[a], append([]float32(nil), lg...))
+								arms[a] = append(arms[a], slices.Clone(lg))
 							}
 							m.Close()
 						}()
@@ -1224,9 +1224,9 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 					rows++
 					n := pos + 1
 					top := kv8TopKey(q, kq[:n*Ly.kvDim], ks[:n*nKV], 0, hd, nKV, G, r.attnScale)
-					vs2 := append([]float32(nil), vs...)
+					vs2 := slices.Clone(vs)
 					vs2[top*nKV] *= 1.05
-					vq2 := append([]int8(nil), vq...)
+					vq2 := slices.Clone(vq)
 					if vq2[top*Ly.kvDim] <= 127-16 {
 						vq2[top*Ly.kvDim] += 16
 					} else {

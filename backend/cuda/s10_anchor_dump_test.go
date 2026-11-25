@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -98,11 +100,9 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 	if kv := os.Getenv("GOINFER_S10H_KNOBS"); kv != "" { // the 896 investigation: operator knobs added to the arm's Options, "NAME=VALUE,NAME=VALUE" (e.g. GOINFER_PREFILL_CHUNK=2048)
 		knobs := decoder.Knobs{}
 		if opts.Knobs != nil {
-			for k, v := range *opts.Knobs {
-				knobs[k] = v
-			}
+			maps.Copy(knobs, *opts.Knobs)
 		}
-		for _, p := range strings.Split(kv, ",") {
+		for p := range strings.SplitSeq(kv, ",") {
 			k, v, _ := strings.Cut(p, "=")
 			knobs[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
@@ -170,7 +170,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		refLast = append([]float32(nil), refLast...)
+		refLast = slices.Clone(refLast)
 		r.Reset()
 		if err := m.ResidentUploadPrefillForTest(cache); err != nil {
 			t.Fatal(err)
@@ -186,7 +186,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				o = append(o, append([]float32(nil), lg...))
+				o = append(o, slices.Clone(lg))
 				toks = append(toks, argmaxF(lg))
 			}
 			return o, toks
@@ -198,7 +198,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: resident DeepStack prefill: %v", tag, err)
 		}
-		on, _ := decode(append([]float32(nil), newLast...), teacher)
+		on, _ := decode(slices.Clone(newLast), teacher)
 		worst := 1.0
 		flat := func(x [][]float32) []float32 {
 			var o []float32

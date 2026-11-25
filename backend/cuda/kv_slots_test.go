@@ -17,13 +17,13 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
+	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -787,7 +787,7 @@ func TestPlanSlack_realSizeDiff(t *testing.T) {
 						for f := range edges {
 							fs = append(fs, f)
 						}
-						sort.Slice(fs, func(i, j int) bool { return fs[i] < fs[j] })
+						slices.Sort(fs)
 						diff := false
 						for _, f := range fs {
 							b, a := m.PlanWithoutSlackForTest("cuda", f, req), m.Plan("cuda", f, req)
@@ -1139,7 +1139,7 @@ func countedDecode(t *testing.T, m *decoder.Model, r *cudaResident, id, pos int)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return c.Report(), append([]float32(nil), lg...)
+	return c.Report(), slices.Clone(lg)
 }
 
 // TestCost_cudaDecodeLaunchCensus prints one decode token's launches per kernel on a real checkpoint (CENSUS_MODEL, a .gguf, at
@@ -1177,8 +1177,8 @@ func TestCost_cudaDecodeLaunchCensus(t *testing.T) {
 		names = append(names, n)
 		total += c[0]
 	}
-	sort.Slice(names, func(i, j int) bool {
-		return got[names[i]][0] > got[names[j]][0] || got[names[i]][0] == got[names[j]][0] && names[i] < names[j]
+	slices.SortFunc(names, func(a, b string) int {
+		return cmp.Or(cmp.Compare(got[b][0], got[a][0]), cmp.Compare(a, b))
 	})
 	for _, n := range names {
 		c := got[n]
@@ -1256,7 +1256,7 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	off = append([]float32(nil), off...)
+	off = slices.Clone(off)
 	_, on := countedDecode(t, m, r, 9, 4)
 	for i := range on {
 		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {
@@ -1330,7 +1330,7 @@ func TestLaunchToken_queuedRowsReadTheirOwnEmbedding(t *testing.T) {
 					return e
 				}
 			}
-			row := append([]float32(nil), e...)
+			row := slices.Clone(e)
 			if e := r.launchToken(row, pos, pos, pos == n-1); e != nil {
 				return e
 			}

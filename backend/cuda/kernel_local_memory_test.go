@@ -3,8 +3,9 @@
 package cuda
 
 import (
+	"cmp"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"unsafe"
@@ -104,7 +105,7 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		for n := range names {
 			sorted = append(sorted, n)
 		}
-		sort.Strings(sorted)
+		slices.Sort(sorted)
 		for _, n := range sorted {
 			p, e := dev.NewComputePipeline(mod, n)
 			if e != nil {
@@ -122,7 +123,7 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		}
 	}
 
-	sort.Slice(rows, func(i, j int) bool { return rows[i].local > rows[j].local })
+	slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.local, a.local) })
 	t.Logf("%-22s %-28s %10s %16s", "module", "kernel", "local/thr", "SMs*maxT*local")
 	nonZero := 0
 	for _, r := range rows {

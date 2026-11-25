@@ -3,11 +3,12 @@
 package cuda
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,7 +158,7 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	if os.Getenv("KSH6C_S4") != "" && startFree-after > 2<<20 {
 		t.Errorf("H6C-S4: the card dropped %.1f MiB after the pools (want <= 2): something the margin does not price came after them", mib(startFree-after))
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].drop > rows[j].drop })
+	slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.drop, a.drop) })
 	for i, x := range rows {
 		if i >= 25 {
 			break

@@ -8,7 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -163,7 +163,7 @@ func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 				}
 				es[h] /= math.Max(refMax, 1e-12)
 			}
-			sort.Float64s(es)
+			slices.Sort(es)
 			return es[nH/2], es[nH-1]
 		}
 		eMed, eMax := perHead(exact)
@@ -305,7 +305,7 @@ func laneArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 				t.Fatalf("sequential seed Forward pos=%d (lane split=%d): %v", pos, split, err)
 			}
 		}
-		seed = append([]float32(nil), seed...)
+		seed = slices.Clone(seed)
 		rf.faSplit = split
 	} else {
 		rf.faSplit = split
@@ -316,7 +316,7 @@ func laneArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 	}
 	rf.faLaunches = 0
 	out := make([][]float32, len(refTokens))
-	out[0] = append([]float32(nil), seed...)
+	out[0] = slices.Clone(seed)
 	pos := K - 1
 	for i := 1; i < len(refTokens); i++ {
 		pos++
@@ -324,7 +324,7 @@ func laneArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 		if err != nil {
 			t.Fatalf("teacher-forced Forward pos=%d (lane split=%d): %v", pos, split, err)
 		}
-		out[i] = append([]float32(nil), lg...)
+		out[i] = slices.Clone(lg)
 	}
 	return out
 }

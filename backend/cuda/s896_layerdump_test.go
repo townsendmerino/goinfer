@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,11 +86,9 @@ func TestS896_layerDump(t *testing.T) {
 	if kv := os.Getenv("GOINFER_S896_KNOBS"); kv != "" {
 		knobs := decoder.Knobs{}
 		if opts.Knobs != nil {
-			for k, v := range *opts.Knobs {
-				knobs[k] = v
-			}
+			maps.Copy(knobs, *opts.Knobs)
 		}
-		for _, p := range strings.Split(kv, ",") {
+		for p := range strings.SplitSeq(kv, ",") {
 			k, v, _ := strings.Cut(p, "=")
 			knobs[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}

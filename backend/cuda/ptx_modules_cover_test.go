@@ -5,7 +5,7 @@ package cuda
 import (
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -41,8 +41,8 @@ func TestPTXModules_coverEveryEmbed(t *testing.T) {
 			stale = append(stale, f)
 		}
 	}
-	sort.Strings(missing)
-	sort.Strings(stale)
+	slices.Sort(missing)
+	slices.Sort(stale)
 	if len(missing) > 0 {
 		t.Errorf("ptxModules() omits %d embedded module(s): %s — the local-memory census cannot see them",
 			len(missing), strings.Join(missing, " "))

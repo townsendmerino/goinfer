@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 					}
 					last = l
 				}
-				return append([]float32(nil), last...), time.Since(t0)
+				return slices.Clone(last), time.Since(t0)
 			}
 			batched := func(prompt [][]float32) ([]float32, time.Duration) {
 				r.Reset()
@@ -109,7 +110,7 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 				if err != nil {
 					t.Fatalf("batched prefill: %v", err)
 				}
-				return append([]float32(nil), l...), time.Since(t0)
+				return slices.Clone(l), time.Since(t0)
 			}
 			greedy := func(from []float32, pos, n int) []int {
 				ids := make([]int, 0, n)
@@ -121,7 +122,7 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 					if err != nil {
 						t.Fatalf("greedy step %d: %v", i, err)
 					}
-					l = append([]float32(nil), nl...)
+					l = slices.Clone(nl)
 				}
 				return ids
 			}

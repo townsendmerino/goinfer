@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -187,7 +188,7 @@ func TestSP0_prize(t *testing.T) {
 			if os.Getenv("SP0_SKIP_ACCEPT") == "1" {
 				break // a cost-only re-run: the teacher continuations above are the cost arms' fill text
 			}
-			seq := append(append([]int(nil), it.prompt...), it.cont...)
+			seq := slices.Concat(it.prompt, it.cont)
 			capt, e := sp0Capture(m, r, taps, seq)
 			if e != nil {
 				t.Fatalf("capture %s/%d: %v", it.suite, it.idx, e)
@@ -243,7 +244,7 @@ func sp0Capture(m *decoder.Model, r *cudaResident, taps []int, seq []int) ([][]f
 		if len(c) != len(seq)*hidden {
 			return nil, fmt.Errorf("tap %d captured %d floats, want %d rows x %d", taps[i], len(c), len(seq), hidden)
 		}
-		out[i] = append([]float32(nil), c...)
+		out[i] = slices.Clone(c)
 	}
 	return out, nil
 }
@@ -313,7 +314,7 @@ func sp0Ngram(prompt, cont []int, k int) (map[string]int, int) {
 	hist := map[string]int{}
 	rounds := 0
 	for j := 0; j+1 < len(cont); {
-		ctx := append(append([]int(nil), prompt...), cont[:j+1]...)
+		ctx := slices.Concat(prompt, cont[:j+1])
 		avail := len(cont) - 1 - j
 		draft := d.Draft(ctx, min(k, avail))
 		accepted := 0
@@ -334,7 +335,7 @@ func sp0Cost(t *testing.T, m *decoder.Model, r *cudaResident, rd decoder.Residen
 	t.Helper()
 	reps := sp0EnvInt(t, "SP0_COST_REPS", 20)
 	const warm = 3
-	for _, cs := range strings.Split(sp0EnvStr("SP0_COST_CTX", "512,4096"), ",") {
+	for cs := range strings.SplitSeq(sp0EnvStr("SP0_COST_CTX", "512,4096"), ",") {
 		L, err := strconv.Atoi(cs)
 		if err != nil {
 			t.Fatalf("SP0_COST_CTX %q: %v", cs, err)

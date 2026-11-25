@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -306,7 +307,7 @@ func moeRowsResidual(t *testing.T, dir string, grouped bool, M int) ([][]float32
 	var s uint32 = 4242
 	for i := range embs {
 		s = s*1664525 + 1013904223
-		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+		embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 	}
 	before := cudaMoeRowsRuns
 	rows, err := r.ResidualAll(context.Background(), embs, 0)

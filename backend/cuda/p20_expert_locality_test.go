@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -83,7 +83,7 @@ func TestP20ExpertLocality(t *testing.T) {
 	var s uint32 = 999331
 	for i := range embs {
 		s = s*1664525 + 1013904223
-		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+		embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 	}
 	if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
 		t.Fatalf("PrefillLast: %v", err)
@@ -125,7 +125,7 @@ func TestP20ExpertLocality(t *testing.T) {
 			counts = append(counts, len(seen[l]))
 		}
 	}
-	sort.Ints(counts)
+	slices.Sort(counts)
 	if len(counts) > 0 {
 		fmt.Printf("distinct-per-layer distribution: min=%d p25=%d median=%d p75=%d max=%d\n",
 			counts[0], counts[len(counts)/4], counts[len(counts)/2], counts[3*len(counts)/4], counts[len(counts)-1])

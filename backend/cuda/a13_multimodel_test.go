@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -47,12 +48,12 @@ func TestA13_MultiModelUnloadPoisons(t *testing.T) {
 			}
 
 			// Baseline from B BEFORE A exists, so a later difference is attributable.
-			emb := append([]float32(nil), mb.EmbedResidentForTest(1)...)
+			emb := slices.Clone(mb.EmbedResidentForTest(1))
 			before, err := rb.Forward(emb, 0)
 			if err != nil {
 				t.Fatalf("round %d: B baseline forward: %v", round, err)
 			}
-			base := append([]float32(nil), before...)
+			base := slices.Clone(before)
 			nzBase := countNonZero(base)
 			if nzBase == 0 {
 				t.Fatalf("round %d: B's BASELINE is all zeros — the probe says nothing", round)

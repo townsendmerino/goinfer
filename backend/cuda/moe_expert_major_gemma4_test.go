@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -62,7 +63,7 @@ func TestMoEExpertMajorGemma4CUDA_bitIdentical(t *testing.T) {
 		var s uint32 = 7373
 		for i := range embs {
 			s = s*1664525 + 1013904223
-			embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+			embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 		}
 		before := cudaMoeExpertMajorRuns
 		out, err := r.PrefillLast(context.Background(), embs, 0)

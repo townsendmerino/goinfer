@@ -297,7 +297,7 @@ func runCUDARefCell(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int,
 			t.Fatalf("PrefillLast (attn=%v gemm=%v): %v", attn, gemm, err)
 		}
 		out := make([][]float32, len(refTokens))
-		out[0] = append([]float32(nil), seed...)
+		out[0] = slices.Clone(seed)
 		pos := K - 1
 		for i := 1; i < len(refTokens); i++ {
 			pos++
@@ -305,7 +305,7 @@ func runCUDARefCell(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int,
 			if err != nil {
 				t.Fatalf("teacher-forced Forward pos=%d: %v", pos, err)
 			}
-			out[i] = append([]float32(nil), lg...)
+			out[i] = slices.Clone(lg)
 		}
 		return out[0], out
 	}
