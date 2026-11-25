@@ -208,6 +208,12 @@ func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
 	if err != nil {
 		return nil, err
 	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = a.Close()
+		}
+	}()
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.posEmbeds, a.ropeTables = enc.PositionEmbeds, enc.RopeTables
 	a.program = func() vision.TowerBlock { return vision.Qwen3Program(c) }
@@ -219,6 +225,7 @@ func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
 		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.Norm1W), norm1b: a.up(b.Norm1B), norm2w: a.up(b.Norm2W), norm2b: a.up(b.Norm2B),
 			q: q, k: k, v: v, proj: a.proj(b.Proj), fc1: a.proj(b.FC1), fc2: a.proj(b.FC2)})
 	}
+	ok = true
 	return a, nil
 }
 
@@ -233,6 +240,12 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 	if err != nil {
 		return nil, err
 	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = a.Close()
+		}
+	}()
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.ropeTables = enc.RopeTables
 	a.program = func() vision.TowerBlock { return vision.GlmOcrProgram(c) }
@@ -247,6 +260,7 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.Norm1W), norm2w: a.up(b.Norm2W), q: q, k: k, v: v, proj: a.proj(b.Proj),
 			qNorm: a.up(b.QNorm), kNorm: a.up(b.KNorm), gate: a.proj(b.Gate), up: a.proj(b.Up), down: a.proj(b.Down)})
 	}
+	ok = true
 	return a, nil
 }
 

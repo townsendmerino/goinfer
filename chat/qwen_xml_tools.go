@@ -214,7 +214,7 @@ func (t *Template) renderQwen35XMLTools(system string, turns []Turn, tools []Too
 		}
 	}
 	b.lit("<|im_start|>assistant\n")
-	return b.segs
+	return b.out()
 }
 
 // ---- the reply ------------------------------------------------------------------------------------------------------------------

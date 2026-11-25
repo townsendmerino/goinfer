@@ -182,6 +182,9 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 // caps only the resized output). ~33.5 MP: above any real camera image, below the memory a decompression bomb would demand.
 const qwenMaxInputPixels = 32 * 1024 * 1024
 
+// visionMaxInputPixels is the shared raw-pixel decompression-bomb cap enforced before image.Decode across Qwen, LFM2-VL, and Pixtral.
+const visionMaxInputPixels = qwenMaxInputPixels
+
 // The largest values a released Qwen VL processor config sets: patch_size*merge_size 32, temporal_patch_size 2, and a 2^24-pixel
 // budget (Qwen3-VL's and Qwen3.5's longest_edge). With checkLimits and qwenResizeGrid, one image's pixel_values are never larger
 // than under the Qwen3.5 config's own budget.
@@ -356,8 +359,13 @@ func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessCo
 	return out
 }
 
-// qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer. The >>8 recovers the 8-bit channel value exactly for an
-// 8-bit (PNG/JPEG) source.
+// qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer.
+func qwenExtractRGB(img image.Image, h, w int) []float32 {
+	return extractRGB[float32](img, h, w)
+}
+
+// extractRGB reads img into a [h*w*3] 0..255 channel-last buffer of T (uint8 or float32). The >>8 recovers the 8-bit channel value
+// exactly for an 8-bit (PNG/JPEG) source.
 //
 // *image.YCbCr (a decoded JPEG, the common case) and *image.RGBA read the backing buffer directly instead of dispatching through the
 // image.Image and color.Color interfaces per pixel. Both are PROVABLY bit-identical to the generic path, not just close:
@@ -365,9 +373,9 @@ func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessCo
 // skipping the >>8 round-trip gives the same result; image.YCbCr.At() calls color.YCbCrToRGB then wraps it in color.RGBA, so calling
 // color.YCbCrToRGB directly is the same identity. NRGBA is deliberately NOT fast-pathed (its alpha premultiplication makes a naive
 // buffer read WRONG for a transparent pixel); every other concrete type falls through to the generic loop unchanged.
-func qwenExtractRGB(img image.Image, h, w int) []float32 {
+func extractRGB[T uint8 | float32](img image.Image, h, w int) []T {
 	b := img.Bounds()
-	out := make([]float32, h*w*3)
+	out := make([]T, h*w*3)
 	switch src := img.(type) {
 	case *image.YCbCr:
 		for y := range h {
@@ -376,7 +384,7 @@ func qwenExtractRGB(img image.Image, h, w int) []float32 {
 				ci := src.COffset(b.Min.X+x, b.Min.Y+y)
 				r, g, bl := color.YCbCrToRGB(src.Y[yi], src.Cb[ci], src.Cr[ci])
 				i := (y*w + x) * 3
-				out[i+0], out[i+1], out[i+2] = float32(r), float32(g), float32(bl)
+				out[i+0], out[i+1], out[i+2] = T(r), T(g), T(bl)
 			}
 		}
 		return out
@@ -385,7 +393,7 @@ func qwenExtractRGB(img image.Image, h, w int) []float32 {
 			for x := range w {
 				pi := src.PixOffset(b.Min.X+x, b.Min.Y+y)
 				i := (y*w + x) * 3
-				out[i+0], out[i+1], out[i+2] = float32(src.Pix[pi+0]), float32(src.Pix[pi+1]), float32(src.Pix[pi+2])
+				out[i+0], out[i+1], out[i+2] = T(src.Pix[pi+0]), T(src.Pix[pi+1]), T(src.Pix[pi+2])
 			}
 		}
 		return out
@@ -394,7 +402,7 @@ func qwenExtractRGB(img image.Image, h, w int) []float32 {
 		for x := range w {
 			cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
 			i := (y*w + x) * 3
-			out[i+0], out[i+1], out[i+2] = float32(cr>>8), float32(cg>>8), float32(cb>>8)
+			out[i+0], out[i+1], out[i+2] = T(cr>>8), T(cg>>8), T(cb>>8)
 		}
 	}
 	return out

@@ -365,8 +365,9 @@ var (
 // Close releases the resident backend's GPU resources. Propagates the resident's Close error (best-
 // effort teardown returns nil today, but the contract is honored so a future failing release surfaces).
 func (b *cudaBackend) Close() error {
-	if b.resident != nil {
-		return b.resident.Close()
+	if r := b.resident; r != nil {
+		b.resident = nil
+		return r.Close()
 	}
 	return nil
 }

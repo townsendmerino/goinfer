@@ -47,6 +47,12 @@ func newSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
 	if err != nil {
 		return nil, err
 	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = a.Close()
+		}
+	}()
 	a.int8W = enc.Quantized() || siglipForceInt8
 	if len(posEmb) != np*c.HiddenSize {
 		return nil, fmt.Errorf("metal: SigLIP position table %d values for %d patches of %d", len(posEmb), np, c.HiddenSize)
@@ -71,6 +77,7 @@ func newSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
 	} else if err := enc.ForEachSiglipBlock(add); err != nil {
 		return nil, fmt.Errorf("metal: SigLIP blocks: %w", err)
 	}
+	ok = true
 	return &siglipVResident{a: a, enc: enc, np: np}, nil
 }
 
@@ -124,6 +131,12 @@ func newQwen25VResident(enc *vision.QwenVisionEncoder) (*qwen25VResident, error)
 	if err != nil {
 		return nil, err
 	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = a.Close()
+		}
+	}()
 	a.patchW = a.up(w.PatchW) // no patch bias
 	full := map[int]bool{}
 	for _, li := range w.FullattBlockIndexes {
@@ -151,6 +164,7 @@ func newQwen25VResident(enc *vision.QwenVisionEncoder) (*qwen25VResident, error)
 			proj: p(ws[1], b.Projb, b.Projw), gate: p(ws[2], b.Gateb, b.Gatew), up: p(ws[3], b.Upb, b.Upw),
 			down: p(ws[4], b.Downb, b.Downw), full: full[i]})
 	}
+	ok = true
 	return &qwen25VResident{a: a, enc: enc, merge: w.SpatialMergeSize}, nil
 }
 

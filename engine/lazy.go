@@ -33,26 +33,44 @@ func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free
 		sp.LogitProcessorGate = func(generated []int) bool { return lazy.Gate(append(base[:len(base):len(base)], generated...)) }
 		return sp
 	}
+	send := func(t int) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case out <- t:
+			return true
+		}
+	}
 	run2 := func(emitted []int) {
+		if ctx.Err() != nil {
+			return
+		}
 		budget := req.MaxTokens
 		if budget > 0 {
 			if budget -= len(emitted); budget <= 0 {
 				return
 			}
 		}
+		ctx2, cancel2 := context.WithCancel(ctx)
+		defer cancel2()
 		prompt := slices.Concat(req.PromptIDs, emitted)
-		s2, g2, d2, err := constrained(ctx, prompt, budget, gated(emitted))
+		s2, g2, d2, err := constrained(ctx2, prompt, budget, gated(emitted))
 		if err != nil {
 			startErr.Store(&err)
 			return
 		}
+		if d2 != nil {
+			defer d2()
+		}
 		cur.Store(g2)
 		phase2At.Store(int64(len(emitted)))
 		for t := range s2 {
-			out <- t
-		}
-		if d2 != nil {
-			d2()
+			if !send(t) {
+				cancel2()
+				for range s2 {
+				}
+				return
+			}
 		}
 	}
 	go func() {
@@ -68,23 +86,27 @@ func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free
 		phase1.Store(g1)
 		var emitted []int
 		armed := false
+		stopped := false
 		for t := range s1 {
 			emitted = append(emitted, t)
-			out <- t
+			if !send(t) {
+				stopped = true
+				break
+			}
 			if lazy.Gate(emitted) {
 				armed = true
 				break
 			}
 		}
-		if armed {
+		if armed || stopped {
 			cancel1()
-			for range s1 { // drain what phase 1 drafted past the opener; none of it is forwarded
+			for range s1 { // drain what phase 1 drafted past the opener or cancel; none of it is forwarded
 			}
 		}
 		if d1 != nil {
 			d1()
 		}
-		if armed {
+		if armed && !stopped {
 			run2(emitted)
 		}
 	}()

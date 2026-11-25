@@ -97,7 +97,11 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 	if causal {
 		vi.grids = nil // no m-RoPE
 	}
-	vi.features = concatImageFeatures(preps, lm.model.Config().HiddenDim)
+	var hiddenDim int
+	if lm.model != nil {
+		hiddenDim = lm.model.Config().HiddenDim
+	}
+	vi.features = concatImageFeatures(preps, hiddenDim)
 	return vi, nil
 }
 

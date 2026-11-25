@@ -82,26 +82,43 @@ func TestDeviceFallback_requireBackendRefuses(t *testing.T) {
 	}
 }
 
+type metalStyleAllocPanic struct{}
+
+func (metalStyleAllocPanic) Error() string {
+	return "metal: MTLBuffer allocation failed (kv, 4194304 bytes) — out of memory"
+}
+func (metalStyleAllocPanic) DeviceAllocFailure() {}
+
 // A device tower that panics inside run is an error, and a device-memory panic falls back like a returned allocation failure.
 func TestDeviceFallback_recoversPanics(t *testing.T) {
-	var f deviceFallback
-	acc := &fakeGridAcc{}
-	var a multimodal.GridTowerAccelerator = acc
-	out, err := func() (out []float32, err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("panic escaped run: %v", r)
+	for _, tc := range []struct {
+		name string
+		val  any
+	}{
+		{"text marker", "metal: MTLBuffer allocation failed: device allocation failed (out of memory)"},
+		{"typed AllocFailure without text marker", metalStyleAllocPanic{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var f deviceFallback
+			acc := &fakeGridAcc{}
+			var a multimodal.GridTowerAccelerator = acc
+			out, err := func() (out []float32, err error) {
+				defer func() {
+					if r := recover(); r != nil {
+						err = fmt.Errorf("panic escaped run: %v", r)
+					}
+				}()
+				return f.run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
+					if x != nil {
+						panic(tc.val)
+					}
+					return []float32{9}, nil
+				})
+			}()
+			if err != nil || len(out) != 1 || out[0] != 9 || !acc.closed || a != nil {
+				t.Fatalf("a device-memory panic: out %v err %v closed %v acc %v; want the CPU result with the accelerator closed", out, err, acc.closed, a)
 			}
-		}()
-		return f.run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
-			if x != nil {
-				panic("metal: MTLBuffer allocation failed: device allocation failed (out of memory)")
-			}
-			return []float32{9}, nil
 		})
-	}()
-	if err != nil || len(out) != 1 || out[0] != 9 || !acc.closed || a != nil {
-		t.Fatalf("a device-memory panic: out %v err %v closed %v acc %v; want the CPU result with the accelerator closed", out, err, acc.closed, a)
 	}
 }
 

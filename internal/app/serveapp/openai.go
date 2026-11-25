@@ -35,6 +35,10 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
+// maxAutoTextBodyBytes caps the context-derived default text body limit (64 MiB) so ultra-long-context models
+// (e.g. 10M positions) cannot silently raise the default cap into gigabytes; -max-body-bytes still overrides it.
+const maxAutoTextBodyBytes = 64 << 20
+
 const defaultMaxTokens = 512
 
 // maxTopLogprobs is the largest `top_logprobs` a request may ask for: OpenAI's own documented ceiling, so no
@@ -403,6 +407,26 @@ type server struct {
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
 	swapWatch        *swapguard.Watch
+
+	// lifeCtx is the server-lifetime context cancelled on shutdown/Close; background jobs and batch lines derive from it.
+	lifeCtx context.Context
+}
+
+// errServerShutdown is the context cancellation cause used by server shutdown and handlerCloser.Close
+// so jobs and batch lines interrupted by shutdown record jobs.Interrupted instead of user jobs.Cancelled.
+var errServerShutdown = errors.New("server shutting down")
+
+func (s *server) initLifeContext() (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	s.lifeCtx = ctx
+	return ctx, cancel
+}
+
+func (s *server) lifeContext() context.Context {
+	if s.lifeCtx != nil {
+		return s.lifeCtx
+	}
+	return context.Background()
 }
 
 // lookupLocked resolves a request's model name to a loaded entry: an exact served-name match, else the sole model
@@ -433,6 +457,14 @@ func (s *server) lookupLocked(name string) *loadedModel {
 // The embed cap is independent of both: /v1/embeddings is served by the encoder, which is not in s.models, so a
 // decoder-derived cap would measure the wrong thing (see maxEmbedBodyBytes). fileCap is independent for the same
 // reason (see maxBatchFileBytes). All four are reported on startup.
+// autoTextBodyCap clamps an auto-derived text body cap between the 4 MiB floor and the 64 MiB ceiling.
+func autoTextBodyCap(derived int64) int64 {
+	if derived <= maxBodyBytes {
+		return maxBodyBytes
+	}
+	return min(derived, maxAutoTextBodyBytes)
+}
+
 func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, fileCap int64) {
 	textCap = maxBodyBytes // 4 MiB floor
 	if override > 0 {
@@ -451,9 +483,7 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, 
 				derived = b
 			}
 		}
-		if derived > textCap {
-			textCap = derived
-		}
+		textCap = autoTextBodyCap(derived)
 	}
 	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
 	embedCap = maxEmbedBodyBytes
@@ -953,6 +983,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		// Nothing else is sent between here and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat keeps a client's idle timeout from firing during it.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
@@ -1081,6 +1112,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
@@ -1564,6 +1596,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			state := jobs.Done
 			var errMsg string
 			switch {
+			case errors.Is(context.Cause(parent), errServerShutdown):
+				state, errMsg = jobs.Interrupted, errServerShutdown.Error()
 			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:
@@ -1635,6 +1669,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			state := jobs.Done
 			var errMsg string
 			switch {
+			case errors.Is(context.Cause(parent), errServerShutdown):
+				state, errMsg = jobs.Interrupted, errServerShutdown.Error()
 			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:

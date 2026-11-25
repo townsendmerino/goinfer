@@ -210,13 +210,18 @@ func (s *kvSnapStore) sortLocked() {
 	})
 }
 
-// removeLocked drops x, releasing its host memory.
+// removeLocked drops x, releasing its host memory. No-op if x was already evicted.
 func (s *kvSnapStore) removeLocked(x *kvSnap) {
+	found := false
 	for i, y := range s.list {
 		if y == x {
 			s.list = append(s.list[:i], s.list[i+1:]...)
+			found = true
 			break
 		}
+	}
+	if !found {
+		return
 	}
 	s.used -= x.h.Bytes()
 	x.h.Release()

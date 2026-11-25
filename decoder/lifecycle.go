@@ -3,9 +3,12 @@ package decoder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // ErrClosed is what Generation.Err reports for a generation that Model.Close ended or that was started after Close. The
@@ -73,6 +76,12 @@ func (m *Model) runGen(ctx context.Context, out chan int, g *Generation, refused
 			l.wg.Done()
 		}()
 		defer close(out)
+		defer func() {
+			if p := recover(); p != nil {
+				mem.RepanicBug(p)
+				g.err = fmt.Errorf("decoder: generation panicked: %v", p)
+			}
+		}()
 		body(gctx)
 		if g.err != nil && errors.Is(g.err, context.Canceled) && ctx.Err() == nil {
 			l.mu.Lock()

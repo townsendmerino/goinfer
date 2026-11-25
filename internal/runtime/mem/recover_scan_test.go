@@ -23,9 +23,12 @@ var recoverExempt = map[string]string{
 	"internal/app/inproc/transport.go:RoundTrip":               "the in-process transport's handler boundary, as net/http's own: the panic fails that response",
 	"decoder/gguf.go:ggufConfig":                               "hostile GGUF metadata drives a family builder into a divide by zero or an index panic: that is the malformed-input error",
 	"decoder/mc3_batch.go:runSolo":                             "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
+	"decoder/mc3_batch.go:execRun":                             "a panic fails that batched step's waiters with its value so serveLocked always clears busy and wakes waiters",
 	"decoder/cpu_batch.go:runStep":                             "a panic fails that batched step's tokens with its value; nothing falls back",
 	"backend/cuda/resident.go:pipeName":                        "an error path's name lookup must not panic: a failure reads as \"?\"",
 	"backend/metal/workingset.go:deviceWorkingSet":             "a probe: a missing Metal symbol reads as an unknown working set (0)",
+	"backend/metal/expertpool.go:ensureResidentBatch":          "forwards a child staging goroutine's panic unchanged to the caller goroutine, where forwardLogitsPaged's RepanicBug classifies it",
+	"backend/metal/expertpool.go:prefetchAsync":                "forwards a background prefetch goroutine's panic unchanged to finishPrefetch on the caller goroutine, where RepanicBug classifies it",
 }
 
 // classifies reports whether fn, the function whose body calls recover, lets a bug through: it calls DeviceAllocFailed or

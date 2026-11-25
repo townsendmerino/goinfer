@@ -111,7 +111,12 @@ func startAdminSocket(s *server, path string, textCap int64) (close func(), err 
 	// identity wrap: no auth(), no requireAdmin — the socket's file permissions are the whole
 	// gate. See registerAdminRoutes' own doc comment (admin.go).
 	registerAdminRoutes(mux, s, textCap, func(h http.HandlerFunc) http.HandlerFunc { return h })
-	sockSrv := &http.Server{Handler: mux}
+	sockSrv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		if err := sockSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "admin socket %s: %v\n", path, err)

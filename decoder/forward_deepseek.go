@@ -293,7 +293,13 @@ var mlaForceNaive bool
 func mlaRope(vec []float32, heads, ropeDim, pos int, invFreq []float64, scale float64, interleave bool) {
 	if interleave {
 		half := ropeDim / 2
-		tmp := make([]float32, ropeDim)
+		var tmpBuf [256]float32
+		var tmp []float32
+		if ropeDim <= len(tmpBuf) {
+			tmp = tmpBuf[:ropeDim]
+		} else {
+			tmp = make([]float32, ropeDim)
+		}
 		for hh := range heads {
 			src := vec[hh*ropeDim : (hh+1)*ropeDim]
 			for i := range half {

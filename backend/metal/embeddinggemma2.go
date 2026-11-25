@@ -157,6 +157,12 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 	}
 	d := ops.d
 	a := &eg2Accel{eg2Ops: ops, ropes: map[eg2RopeKey][2]Buffer{}}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = a.Close()
+		}
+	}()
 	w := m.Weights()
 	a.cfg, a.embed = w.Config, w.Embed
 	a.eps = float32(a.cfg.RMSNormEps)
@@ -183,6 +189,7 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 			gate: up(ly.Gate), up: up(ly.Up), down: up(ly.Down), postFFNorm: up(ly.PostFFNorm), pleGate: up(ly.PLEGate),
 			pleProj: up(ly.PLEProj), plePostNorm: up(ly.PLEPostNorm)})
 	}
+	ok = true
 	return a, nil
 }
 

@@ -213,11 +213,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 // The first write error is sticky and readable: a stream whose client vanished should stop generating rather than
 // keep pushing frames into a dead socket.
 type sseWriter struct {
-	mu  sync.Mutex
-	w   http.ResponseWriter
-	f   http.Flusher
-	rc  *http.ResponseController
-	err error
+	mu    sync.Mutex
+	w     http.ResponseWriter
+	f     http.Flusher
+	rc    *http.ResponseController
+	onErr func()
+	err   error
 }
 
 // sseWriteTimeout bounds one frame's write+flush. A var so tests can drive it. Generous against a
@@ -239,9 +240,22 @@ func (s *sseWriter) frame(format string, args ...any) error {
 	}
 	if _, err := fmt.Fprintf(s.w, format, args...); err != nil {
 		s.err = err
+		if s.onErr != nil {
+			s.onErr()
+		}
 		return err
 	}
-	s.f.Flush()
+	if s.rc != nil {
+		if err := s.rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			s.err = err
+			if s.onErr != nil {
+				s.onErr()
+			}
+			return err
+		}
+	} else {
+		s.f.Flush()
+	}
 	return nil
 }
 
@@ -264,14 +278,13 @@ func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
 // frame to send or fail.
 func sseJSONSender(w http.ResponseWriter, f http.Flusher, cancel context.CancelFunc) func(event string, payload any) {
 	sw := newSSEWriter(w, f)
+	sw.onErr = cancel
 	return func(event string, payload any) {
 		b, err := json.Marshal(payload)
 		if err != nil {
 			return
 		}
-		if sw.frame("event: %s\ndata: %s\n\n", event, b) != nil {
-			cancel()
-		}
+		_ = sw.frame("event: %s\ndata: %s\n\n", event, b)
 	}
 }
 
@@ -288,7 +301,10 @@ func sseStart(w http.ResponseWriter) (*sseWriter, bool) {
 }
 
 func sseSend(ss *sseWriter, v any) {
-	b, _ := json.Marshal(v)
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
 	ss.frame("data: %s\n\n", b)
 }
 
@@ -334,9 +350,12 @@ func sseHeartbeat(ss *sseWriter) (stop func()) {
 			}
 		}
 	}()
+	var once sync.Once
 	return func() {
-		close(done)
-		<-finished
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
 	}
 }
 

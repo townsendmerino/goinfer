@@ -69,11 +69,27 @@ func parseEmbedItems(raw json.RawMessage) ([]embedItem, error) {
 	if json.Unmarshal(raw, &many) != nil {
 		return nil, fmt.Errorf("input must be a string, an image object, or an array of them")
 	}
+	if len(many) > maxEmbedInputs {
+		return nil, fmt.Errorf("too many inputs: %d (max %d per request)", len(many), maxEmbedInputs)
+	}
 	items := make([]embedItem, 0, len(many))
+	var ni, na int
 	for i, el := range many {
 		it, err := parseEmbedElement(el)
 		if err != nil {
 			return nil, fmt.Errorf("input %d: %w", i, err)
+		}
+		if len(it.image) > 0 {
+			ni++
+			if ni > maxEmbedImages {
+				return nil, fmt.Errorf("too many images: %d (max %d per request)", ni, maxEmbedImages)
+			}
+		}
+		if len(it.audio) > 0 {
+			na++
+			if na > maxEmbedAudio {
+				return nil, fmt.Errorf("too many audio clips: %d (max %d per request)", na, maxEmbedAudio)
+			}
 		}
 		items = append(items, it)
 	}

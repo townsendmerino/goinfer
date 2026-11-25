@@ -186,19 +186,19 @@ func Lfm2VLPreprocess(data []byte, c Lfm2VLPreprocessConfig) (Lfm2VLLayout, erro
 	if err != nil {
 		return Lfm2VLLayout{}, fmt.Errorf("lfm2-vl: decode image header: %w", err)
 	}
-	if ic.Width <= 0 || ic.Height <= 0 || ic.Width > 16384 || ic.Height > 16384 {
+	if ic.Width <= 0 || ic.Height <= 0 || ic.Width > 16384 || ic.Height > 16384 || int64(ic.Width)*int64(ic.Height) > visionMaxInputPixels {
 		return Lfm2VLLayout{}, fmt.Errorf("lfm2-vl: image %dx%d out of range", ic.Width, ic.Height)
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return Lfm2VLLayout{}, fmt.Errorf("lfm2-vl: decode image: %w", err)
 	}
-	h, w := ic.Height, ic.Width
-	rgb := qwenExtractRGB(img, h, w)
-	src := make([]uint8, len(rgb))
-	for i, v := range rgb {
-		src[i] = uint8(v)
+	b := img.Bounds()
+	h, w := b.Dy(), b.Dx()
+	if h <= 0 || w <= 0 || int64(w)*int64(h) > visionMaxInputPixels {
+		return Lfm2VLLayout{}, fmt.Errorf("lfm2-vl: decoded image %dx%d out of range", w, h)
 	}
+	src := extractRGB[uint8](img, h, w)
 	return lfm2VLLayoutRGB(src, h, w, c), nil
 }
 

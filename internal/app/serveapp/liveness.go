@@ -196,6 +196,7 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 		defer recoverDrain(lm.name)
 		if ml != nil {
 			ml.rw.Lock() // DRAIN: waits out every in-flight request holding this model (all siblings)
+			defer ml.rw.Unlock()
 		}
 		// KV is settled now (no in-flight generation). Checkpoint before the buffers it lives in are
 		// freed — for a resident backend the KV is inside the model's device memory.
@@ -205,20 +206,19 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 			// goroutine is not a request and does not hold ml.rw. The window is narrow (-kv-idle-demote + -session-dir + an
 			// unload landing on a tick), but it is a map mutated concurrently, a process crash rather than a wrong answer.
 			// admin.go takes lm.sessMu around the load-side restore for the same reason.
-			lm.sessMu.Lock()
-			if err := lm.sessions.Save(sessionSubdir(s.cfg.sessionDir, lm.fp)); err != nil {
-				fmt.Fprintf(sessionNoticeOut, "unload: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
-			}
-			lm.sessMu.Unlock()
+			func() {
+				lm.sessMu.Lock()
+				defer lm.sessMu.Unlock()
+				if err := lm.sessions.Save(sessionSubdir(s.cfg.sessionDir, lm.fp)); err != nil {
+					fmt.Fprintf(sessionNoticeOut, "unload: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
+				}
+			}()
 		}
 		lm.closeEntryNatives()
 		if last {
 			if c := lm.livenessKey(); c != nil {
 				_ = c.Close()
 			}
-		}
-		if ml != nil {
-			ml.rw.Unlock()
 		}
 		s.regMu.Lock()
 		delete(s.draining, lm.name)

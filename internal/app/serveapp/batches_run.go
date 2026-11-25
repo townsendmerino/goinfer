@@ -2,10 +2,58 @@ package serveapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 )
+
+const batchLineWorkers = 8
+
+// runBatchPool dispatches indices 0..n-1 across at most batchLineWorkers goroutines so a max-size batch
+// does not spawn thousands of concurrent pre-queue goroutines at once.
+func runBatchPool(n int, fn func(i int)) {
+	if n <= 0 {
+		return
+	}
+	workers := min(n, batchLineWorkers)
+	var next atomic.Int64
+	for range workers {
+		go runBatchWorker(n, &next, fn)
+	}
+}
+
+func runBatchWorker(n int, next *atomic.Int64, fn func(i int)) {
+	for {
+		i := int(next.Add(1) - 1)
+		if i >= n {
+			return
+		}
+		fn(i)
+	}
+}
+
+// registerBatchJob publishes jobID into batch.JobIDs[i] under batch.mu after registering cancel in js.
+// requestCancel (batches.go) reads the whole JobIDs slice from another goroutine while lines write their own
+// slots; disjoint indices do not save a plain slice write from racing a concurrent read of the slice's backing
+// array. Checking Status under the same lock returns false (and cancels immediately) if the batch is already
+// cancelling, closing the cancel-vs-registration race.
+func registerBatchJob(batch *batchRecord, i int, jobID string, js *jobs.Store, cancel context.CancelFunc) bool {
+	js.SetCancel(jobID, cancel)
+	batch.mu.Lock()
+	if batch.Status == "cancelling" || batch.Status == "cancelled" {
+		batch.mu.Unlock()
+		cancel()
+		return false
+	}
+	batch.JobIDs[i] = jobID
+	batch.mu.Unlock()
+	return true
+}
 
 // setResult records line i's outcome under the batch's own lock. Safe to call concurrently from every line's goroutine:
 // each writes a disjoint index, so only Status and the file-id fields (untouched here) actually need the lock; it is
@@ -20,15 +68,6 @@ func lineError(customID string, status int, errType, msg string) batchLineResult
 	return batchLineResult{CustomID: customID, StatusCode: status, ErrType: errType, ErrMsg: msg}
 }
 
-// setJobID records line i's job id under the batch's own lock. requestCancel (batches.go) reads the whole JobIDs slice
-// from a different goroutine while lines are still writing their own slot; disjoint indices do not save a plain slice
-// write from racing a concurrent read of the slice's backing array.
-func setJobID(batch *batchRecord, i int, id string) {
-	batch.mu.Lock()
-	batch.JobIDs[i] = id
-	batch.mu.Unlock()
-}
-
 // runBatchChatLine is one line of an OpenAI batch: the same validate -> resolveAndLock -> encode -> prepare -> admission
 // -> drive pipeline that handleCreateJob (jobs_http.go) and runJob (jobs_run.go) run, replicated rather than called
 // because both are tied to a single HTTP handler's or a fire-and-forget job's lifecycle, neither of which fits "run
@@ -41,6 +80,10 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	defer batch.wg.Done()
 	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
+	if batch.isCancelling() {
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		return
+	}
 	if len(req.Messages) == 0 {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
 			"messages is required and must contain at least one message"))
@@ -96,13 +139,16 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	jobID := "batch_req_" + reqID()
 	gr.id = jobID
 	s.jobs.CreatePending(jobID, lm.name, gr.promptIDs)
-	setJobID(batch, i, jobID)
 
 	// Stored before tryEnter, same ordering as runJob — POST .../cancel must reach a still-queued
 	// line, not only a running one.
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	s.jobs.SetCancel(jobID, bgCancel)
+	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	defer bgCancel()
+	if !registerBatchJob(batch, i, jobID, s.jobs, bgCancel) {
+		s.jobs.Finish(s.jobs.Get(jobID), jobs.Cancelled, nil, "batch cancelled", nil)
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		return
+	}
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
@@ -119,6 +165,10 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
+		return
+	}
+	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
+		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
 		return
 	}
 	if res.cancelReason != "" {
@@ -152,6 +202,10 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	defer batch.wg.Done()
 	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
+	if batch.isCancelling() {
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		return
+	}
 	if req.MaxTokens == nil || *req.MaxTokens <= 0 {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", "max_tokens is required and must be > 0"))
 		return
@@ -219,11 +273,14 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	jobID := "batch_req_" + reqID()
 	gr.id = jobID
 	s.jobs.CreatePending(jobID, lm.name, gr.promptIDs)
-	setJobID(batch, i, jobID)
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	s.jobs.SetCancel(jobID, bgCancel)
+	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	defer bgCancel()
+	if !registerBatchJob(batch, i, jobID, s.jobs, bgCancel) {
+		s.jobs.Finish(s.jobs.Get(jobID), jobs.Cancelled, nil, "batch cancelled", nil)
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		return
+	}
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
@@ -240,6 +297,10 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
+		return
+	}
+	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
+		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
 		return
 	}
 	if res.cancelReason != "" {

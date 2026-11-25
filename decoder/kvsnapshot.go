@@ -359,10 +359,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			// Copied, not aliased: the cache outlives the blob it was restored from.
 			ref.keysH[l] = append(ref.keysH[l][:0], r.u16View(int(r.u32()))...)
 			ref.valsH[l] = append(ref.valsH[l][:0], r.u16View(int(r.u32()))...)
-			if e := checkGlobalLen(l, "keysH", len(ref.keysH[l]), pos*kvDim); e != nil {
-				return nil, e
-			}
-			if e := checkGlobalLen(l, "valsH", len(ref.valsH[l]), pos*kvDim); e != nil {
+			if e := checkGlobalPair(l, "keysH", "valsH", len(ref.keysH[l]), len(ref.valsH[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
 			if len(ref.keysH[l]) > 0 {
@@ -375,18 +372,15 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
 			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
 			// legal and means a KV-shared layer, which stores nothing of its own.
-			if e := checkGlobalLen(l, "keysQ", len(ref.keysQ[l]), pos*kvDim); e != nil {
-				return nil, e
-			}
-			if e := checkGlobalLen(l, "valsQ", len(ref.valsQ[l]), pos*kvDim); e != nil {
+			if e := checkGlobalPair(l, "keysQ", "valsQ", len(ref.keysQ[l]), len(ref.valsQ[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
 			nKV := kvDim / headDim
-			if e := checkGlobalLen(l, "keyScale", len(ref.keyScale[l]), pos*nKV); e != nil {
+			if e := checkGlobalPair(l, "keyScale", "valScale", len(ref.keyScale[l]), len(ref.valScale[l]), pos*nKV); e != nil {
 				return nil, e
 			}
-			if e := checkGlobalLen(l, "valScale", len(ref.valScale[l]), pos*nKV); e != nil {
-				return nil, e
+			if (len(ref.keysQ[l]) == 0) != (len(ref.keyScale[l]) == 0) {
+				return nil, &SnapshotError{fmt.Sprintf("layer %d keysQ/keyScale presence mismatch (%d vs %d)", l, len(ref.keysQ[l]), len(ref.keyScale[l]))}
 			}
 			if len(ref.keysQ[l]) > 0 {
 				ref.stride[l] = kvDim // restore the per-layer KV width
@@ -404,10 +398,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			// so the first TruncateTo slices it to [:0] (or attendBatchedHeads panics) while pos stays non-zero. A global layer's width is the
 			// cache's uniform kvDim (geometry-guarded above); KV-shared layers keep stride 0, which TruncateTo's min() already guards. The
 			// lengths are checked as in the int8 arm above.
-			if e := checkGlobalLen(l, "keys", len(ref.keys[l]), pos*kvDim); e != nil {
-				return nil, e
-			}
-			if e := checkGlobalLen(l, "vals", len(ref.vals[l]), pos*kvDim); e != nil {
+			if e := checkGlobalPair(l, "keys", "vals", len(ref.keys[l]), len(ref.vals[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
 			if len(ref.keys[l]) > 0 {
@@ -444,6 +435,20 @@ func (r *giwReader) ints() []int {
 		out[i] = int(r.u32())
 	}
 	return out
+}
+
+// checkGlobalPair validates a paired global-layer K/V (or scale) array set: both must be 0 (KV-shared) or both equal want.
+func checkGlobalPair(layer int, nameA, nameB string, gotA, gotB, want int) *SnapshotError {
+	if e := checkGlobalLen(layer, nameA, gotA, want); e != nil {
+		return e
+	}
+	if e := checkGlobalLen(layer, nameB, gotB, want); e != nil {
+		return e
+	}
+	if (gotA == 0) != (gotB == 0) {
+		return &SnapshotError{fmt.Sprintf("layer %d %s/%s presence mismatch (%d vs %d)", layer, nameA, nameB, gotA, gotB)}
+	}
+	return nil
 }
 
 // checkGlobalLen validates one blob-controlled global-layer array against the length the header's pos and the model's geometry

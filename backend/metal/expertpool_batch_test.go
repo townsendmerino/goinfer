@@ -4,9 +4,12 @@ package metal
 
 import (
 	"encoding/binary"
+	"fmt"
+	"strings"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // holdsInPool reports whether slot s (a view returned by pool) holds expert e's bytes. Reads
@@ -223,4 +226,74 @@ func TestExpertPoolBatch_pread(t *testing.T) {
 	if seqPool.preads == 0 || batchPool.preads == 0 {
 		t.Fatal("test setup: stagePread path did not engage (preads counter stayed 0)")
 	}
+}
+
+func TestAllocFailure_matchesDeviceOutOfMemory(t *testing.T) {
+	err := gpu.AllocFailure{What: "kv", Bytes: 1 << 20}
+	if !mem.DeviceOutOfMemory(err) {
+		t.Fatalf("mem.DeviceOutOfMemory(%v) = false, want true", err)
+	}
+	wrapped := fmt.Errorf("the Qwen tower failed (%w)", err)
+	if !mem.DeviceOutOfMemory(wrapped) {
+		t.Fatalf("mem.DeviceOutOfMemory(wrapped) = false, want true")
+	}
+}
+
+func TestExpertPool_workerPanicReRaisesOnCallerGoroutine(t *testing.T) {
+	p := &expertPool{
+		slotExpert: []int{-1, -1},
+		where:      map[int]int{},
+		stagePread: func(e int, _ expertSlot) {
+			panic(fmt.Sprintf("simulated pread failure for expert %d", e))
+		},
+	}
+
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil || !strings.Contains(fmt.Sprint(r), "simulated pread failure") {
+				t.Fatalf("ensureResidentBatch recover = %v, want simulated pread failure", r)
+			}
+		}()
+		p.ensureResidentBatch([]int{0})
+	}()
+	if p.slotExpert[0] != -1 || len(p.where) != 0 {
+		t.Fatalf("slot not cleaned up after batch stage panic: slotExpert=%v where=%v", p.slotExpert, p.where)
+	}
+
+	p.prefetchAsync([]int{1})
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil || !strings.Contains(fmt.Sprint(r), "simulated pread failure") {
+				t.Fatalf("finishPrefetch recover = %v, want simulated pread failure", r)
+			}
+		}()
+		p.finishPrefetch()
+	}()
+	if p.slotExpert[0] != -1 || p.slotExpert[1] != -1 || len(p.where) != 0 {
+		t.Fatalf("slots not cleaned up after prefetch panic: slotExpert=%v where=%v", p.slotExpert, p.where)
+	}
+
+	p.prefetchAsync([]int{1})
+	p.drainPrefetch()
+	if len(p.prefetchPending) != 0 || p.prefetchPanic != nil {
+		t.Fatalf("drainPrefetch left pending=%d panic=%v", len(p.prefetchPending), p.prefetchPanic)
+	}
+
+	// A programming bug (runtime.Error) in a prefetch worker must not be silently swallowed by drainPrefetch.
+	p.stagePread = func(e int, s expertSlot) {
+		var nilSlice []int
+		_ = nilSlice[0]
+	}
+	p.prefetchAsync([]int{1})
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("drainPrefetch swallowed runtime.Error from prefetch worker")
+			}
+		}()
+		p.drainPrefetch()
+	}()
 }

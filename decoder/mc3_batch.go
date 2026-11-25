@@ -67,6 +67,7 @@ type residentBatcher struct {
 	maxHolders int             // generations that may hold a slot at once
 
 	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
+	adaptive int    // adaptive speculative generations active on the batcher; guarded by mu
 	slotBusy []bool // resident KV slots a holder is using; guarded by mu
 	// holding: the one holder, decoding alone, keeps the resident (busy) across its tokens (holdSolo), so a chained forward
 	// stays queued on the device between them; guarded by mu.
@@ -235,12 +236,14 @@ func (b *residentBatcher) releaseHold(release func()) {
 	if !held {
 		return
 	}
+	defer func() {
+		b.mu.Lock()
+		b.holding, b.busy = false, false
+		b.freeAt = time.Now()
+		b.cond.Broadcast()
+		b.mu.Unlock()
+	}()
 	release()
-	b.mu.Lock()
-	b.holding, b.busy = false, false
-	b.freeAt = time.Now()
-	b.cond.Broadcast()
-	b.mu.Unlock()
 }
 
 // mc3HoldSendGrace is how long a holder keeping the resident (holdSolo) waits for its consumer to take a token before it
@@ -255,11 +258,41 @@ func (b *residentBatcher) isHolding() bool {
 	return b.holding
 }
 
-// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder has a slot.
+// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder or adaptive
+// generation is active and no batch/exclusive run is in progress.
 func (b *residentBatcher) claimExclusive(resBusy *int32) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.holders == 0 && atomic.CompareAndSwapInt32(resBusy, 0, 1)
+	return b.holders == 0 && b.adaptive == 0 && !b.busy && atomic.CompareAndSwapInt32(resBusy, 0, 1)
+}
+
+// claimAdaptive registers an adaptive speculative generation on the batcher. It fails when a whole-generation
+// exclusive caller (tryClaimResident: adaptive == 0 with resBusy set) currently owns the resident.
+func (b *residentBatcher) claimAdaptive(resBusy *int32) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.adaptive == 0 && atomic.LoadInt32(resBusy) != 0 {
+		return false
+	}
+	b.adaptive++
+	return true
+}
+
+// releaseAdaptive unregisters an adaptive speculative generation from the batcher.
+func (b *residentBatcher) releaseAdaptive() {
+	b.mu.Lock()
+	b.adaptive--
+	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+// claimAdaptiveRound is an adaptive speculative generation's per-round probe for whether it is the sole
+// resident user: it succeeds only with no batched holders and no other adaptive generation active, setting
+// resBusy so no batched holder joins mid-round while preserving exclusive()'s own serialization.
+func (b *residentBatcher) claimAdaptiveRound(resBusy *int32) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.holders == 0 && b.adaptive == 1 && atomic.CompareAndSwapInt32(resBusy, 0, 1)
 }
 
 // exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
@@ -414,11 +447,7 @@ func (b *tokenCoalescer) serveLocked(done func() bool) {
 				b.busy = true
 				b.mu.Unlock()
 				t0 := time.Now()
-				if c != nil {
-					b.ride(c, run)
-				} else {
-					b.runTokens(run)
-				}
+				b.execRun(c, run)
 				b.mu.Lock()
 				if d := time.Since(t0).Nanoseconds(); c != nil {
 					b.stats.RideNs += d
@@ -460,6 +489,29 @@ func (b *tokenCoalescer) armLocked(deadline time.Time) {
 		b.cond.Broadcast()
 		b.mu.Unlock()
 	})
+}
+
+// execRun runs a batched step or prefill ride while converting any panic into an error for every waiting
+// caller in the run, so serveLocked always releases b.busy and wakes waiters instead of deadlocking.
+func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) {
+	defer func() {
+		if p := recover(); p != nil {
+			err := fmt.Errorf("decoder: batched step panicked: %v", p)
+			if c != nil && c.err == nil {
+				c.err = err
+			}
+			for _, r := range run {
+				if r.out == nil && r.err == nil {
+					r.err = err
+				}
+			}
+		}
+	}()
+	if c != nil {
+		b.ride(c, run)
+	} else {
+		b.runTokens(run)
+	}
 }
 
 // runTokens serves one run: in one batched step (step) when it has at least lo tokens, else every token through its

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -210,5 +211,30 @@ func TestEncode_multiQuestionMatchesReference(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("the golden carries no multi-question request, so this checked nothing")
+	}
+}
+
+func TestLoadHead_rejectsOutOfRangeConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  string
+	}{
+		{"routing_layers", `{"hidden_size":64,"width":64,"routing_layers":999,"layers":2,"heads":4,"feedforward":128}`},
+		{"layers", `{"hidden_size":64,"width":64,"routing_layers":2,"layers":999,"heads":4,"feedforward":128}`},
+		{"hidden_size", `{"hidden_size":100000,"width":64,"routing_layers":2,"layers":2,"heads":4,"feedforward":128}`},
+		{"width", `{"hidden_size":64,"width":100000,"routing_layers":2,"layers":2,"heads":4,"feedforward":128}`},
+		{"feedforward", `{"hidden_size":64,"width":64,"routing_layers":2,"layers":2,"heads":4,"feedforward":100000}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "joint_head_config.json"), []byte(tc.cfg), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadHead(dir)
+			if err == nil || !strings.Contains(err.Error(), "out-of-range") {
+				t.Fatalf("LoadHead(%s) err = %v, want out-of-range error", tc.name, err)
+			}
+		})
 	}
 }

@@ -201,6 +201,9 @@ func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 // encodeLocked is Encode's body; callers hold e.mu. It returns the token ids with the vector so EncodeBatchCounted
 // can report their count without a second tokenize pass.
 func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []int, error) {
+	if e.m == nil {
+		return nil, nil, decoder.ErrClosed
+	}
 	ids, err := e.tokenize(text, isQuery)
 	if err != nil {
 		return nil, nil, err
@@ -234,6 +237,18 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 		ids = append(ids, e.appendID)
 	}
 	return ids, nil
+}
+
+// Close releases the underlying decoder model.
+func (e *decoderEmbedder) Close() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.m == nil {
+		return nil
+	}
+	err := e.m.Close()
+	e.m = nil
+	return err
 }
 
 // truncateForContext is tokenize's truncation arithmetic, pulled out so a test calls the same code the request path

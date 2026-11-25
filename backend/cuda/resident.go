@@ -1405,7 +1405,13 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 	return r.cacheSlots, err
 }
 
-func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return ackJob(<-r.ackCh) }
+func (r *cudaResident) do(j func() error) error {
+	if r.reqCh == nil {
+		return decoder.ErrClosed
+	}
+	r.reqCh <- j
+	return ackJob(<-r.ackCh)
+}
 
 // doOn is do with the allocation helpers on plan line line for the job: the line is set on the executor, where they read it.
 func (r *cudaResident) doOn(line string, j func() error) error {
@@ -1897,6 +1903,12 @@ func (r *cudaResident) Close() error {
 				}
 			}
 		}
+		// Release demoted host-mmap KV snapshots explicitly: each snapshot holds a back-pointer to r and a finalizer,
+		// so leaving r.kvDemoted populated forms a finalized reference cycle that can prevent reclamation.
+		for s := range r.kvDemoted {
+			r.kvDropDemoted(s)
+		}
+		r.kvDemoted = nil
 		// The Device OWNS every device allocation (weights, KV caches, scratch) in its ledger; ReleaseObjects frees all of
 		// them in the correct order, then the modules + stream, then releases our primary-context ref.
 		if r.dev != nil {

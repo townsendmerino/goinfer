@@ -1,8 +1,10 @@
 package serveapp
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,10 +28,13 @@ type speechEngine interface {
 	HasLanguage(code string) bool
 }
 
+var errSpeechClosed = errors.New("speech model is closed")
+
 type speechModel struct {
 	name, dir string
 	eng       speechEngine
 	mu        sync.Mutex // one transcription at a time: a window is a whole encoder pass, and two at once only slow each other
+	closed    bool       // set under mu by handlerCloser.Close before closing eng
 }
 
 // speechMaxSeconds is the longest clip a request may carry: a cost bound (each 30 s window is an encoder pass and a decode), not the model's limit; a longer clip is refused, never cut.
@@ -183,7 +188,7 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	temperature := 0.0
 	if t := val("temperature"); t != "" {
 		v, err := strconv.ParseFloat(t, 64)
-		if err != nil || v < 0 || v > 1 {
+		if err != nil || math.IsNaN(v) || v < 0 || v > 1 {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("temperature %q must be a number from 0 to 1", t))
 			return
 		}
@@ -218,10 +223,19 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	samples := wav.Decode()
 	opts := transcriptionPolicy(temperature)
 	opts.Language, opts.Task, opts.Seed = language, "transcribe", uint64(time.Now().UnixNano())
-	sm.mu.Lock()
-	res, err := sm.eng.TranscribeWith(samples, opts)
-	sm.mu.Unlock()
+	res, err := func() (*whisper.LongResult, error) {
+		sm.mu.Lock()
+		defer sm.mu.Unlock()
+		if sm.closed {
+			return nil, errSpeechClosed
+		}
+		return sm.eng.TranscribeWith(samples, opts)
+	}()
 	if err != nil {
+		if errors.Is(err, errSpeechClosed) {
+			writeErr(w, http.StatusServiceUnavailable, "transcription: "+err.Error())
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "transcription: "+err.Error())
 		return
 	}

@@ -1,4 +1,4 @@
-//go:build goinfer_testhooks
+//go:build darwin && goinfer_testhooks
 
 package metal
 

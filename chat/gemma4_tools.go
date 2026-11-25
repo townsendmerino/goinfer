@@ -32,13 +32,29 @@ var gemmaQuote = []string{gq}
 // gemmaSafe removes the control-token strings from a value the micro-language embeds (a schema's descriptions, names and enum values, a
 // call's argument keys and string values). The renderers mark the quote in the rendered schema and arguments as a token, so a quote a
 // value carried would close its own string; any other marker in a value stays literal text, since only the quote is marked there.
+// A single left-to-right stack pass removes nested or reconstituted markers (e.g. `<|<|"|>"|>`) in O(N) time without repeated rescans.
 func gemmaSafe(s string) string {
-	for _, m := range gemmaToolMarks {
-		if strings.Contains(s, m) {
-			s = strings.ReplaceAll(s, m, "")
+	if !strings.ContainsAny(s, "<>") {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	for i := range len(s) {
+		out = append(out, s[i])
+		for len(out) > 0 && out[len(out)-1] == '>' {
+			trimmed := false
+			for _, m := range gemmaToolMarks {
+				if len(out) >= len(m) && string(out[len(out)-len(m):]) == m {
+					out = out[:len(out)-len(m)]
+					trimmed = true
+					break
+				}
+			}
+			if !trimmed {
+				break
+			}
 		}
 	}
-	return s
+	return string(out)
 }
 
 // renderGemma4Tools is Gemma 4's JSON-free tool prompt as segments (the generic rendering; renderGemma4NativeTools is the canonical template's).
@@ -157,7 +173,7 @@ func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool, 
 		// the next step, so the reply starts inside it (Template.PromptOpensThinkFor).
 		b.lit("<|channel>thought\n")
 	}
-	return b.segs
+	return b.out()
 }
 
 func parseGemma4Tools(out string) ([]ToolCall, string) {
@@ -186,11 +202,30 @@ func parseGemma4Tools(out string) ([]ToolCall, string) {
 	return calls, strings.TrimSpace(lead)
 }
 
+const maxGemmaSchemaDepth = 64
+
 // gemmaSchema renders a JSON Schema in Gemma's parameter syntax (keys alphabetical,
 // types upper-cased, strings in <|"|> quotes).
 func gemmaSchema(raw json.RawMessage) string {
 	var s map[string]any
 	if json.Unmarshal(raw, &s) != nil {
+		return "{type:" + gq + "OBJECT" + gq + "}"
+	}
+	return gemmaSchemaMap(s, 0)
+}
+
+func gemmaSchemaVal(v any, depth int) string {
+	if v == nil {
+		return "{}"
+	}
+	if m, ok := v.(map[string]any); ok {
+		return gemmaSchemaMap(m, depth)
+	}
+	return "{type:" + gq + "OBJECT" + gq + "}"
+}
+
+func gemmaSchemaMap(s map[string]any, depth int) string {
+	if depth >= maxGemmaSchemaDepth {
 		return "{type:" + gq + "OBJECT" + gq + "}"
 	}
 	var parts []string
@@ -206,25 +241,22 @@ func gemmaSchema(raw json.RawMessage) string {
 		case "required":
 			parts = append(parts, "required:"+gemmaStrList(v))
 		case "properties":
-			parts = append(parts, "properties:"+gemmaProps(v))
+			parts = append(parts, "properties:"+gemmaProps(v, depth+1))
 		case "items":
-			if sub, _ := json.Marshal(v); sub != nil {
-				parts = append(parts, "items:"+gemmaSchema(sub))
-			}
+			parts = append(parts, "items:"+gemmaSchemaVal(v, depth+1))
 		}
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-func gemmaProps(v any) string {
+func gemmaProps(v any, depth int) string {
 	m, ok := v.(map[string]any)
-	if !ok {
+	if !ok || depth >= maxGemmaSchemaDepth {
 		return "{}"
 	}
 	var parts []string
 	for _, k := range slices.Sorted(maps.Keys(m)) {
-		sub, _ := json.Marshal(m[k])
-		parts = append(parts, gemmaSafe(k)+":"+gemmaSchema(sub))
+		parts = append(parts, gemmaSafe(k)+":"+gemmaSchemaVal(m[k], depth+1))
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
@@ -519,7 +551,7 @@ func (t *Template) renderGemma4NativeTools(system string, turns []Turn, tools []
 	} else if prevMessageType == "tool_response" && think {
 		b.lit("<|channel>thought\n")
 	}
-	return b.segs
+	return b.out()
 }
 
 // detectGemma4ContentBeforeCalls recognises a Gemma 4 template that writes an assistant message's text before its tool calls

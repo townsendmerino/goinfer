@@ -48,15 +48,22 @@ type batchRecord struct {
 	CompletedAt  *time.Time
 }
 
+// isCancelling reports whether cancellation has been requested for this batch.
+func (b *batchRecord) isCancelling() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Status == "cancelling" || b.Status == "cancelled"
+}
+
 // requestCancel is the batch-level analogue of jobs.Store.Cancel: mark cancelling, then cancel every constituent job not
 // yet terminal (checked live against jobs.Store, not against Results, since Results is only written by a line's OWN
 // goroutine as it finishes).
 //
-// JobIDs is copied under b.mu before ranging over it: each line's goroutine writes its own slot via setJobID under the
-// same lock, and a plain read of the slice raced those writes even though every write lands at a disjoint index.
+// JobIDs is copied under b.mu before ranging over it: each line's goroutine writes its own slot via registerBatchJob
+// under the same lock, and a plain read of the slice raced those writes even though every write lands at a disjoint index.
 func (b *batchRecord) requestCancel(js *jobs.Store) {
 	b.mu.Lock()
-	if b.Status == "completed" || b.Status == "cancelled" {
+	if b.Status == "completed" || b.Status == "cancelled" || b.Status == "failed" {
 		b.mu.Unlock()
 		return
 	}
@@ -64,7 +71,7 @@ func (b *batchRecord) requestCancel(js *jobs.Store) {
 	ids := slices.Clone(b.JobIDs)
 	b.mu.Unlock()
 	for _, id := range ids {
-		if id != "" { // a line still validating (before setJobID) has no job to cancel yet
+		if id != "" { // a line still validating (before registerBatchJob) has no job to cancel yet
 			js.Cancel(id)
 		}
 	}
@@ -122,7 +129,7 @@ func (bs *batchStore) evictLocked() {
 		live := true
 		if b != nil {
 			b.mu.Lock()
-			live = b.Status != "completed" && b.Status != "cancelled"
+			live = b.Status != "completed" && b.Status != "cancelled" && b.Status != "failed"
 			b.mu.Unlock()
 		}
 		if b == nil || !live {

@@ -153,7 +153,10 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	// gets auth + maxBytes only (haltGate and inf bound decode concurrency, not upload I/O). POST /v1/batches and POST
 	// /v1/messages/batches queue real generation work (one job per line, the /v1/jobs pipeline) and get the full stack.
 	// Every GET and every .../cancel gets auth only, as /v1/jobs' own GET/DELETE do.
-	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
+	// Bound concurrent 64 MiB file uploads independently of inference inflight slots.
+	const maxConcurrentFileUploads = 8
+	fileUploadSem := make(chan struct{}, maxConcurrentFileUploads)
+	mux.HandleFunc("POST /v1/files", auth(limitInflight(fileUploadSem, maxBytes(fileCap, srv.handleCreateFile))))
 	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
 	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
 	mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
@@ -378,8 +381,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// timeout. sessMu is held only briefly (around sessions.acquire), so the checkpoint loop does not deadlock on a running
 	// generation, but Shutdown still waits for the handler to return: cancelling is what bounds it. tryLockUntil's deadline
 	// is the remaining bound on sessMu itself.
-	srvCtx, srvCancel := context.WithCancel(context.Background())
-	defer srvCancel()
+	srvCtx, srvCancel := srv.initLifeContext()
+	defer srvCancel(errServerShutdown)
 	var handler http.Handler = mux
 	if addrIsLoopback(*addr) {
 		handler = hostGuard(mux, *addr, splitHosts(cfg.allowedHosts))
@@ -421,10 +424,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			fmt.Fprintln(os.Stderr, "second signal — forcing exit")
 			os.Exit(1)
 		}()
-		close(stopDemote)   // stop demoting before we checkpoint
-		close(stopHaltPoll) // stop polling -halt-file; nothing left to react to it after shutdown
-		closeAdminSock()    // close + unlink the admin socket, if one was started
-		srvCancel()         // cancel in-flight generations (via BaseContext) so they release lm.mu
+		close(stopDemote)            // stop demoting before we checkpoint
+		close(stopHaltPoll)          // stop polling -halt-file; nothing left to react to it after shutdown
+		closeAdminSock()             // close + unlink the admin socket, if one was started
+		srvCancel(errServerShutdown) // cancel in-flight generations (via BaseContext) so they release lm.mu
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)

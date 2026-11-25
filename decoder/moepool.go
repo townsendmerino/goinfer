@@ -97,27 +97,23 @@ func containedOffset(raw []byte, base, end uintptr) (off int64, n int, ok bool) 
 	return int64(start - base), len(raw), true
 }
 
-// refill re-preads this field's payload into dst (already sized to f.n) and repoints f.wm at
-// it, reconstructing the same rows/cols/group/scales the original WeightMat had -- only the
-// payload bytes' physical location changes.
-func (f *expertField) refill(fd *os.File, dst []byte) error {
-	if err := preadFull(fd, dst, f.off); err != nil {
-		return err
-	}
+// wrap reconstructs a WeightMat backed by dst with this field's layout and scales.
+func (f *expertField) wrap(dst []byte) (linalg.WeightMat, error) {
 	switch f.kind {
 	case fieldInt4Row4Only:
 		wm, ok := linalg.WrapInt4Row4OnlyF16(dst, f.scales16, f.rows, f.cols, f.group)
 		if !ok {
-			return fmt.Errorf("WrapInt4Row4Only rejected rows=%d cols=%d group=%d", f.rows, f.cols, f.group)
+			return linalg.WeightMat{}, fmt.Errorf("WrapInt4Row4Only rejected rows=%d cols=%d group=%d", f.rows, f.cols, f.group)
 		}
-		*f.wm = wm
+		return wm, nil
 	case fieldInt4Canonical:
-		*f.wm = linalg.WrapInt4F16(dst, f.scales16, f.rows, f.cols, f.group)
+		return linalg.WrapInt4F16(dst, f.scales16, f.rows, f.cols, f.group), nil
 	case fieldInt8:
 		q8 := unsafe.Slice((*int8)(unsafe.Pointer(&dst[0])), len(dst))
-		*f.wm = linalg.WrapInt8(q8, f.scales, f.rows, f.cols, f.w8a8)
+		return linalg.WrapInt8(q8, f.scales, f.rows, f.cols, f.w8a8), nil
+	default:
+		return linalg.WeightMat{}, fmt.Errorf("unknown expertFieldKind %d", f.kind)
 	}
-	return nil
 }
 
 // preadFull reads exactly len(dst) bytes from f at off, looping on short reads. os.File.ReadAt
@@ -240,6 +236,7 @@ func (p *expertBufferPool) ensure(key unsafe.Pointer) error {
 	s := p.pickSlot()
 	if old := p.slotExpert[s]; old != nil {
 		delete(p.where, old)
+		p.slotExpert[s] = nil
 		p.evictions++
 	}
 	buf := p.slotBuf[s]
@@ -247,11 +244,29 @@ func (p *expertBufferPool) ensure(key unsafe.Pointer) error {
 	for i := range fields {
 		f := &fields[i]
 		dst := buf[off : off+f.n]
-		if err := f.refill(p.fd, dst); err != nil {
+		if err := preadFull(p.fd, dst, f.off); err != nil {
 			return fmt.Errorf("refill field %d/%d (%d bytes @ %d): %w", i, len(fields), f.n, f.off, err)
 		}
 		p.bytesRead += int64(f.n)
 		off += f.n
+	}
+	var rebuiltBuf [4]linalg.WeightMat
+	rebuilt := rebuiltBuf[:0]
+	if len(fields) > len(rebuiltBuf) {
+		rebuilt = make([]linalg.WeightMat, 0, len(fields))
+	}
+	off = 0
+	for i := range fields {
+		f := &fields[i]
+		wm, err := f.wrap(buf[off : off+f.n])
+		if err != nil {
+			return fmt.Errorf("refill field %d/%d (%d bytes @ %d): %w", i, len(fields), f.n, f.off, err)
+		}
+		rebuilt = append(rebuilt, wm)
+		off += f.n
+	}
+	for i := range fields {
+		*fields[i].wm = rebuilt[i]
 	}
 	p.slotExpert[s] = key
 	p.where[key] = s

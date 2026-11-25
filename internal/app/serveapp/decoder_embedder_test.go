@@ -1,7 +1,7 @@
 package serveapp
 
 import (
-	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"errors"
 	"math"
 	"os"
 	"sync"
@@ -9,8 +9,8 @@ import (
 
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
-
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -363,5 +363,12 @@ func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
 		t.Errorf("maxTokens %d, want the model's max_position_embeddings %d: 0 leaves only the request's byte cap between a request "+
 			"and about 500k positions of sequential forward under the embed mutex (audit-2026-09-02 C-07), and Architecture.MaxPositions "+
 			"is the GPT-2 learned-position table, 0 for every RoPE family", got, want)
+	}
+}
+
+func TestDecoderEmbedder_closedReturnsErrClosed(t *testing.T) {
+	de := &decoderEmbedder{}
+	if _, err := de.Encode("hello", false); !errors.Is(err, decoder.ErrClosed) {
+		t.Fatalf("closed decoderEmbedder.Encode err = %v, want decoder.ErrClosed", err)
 	}
 }

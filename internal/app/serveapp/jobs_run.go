@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 )
@@ -34,6 +35,8 @@ func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusa
 	switch {
 	case haltReason != "":
 		return refusal{jobs.Cancelled, statusCancelled, "cancelled", haltReason}
+	case errors.Is(context.Cause(ctx), errServerShutdown):
+		return refusal{jobs.Interrupted, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"}
 	case ctx.Err() != nil:
 		return refusal{jobs.Cancelled, statusCancelled, "cancelled", "cancelled before a turn was granted"}
 	default:
@@ -89,7 +92,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	// before tryEnter is even attempted, so DELETE /v1/jobs/{id} can stop a still-QUEUED job, not
 	// just a running one — cancelling it propagates to whatever drive derives from it once
 	// admission is granted, the same way any other context cancellation in this codebase does.
-	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	s.jobs.SetCancel(gr.id, bgCancel)
 	defer bgCancel() // release resources tied to bgCtx once this job is fully done, either way
 

@@ -121,12 +121,6 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			case na > 0 && (!okA || !okT):
 				writeErr(w, http.StatusBadRequest, fmt.Sprintf("model %q takes no audio input", s.embedID))
 				return
-			case ni > maxEmbedImages:
-				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many images: %d (max %d per request)", ni, maxEmbedImages))
-				return
-			case na > maxEmbedAudio:
-				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many audio clips: %d (max %d per request)", na, maxEmbedAudio))
-				return
 			}
 			mediaItems = items
 		}
