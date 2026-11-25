@@ -103,7 +103,7 @@ func TestKV2FU1_cpuOwnRollback(t *testing.T) {
 		out := map[int][]fu1CPUTurn{}
 		for _, c := range order {
 			p := next(c, out[c])
-			s := l.acquire(p)
+			s := l.Acquire(p)
 			ch, g := s.Generate(context.Background(), p, 6, sp)
 			x := fu1CPUTurn{prompt: p, s: s}
 			for id := range ch {
@@ -112,7 +112,7 @@ func TestKV2FU1_cpuOwnRollback(t *testing.T) {
 			if g.Err() != nil {
 				t.Fatal(g.Err())
 			}
-			l.checkin(s)
+			l.Checkin(s)
 			for _, in := range g.Logprobs {
 				x.logprobs = append(x.logprobs, math.Float64bits(in.Logprob))
 				for _, tl := range in.Top {

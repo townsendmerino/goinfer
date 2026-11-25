@@ -56,10 +56,10 @@ func TestSessionLRU_sharesAPreamble(t *testing.T) {
 	cold, _ := gen(m.NewSession(0), prompt(1))
 
 	l := newSessionLRU(m, 2, 0, "fp")
-	a := l.acquire(prompt(0))
+	a := l.Acquire(prompt(0))
 	gen(a, prompt(0))
-	l.checkin(a)
-	b := l.acquire(prompt(1))
+	l.Checkin(a)
+	b := l.Acquire(prompt(1))
 	if b == a || len(b.Tokens()) != 1088 {
 		t.Fatalf("room in the LRU: B got A (%v) or a session holding %d tokens, want a fresh one holding 1,088", b == a, len(b.Tokens()))
 	}
@@ -67,39 +67,39 @@ func TestSessionLRU_sharesAPreamble(t *testing.T) {
 	if g.PrefillShared != 1088 || !slices.Equal(got, cold) {
 		t.Errorf("B: shared %d, %v; cold %v", g.PrefillShared, got, cold)
 	}
-	l.checkin(b)
+	l.Checkin(b)
 
 	// Full, two sessions sharing the preamble (so serve's own rule gives B neither): the least recently used, A, is
 	// both the session fresh would evict and a donor, so B takes it in place, cut back to the hit.
 	full := newSessionLRU(m, 2, 0, "fp")
-	a = full.acquire(prompt(0))
+	a = full.Acquire(prompt(0))
 	gen(a, prompt(0))
-	full.checkin(a)
-	c := full.acquire(prompt(2))
+	full.Checkin(a)
+	c := full.Acquire(prompt(2))
 	gen(c, prompt(2))
-	full.checkin(c)
-	b = full.acquire(prompt(1))
+	full.Checkin(c)
+	b = full.Acquire(prompt(1))
 	if b != a || len(b.Tokens()) != 1088 {
 		t.Fatalf("a full LRU whose victim holds the hit: B got A %v (C %v), holding %d tokens, want A cut back to 1,088", b == a, b == c, len(b.Tokens()))
 	}
 	if got, _ := gen(b, prompt(1)); !slices.Equal(got, cold) {
 		t.Errorf("B in place: %v, cold %v", got, cold)
 	}
-	full.checkin(b)
+	full.Checkin(b)
 
 	busy := newSessionLRU(m, 2, 0, "fp")
-	a = busy.acquire(prompt(0))
+	a = busy.Acquire(prompt(0))
 	gen(a, prompt(0)) // still checked out
-	if b = busy.acquire(prompt(1)); len(b.Tokens()) != 0 {
+	if b = busy.Acquire(prompt(1)); len(b.Tokens()) != 0 {
 		t.Errorf("a busy donor was read: B holds %d tokens", len(b.Tokens()))
 	}
 
 	off := load(true)
 	lo := newSessionLRU(off, 2, 0, "fp")
-	a = lo.acquire(prompt(0))
+	a = lo.Acquire(prompt(0))
 	gen(a, prompt(0))
-	lo.checkin(a)
-	if b = lo.acquire(prompt(1)); len(b.Tokens()) != 0 {
+	lo.Checkin(a)
+	if b = lo.Acquire(prompt(1)); len(b.Tokens()) != 0 {
 		t.Errorf("sharing off: B holds %d copied tokens", len(b.Tokens()))
 	}
 }

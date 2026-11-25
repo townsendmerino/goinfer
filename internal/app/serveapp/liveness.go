@@ -206,7 +206,7 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 			// unload landing on a tick), but it is a map mutated concurrently, a process crash rather than a wrong answer.
 			// admin.go takes lm.sessMu around the load-side restore for the same reason.
 			lm.sessMu.Lock()
-			if err := lm.sessions.save(sessionSubdir(s.cfg.sessionDir, lm.fp)); err != nil {
+			if err := lm.sessions.Save(sessionSubdir(s.cfg.sessionDir, lm.fp)); err != nil {
 				fmt.Fprintf(sessionNoticeOut, "unload: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
 			}
 			lm.sessMu.Unlock()

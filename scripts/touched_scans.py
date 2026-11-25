@@ -149,7 +149,7 @@ SCANS = [
     # A loadedModel's blockSpec is set only through drafterOf.
     Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/app/serveapp", "TestBlockDrafter_assignedThroughDrafterOf", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
+    Scan("internal/app/serveapp/sessions", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),
     Scan("internal/app/serveapp", "TestPanicGuard_everyGoFuncLiteralDefersARecover", NT("internal/app/serveapp")),
