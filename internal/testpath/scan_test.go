@@ -77,7 +77,7 @@ func strayRelative(root, pkgDir, rel string) string {
 		return "it leaves the module root"
 	}
 	climb := pkgDir
-	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/") {
+	for part := range strings.SplitSeq(filepath.ToSlash(filepath.Clean(rel)), "/") {
 		if part == ".." {
 			climb = filepath.Dir(climb)
 			continue

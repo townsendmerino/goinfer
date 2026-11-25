@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -121,7 +122,7 @@ func replayTokenizer(t *testing.T, d dumpItem) (Tokenize, func() int) {
 			schemaOff += want.NTokens
 		}
 		call++
-		return append([]int(nil), ids...), nil
+		return slices.Clone(ids), nil
 	}
 	return tok, func() int { return call }
 }

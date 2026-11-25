@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -170,7 +170,7 @@ func LoadHead(dir string) (*Head, error) {
 	if h.b, err = st.TensorF32("proj.bias", jc.Slots.NumSlots); err != nil {
 		return nil, fmt.Errorf("decide(head): proj.bias: %w", err)
 	}
-	h.w, h.b = append([]float32(nil), h.w...), append([]float32(nil), h.b...) // outlive the file
+	h.w, h.b = slices.Clone(h.w), slices.Clone(h.b) // outlive the file
 
 	if _, err := os.Stat(filepath.Join(dir, "calibration.json")); err == nil {
 		if h.Calibration, err = LoadCalibration(filepath.Join(dir, "calibration.json")); err != nil {
@@ -186,12 +186,7 @@ func (h *Head) AdapterDir() string { return h.adapter }
 
 // Kinds returns the kinds this head has slots for, sorted.
 func (h *Head) Kinds() []string {
-	ks := make([]string, 0, len(h.ranges))
-	for k := range h.ranges {
-		ks = append(ks, k)
-	}
-	sort.Strings(ks)
-	return ks
+	return slices.Sorted(maps.Keys(h.ranges))
 }
 
 // check refuses a request this head was not trained to answer: a kind it has no slots for, more options than its
