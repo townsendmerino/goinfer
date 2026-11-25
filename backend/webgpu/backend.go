@@ -7,37 +7,9 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"sync"
 
-	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
-
-// init registers the WebGPU backend under the name "webgpu" with BOTH the
-// goinfer decoder and the aikit encoder. Their Backend interfaces have the
-// same method set, so one *webgpuBackend satisfies both — a `-tags gpu` build
-// that blank-imports this package gains GPU matmul on either side without the
-// core modules ever importing github.com/oliverbestmann/webgpu.
-func init() {
-	// Return a LITERAL nil interface on failure, not the (nil, err) *webgpuBackend
-	// newWebGPUBackend hands back: a typed-nil pointer auto-converts to a NON-nil
-	// Backend interface, which defeats the caller's "no device → fall back to CPU"
-	// path — Model.withResidency would type-assert it and call BuildResident on a
-	// nil receiver (panic). With a literal nil, Load keeps the CPU backend cleanly.
-	decoder.RegisterBackend("webgpu", func() (decoder.Backend, error) {
-		b, err := newWebGPUBackend("decoder")
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
-	})
-	encoder.RegisterBackend("webgpu", func() (encoder.Backend, error) {
-		b, err := newWebGPUBackend("encoder")
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
-	})
-}
 
 // webgpuBackend runs the decoder's matmuls on a WebGPU adapter (Vulkan / Metal / D3D12) via the Context foundation in this
 // package. Built only under -tags gpu.

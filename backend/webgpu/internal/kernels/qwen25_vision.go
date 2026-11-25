@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
-
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // Qwen2.5-VL's vision tower on WebGPU, on the grid engine (grid_vision.go), in float32 from aikit's GPUWeights. It
@@ -17,13 +15,6 @@ import (
 // pixel rows are permuted into window order before the patch embed (a per-row matmul, so this equals permuting its
 // output), the blocks attend per window except the full-attention ones (per image frame), and the output is permuted
 // back to the original order; aikit's merger (MergeHidden) stays on the host, where Forward calls it.
-
-func init() {
-	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
-		return newQwen25VResident(enc)
-	})
-	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "webgpu") // aikit's slot cannot be asked what is registered
-}
 
 // qwen25VResident is the Qwen2.5-VL tower on WebGPU (vision.QwenResidentEncoder).
 type qwen25VResident struct {

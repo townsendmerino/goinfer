@@ -17,13 +17,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-func init() {
-	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
-		return &cudaBackend{}, nil
-	})
-	decoder.RegisterMemoryProbe("cuda", freeVRAM)
-}
-
 // freeVRAM is the CUDA memory probe: the driver's free VRAM, in bytes. A live query, unlike Metal's registered probe: CUDA
 // VRAM is a separate pool from host RAM, so the driver's free figure is reliable. It creates a throwaway device with no
 // kernels loaded and releases it right after the query (the bare create-query-release shape of cuda/alloc_floor_test.go),

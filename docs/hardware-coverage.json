@@ -355,7 +355,7 @@
    "gate": "CUDA free-VRAM probes: the fit guard's and the resident KV pricing",
    "kind": "memory-probe",
    "predicates": [
-    "mem:probe:cuda@goinfer/backend/cuda/backend.go",
+    "mem:probe:cuda@goinfer/backend/cuda/register.go",
     "mem:MemInfo@goinfer/backend/cuda/backend.go",
     "mem:MemInfo@goinfer/backend/cuda/resident.go"
    ],
@@ -467,7 +467,7 @@
    "gate": "Metal memory ceiling and guards (hw.memsize through internal/mem/probe, recommendedMaxWorkingSetSize)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:probe:metal@goinfer/backend/metal/backend.go",
+    "mem:probe:metal@goinfer/backend/metal/register.go",
     "metal:recommendedMaxWorkingSetSize"
    ],
    "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard; the working-set cap (B41 gate 4)",

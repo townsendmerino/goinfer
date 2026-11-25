@@ -10,8 +10,6 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/internal/vision"
-
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Qwen3.5+ and GLM-OCR vision towers on WebGPU: aikit's ForwardViT up to the last block, in float32, from aikit's
@@ -23,15 +21,6 @@ import (
 // MLP and residual. Qwen3: LayerNorm with bias, MLP fc1 -> GELU-tanh -> fc2, and the interpolated position rows added
 // after the patch embed. GLM-OCR: RMSNorm, per-head RMSNorm of q and k before RoPE, MLP down(silu(gate)·up), no
 // position table.
-
-func init() {
-	multimodal.RegisterQwen3Tower("webgpu", func(enc *vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newQwen3VTower(enc)
-	})
-	multimodal.RegisterGlmOcrTower("webgpu", func(enc *vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newGlmOcrVTower(enc)
-	})
-}
 
 // gvRopeWGSL: rotate-half RoPE in place over x [T, heads, hd] from tables cs/sn [T, hd]: the pair (i, i + hd/2) of
 // every head is rotated by the row's angle i. One invocation owns one pair; n = T * heads * hd/2.

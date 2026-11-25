@@ -9,7 +9,6 @@ import (
 
 // The CUDA build's account of a load, before the build, for the fit guard (decoder.BuildDemand). Which architectures run
 // resident is decoder's feature table (BuildQuery.FeaturesCovered); the bytes are this package's.
-func init() { decoder.RegisterBuildDemand("cuda", buildDemand) }
 
 // packStageHostBytes is the host staging BuildResident streams packed weights through: up to four blocks of stagePackWords
 // words (8 MiB) with their scale scratch, 20 MiB each.

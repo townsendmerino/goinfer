@@ -10,7 +10,6 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Gemma 4 vision tower on Metal: aikit's Gemma4Encoder.Forward up
@@ -19,12 +18,6 @@ import (
 // one head per KV head), plus the position-table add, the ClippableLinear clamps and the axial 2-D RoPE below. The
 // pool and the projection after them stay aikit's (FinishHidden), on the host. Registered as multimodal's "metal" Gemma 4
 // tower, so Gemma 4's own image input (serve, --backend metal) and an EmbeddingGemma 2 encoder on Metal both run it.
-
-func init() {
-	multimodal.RegisterGemma4Tower("metal", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
-		return newG4VAccel(enc)
-	})
-}
 
 type g4vPipes struct{ posAdd, clamp, clampCopy, rope Pipeline }
 

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"maps"
 	"slices"
 	"sync"
 
@@ -61,7 +62,7 @@ type BuildDemandFunc func(BuildQuery) BuildDemand
 
 var (
 	buildDemandMu sync.RWMutex
-	buildDemands  = map[string]BuildDemandFunc{}
+	buildDemands  = maps.Clone(defaultBuildDemands)
 )
 
 // RegisterBuildDemand installs backend's report, replacing decoder's default for it. Call it from the backend package's init.
@@ -86,13 +87,6 @@ var defaultBuildDemands = map[string]BuildDemandFunc{"cuda": defaultCUDABuildDem
 // stateOnlyBuildDemand is the report of a backend with nothing else to tell the fit guard. A WebGPU buffer and a CPU slice take their size.
 func stateOnlyBuildDemand(q BuildQuery) BuildDemand {
 	return BuildDemand{StateBytes: q.StateTotalBytes()}
-}
-
-// The defaults stand in for a backend's own report where its package is not linked, as in the decoder's tests.
-func init() {
-	for name, f := range defaultBuildDemands {
-		RegisterBuildDemand(name, f)
-	}
 }
 
 // cudaChargedBytes is what CUDA's allocator takes for a buffer of n bytes: one of its 2 MiB quantum or more rounds up to the next quantum,

@@ -2,40 +2,31 @@
 
 package kernels
 
-import (
-	"github.com/townsendmerino/goinfer/internal/vision"
+import "github.com/townsendmerino/goinfer/internal/vision"
 
-	"github.com/townsendmerino/goinfer/multimodal"
-)
-
-// init plugs the resident WebGPU SigLIP encoder into the vision package, so a
-// `-tags gpu` build that blank-imports gpu lets vision.Encoder.EnableResident()
-// run the tower on the device. The core vision package never imports webgpu.
-func init() {
-	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {
-		c, err := New()
-		if err != nil {
-			return nil, err
+// newSiglipResident builds the WebGPU SigLIP vision tower for vision.RegisterResident (wired in register.go).
+func newSiglipResident(e *vision.Encoder) (vision.ResidentEncoder, error) {
+	c, err := New()
+	if err != nil {
+		return nil, err
+	}
+	var ve *VisionEncoder
+	if e.Quantized() { // int8 matmul weights (LoadEncoder quant=true)
+		var w vision.GPUWeights
+		if w, err = e.GPUWeights(); err == nil {
+			ve, err = c.NewVisionEncoder(w)
 		}
-		var ve *VisionEncoder
-		if e.Quantized() { // int8 matmul weights (LoadEncoder quant=true)
-			var w vision.GPUWeights
-			if w, err = e.GPUWeights(); err == nil {
-				ve, err = c.NewVisionEncoder(w)
-			}
-		} else {
-			var w vision.SiglipWeights
-			if w, err = e.Weights(); err == nil {
-				ve, err = c.NewVisionEncoderF32(w)
-			}
+	} else {
+		var w vision.SiglipWeights
+		if w, err = e.Weights(); err == nil {
+			ve, err = c.NewVisionEncoderF32(w)
 		}
-		if err != nil {
-			c.Close()
-			return nil, err
-		}
-		return &residentVision{c: c, ve: ve, enc: e}, nil
-	})
-	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "webgpu") // aikit's slot cannot be asked what is registered
+	}
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	return &residentVision{c: c, ve: ve, enc: e}, nil
 }
 
 // residentVision owns the encoder's WebGPU Context so Close tears down both the

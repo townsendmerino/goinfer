@@ -38,10 +38,6 @@ var (
 	GridOne                   = gpu.GridOne
 )
 
-// Every device created in a process that links this package leases its allocations to a mem.Ledger, whichever package
-// creates it.
-func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
-
 // deviceLedger is a device's mem.Ledger: device buffers on VRAM, pinned host memory on HostAnon.
 type deviceLedger struct{ mem.Ledger }
 

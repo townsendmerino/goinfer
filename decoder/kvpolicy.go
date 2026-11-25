@@ -30,7 +30,17 @@ type KVF16Policy struct {
 	DeclineI8 func(f KVFacts, o Options) string
 }
 
-var kvPolicies = map[string]KVF16Policy{}
+// kvPolicies holds each backend's KV precision policy. The CUDA default lets ResolveKV answer when the
+// cuda package is not linked (decoder tests and the generated KV matrix); the cuda package overwrites it
+// with its own kvF16Auto switch at init.
+var kvPolicies = map[string]KVF16Policy{
+	"cuda": {
+		Decline:     CUDAKVF16Decline,
+		Auto:        func() bool { return true },
+		AutoDecline: CUDAKVF16AutoDecline,
+		DeclineI8:   CUDAKVI8Decline,
+	},
+}
 
 // RegisterKVF16Policy installs a backend's f16 KV policy under its name. Call it from the backend package's init.
 func RegisterKVF16Policy(backend string, p KVF16Policy) { kvPolicies[backend] = p }

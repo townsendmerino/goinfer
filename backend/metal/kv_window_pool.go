@@ -10,8 +10,7 @@ import (
 // recent positions (kvRetain), so its pool can hold decoder.MetalKVWindowBlocks a slot instead of the context's blocks, as long as no
 // pass writes more rows into it than that holds. windowPoolBlocks decides, from the model alone, whether every pass that writes the
 // group is bounded; the build sizes the pool by it and the plan (decoder.Model.MetalWindowBlocks) prices it by the same function,
-// registered here at init. A condition that does not hold leaves the pool the context's size, as before.
-func init() { decoder.RegisterMetalWindowPool(windowPoolBlocks) }
+// registered in register.go. A condition that does not hold leaves the pool the context's size, as before.
 
 // windowCondition is one reason a build's passes are not all bounded: the first one that does not hold keeps the pool full-size. They
 // are exactly the ways PrefillBlockRows reports 0 (an unsplit prompt) or a route writes without blocking, kept to what the model alone

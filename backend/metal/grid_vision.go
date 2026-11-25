@@ -12,7 +12,6 @@ import (
 	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Qwen3.5+ and GLM-OCR vision towers on Metal: aikit's
@@ -26,15 +25,6 @@ import (
 // frame (one eg2Ops.attention per segment), biased proj and residual, then the MLP and residual. Qwen3: LayerNorm with
 // bias, eps 1e-6, MLP fc1 -> GELU-tanh -> fc2, and the interpolated position rows added after the patch embed. GLM-OCR:
 // RMSNorm, eps rms_norm_eps, per-head RMSNorm of q and k before RoPE, MLP down(silu(gate)·up), no position table.
-
-func init() {
-	multimodal.RegisterQwen3Tower("metal", func(enc *vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newQwen3VAccel(enc)
-	})
-	multimodal.RegisterGlmOcrTower("metal", func(enc *vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newGlmOcrVAccel(enc)
-	})
-}
 
 // gvKind is the tower family. Its program (vision.TowerBlock) is the block; the kind decides only whether the MLP has a
 // second intermediate buffer (gated).
