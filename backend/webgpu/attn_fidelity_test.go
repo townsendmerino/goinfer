@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/fidelity"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -238,10 +239,8 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 		src = sc
 	}
 	// A resident's decode kernels are chosen when it is built, so each arm is its own resident, built under its switch.
-	keysWas := kernels.AttnKeysDisabled
-	defer func() { kernels.AttnKeysDisabled = keysWas }()
 	build := func(disabled bool) (*decoder.Model, *residentDecoder) {
-		kernels.AttnKeysDisabled = disabled
+		testgate.SetForTest(t, &kernels.AttnKeysDisabled, disabled)
 		m, err := decoder.Load(src, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 2048})
 		if err != nil {
 			t.Fatalf("the int4 resident (key-split off: %v): %v", disabled, err)
@@ -286,7 +285,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 			toks = append(toks, argmax(l))
 		}
 		arm := func(m *decoder.Model, rd *residentDecoder, disabled, stale bool) ([]fidelity.Position, [][]float32) {
-			kernels.AttnKeysDisabled = disabled // the batched pass reads the switch when it runs
+			testgate.SetForTest(t, &kernels.AttnKeysDisabled, disabled) // the batched pass reads the switch when it runs
 			rd.Reset()
 			embs := make([][]float32, n)
 			for r, id := range ids {
@@ -482,10 +481,9 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 		t.Errorf("worst relL2 %.3g, want <= %g", worst, bar)
 	}
 
-	kernels.AttnTempOffForTest = true
-	t.Cleanup(func() { kernels.AttnTempOffForTest = false })
+	testgate.SetForTest(t, &kernels.AttnTempOffForTest, true)
 	off, _, _ := decode()
-	kernels.AttnTempOffForTest = false
+	testgate.SetForTest(t, &kernels.AttnTempOffForTest, false)
 	offWorst := 0.0
 	for i := range off {
 		if i < orig && !slices.Equal(off[i], got[i]) {

@@ -15,6 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -418,9 +419,9 @@ func TestActG32_phi3TinyResidentMatchesCPU(t *testing.T) {
 		t.Errorf("median cosine %.7f (want >= 0.9999), min %.7f (want >= 0.999)", cs[len(cs)/2], cs[0])
 	}
 
-	kernels.ActG32PerVectorScaleForTest = true
+	testgate.SetForTest(t, &kernels.ActG32PerVectorScaleForTest, true)
 	planted := actG32Agreement(actG32ResidentLogits(t, path, ids, decoder.Options{}), want)
-	kernels.ActG32PerVectorScaleForTest = false
+	testgate.SetForTest(t, &kernels.ActG32PerVectorScaleForTest, false)
 	t.Logf("plant (group 0's scale for every group): cosine min %.7f median %.7f", planted[0], planted[len(planted)/2])
 	if planted[len(planted)/2] >= 0.9999 {
 		t.Errorf("plant: median cosine %.7f still passes the 0.9999 bar", planted[len(planted)/2])

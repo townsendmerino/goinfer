@@ -215,7 +215,7 @@ type headWorkerScratch struct {
 	avAcc                  []float64
 	// groupScores/groupCtx/groupAvAcc are the grouped-kernel scratch: one MatmulQKAcc64Group/MatmulAVAcc64Group call covers
 	// attnGroupedNEONSize query heads, so they are sized ×attnGroupedNEONSize the single-head scores/ch/avAcc (see headWorkerPool).
-	// In attendGroupedLayer they are each worker's temp buffer for its key-range (QK) or dim-range (AV) slice; groupScoresCombined,
+	// In kvAttend.groupedLayer they are each worker's temp buffer for its key-range (QK) or dim-range (AV) slice; groupScoresCombined,
 	// used only on pool[0], is the shared full-width [group,nKeys] buffer each worker's slice is copied into at its own disjoint
 	// offset (a copy, never a sum, so no float add is reassociated). The context needs no combined buffer: each worker's dim slice is
 	// scattered straight into ctx.
@@ -368,9 +368,9 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 			p.groupAvAcc = make([]float64, c)
 		}
 		// groupScoresCombined (Arm B) is grown lazily inside
-		// attendGroupedLayer itself instead of here: its size depends on nKV,
+		// kvAttend.groupedLayer itself instead of here: its size depends on nKV,
 		// which headWorkerPool's callers don't thread through this signature,
-		// and attendGroupedLayer already has it captured. Only pool[0] (the
+		// and kvAttend.groupedLayer already has it captured. Only pool[0] (the
 		// "leader" slot — see headWorkerScratch's own doc) ever uses it.
 	}
 	return s.headPool[:n]
@@ -419,7 +419,7 @@ func newHeadWorkerPoolK(k *knobSet, n, K, nKeys, hd int, wantFused bool) []headW
 	if n < 1 {
 		n = 1
 	}
-	// Slots are sized for one row tile, not the whole prompt: attendOneHead walks its query rows in tiles of exactly this many, so
+	// Slots are sized for one row tile, not the whole prompt: kvAttend.oneHead walks its query rows in tiles of exactly this many, so
 	// anything larger would be allocated and never touched.
 	t := attnRowTileK(k, K, nKeys)
 	skipMaterialized := wantFused && k.fusedAttention()

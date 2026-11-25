@@ -161,9 +161,11 @@ func ParseConfig(raw json.RawMessage) (*Config, error) {
 		// checkpoint_format distinguishes GPTQModel's v2 export (zero-points without the v1 "+1" bias) from v1; ParseConfig
 		// refuses v2.
 		CheckpointFormat string `json:"checkpoint_format"`
-		Fmt              string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
-		WeightBlock      []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
-		ConfigGroups     map[string]struct {
+		// version is AutoAWQ's packing layout: "gemm" (or absent) is the one AWQReconstruct reads.
+		Version      string `json:"version"`
+		Fmt          string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
+		WeightBlock  []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
+		ConfigGroups map[string]struct {
 			Weights struct {
 				NumBits   int    `json:"num_bits"`
 				Type      string `json:"type"`
@@ -255,6 +257,11 @@ func ParseConfig(raw json.RawMessage) (*Config, error) {
 			"(have: gptq / v1). This loader adds the v1 +1 zero-point bias unconditionally, so a "+
 			"%s checkpoint would load one scale step low on EVERY weight without erroring",
 			obj.CheckpointFormat, obj.CheckpointFormat)
+	}
+	// A GEMV export packs qweight along the input dimension where GEMM packs along the output, in the same number of words, so the
+	// reconstructor's length checks cannot tell them apart: refuse it here rather than load finite, wrong weights.
+	if v := strings.ToLower(obj.Version); obj.QuantMethod == "awq" && strings.HasPrefix(v, "gemv") {
+		return nil, fmt.Errorf("quantization_config(awq): version %q unsupported (have: gemm); its qweight layout differs", obj.Version)
 	}
 	sym := true
 	if obj.Sym != nil {

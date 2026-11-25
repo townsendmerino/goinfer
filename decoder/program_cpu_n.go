@@ -7,6 +7,15 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
+// batchRowPos is the absolute position of row i of a batched pass that starts at startPos: its tree position in a speculative
+// tree verify, else startPos+i.
+func (c *KVCache) batchRowPos(startPos, i int) int {
+	if c.treeRowPos != nil {
+		return c.treeRowPos[i]
+	}
+	return startPos + i
+}
+
 // walkBatch runs prog's layers over K pre-embedded rows h ([K*hidden], updated in place) appended as the next K positions of
 // cache, then the head's norm, and returns h. Its operations compute what walkToken's do, row by row, with the projections at
 // M=K; rows are independent within an operation, so a row's result is the per-token walker's (TestForwardN_matchesSequential).
@@ -85,12 +94,6 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 		}
 		return h
 	}
-	rowPos := func(i int) int {
-		if cache.treeRowPos != nil {
-			return cache.treeRowPos[i]
-		}
-		return startPos + i
-	}
 	var gp *gemma4Pass
 	if arch.gemma4 != nil {
 		if rows == nil || len(rows.ids) != K {
@@ -154,11 +157,11 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 				}
 			case opRope:
 				for i := range K {
-					applyRope(&o.Rope, row(q, i, qDim), row(k, i, kvDim), nH, nKV, hd, rowPos(i), cache.mropePos, cache.mropeDelta)
+					applyRope(&o.Rope, row(q, i, qDim), row(k, i, kvDim), nH, nKV, hd, cache.batchRowPos(startPos, i), cache.mropePos, cache.mropeDelta)
 				}
 			case opAttnTemp:
 				for i := range K {
-					scale := o.Temp.Scale(rowPos(i))
+					scale := o.Temp.Scale(cache.batchRowPos(startPos, i))
 					qi := row(q, i, qDim)
 					for j := range qi {
 						qi[j] *= scale

@@ -170,32 +170,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				}
 				lastFFN = true
 			case opResidual:
-				if o.Res.Two {
-					if cache.subCapture {
-						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
-					}
-					addResidual2(h, scr.sub, scr.sub2)
-					break
-				}
-				if cache.subCapture { // the contribution about to reach the residual
-					switch {
-					case lastFFN:
-						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
-						if seamPlantForTest == plantMLPPreAfterNorm && l == 1 {
-							cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
-						}
-					case planted != nil:
-						cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
-					default:
-						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-					}
-				}
-				if o.Res.Scale != 0 {
-					addScaled(h, scr.sub, float32(o.Res.Scale))
-				} else {
-					addResidual(h, scr.sub)
-				}
+				residualToken(o, h, scr, cache, l, lastFFN, planted)
 			case opGemma4Attn:
 				m.gemma4AttnToken(&o.G4, m.reg(o.In, h, scr), m.reg(o.Out, h, scr), lw, cache, l, pos, g4)
 				lastFFN = false
@@ -480,6 +455,38 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		return nonGatedMLPWith(x, out, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be, mid)
 	}
 	return gatedMLPAct(x, out, lw, p.Act, m.be, scr, ld)
+}
+
+// residualToken is opResidual on one position: the sublayer's contribution in scr.sub (and scr.sub2 for a parallel block) added
+// into h, scaled when the op says so, after the sublayer capture records it. lastFFN says which sublayer a single add belongs to;
+// planted is a test seam's stand-in for the attention contribution.
+func residualToken(o *op, h []float32, scr *decodeScratch, cache *KVCache, l int, lastFFN bool, planted []float32) {
+	if o.Res.Two {
+		if cache.subCapture {
+			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
+		}
+		addResidual2(h, scr.sub, scr.sub2)
+		return
+	}
+	if cache.subCapture { // the contribution about to reach the residual
+		switch {
+		case lastFFN:
+			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
+			if seamPlantForTest == plantMLPPreAfterNorm && l == 1 {
+				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
+			}
+		case planted != nil:
+			cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
+		default:
+			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+		}
+	}
+	if o.Res.Scale != 0 {
+		addScaled(h, scr.sub, float32(o.Res.Scale))
+	} else {
+		addResidual(h, scr.sub)
+	}
 }
 
 // attnTimer accumulates decodeTiming's attention counters across the operations of one attention sublayer.

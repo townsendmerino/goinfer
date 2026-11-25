@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // KV3's gates for the row-batched exact attention (docs/measurements/kv3-tiled-exact-2026-10-13.md §3 and §6): G2b, G3 and G7.
@@ -245,8 +247,9 @@ func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 KV3_TILED_SPEED=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_forcedRouteOnGemma3$' -v ./cuda/
 func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("KV3_TILED_SPEED") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 and KV3_TILED_SPEED=1")
+	testgate.RequireHeavy(t)
+	if os.Getenv("KV3_TILED_SPEED") == "" {
+		t.Skip("set KV3_TILED_SPEED=1")
 	}
 	path := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
 	requireDeviceAndFile(t, path)
@@ -295,8 +298,9 @@ func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 KV3_TILED_REAL=1 go test -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_batchedEqualsPerToken_real$' -v ./cuda/
 func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("KV3_TILED_REAL") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 and KV3_TILED_REAL=1")
+	testgate.RequireHeavy(t)
+	if os.Getenv("KV3_TILED_REAL") == "" {
+		t.Skip("set KV3_TILED_REAL=1")
 	}
 	n := 12400
 	if v := os.Getenv("KV3_TILED_N"); v != "" {
@@ -402,8 +406,9 @@ var g46Seeds = []int{4242, 9001}
 //
 //	GOINFER_HEAVY_TESTS=1 G46_REAL=1 go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' -run '^TestG46_gemma3GEMMFidelityLadder$' -v ./backend/cuda/
 func TestG46_gemma3GEMMFidelityLadder(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("G46_REAL") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 and G46_REAL=1")
+	testgate.RequireHeavy(t)
+	if os.Getenv("G46_REAL") == "" {
+		t.Skip("set G46_REAL=1")
 	}
 	path := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
 	requireDeviceAndFile(t, path)

@@ -8,7 +8,7 @@ import (
 // The head-worker pool is sized from the GLOBAL key count and the row tile is computed from the PER-LAYER one.
 // forwardLayersN sizes the pool once, from maxKeys = startPos+K, on the premise that nKeys is the same for every
 // layer. A LOCAL (sliding-window) layer whose ring has wrapped assembles a SHORTER window (nKeys = W-1+K) and
-// attendOneHead recomputes its row tile from that. attnRowTile is INVERSE in nKeys, so a shorter window yields a
+// kvAttend.oneHead recomputes its row tile from that. attnRowTile is INVERSE in nKeys, so a shorter window yields a
 // LARGER tile than the slot's qh holds and the Q gather slices past its length (an unrecovered panic, in a
 // worker goroutine on the fan-out arm and the Generate goroutine on the serial one).
 //

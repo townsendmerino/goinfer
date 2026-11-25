@@ -318,6 +318,15 @@ func MLXExpertSlice3D(st *embed.SafetensorsFile, projPrefix string, nExpert, out
 			return dst, nil
 		}, nil
 	}
+	// The bias-free modes MLXRowReader2D accepts, and no others: 4-bit with fp8 (or U8) scales on groups of 16 (nvfp4), or E8M0 U8
+	// scales on groups of 32 (mxfp4). Any other pairing would decode the scale bytes in the wrong format.
+	if bits != 4 {
+		return nil, fmt.Errorf("mlx switch_mlp %q: missing %q for %d-bit tensor", wName, bName, bits)
+	}
+	nvfp4 := groupSize == 16 && (sT.DType == "F8_E4M3" || sT.DType == "U8")
+	if !nvfp4 && (groupSize != 32 || sT.DType != "U8") {
+		return nil, fmt.Errorf("mlx switch_mlp %q: unsupported bias-free mode (group_size=%d, scales dtype=%s)", wName, groupSize, sT.DType)
+	}
 	scaleBytes, err := sT.Uint8s()
 	if err != nil {
 		return nil, fmt.Errorf("mlx switch_mlp %q: %w", sName, err)

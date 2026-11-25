@@ -772,6 +772,11 @@
       "pull",
       "tokenizer"
     ],
+    "internal/app/serveapp/carriedids": [
+      "chat",
+      "internal/codec",
+      "tokenizer"
+    ],
     "internal/app/serveapp/sessions": [
       "internal/runtime/scheduler"
     ],
@@ -781,6 +786,10 @@
     "internal/clef": [
       "decoder",
       "internal/runtime/modelload",
+      "tokenizer"
+    ],
+    "internal/codec": [
+      "chat",
       "tokenizer"
     ],
     "internal/config": [
@@ -806,6 +815,9 @@
     "internal/guard/swapguard": [
       "decoder",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/mamba2": [
+      "internal/runtime/hybridattn"
     ],
     "internal/runtime/modelload": [
       "decoder",
