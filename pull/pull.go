@@ -28,7 +28,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -219,7 +221,104 @@ func getRange(ctx context.Context, url string, from int64) (*http.Response, erro
 	if from > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", from))
 	}
-	return http.DefaultClient.Do(req)
+	return clientFrom(ctx).Do(req)
+}
+
+// maxPullMetaBytes caps a metadata response (repo info, tree listing, search results) read into memory; decodeMeta
+// refuses a larger body rather than decoding a prefix of it.
+const maxPullMetaBytes = 16 << 20
+
+// maxRedirects is how many redirects one request follows, matching net/http's own default.
+const maxRedirects = 10
+
+// decodeMeta reads at most maxPullMetaBytes of r and decodes it into v, failing on a body over the cap.
+func decodeMeta(r io.Reader, v any) error {
+	b, err := io.ReadAll(io.LimitReader(r, maxPullMetaBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(b) > maxPullMetaBytes {
+		return fmt.Errorf("response is larger than %s", humanBytes(maxPullMetaBytes))
+	}
+	return json.Unmarshal(b, v)
+}
+
+// clientKey carries an *http.Client in a request context. Every exported entry point already takes a context, so this
+// is how a test substitutes the client (a TLS root, a transport) without a package-level hook or a signature change.
+type clientKey struct{}
+
+// withHTTPClient returns ctx carrying c, which get and getRange use in place of defaultHTTPClient.
+func withHTTPClient(ctx context.Context, c *http.Client) context.Context {
+	return context.WithValue(ctx, clientKey{}, c)
+}
+
+func clientFrom(ctx context.Context) *http.Client {
+	if c, ok := ctx.Value(clientKey{}).(*http.Client); ok && c != nil {
+		return c
+	}
+	return defaultHTTPClient
+}
+
+// defaultHTTPClient is the client every pull request uses unless the context carries another. It is never reassigned.
+var defaultHTTPClient = newHTTPClient()
+
+// newHTTPClient builds pull's client: the default transport's proxy and pooling settings with bounded dial, TLS
+// handshake and response-header waits, and redirectPolicy. It sets no overall Timeout, because a body is a multi-GB
+// transfer that the caller's context bounds.
+func newHTTPClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	tr.TLSHandshakeTimeout = 15 * time.Second
+	tr.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{Transport: tr, CheckRedirect: redirectPolicy}
+}
+
+// redirectPolicy is the client's CheckRedirect. It follows at most maxRedirects, refuses an https -> http downgrade,
+// and refuses a redirect from a public host to a loopback, private, link-local or unspecified address, so a
+// compromised or spoofed upstream cannot steer a pull at the local network. The hop judged is the one immediately
+// before req, so a public hop anywhere in the chain is caught; an internal origin (an httptest server, a local
+// mirror) may still redirect internally.
+//
+// A hostname is judged by resolving it here. The dial resolves it again, so a name that changes answer between the
+// two lookups is not caught; the check closes the plain case of a redirect naming an internal host.
+func redirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	prev := via[len(via)-1].URL
+	if strings.EqualFold(prev.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return fmt.Errorf("refusing redirect from %s to %s: HTTPS downgrade", prev.Host, req.URL.Redacted())
+	}
+	ctx := req.Context()
+	if hostIsInternal(ctx, prev.Hostname()) {
+		return nil
+	}
+	if hostIsInternal(ctx, req.URL.Hostname()) {
+		return fmt.Errorf("refusing redirect from %s to internal address %s", prev.Host, req.URL.Host)
+	}
+	return nil
+}
+
+// hostIsInternal reports whether host (a literal IP or a name) is, or resolves to any, loopback, private, link-local
+// or unspecified address. A name that does not resolve counts as internal, so redirectPolicy refuses it rather than
+// guessing; for a redirect source, which was just reached, that case does not arise.
+func hostIsInternal(ctx context.Context, host string) bool {
+	if a, err := netip.ParseAddr(host); err == nil {
+		return addrIsInternal(a)
+	}
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(addrs, addrIsInternal)
+}
+
+func addrIsInternal(a netip.Addr) bool {
+	a = a.Unmap()
+	return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsUnspecified()
 }
 
 // CheckAccess reports whether the repo is reachable anonymously, naming the reason when it is not.
@@ -246,7 +345,7 @@ func CheckAccess(ctx context.Context, repo string) error {
 		return fmt.Errorf("repo %q: HuggingFace returned %s", repo, resp.Status)
 	}
 	var info repoInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeMeta(resp.Body, &info); err != nil {
 		return fmt.Errorf("parsing repo metadata: %w", err)
 	}
 	// gated is `false` when open and a STRING ("manual"/"auto") when not, so it cannot be
@@ -274,13 +373,16 @@ func List(ctx context.Context, repo string) ([]File, error) {
 		return nil, fmt.Errorf("listing %s: HuggingFace returned %s", repo, resp.Status)
 	}
 	var entries []treeEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := decodeMeta(resp.Body, &entries); err != nil {
 		return nil, fmt.Errorf("parsing file list: %w", err)
 	}
 	var out []File
 	for _, e := range entries {
 		if e.Type != "file" || !strings.HasSuffix(strings.ToLower(e.Path), ".gguf") {
 			continue
+		}
+		if !safeRepoPath(e.Path) {
+			return nil, fmt.Errorf("listing %s: unsafe path %q in the file list", repo, e.Path)
 		}
 		f := File{Path: e.Path, Size: e.Size}
 		if e.LFS != nil {
@@ -347,7 +449,7 @@ func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, err
 		return nil, fmt.Errorf("searching %q: HuggingFace returned %s", q, resp.Status)
 	}
 	var hits []searchHit
-	if err := json.NewDecoder(resp.Body).Decode(&hits); err != nil {
+	if err := decodeMeta(resp.Body, &hits); err != nil {
 		return nil, fmt.Errorf("parsing search results: %w", err)
 	}
 	out := make([]SearchResult, 0, len(hits))
@@ -741,6 +843,9 @@ func CacheDir(repo string) (string, error) {
 // Writes to a .part file and renames only after the digest matches, so an interrupted or corrupted
 // pull can never leave something at the final path that later looks loadable.
 func Download(ctx context.Context, repo string, f File, dir string, progress func(done, total int64)) (string, error) {
+	if !safeRepoPath(f.Path) {
+		return "", fmt.Errorf("downloading from %s: unsafe path %q", repo, f.Path)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -818,8 +923,17 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		total = resumeFrom + resp.ContentLength
 	}
 	pw := &progressWriter{w: io.MultiWriter(out, h), done: resumeFrom, total: total, report: progress, last: time.Now()}
-	_, copyErr := io.Copy(pw, resp.Body)
+	var body io.Reader = resp.Body
+	if f.Size > 0 {
+		// One byte past the declared size is enough to detect a body that would overrun it.
+		body = io.LimitReader(resp.Body, f.Size-resumeFrom+1)
+	}
+	_, copyErr := io.Copy(pw, body)
 	closeErr := out.Close()
+	if f.Size > 0 && pw.done > f.Size {
+		os.Remove(part)
+		return "", fmt.Errorf("downloading %s: the server sent more than the declared %d bytes; nothing was written", f.Path, f.Size)
+	}
 	if copyErr != nil {
 		// Deliberately NOT removed: the bytes already fetched are the whole point of resume.
 		// A digest mismatch below still deletes, because that partial is known-bad.
