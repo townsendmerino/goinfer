@@ -58,7 +58,7 @@ import (
 //	5  int4, row4-only: u16 scales and raw nibbles in the arm64 split-half + 4-row-interleaved layout, with no canonical
 //	   arrays. Written per tensor on a cpu-arm64 target only, for a tensor whose call site allows it (weightMat, not
 //	   weightMatKind3Only) and whose shape repackRow4ForEmit accepts; everything else is kind 3. Loaded with
-//	   linalg.WrapInt4Row4OnlyF16, which declines (a named *SerializeError) on a core that cannot run that layout. A
+//	   linalg.WrapInt4 (LayoutRow4), which declines (a named *SerializeError) on a core that cannot run that layout. A
 //	   storage choice, not a numerics one: dispatch is bit-identical either way.
 //	6  int4, fused-group member (Metal target): a header with no arrays; the group's nibbles and then its binary16
 //	   scales follow the group's last header as two unprefixed 16-aligned blocks (giwWriter.fusedGroup).

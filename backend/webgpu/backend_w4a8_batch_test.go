@@ -14,6 +14,13 @@ import (
 // buildW4A8Op builds one random int4 projection (decoder's native 2-nibble/byte packed layout)
 // of shape [N,K] and its linalg.BatchOp, sharing K with the caller's activation.
 func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.BatchOp, []float32) {
+	op, dst, _, _ := buildW4A8OpBytes(rng, N, K)
+	return op, dst
+}
+
+// buildW4A8OpBytes is buildW4A8Op that also returns the op weight's packed bytes and binary16 scales: the
+// WeightMat aliases them, so they are the bytes the backend keys its resident copy on.
+func buildW4A8OpBytes(rng *rand.Rand, N, K int) (linalg.BatchOp, []float32, []byte, []uint16) {
 	rowBytes := (K + 1) / 2
 	bQ4 := make([]byte, N*rowBytes)
 	for i := range bQ4 {
@@ -25,7 +32,9 @@ func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.BatchOp, []float32) {
 		scales[i] = 0.01 + rng.Float32()*0.05
 	}
 	dst := make([]float32, N)
-	return linalg.BatchOp{W4: bQ4, Scales: scales, Dst: dst, N: N}, dst
+	s16 := linalg.F32ToF16Scales(scales)
+	w, _ := linalg.WrapInt4(bQ4, s16, N, K, kernels.W4a8GroupSize, linalg.LayoutCanonical)
+	return linalg.BatchOp{W: &w, Dst: dst}, dst, bQ4, s16
 }
 
 // TestWebGPUBackend_MatmulW4A8Batch_matchesCPU is the batched int4 twin of
@@ -56,7 +65,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 		op, _ := buildW4A8Op(rng, n, K)
 		gpuOps[i] = op
 		// Independent Dst backing arrays: the GPU and CPU runs must not alias each other's output.
-		cpuOps[i] = linalg.BatchOp{W4: op.W4, Scales: op.Scales, Dst: make([]float32, n), N: n}
+		cpuOps[i] = linalg.BatchOp{W: op.W, Dst: make([]float32, n)}
 	}
 
 	if !be.MatmulW4A8Batch(a, 1, K, group, gpuOps) {
@@ -118,22 +127,22 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 
 	const N, K = 8, 1536
 	rng := rand.New(rand.NewSource(17))
-	op, dst := buildW4A8Op(rng, N, K)
+	op, dst, w4, s16 := buildW4A8OpBytes(rng, N, K)
 	a := make([]float32, K)
 	for i := range a {
 		a[i] = rng.Float32()*2 - 1
 	}
 
-	if !be.MatmulW4A8(a, op.W4, linalg.F32ToF16Scales(op.Scales), kernels.W4a8GroupSize, dst, 1, K, N) {
+	if !be.MatmulW4A8(a, w4, s16, kernels.W4a8GroupSize, dst, 1, K, N) {
 		t.Fatal("MatmulW4A8 declined — expected it to run on a real device")
 	}
 	if len(be.q4resident) != 1 {
 		t.Fatalf("q4resident has %d entries after one MatmulW4A8 call, want 1", len(be.q4resident))
 	}
-	cached := be.q4resident[&op.W4[0]]
+	cached := be.q4resident[&w4[0]]
 
 	dst2 := make([]float32, N)
-	op2 := linalg.BatchOp{W4: op.W4, Scales: op.Scales, Dst: dst2, N: N}
+	op2 := linalg.BatchOp{W: op.W, Dst: dst2}
 	if !be.MatmulW4A8Batch(a, 1, K, kernels.W4a8GroupSize, []linalg.BatchOp{op2}) {
 		t.Fatal("MatmulW4A8Batch declined — expected it to run on a real device")
 	}
@@ -141,7 +150,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 		t.Errorf("q4resident has %d entries after MatmulW4A8Batch on the SAME weight bytes, want 1 — "+
 			"the batch path re-uploaded instead of reusing MatmulW4A8's cached resident weight", len(be.q4resident))
 	}
-	if be.q4resident[&op.W4[0]] != cached {
+	if be.q4resident[&w4[0]] != cached {
 		t.Error("MatmulW4A8Batch cached a DIFFERENT *q4Resident for the same weight bytes — " +
 			"the two entry points are not sharing residentW4A8For's cache")
 	}
