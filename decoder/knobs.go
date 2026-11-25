@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"os"
+	"slices"
 	"strconv"
 )
 
@@ -57,7 +58,7 @@ var cudaKnobs = []string{
 	"GOINFER_MOE_PIN_REGISTER",
 }
 
-var knobNames = []string{
+var cpuKnobs = []string{
 	knobAttnGrouped, knobAttnRowTile, knobPrefillWorkers, knobFusedAttention, knobMLANaive, knobMoEExpertMajor,
 	knobBatchedPrefill, knobNoKVOnlyPrefill, knobNoGreedyFastpath, knobNoOptFwd, knobNoSampleFastpath,
 	knobNoTopKFastpath, knobOptFwdMaxTemp, knobCPUFastAttention,
@@ -74,7 +75,7 @@ var metalKnobs = []string{
 	"GOINFER_MOE_RESIDENCY_SCOPE", "GOINFER_NO_RESIDENT_MEM_GUARD", "GOINFER_PRECISE_MATH",
 }
 
-func init() { knobNames = append(append(knobNames, cudaKnobs...), metalKnobs...) }
+var knobNames = slices.Concat(cpuKnobs, cudaKnobs, metalKnobs)
 
 // Knobs is Options.Knobs: per-model knob values by environment-variable name.
 type Knobs map[string]string
