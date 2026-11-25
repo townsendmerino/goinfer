@@ -238,7 +238,8 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 	"captured": mem.LineScratch, "layerInputs": mem.LineScratch, "subAttn": mem.LineScratch, "subMLP": mem.LineScratch, "subMLPpre": mem.LineScratch, "subCtx": mem.LineScratch, "subPLE": mem.LineScratch, "treeRowPos": mem.LineScratch,
 	"treeMask": mem.LineScratch, "numLayers": mem.LineScratch, "planRows": mem.LineScratch, "rowCeiling": mem.LineScratch, "regrownBytes": mem.LineScratch, "kvDim": mem.LineScratch,
 	"window": mem.LineScratch, "mropeDelta": mem.LineScratch, "pos": mem.LineScratch, "localAny": mem.LineScratch, "quant": mem.LineScratch, "headDim": mem.LineScratch,
-	"manualPos": mem.LineScratch, "recurrentResets": mem.LineScratch, "latentDim": mem.LineScratch, "subCapture": mem.LineScratch}
+	"manualPos": mem.LineScratch, "recurrentResets": mem.LineScratch, "latentDim": mem.LineScratch, "subCapture": mem.LineScratch,
+	"rowPad": mem.LineScratch, "f16InPlaceReads": mem.LineScratch}
 
 // cpuRingBookkeeping is a ring's scalar fields: its geometry and counters, which lease on scratch beside the cache's own (kvDim, window, pos),
 // so its K/V line is the arrays alone.
