@@ -482,9 +482,22 @@ func (d *Device) MustBufOn(line string, id objc.ID, n int, what string) Buffer {
 	return d.mustBuf(line, false, id, n, what)
 }
 
+// AllocFailure is the typed panic value raised when Metal refuses a buffer allocation (out of memory).
+// It satisfies internal/runtime/mem.AllocFailure so device fallback and error classifiers recognise it.
+type AllocFailure struct {
+	What  string
+	Bytes int
+}
+
+func (e AllocFailure) Error() string {
+	return fmt.Sprintf("metal: MTLBuffer allocation failed (%s, %d bytes) — out of memory", e.What, e.Bytes)
+}
+
+func (AllocFailure) DeviceAllocFailure() {}
+
 func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what string) Buffer {
 	if id == 0 {
-		panic(fmt.Sprintf("metal: MTLBuffer allocation failed (%s, %d bytes) — out of memory", what, n))
+		panic(AllocFailure{What: what, Bytes: n})
 	}
 	release := func() {}
 	length, allocated := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))

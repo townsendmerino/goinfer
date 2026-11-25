@@ -827,6 +827,13 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 			}
 		}
 	}
+	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
+	// and the fused-attention flags are set again where the modules load. Read recurrent floats before starting the executor
+	// goroutine so an early error never leaks the locked OS thread.
+	r.layers = planLayerGeometry(m, hls, nH, r)
+	if e := r.readRecurrentFloats(m); e != nil {
+		return nil, decline(e)
+	}
 	if mp == nil { // the memory plan runs no job: it opens no device
 		r.reqCh = make(chan func() error)
 		r.ackCh = make(chan error)
@@ -837,15 +844,6 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 				r.ackCh <- runJob(j)
 			}
 		}()
-	}
-
-	// (runJob — the executor's panic boundary — is defined below.)
-
-	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
-	// and the fused-attention flags are set again where the modules load.
-	r.layers = planLayerGeometry(m, hls, nH, r)
-	if e := r.readRecurrentFloats(m); e != nil {
-		return nil, decline(e)
 	}
 	r.pleP, r.eModel = pleP, pleP > 0
 	for l := range r.layers {

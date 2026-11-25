@@ -418,6 +418,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	// server.
 	defer func() {
 		if p := recover(); p != nil {
+			r.drainMoEPrefetch()
 			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: paged forward aborted: %v", p))
 			logits = nil

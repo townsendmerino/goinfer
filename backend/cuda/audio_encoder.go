@@ -246,4 +246,8 @@ func (t *audioTower) Forward(feats []float32) ([]float32, error) {
 }
 
 // Close releases the device.
-func (t *audioTower) Close() error { return t.g.Close() }
+func (t *audioTower) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.g.Close()
+}

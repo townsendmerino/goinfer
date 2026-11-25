@@ -588,7 +588,7 @@ type ModelW struct {
 }
 
 // hasQKNorm reports whether any layer carries QK-norm weights (Qwen3/GLM).
-func (m ModelW) hasQKNorm() bool {
+func (m *ModelW) hasQKNorm() bool {
 	for i := range m.Layers {
 		if m.Layers[i].Attn.QNorm != nil {
 			return true
@@ -598,7 +598,7 @@ func (m ModelW) hasQKNorm() bool {
 }
 
 // hasQGate reports whether any layer carries a query/gate split (qGate).
-func (m ModelW) hasQGate() bool {
+func (m *ModelW) hasQGate() bool {
 	for i := range m.Layers {
 		if m.Layers[i].Attn.QGate {
 			return true

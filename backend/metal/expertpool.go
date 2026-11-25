@@ -101,6 +101,8 @@ type expertPool struct {
 	// thread and read in the background (prefetchAsync); finishPrefetch, which ensureResidentBatch runs first, waits for
 	// the reads and only then marks them resident, so the GPU never reads a slot still being written.
 	prefetchWG      sync.WaitGroup
+	prefetchMu      sync.Mutex
+	prefetchPanic   any
 	prefetchPending []prefetchSlot
 	prefetchLive    map[int]bool // prefetched experts not yet asked for: a later hit on one counts in prefetchHits
 	prefetched      int          // experts prefetched
@@ -342,8 +344,18 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var fetchNanos int64
+		var stagePanic any
 		for _, ms := range misses {
 			wg.Go(func() {
+				defer func() {
+					if r := recover(); r != nil {
+						mu.Lock()
+						if stagePanic == nil {
+							stagePanic = r
+						}
+						mu.Unlock()
+					}
+				}()
 				t0 := time.Now()
 				p.stageInto(ms.expert, ms.slot)
 				d := time.Since(t0).Nanoseconds()
@@ -353,6 +365,12 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			})
 		}
 		wg.Wait()
+		if stagePanic != nil {
+			for _, ms := range misses {
+				p.slotExpert[ms.slot] = -1
+			}
+			panic(stagePanic)
+		}
 		p.fetchNanos += fetchNanos
 		// stageNanos is the wall-clock paging-traffic penalty term (ensureResident's own comment); under concurrent staging the sum
 		// of fetchNanos is an upper bound on the WaitGroup's span and keeps the unit consistent with the sequential path.
@@ -444,12 +462,33 @@ func (p *expertPool) prefetchAsync(ids []int) {
 		p.prefetchPending = append(p.prefetchPending, prefetchSlot{e, s})
 	}
 	for _, ps := range p.prefetchPending {
-		p.prefetchWG.Add(1)
-		go func(ps prefetchSlot) {
-			defer p.prefetchWG.Done()
+		p.prefetchWG.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					p.prefetchMu.Lock()
+					if p.prefetchPanic == nil {
+						p.prefetchPanic = r
+					}
+					p.prefetchMu.Unlock()
+				}
+			}()
 			p.stageInto(ps.expert, ps.slot)
-		}(ps)
+		})
 	}
+}
+
+// drainPrefetch waits for any in-flight background prefetch reads without marking slots resident or re-panicking.
+// Close and abort recovery call it before releasing pool buffers or closing the pread fd.
+func (p *expertPool) drainPrefetch() {
+	if len(p.prefetchPending) == 0 {
+		return
+	}
+	p.prefetchWG.Wait()
+	for _, ps := range p.prefetchPending {
+		p.slotExpert[ps.slot] = -1
+	}
+	p.prefetchPending = p.prefetchPending[:0]
+	p.prefetchPanic = nil
 }
 
 // finishPrefetch waits for the reads prefetchAsync started and marks those experts resident.
@@ -460,6 +499,14 @@ func (p *expertPool) finishPrefetch() {
 	t0 := time.Now()
 	p.prefetchWG.Wait()
 	p.stageNanos += time.Since(t0).Nanoseconds() // the part of the reads the caller still waited for
+	if pan := p.prefetchPanic; pan != nil {
+		p.prefetchPanic = nil
+		for _, ps := range p.prefetchPending {
+			p.slotExpert[ps.slot] = -1
+		}
+		p.prefetchPending = p.prefetchPending[:0]
+		panic(pan)
+	}
 	if p.prefetchLive == nil {
 		p.prefetchLive = map[int]bool{}
 	}

@@ -68,6 +68,9 @@ type VisionEncoder struct {
 // do runs j on the pinned executor goroutine — every device call in this file goes through this,
 // matching cudaResident's own reqCh/ackCh discipline (CUDA contexts are thread-affine).
 func (ve *VisionEncoder) do(j func() error) error {
+	if ve.reqCh == nil {
+		return fmt.Errorf("cuda: vision encoder is closed")
+	}
 	ve.reqCh <- j
 	return ackJob(<-ve.ackCh)
 }

@@ -91,6 +91,9 @@ func newTowerOps(maxN int) (t *towerOps, err error) {
 
 // do runs j on the executor goroutine; a panic inside it (an allocation failure) comes back as an error.
 func (t *towerOps) do(j func() error) error {
+	if t.reqCh == nil {
+		return fmt.Errorf("cuda: tower is closed")
+	}
 	t.reqCh <- j
 	return ackJob(<-t.ackCh)
 }

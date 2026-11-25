@@ -389,58 +389,75 @@ func (r *resident) execLoop() {
 		return r.encodeLogitsCB()
 	}
 	for job := range r.execReq {
-		want := r.attnPlanFor(job.pos + 1)
-		if cur != nil && (curNoHead != job.noHead || curPlan != want) {
-			// Pre-encoded for a different head mode or attention plan than this job needs: drop it
-			// uncommitted, with the pool it was encoded into.
-			pool.Drain()
-			pool = NewARPool()
-			cur = nil
-			count = 0
-		}
-		if cur != nil && r.d.Tracking() && !cur.Tracked() && costPlantForTest != 2 {
-			// Encoded ahead before a cost counter was attached: drop it and encode it again under the counter, so the first
-			// counted token attributes its dispatches (cost.go).
-			pool.Drain()
-			pool = NewARPool()
-			cur = nil
-			count = 0
-		}
-		if cur == nil {
-			cur, curNoHead, curPlan = encodeFor(job.noHead, job.pos+1), job.noHead, want
-		}
-		r.loadEmb(job.emb)       // this token's embedding + pos (set at commit time, not encode)
-		r.addLearnedPos(job.pos) // GPT-2: += wpe[pos], same commit-time placement as the copy above
-		r.setPos(job.pos, job.ropePos)
-		cur.Commit()
+		var out []float32
+		func() {
+			defer func() {
+				if p := recover(); p != nil {
+					cur = nil
+					pool.Drain()
+					pool = NewARPool()
+					count = 0
+					switch v := p.(type) {
+					case runtime.Error:
+						r.recordExecErr(fmt.Errorf("metal: executor bug: %w", v))
+					case error:
+						r.recordExecErr(fmt.Errorf("metal: executor panicked: %w", v))
+					default:
+						r.recordExecErr(fmt.Errorf("metal: executor panicked: %v", p))
+					}
+					out = nil
+				}
+			}()
+			want := r.attnPlanFor(job.pos + 1)
+			if cur != nil && (curNoHead != job.noHead || curPlan != want) {
+				// Pre-encoded for a different head mode or attention plan than this job needs: drop it
+				// uncommitted, with the pool it was encoded into.
+				pool.Drain()
+				pool = NewARPool()
+				cur = nil
+				count = 0
+			}
+			if cur != nil && r.d.Tracking() && !cur.Tracked() && costPlantForTest != 2 {
+				// Encoded ahead before a cost counter was attached: drop it and encode it again under the counter, so the first
+				// counted token attributes its dispatches (cost.go).
+				pool.Drain()
+				pool = NewARPool()
+				cur = nil
+				count = 0
+			}
+			if cur == nil {
+				cur, curNoHead, curPlan = encodeFor(job.noHead, job.pos+1), job.noHead, want
+			}
+			r.loadEmb(job.emb)       // this token's embedding + pos (set at commit time, not encode)
+			r.addLearnedPos(job.pos) // GPT-2: += wpe[pos], same commit-time placement as the copy above
+			r.setPos(job.pos, job.ropePos)
+			cur.Commit()
 
-		count++
-		drain := count%drainEvery == 0
-		var next *Encoder
-		var nextNoHead bool
-		var nextPlan attnPlan
-		if !drain {
-			next, nextNoHead, nextPlan = encodeFor(job.noHead, job.pos+2), job.noHead, r.attnPlanFor(job.pos+2)
-		}
-		cur.WaitDone()
-		r.recordExecErr(cur.Err()) // set BEFORE the execAck send so the adapter's read is ordered
-		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
-		if !job.noHead {
-			r.finalizeLogits()
-		}
+			count++
+			drain := count%drainEvery == 0
+			var next *Encoder
+			var nextNoHead bool
+			var nextPlan attnPlan
+			if !drain {
+				next, nextNoHead, nextPlan = encodeFor(job.noHead, job.pos+2), job.noHead, r.attnPlanFor(job.pos+2)
+			}
+			cur.WaitDone()
+			r.recordExecErr(cur.Err()) // set BEFORE the execAck send so the adapter's read is ordered
+			r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
+			if !job.noHead {
+				r.finalizeLogits()
+				out = r.logitsHost
+			}
 
-		if drain { // no un-committed cb live now → safe to drain the shared pool
-			pool.Drain()
-			pool = NewARPool()
-			cur = nil
-		} else {
-			cur, curNoHead, curPlan = next, nextNoHead, nextPlan
-		}
-		if job.noHead {
-			r.execAck <- nil
-		} else {
-			r.execAck <- r.logitsHost
-		}
+			if drain { // no un-committed cb live now → safe to drain the shared pool
+				pool.Drain()
+				pool = NewARPool()
+				cur = nil
+			} else {
+				cur, curNoHead, curPlan = next, nextNoHead, nextPlan
+			}
+		}()
+		r.execAck <- out
 	}
 	pool.Drain()
 }
@@ -631,8 +648,22 @@ func (r *resident) useKVSlot(i int) error {
 // Close must not run while a request still holds the model: that is a use-after-free (on CUDA, a driver SIGSEGV that
 // kills the server). Serve's unload drains in-flight holders first (internal/serveapp/admin.go, handleAdminUnload;
 // ); keep that ordering for any new caller.
+// drainMoEPrefetch joins any background MoE expert prefetch goroutines across all layers so no goroutine
+// writes into pool buffers or reads giwFile after abort or during Close.
+func (r *resident) drainMoEPrefetch() {
+	for l := range r.layers {
+		if g := r.layers[l].g4moe; g != nil && g.pool != nil {
+			g.pool.drainPrefetch()
+		}
+		if m := r.layers[l].moe; m != nil && m.pool != nil {
+			m.pool.drainPrefetch()
+		}
+	}
+}
+
 func (r *resident) Close() error {
 	r.stopExec()
+	r.drainMoEPrefetch()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)
 		r.g4moe.giwFile = nil
