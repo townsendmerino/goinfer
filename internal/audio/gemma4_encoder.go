@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -153,7 +154,7 @@ func LoadGemma4AudioEncoder(dir string) (*Gemma4AudioEncoder, error) {
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	scalar := func(name string) float32 {
 		v := get(name)
@@ -267,7 +268,7 @@ func (e *Gemma4AudioEncoder) forward(feats []float32, T int, keep bool) ([]float
 	h, n := e.subsample(feats, T)
 	var st *Gemma4AudioStages
 	if keep {
-		st = &Gemma4AudioStages{Sub: append([]float32(nil), h...)}
+		st = &Gemma4AudioStages{Sub: slices.Clone(h)}
 	}
 	prog := Gemma4AudioProgram(e.Cfg)
 	regs := newGemma4Regs(h, n, e.Cfg.HiddenSize)
@@ -276,12 +277,12 @@ func (e *Gemma4AudioEncoder) forward(feats []float32, T int, keep bool) ([]float
 			return nil, nil, fmt.Errorf("audio: block %d: %w", l, err)
 		}
 		if keep {
-			st.Blocks = append(st.Blocks, append([]float32(nil), h...))
+			st.Blocks = append(st.Blocks, slices.Clone(h))
 		}
 	}
 	tw := e.outputProj.apply(h, n)
 	if keep {
-		st.Tower = append([]float32(nil), tw...)
+		st.Tower = slices.Clone(tw)
 	}
 	rmsNorm(tw, nil, n, e.Cfg.OutputProjDims, e.Cfg.RMSNormEps)
 	return e.embedProj.apply(tw, n), st, nil

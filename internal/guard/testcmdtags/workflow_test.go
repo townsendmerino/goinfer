@@ -12,11 +12,11 @@ import (
 // that flag's value: "go test -census.update ./decoder/" runs no package at all and reports "no Go files in ." where it was run. The
 // package goes first, or after a flag go test knows ("-tags x", "-run y", "-timeout 30m").
 func swallowedPackage(line string) (flag, pkg string, found bool) {
-	i := strings.Index(line, "go test ")
-	if i < 0 {
+	_, after, ok := strings.Cut(line, "go test ")
+	if !ok {
 		return "", "", false
 	}
-	words := strings.Fields(line[i+len("go test "):])
+	words := strings.Fields(after)
 	for k := 0; k+1 < len(words); k++ {
 		if strings.HasPrefix(words[k], "-") && strings.Contains(words[k], ".") && !strings.Contains(words[k], "=") &&
 			(strings.HasPrefix(words[k+1], "./") || strings.HasPrefix(words[k+1], "github.com/")) {

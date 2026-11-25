@@ -57,8 +57,7 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 				kv = ""
 			}
 			m, err := decoder.Load(filepath.Join("../../testdata", f), decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, KVQuant: loadflags.CPUKV("", kv), ResidentContext: 100})
-			var r *decoder.KVRefusal
-			if errors.As(err, &r) {
+			if _, ok := errors.AsType[*decoder.KVRefusal](err); ok {
 				continue // a refused cell allocates nothing
 			}
 			if err != nil {
@@ -678,11 +677,18 @@ func TestKVPages_pressureFollowsD5(t *testing.T) {
 	if r.kvEvictions != 1 {
 		t.Errorf("%d idle slots released, want 1", r.kvEvictions)
 	}
-	var d *decoder.KVCopyDecline
-	if err := a.CopyKV(1, 3, 0, decoder.KVBlockRows); !errors.As(err, &d) {
+	if err := a.CopyKV(1, 3, 0, decoder.KVBlockRows); err != nil {
+		if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
+			t.Errorf("a copy from the released slot 1: %v, want a KVCopyDecline", err)
+		}
+	} else {
 		t.Errorf("a copy from the released slot 1: %v, want a KVCopyDecline", err)
 	}
-	if err := a.CopyKV(2, 3, 0, share); !errors.As(err, &d) {
+	if err := a.CopyKV(2, 3, 0, share); err != nil {
+		if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
+			t.Errorf("a copy of slot 2's rows to %d, past the %d it wrote: %v, want a KVCopyDecline", share, conv, err)
+		}
+	} else {
 		t.Errorf("a copy of slot 2's rows to %d, past the %d it wrote: %v, want a KVCopyDecline", share, conv, err)
 	}
 	if got := a.ReusableKVSlot(3, conv); got != conv {
@@ -740,7 +746,8 @@ func TestKVPages_pressureFollowsD5(t *testing.T) {
 	if n := a.ReusableKVSlot(0, decoder.KVBlockRows); n != 0 {
 		t.Errorf("the stopped borrower answers %d for its first block, want 0", n)
 	}
-	if err := a.CopyKV(0, 1, 0, decoder.KVBlockRows); !errors.As(err, &d) {
+	err = a.CopyKV(0, 1, 0, decoder.KVBlockRows)
+	if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 		t.Errorf("a copy from the stopped borrower's first block: %v, want a KVCopyDecline", err)
 	}
 	if _, err := kvCapPrefill(m, a, 0, grow[need:need+64], need); !errors.Is(err, decoder.ErrKVPoolFull) {
@@ -1382,11 +1389,18 @@ func TestKVPages_truncationReleasesTheTail(t *testing.T) {
 	if held, used := r.kvHeld(0), r.kvBlocksInUse(); held != 2 || used != 2 {
 		t.Errorf("after a write ends slot 0's 640 rows at 120 it holds %d blocks and the pool %d; want 2 and 2", held, used)
 	}
-	var d *decoder.KVCopyDecline
-	if err := a.CopyKV(0, 1, 0, 640); !errors.As(err, &d) {
+	if err := a.CopyKV(0, 1, 0, 640); err != nil {
+		if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
+			t.Errorf("a copy of 640 rows from a slot that holds 120: %v, want a KVCopyDecline", err)
+		}
+	} else {
 		t.Errorf("a copy of 640 rows from a slot that holds 120: %v, want a KVCopyDecline", err)
 	}
-	if err := a.CopyKV(0, 1, 64, 128); !errors.As(err, &d) {
+	if err := a.CopyKV(0, 1, 64, 128); err != nil {
+		if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
+			t.Errorf("a copy from 64 into a slot that holds nothing: %v, want a KVCopyDecline", err)
+		}
+	} else {
 		t.Errorf("a copy from 64 into a slot that holds nothing: %v, want a KVCopyDecline", err)
 	}
 	bind(2)
@@ -1984,8 +1998,7 @@ func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
 	if sc.copyKV {
 		cut := end / decoder.KVBlockRows * decoder.KVBlockRows
 		if err := a.CopyKV(0, 1, 0, cut); err != nil {
-			var decline *decoder.KVCopyDecline
-			if errors.As(err, &decline) { // a recurrent or MLA model, or a source the pool released: not a case for this fixture
+			if _, ok := errors.AsType[*decoder.KVCopyDecline](err); ok { // a recurrent or MLA model, or a source the pool released: not a case for this fixture
 				return res
 			}
 			t.Fatalf("CopyKV: %v", err)

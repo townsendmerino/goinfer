@@ -137,8 +137,7 @@ func benchEncoder(seed int64, quant bool) ([]float32, *Encoder) {
 func BenchmarkForward(b *testing.B) {
 	pixels, e := benchEncoder(9, false)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = e.Forward(pixels)
 	}
 }

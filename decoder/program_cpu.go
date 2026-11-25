@@ -63,6 +63,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 		if ssmStopLayer >= 0 && l > ssmStopLayer {
 			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
 		}
+		if cache.layerInputs != nil && cache.layerInputs[l] != nil {
+			copy(h, cache.layerInputs[l])
+		}
 		if m.layerPager != nil {
 			m.layerPager.enterLayer(l)
 		}

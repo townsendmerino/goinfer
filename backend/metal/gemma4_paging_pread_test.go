@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -74,7 +75,7 @@ func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward[%d] (slots=%q pread=%q): %v", i, slots, pread, err)
 			}
-			o.logits = append(o.logits, append([]float32(nil), lg...))
+			o.logits = append(o.logits, slices.Clone(lg))
 		}
 		inMap := func(s []uint16) bool {
 			_, ok := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(s))), 2*len(s)))

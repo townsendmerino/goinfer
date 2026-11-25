@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -95,7 +96,7 @@ func TestIDsCarried_G0(t *testing.T) {
 		if len(P) != rp.P { // void: the fixture's prompt is not the one the replay's slot started with
 			t.Fatalf("VOID %s: the route renders %d prompt ids, the replay's slot started with %d", rp.ID, len(P), rp.P)
 		}
-		slot := append(append([]int(nil), P...), rp.Gen...)
+		slot := slices.Concat(P, rp.Gen)
 		rsText, rsAt, callAt, msgAt := "", -1, -1, -1
 		for i, it := range rp.Items {
 			switch it["type"] {
@@ -135,7 +136,7 @@ func TestIDsCarried_G0(t *testing.T) {
 				items = edit(items)
 			}
 			nb := fx.body(rp.Session, rp.NInput)
-			input := append([]any(nil), nb["input"].([]any)...)
+			input := slices.Clone(nb["input"].([]any))
 			for _, it := range items {
 				input = append(input, it)
 			}
@@ -203,9 +204,7 @@ func TestIDsCarried_G0(t *testing.T) {
 			ds = append(ds, defect{"d", idsDecode, next(func(items []map[string]any) []map[string]any {
 				c := items[msgAt]["content"].([]any)[0].(map[string]any)
 				cc := map[string]any{}
-				for k, v := range c {
-					cc[k] = v
-				}
+				maps.Copy(cc, c)
 				cc["text"] = flipChar(c["text"].(string))
 				items[msgAt]["content"] = []any{cc}
 				return items
@@ -334,10 +333,8 @@ func loadIDsStep0(t *testing.T) *idsStep0 {
 // body is the request a session sent with its first n input items, as Codex sent it.
 func (fx *idsStep0) body(session string, n int) map[string]any {
 	b := map[string]any{}
-	for k, v := range fx.template {
-		b[k] = v
-	}
-	b["input"] = append([]any(nil), fx.sessions[session][:n]...)
+	maps.Copy(b, fx.template)
+	b["input"] = slices.Clone(fx.sessions[session][:n])
 	return b
 }
 
@@ -352,7 +349,7 @@ func idsLCP(a, b []int) int {
 // flipChar changes one character in the middle of s (an ASCII letter or digit, so the JSON it may sit in stays valid).
 func flipChar(s string) string {
 	b := []byte(s)
-	for off := 0; off < len(b); off++ {
+	for off := range b {
 		for _, i := range []int{len(b)/2 + off, len(b)/2 - off} {
 			if i < 0 || i >= len(b) {
 				continue

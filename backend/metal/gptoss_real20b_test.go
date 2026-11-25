@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -95,7 +96,7 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cpu forward %d: %v", i, err)
 			}
-			cpuLogits = append(cpuLogits, append([]float32(nil), l...))
+			cpuLogits = append(cpuLogits, slices.Clone(l))
 			toks = append(toks, tok)
 			if i+1 < len(seed) {
 				tok = seed[i+1]

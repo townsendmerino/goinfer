@@ -87,7 +87,7 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 			if err := os.WriteFile(hold, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
 				t.Fatalf("hold file: %v", err)
 			}
-			for w := 0; w < 600; w++ { // the run script removes the file once vmmap and footprint are taken
+			for range 600 { // the run script removes the file once vmmap and footprint are taken
 				if _, err := os.Stat(hold); os.IsNotExist(err) {
 					break
 				}

@@ -55,7 +55,7 @@ func TestSpecNgram_multiTurnMatchesPlain(t *testing.T) {
 		for l := range r.layers {
 			kvDim := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*kvDim]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*kvDim]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*kvDim]), slices.Clone(r.vc[l].U16s()[o:o+n*kvDim]))
 		}
 		return out
 	}
@@ -177,7 +177,7 @@ func TestSpecNgram_copyOnStepVerify(t *testing.T) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}

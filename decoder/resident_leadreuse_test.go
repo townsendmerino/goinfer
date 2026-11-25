@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // fastPrefillResident is a slotResident that also reports a fast-prefill floor, the way CUDA's resident does.
 type fastPrefillResident struct {
@@ -17,7 +20,7 @@ func (f *fastPrefillResident) ResidentCaps() ResidentCaps {
 }
 
 func longPrompt(lead []int, n int) []int {
-	p := append([]int(nil), lead...)
+	p := slices.Clone(lead)
 	for i := len(p); i < n; i++ {
 		p = append(p, 1000+i)
 	}
@@ -29,8 +32,8 @@ func longPrompt(lead []int, n int) []int {
 // reuse caller goes through, against a slot that really holds a short earlier conversation.
 func TestResidentAcquire_declinesShortLeadUnderFastPrefill(t *testing.T) {
 	const floor = 512
-	lead := []int{7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}                           // a 13-token shared lead, as the chat header was
-	earlier := append(append([]int(nil), lead...), 5001, 5002, 5003, 5004, 5005, 5006, 5007) // a short earlier conversation: under the floor, so its rows are exact; it shares only the lead
+	lead := []int{7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}                  // a 13-token shared lead, as the chat header was
+	earlier := append(slices.Clone(lead), 5001, 5002, 5003, 5004, 5005, 5006, 5007) // a short earlier conversation: under the floor, so its rows are exact; it shares only the lead
 	for _, tc := range []struct {
 		name  string
 		res   func() any
@@ -70,7 +73,7 @@ func TestResidentAcquire_keepsALongReuseUnderFastPrefill(t *testing.T) {
 	m.residentForgetIDs()
 	reply := []int{1, 2, 3, 4, 5}
 	m.residentCommitIDs(hist, reply, nil, nil)
-	next := append(append(append([]int(nil), hist...), reply...), longPrompt(nil, 700)[:200]...)
+	next := append(append(slices.Clone(hist), reply...), longPrompt(nil, 700)[:200]...)
 	want := len(hist) + len(reply)
 	if got := m.residentAcquire(next, nil, nil); got != want {
 		t.Errorf("a %d-token continuation reused %d, want all %d: a long reuse must survive", want, got, want)
@@ -102,7 +105,7 @@ func TestDeclineShortLeadReuse_boundary(t *testing.T) {
 func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
 	pre := longPrompt(nil, 1000)
 	tail := func(seed, n int) []int {
-		p := append([]int(nil), pre...)
+		p := slices.Clone(pre)
 		for i := range n {
 			p = append(p, 50000+seed*100+i)
 		}
@@ -125,7 +128,7 @@ func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
 	m.residentAcquire(a, nil, nil)
 	m.residentForgetIDs()
 	m.residentCommitIDs(a, reply, nil, nil)
-	next := append(append(append([]int(nil), a...), reply...), 7, 8, 9)
+	next := append(append(slices.Clone(a), reply...), 7, 8, 9)
 	if got, want := m.residentAcquire(next, nil, nil), len(a)+len(reply); got != want {
 		t.Errorf("a continuation over its own reply reused %d, want all %d", got, want)
 	}
@@ -135,7 +138,7 @@ func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
 	m.residentAcquire(short, nil, nil)
 	m.residentForgetIDs()
 	m.residentCommitIDs(short, reply, nil, nil)
-	under := append(append([]int(nil), short[:290]...), 9001, 9002, 9003)
+	under := append(slices.Clone(short[:290]), 9001, 9002, 9003)
 	if got := m.residentAcquire(under, nil, nil); got != 290 {
 		t.Errorf("a prompt under the floor reused %d, want 290 (its cold prefill is exact too)", got)
 	}
@@ -148,7 +151,7 @@ func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
 func TestResidentAcquire_floorAfterTheInPlaceCap(t *testing.T) {
 	pre := longPrompt(nil, 1000)
 	tail := func(seed, n int) []int {
-		p := append([]int(nil), pre...)
+		p := slices.Clone(pre)
 		for i := range n {
 			p = append(p, 50000+seed*100+i)
 		}

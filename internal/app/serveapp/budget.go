@@ -52,7 +52,7 @@ func parseBudgetFlag(s string) (budgetFlag, error) {
 	}
 }
 
-func (c config) reasoningBudgetFlag() budgetFlag {
+func (c *config) reasoningBudgetFlag() budgetFlag {
 	f, _ := parseBudgetFlag(c.reasoningBudget)
 	return f
 }

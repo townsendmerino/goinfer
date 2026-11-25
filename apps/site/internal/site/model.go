@@ -1,9 +1,11 @@
 package site
 
 import (
+	"cmp"
 	"fmt"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -35,8 +37,8 @@ var metricRe = regexp.MustCompile(`([\d.]+)%/([\d.]+)`)
 // ParseProof reads a parity string such as "experimental: real-oracle 100.0%/0.98988" or "shared-path: deepseek_v3".
 func ParseProof(p string) Proof {
 	pr := Proof{Core: p}
-	if strings.HasPrefix(p, "experimental: ") {
-		pr.Exp, pr.Core = true, strings.TrimPrefix(p, "experimental: ")
+	if after, ok := strings.CutPrefix(p, "experimental: "); ok {
+		pr.Exp, pr.Core = true, after
 	}
 	pr.Tier = "other"
 	switch {
@@ -46,8 +48,8 @@ func ParseProof(p string) Proof {
 		pr.Tier = "fixture"
 	case strings.HasPrefix(pr.Core, "shared-path"):
 		pr.Tier = "shared"
-		if i := strings.Index(pr.Core, ":"); i >= 0 {
-			pr.Via = strings.TrimSpace(pr.Core[i+1:])
+		if _, via, ok := strings.Cut(pr.Core, ":"); ok {
+			pr.Via = strings.TrimSpace(via)
 		}
 	}
 	if m := metricRe.FindStringSubmatch(pr.Core); m != nil {
@@ -222,12 +224,7 @@ func Derive(in *Inputs) (*Model, error) {
 		byRepoFile[rc.Repo+"/"+rc.File] = true
 	}
 	// Curated tiers not already a registry checkpoint attach to the family whose checkpoint shares their model line.
-	tiers := make([]string, 0, len(in.Curated.Tiers))
-	for k := range in.Curated.Tiers {
-		tiers = append(tiers, k)
-	}
-	sort.Strings(tiers)
-	for _, k := range tiers {
+	for _, k := range slices.Sorted(maps.Keys(in.Curated.Tiers)) {
 		t := in.Curated.Tiers[k]
 		if byRepoFile[t.Repo+"/"+t.File] {
 			continue
@@ -255,7 +252,7 @@ func Derive(in *Inputs) (*Model, error) {
 	// Speeds from the claims file, by checkpoint id.
 	ck := map[string]*Checkpoint{}
 	for _, f := range m.Families {
-		sort.SliceStable(f.Checkpoints, func(i, j int) bool { return f.Checkpoints[i].Bytes < f.Checkpoints[j].Bytes })
+		slices.SortStableFunc(f.Checkpoints, func(a, b *Checkpoint) int { return cmp.Compare(a.Bytes, b.Bytes) })
 		for _, c := range f.Checkpoints {
 			c.Speed = map[string]*Speed{}
 			ck[c.ID] = c
@@ -280,7 +277,7 @@ func Derive(in *Inputs) (*Model, error) {
 		}
 		c.Decision = d
 	}
-	sort.SliceStable(m.Vetted, func(i, j int) bool { return m.Vetted[i].Bytes < m.Vetted[j].Bytes })
+	slices.SortStableFunc(m.Vetted, func(a, b *Checkpoint) int { return cmp.Compare(a.Bytes, b.Bytes) })
 	// The Models page calls these the supported tier because each comes from a family checked against its released
 	// model; a vetted checkpoint from a weaker or experimental family would make that label false.
 	for _, c := range m.Vetted {
@@ -290,22 +287,22 @@ func Derive(in *Inputs) (*Model, error) {
 		}
 	}
 	// The ledger: strongest check first, then non-experimental, then by the two numbers, then by name.
-	m.Ledger = append([]*Family(nil), m.Families...)
-	sort.SliceStable(m.Ledger, func(i, j int) bool {
-		a, b := m.Ledger[i], m.Ledger[j]
-		if TierOrder[a.P.Tier] != TierOrder[b.P.Tier] {
-			return TierOrder[a.P.Tier] < TierOrder[b.P.Tier]
+	m.Ledger = slices.Clone(m.Families)
+	slices.SortStableFunc(m.Ledger, func(a, b *Family) int {
+		if c := cmp.Compare(TierOrder[a.P.Tier], TierOrder[b.P.Tier]); c != 0 {
+			return c
 		}
 		if a.P.Exp != b.P.Exp {
-			return !a.P.Exp
+			if !a.P.Exp {
+				return -1
+			}
+			return 1
 		}
-		if av, bv := val(a.P.Argmax), val(b.P.Argmax); av != bv {
-			return av > bv
-		}
-		if av, bv := val(a.P.Cos), val(b.P.Cos); av != bv {
-			return av > bv
-		}
-		return strings.ToLower(a.DisplayName) < strings.ToLower(b.DisplayName)
+		return cmp.Or(
+			cmp.Compare(val(b.P.Argmax), val(a.P.Argmax)),
+			cmp.Compare(val(b.P.Cos), val(a.P.Cos)),
+			cmp.Compare(strings.ToLower(a.DisplayName), strings.ToLower(b.DisplayName)),
+		)
 	})
 	if in.Ollama != nil {
 		es, err := deriveOllama(in.Ollama, m.ByName)

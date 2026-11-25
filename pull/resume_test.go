@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,7 +26,7 @@ import (
 // file size.
 func TestDownload_resumesAfterInterruption(t *testing.T) {
 	body := make([]byte, 512*1024)
-	rand.New(rand.NewSource(11)).Read(body)
+	rand.NewChaCha8([32]byte{11}).Read(body)
 	sum := sha256.Sum256(body)
 	want := hex.EncodeToString(sum[:])
 
@@ -229,7 +229,7 @@ func TestDownload_badDigestIsNotKept(t *testing.T) {
 // normal path and the resume path (the digest there covers the bytes already on disk, so it is just as verified).
 func TestDownload_recordsDigestSoResolveDoesNotRehash(t *testing.T) {
 	body := make([]byte, 256*1024)
-	rand.New(rand.NewSource(18)).Read(body)
+	rand.NewChaCha8([32]byte{18}).Read(body)
 	sum := sha256.Sum256(body)
 	want := hex.EncodeToString(sum[:])
 

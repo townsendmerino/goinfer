@@ -33,8 +33,8 @@ func (m *carriedMint) blob(text string) string {
 	ids, whole := m.out.ids, m.out.done
 	if !whole {
 		cut := -1
-		for i := len(ids) - 1; i >= 0; i-- {
-			if m.lm.tk.IsAdded(ids[i]) {
+		for i, id := range slices.Backward(ids) {
+			if m.lm.tk.IsAdded(id) {
 				cut = i + 1
 				break
 			}

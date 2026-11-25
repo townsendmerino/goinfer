@@ -85,8 +85,7 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 			r.kvFloor[dst] = max(r.kvFloor[dst], r.kvFloor[src])
 		default:
 			r.kvWriteFailed(w, start)
-			var d *decoder.KVCopyDecline
-			if w.fresh && !errors.As(err, &d) {
+			if _, ok := errors.AsType[*decoder.KVCopyDecline](err); w.fresh && !ok {
 				err = &decoder.KVCopyDecline{Reason: err.Error()} // dst is as it was, so the request can go on with its host copy
 			}
 		}

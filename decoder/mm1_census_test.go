@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -61,7 +61,7 @@ func censusMachines(t *testing.T) []censusMachine {
 		}
 		ms = append(ms, m)
 	}
-	sort.Slice(ms, func(i, j int) bool { return ms[i].Name < ms[j].Name })
+	slices.SortFunc(ms, func(a, b censusMachine) int { return cmp.Compare(a.Name, b.Name) })
 	return ms
 }
 
@@ -106,7 +106,7 @@ func (c *census) total() string {
 	for k := range c.groups {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	h := sha256.New()
 	for _, k := range keys {
 		fmt.Fprintf(h, "%s\x00%s\x00", k, c.groups[k])
@@ -148,7 +148,7 @@ func changePoints(lo, hi int64, max int, outcome func(int64) string) []int64 {
 		walk(m, b, om, ob)
 	}
 	walk(lo, hi, outcome(lo), outcome(hi))
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 
@@ -203,7 +203,7 @@ func censusFamilies(t *testing.T) []censusFamily {
 		}
 		fams = append(fams, censusFamily{name: censusName(p), path: p, dir: !strings.HasSuffix(p, ".gguf")})
 	}
-	sort.Slice(fams, func(i, j int) bool { return fams[i].name < fams[j].name })
+	slices.SortFunc(fams, func(a, b censusFamily) int { return cmp.Compare(a.name, b.name) })
 	return fams
 }
 
@@ -275,7 +275,7 @@ func censusSetAvail(fake *probe.Fake, phys, avail int64) {
 }
 
 // d1Outcome names a resident-guard outcome, for coverage and for the change-point search.
-func d1Outcome(f fitCheck) string {
+func d1Outcome(f *fitCheck) string {
 	pin, decline := f.decide()
 	switch {
 	case decline != nil && f.pinned:
@@ -294,7 +294,7 @@ func d1Outcome(f fitCheck) string {
 }
 
 // d1Line is everything the resident guard says of f: its decision, its numbers, and the line guardFit prints or the refusal.
-func d1Line(f fitCheck) string {
+func d1Line(f *fitCheck) string {
 	pin, decline := f.decide()
 	line := ""
 	switch {
@@ -352,7 +352,7 @@ func TestDecisionCensus(t *testing.T) {
 			diffs = append(diffs, "added: "+k)
 		}
 	}
-	sort.Strings(diffs)
+	slices.Sort(diffs)
 	t.Errorf("the census differs from the golden in %d group(s); -census.dump writes the full text to diff against the base:\n  %s",
 		len(diffs), strings.Join(diffs[:min(len(diffs), 40)], "\n  "))
 }
@@ -508,7 +508,7 @@ func writeCensusGolden(t *testing.T, path, class string, c censusGoldenClass) {
 		}
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var sb strings.Builder
 	sb.WriteString("# class " + class + "\n# total " + c.Total + "\n")
 	for _, k := range keys {
@@ -540,7 +540,7 @@ func writeCensusDump(t *testing.T, c *census, path string) {
 	for k := range c.groups {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var sb strings.Builder
 	for _, k := range keys {
 		sb.WriteString("## " + k + "\n" + c.groups[k] + "\n")

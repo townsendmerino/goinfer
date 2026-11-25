@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"hash/crc32"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -136,7 +137,7 @@ func TestGiw_layerCountCheckedBeforeAllocation(t *testing.T) {
 	if idx < 0 {
 		t.Skipf("could not locate the layer-count word for %d layers", real32)
 	}
-	bad := append([]byte(nil), blob...)
+	bad := slices.Clone(blob)
 	huge := uint32(maxSerializedLayers - 1) // in range for the old guard, wrong for the arch
 	bad[idx], bad[idx+1] = byte(huge), byte(huge>>8)
 	bad[idx+2], bad[idx+3] = byte(huge>>16), byte(huge>>24)

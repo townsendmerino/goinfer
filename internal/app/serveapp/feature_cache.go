@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 )
@@ -56,7 +57,7 @@ func (c *featureCache) get(key [sha256.Size]byte) ([]float32, bool) {
 		return nil, false
 	}
 	c.order.MoveToFront(el)
-	return append([]float32(nil), el.Value.(*featureEntry).feats...), true // a copy: no caller can edit what the next one reads
+	return slices.Clone(el.Value.(*featureEntry).feats), true // a copy: no caller can edit what the next one reads
 }
 
 func (c *featureCache) put(key [sha256.Size]byte, feats []float32) {
@@ -77,7 +78,7 @@ func (c *featureCache) put(key [sha256.Size]byte, feats []float32) {
 		delete(c.items, e.key)
 		c.used -= len(e.feats) * 4
 	}
-	c.items[key] = c.order.PushFront(&featureEntry{key: key, feats: append([]float32(nil), feats...)})
+	c.items[key] = c.order.PushFront(&featureEntry{key: key, feats: slices.Clone(feats)})
 	c.used += size
 }
 

@@ -147,9 +147,9 @@ func TestDo_aBugOnTheExecutorPanicsOnTheCaller(t *testing.T) {
 func TestDo_anAllocFailureIsAnErrorThatStillClassifies(t *testing.T) {
 	r := newTestExecutor(t)
 	err := r.do(func() error { panic(allocFailureForTest()) })
-	var f *gpu.AllocFailure
-	if !errors.As(err, &f) || !mem.DeviceAllocFailed(err) {
-		t.Errorf("do's error %v: errors.As finds the AllocFailure %v, DeviceAllocFailed %v; want both", err, f != nil, mem.DeviceAllocFailed(err))
+	f, ok := errors.AsType[*gpu.AllocFailure](err)
+	if !ok || !mem.DeviceAllocFailed(err) {
+		t.Errorf("do's error %v: errors.AsType finds the AllocFailure %v, DeviceAllocFailed %v; want both", err, f != nil, mem.DeviceAllocFailed(err))
 	}
 }
 

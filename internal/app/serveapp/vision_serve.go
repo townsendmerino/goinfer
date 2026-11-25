@@ -105,13 +105,13 @@ func (lm *loadedModel) visionFeatureCache() *featureCache {
 // called, so a model loaded since this one is counted. With the fit guard off (GOINFER_NO_FIT_GUARD) or --fit=off it is
 // featureCacheBudget.
 func (lm *loadedModel) featureCacheSize() int {
-	if lm.model == nil || lm.mdl().FitDisabled() {
+	if lm.model == nil || lm.model.FitDisabled() {
 		return featureCacheBudget
 	}
-	if v, _ := lm.mdl().Knob("GOINFER_NO_FIT_GUARD"); v != "" {
+	if v, _ := lm.model.Knob("GOINFER_NO_FIT_GUARD"); v != "" {
 		return featureCacheBudget
 	}
-	_, kvBytes, _, budgetBytes, known := lm.mdl().FitBudgetSummary()
+	_, kvBytes, _, budgetBytes, known := lm.model.FitBudgetSummary()
 	n := featureCacheBudgetFor(known, budgetBytes, kvBytes)
 	if n < featureCacheBudget {
 		fmt.Fprintf(os.Stderr, "vision: the image feature cache holds %d MiB, not %d: that is what the fit budget leaves after this model's KV\n",
@@ -221,7 +221,7 @@ func (lm *loadedModel) glmOcrVisionPrompt(g *glmVision, tm *chat.Template, syste
 	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
 		return visionInput{}, err
 	}
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
 		feats, err := g.features(pv, grid)
 		if err != nil {

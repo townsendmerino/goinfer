@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -224,7 +225,7 @@ func LoadPixtralProjector(dir string) (*PixtralProjector, error) {
 		}
 		var v []float32
 		v, err = st.TensorF32("multi_modal_projector."+name, want...)
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	p.normW = get("norm.weight", vh)
 	p.mergeW = get("patch_merger.merging_layer.weight", vh, vh*mm)
@@ -251,7 +252,7 @@ func (p *PixtralProjector) Forward(hidden []float32, grids [][2]int) ([]float32,
 // merger's, linear_1's (before the GELU) and linear_2's.
 func (p *PixtralProjector) ForwardStages(hidden []float32, grids [][2]int) ([][]float32, error) {
 	var st [][]float32
-	_, err := p.forward(hidden, grids, func(x []float32) { st = append(st, append([]float32(nil), x...)) })
+	_, err := p.forward(hidden, grids, func(x []float32) { st = append(st, slices.Clone(x)) })
 	return st, err
 }
 

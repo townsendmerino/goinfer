@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -200,7 +201,7 @@ func TestPairwiseRoPEResidentParityMetal(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					out[i] = append([]float32(nil), l...)
+					out[i] = slices.Clone(l)
 				}
 				return out
 			}
@@ -209,7 +210,7 @@ func TestPairwiseRoPEResidentParityMetal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			last32 = append([]float32(nil), last32...)
+			last32 = slices.Clone(last32)
 			measure := func() map[string]pwMetric {
 				dec, pre, mixed := newPWMetric(), newPWMetric(), newPWMetric()
 				a.Reset()
@@ -324,18 +325,18 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		row[i] = append([]float32(nil), l...)
+		row[i] = slices.Clone(l)
 	}
 	textLast32, err := cpu32.PrefillLogitsForTest(ctx, text, cpu32.NewCache(len(text)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	textLast32 = append([]float32(nil), textLast32...)
+	textLast32 = slices.Clone(textLast32)
 	img32, err := cpu32.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, cpu32.NewCache(len(g.PromptIDs)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	img32 = append([]float32(nil), img32...)
+	img32 = slices.Clone(img32)
 	imgC := cpuRow.NewCache(len(g.PromptIDs) + g.NNew)
 	if _, err := cpuRow.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, imgC); err != nil {
 		t.Fatal(err)
@@ -350,7 +351,7 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		past = append(past, append([]float32(nil), l...))
+		past = append(past, slices.Clone(l))
 	}
 	measure := func() map[string]pwMetric {
 		out := map[string]pwMetric{}

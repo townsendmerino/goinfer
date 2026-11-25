@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -39,7 +40,7 @@ func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	if len(src.sessions.order) != 1 {
 		t.Fatalf("source LRU holds %d sessions, want 1", len(src.sessions.order))
 	}
-	turn2 := append(append([]int(nil), src.sessions.order[0].Tokens()...), 5, 6)
+	turn2 := append(slices.Clone(src.sessions.order[0].Tokens()), 5, 6)
 	dir := t.TempDir()
 	if err := src.sessions.save(dir); err != nil {
 		t.Fatalf("save: %v", err)

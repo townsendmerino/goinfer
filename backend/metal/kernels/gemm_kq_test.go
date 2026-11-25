@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -307,7 +308,7 @@ func TestGemmKQ_segmentsMatchReference(t *testing.T) {
 						}
 						kqDispatch(t, d, cq, p, tl.tm, tl.tn, s, a, rows, widths[si], K, c, ldc, offs[si], bias, mode)
 					}
-					got := append([]uint16(nil), c.U16s()...)
+					got := slices.Clone(c.U16s())
 					if first != nil {
 						for i := range got {
 							if got[i] != first[i] {

@@ -96,7 +96,6 @@ func devBytes(t *testing.T, w cudaWQ, h hostW) map[string][]byte {
 func TestPackStream_deviceBytesIdenticalToPackWeight(t *testing.T) {
 	r := streamRig(t)
 	for name, wm := range streamWeights() {
-		wm := wm
 		plan, err := planWeight(&wm)
 		if err != nil {
 			t.Fatalf("%s: planWeight: %v", name, err)
@@ -175,7 +174,6 @@ func TestPackStream_hostBytesAreTheStagingBlockNotTheTensor(t *testing.T) {
 // G-S2b: planning packs nothing, and the allocation slack priced from planned layers is the slack of the same layers packed.
 func TestPackStream_planningPacksNothing(t *testing.T) {
 	for name, wm := range streamWeights() {
-		wm := wm
 		plan, _ := planWeight(&wm)
 		if len(plan.wpk) != 0 || len(plan.ws) != 0 || len(plan.ws16) != 0 || plan.src == nil {
 			t.Errorf("%s: a planned weight holds packed data (%d/%d/%d words) or no source", name, len(plan.wpk), len(plan.ws), len(plan.ws16))
@@ -199,7 +197,6 @@ func TestPackStream_aDeclineAllocatesNothing(t *testing.T) {
 	allocSeenForTest = func(int) { allocs++ }
 	defer func() { allocSeenForTest = nil }()
 	for name, wm := range cases {
-		wm := wm
 		_, perr := planWeight(&wm)
 		_, kerr := packWeight(&wm)
 		if perr == nil || kerr == nil || perr.Error() != kerr.Error() {
@@ -337,7 +334,9 @@ func TestPlanHeldKQuant_onlyThroughPlanProj(t *testing.T) {
 			t.Errorf("%s: planWeight planned a held native weight (err %v); only planProj may, under per-32 activations", c.kind, err)
 		}
 		s := &buildState{actG32: false}
-		if _, err := s.planProj(&wm); err == nil || !errors.As(err, new(buildDecline)) {
+		if _, err := s.planProj(&wm); err == nil {
+			t.Errorf("%s: planProj without per-32 activations succeeded, want a decline", c.kind)
+		} else if _, ok := errors.AsType[buildDecline](err); !ok {
 			t.Errorf("%s: planProj without per-32 activations: err %v, want a decline", c.kind, err)
 		}
 		s.actG32 = true

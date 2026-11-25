@@ -5,10 +5,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -242,11 +243,7 @@ func writeST(t *testing.T, path string, data map[string][]float32, shapes map[st
 		Shape   []int  `json:"shape"`
 		Offsets [2]int `json:"data_offsets"`
 	}
-	names := make([]string, 0, len(data))
-	for n := range data {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(data))
 	header := map[string]meta{}
 	var blob []byte
 	off := 0

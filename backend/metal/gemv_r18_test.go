@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -580,7 +580,7 @@ func TestR18Step0Standalone(t *testing.T) {
 	seed := uint32(88172645)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
@@ -655,7 +655,7 @@ func TestR18Step0Standalone(t *testing.T) {
 				e.DispatchTG(p, s.N*32/a.R, 256, shmFor(a.name, s.K), ws[0], ss[0], aqb, asc, outs[ai], uK, bias)
 			}
 			e.End()
-			got := append([]float32(nil), outs[ai].Floats()[:s.N]...)
+			got := slices.Clone(outs[ai].Floats()[:s.N])
 			if ai == 0 {
 				ref = got
 				continue
@@ -738,7 +738,7 @@ func TestR18Step0Standalone(t *testing.T) {
 			e := cq.Begin()
 			disp(e, a.name, a.R, 0, outs[ai])
 			e.End()
-			got := append([]float32(nil), outs[ai].Floats()[:s.N]...)
+			got := slices.Clone(outs[ai].Floats()[:s.N])
 			if ai == 0 {
 				ref = got
 				continue

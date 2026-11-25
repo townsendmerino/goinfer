@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -49,7 +50,7 @@ func gateH(t *testing.T, m *Model, ids []int) error {
 			return err
 		}
 	}
-	want := append([]float32(nil), h...)
+	want := slices.Clone(h)
 	hp := &m.program().Head
 	b := m.w.FinalNormBias
 	if !hp.Norm.Bias {
@@ -63,7 +64,7 @@ func gateH(t *testing.T, m *Model, ids []int) error {
 	if !sameBits(got, want) {
 		return fmt.Errorf("HiddenLast's row is not the forward's final hidden state")
 	}
-	if !sameBits(m.logitsFromNormed(append([]float32(nil), got...), m.NewCache(1)), seamLogits(t, m, ids)) {
+	if !sameBits(m.logitsFromNormed(slices.Clone(got), m.NewCache(1)), seamLogits(t, m, ids)) {
 		return fmt.Errorf("the head over HiddenLast's row is not the forward's last logits")
 	}
 	return nil
@@ -83,7 +84,7 @@ func captureAll(m *Model, ids []int) ([]float32, [][]float32, error) {
 		layers[l] = l
 	}
 	lg, hidden, err := m.ForwardCapture(ids[n-1], cache, layers)
-	return append([]float32(nil), lg...), hidden, err
+	return slices.Clone(lg), hidden, err
 }
 
 // gateC: the residual captured after layer l is the forward over the same prompt with the program cut to layers 0..l; the
@@ -137,7 +138,7 @@ func gateS(t *testing.T, m *Model, ids []int) (checked, skipped int, err error) 
 	prog := m.program()
 layers:
 	for l := 1; l < len(prog.Layers); l++ {
-		h := append([]float32(nil), resid[l-1]...)
+		h := slices.Clone(resid[l-1])
 		lastFFN := false
 		for _, o := range prog.Layers[l] {
 			switch o.Kind {
@@ -187,7 +188,7 @@ layers:
 	if err != nil {
 		return checked, skipped, err
 	}
-	lp = append([]float32(nil), lp...)
+	lp = slices.Clone(lp)
 	lc, err := m.forward(ids[0], cache)
 	if err != nil {
 		return checked, skipped, err

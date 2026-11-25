@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -84,7 +84,7 @@ func TestAliasForkProbe(t *testing.T) {
 	}
 	median3 := func() float64 {
 		v := []float64{forkMS(), forkMS(), forkMS()}
-		sort.Float64s(v)
+		slices.Sort(v)
 		return v[1]
 	}
 	mark := func(label string) time.Time {

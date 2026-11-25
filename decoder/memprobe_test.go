@@ -173,11 +173,12 @@ func TestFitGuard_fakeProbeReachesEveryOutcome(t *testing.T) {
 		if ctx, err := run(loadsAt, Options{}); err != nil || ctx < ctxFloor || ctx >= maxCtx {
 			t.Errorf("auto-pin: (%d, %v) at %d, want a context in [%d, %d)", ctx, err, loadsAt, ctxFloor, maxCtx)
 		}
-		var decline *FitDeclineError
-		if _, err := run(loadsAt-1, Options{}); !errors.As(err, &decline) {
+		_, err := run(loadsAt-1, Options{})
+		if _, ok := errors.AsType[*FitDeclineError](err); !ok {
 			t.Errorf("refuse at the floor: %v at %d, want a *FitDeclineError", err, loadsAt-1)
 		}
-		if _, err := run(loadsAt, Options{ResidentContext: maxCtx}); !errors.As(err, &decline) {
+		_, err = run(loadsAt, Options{ResidentContext: maxCtx})
+		if _, ok := errors.AsType[*FitDeclineError](err); !ok {
 			t.Errorf("refuse a pin: %v at %d with -ctx %d, want a *FitDeclineError", err, loadsAt, maxCtx)
 		}
 	})

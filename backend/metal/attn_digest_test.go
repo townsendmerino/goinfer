@@ -238,7 +238,7 @@ func TestAttnFABlk64Digest(t *testing.T) {
 			if err := e.Err(); err != nil {
 				t.Fatalf("dispatch: %v", err)
 			}
-			got := append([]float32(nil), out.Floats()[:nH*hd]...)
+			got := slices.Clone(out.Floats()[:nH*hd])
 			recordAttnDigest(t, "attention_fa_blk64_g7,attention_fa_combine", got)
 
 			kf, vf := make([]float32, len(kh)), make([]float32, len(vh))
@@ -332,7 +332,7 @@ func TestAttnFABlk96Digest(t *testing.T) {
 		if err := e.Err(); err != nil {
 			t.Fatalf("dispatch: %v", err)
 		}
-		got := append([]float32(nil), out.Floats()[:nH*hd]...)
+		got := slices.Clone(out.Floats()[:nH*hd])
 		recordAttnDigest(t, "attention_fa_blk96_g1,attention_fa_combine", got)
 		kf, vf := make([]float32, len(kh)), make([]float32, len(vh))
 		for i := range kh {

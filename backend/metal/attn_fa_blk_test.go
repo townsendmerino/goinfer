@@ -128,7 +128,7 @@ func blkRun(t *testing.T, d *Device, cq Queue, pipe, comb Pipeline, G, nKV, nKey
 	if err := e.Err(); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	return append([]float32(nil), out.Floats()[:nH*hd]...)
+	return slices.Clone(out.Floats()[:nH*hd])
 }
 
 // blkInputs builds q and f16 K/V; peaked plants a sink-like key (position 0) and a few strong keys, so the online
@@ -475,7 +475,7 @@ func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
 				if err := e.Err(); err != nil {
 					t.Fatal(err)
 				}
-				return append([]float32(nil), partial.Floats()...)
+				return slices.Clone(partial.Floats())
 			}
 			inOrder, scrambled := []uint32{1, 2, 3, 4, 5, 6}, []uint32{6, 3, 5, 1, 4, 2}
 			differ := func(a, b []float32) int {
@@ -556,7 +556,7 @@ func TestKVPages_fusedAttentionDepthThroughTheTable(t *testing.T) {
 					for pos := range depth {
 						l := r.ForwardEmb(mc3Emb(r, (pos*7+s*13+1)%r.V), pos)
 						if pos >= attnFADepthFloor {
-							out = append(out, append([]float32(nil), l...))
+							out = append(out, slices.Clone(l))
 						}
 					}
 				}
@@ -566,7 +566,7 @@ func TestKVPages_fusedAttentionDepthThroughTheTable(t *testing.T) {
 					if err := r.useKVSlot(q.slot); err != nil {
 						t.Fatal(err)
 					}
-					decoded[q.slot] = append([]float32(nil), r.ForwardEmb(q.emb, q.pos)...)
+					decoded[q.slot] = slices.Clone(r.ForwardEmb(q.emb, q.pos))
 				}
 				for m, l := range mc3Step(t, r, seqs) {
 					for j := range l {
@@ -574,7 +574,7 @@ func TestKVPages_fusedAttentionDepthThroughTheTable(t *testing.T) {
 							t.Fatalf("scrambled %v: step row %d logit %d is %v, its slot's decode %v", scramble, m, j, l[j], decoded[seqs[m].slot][j])
 						}
 					}
-					out = append(out, append([]float32(nil), l...))
+					out = append(out, slices.Clone(l))
 				}
 				return out
 			}
@@ -674,7 +674,7 @@ func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 				if err := e.Err(); err != nil {
 					t.Fatal(err)
 				}
-				got := append([]float32(nil), out.Floats()[:nH*hd]...)
+				got := slices.Clone(out.Floats()[:nH*hd])
 				d.ReleaseAll() // this run's buffers; the next allocates its own
 				return got
 			}

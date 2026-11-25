@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,8 +40,8 @@ func TestLookupLockedOnlyViaResolve(t *testing.T) {
 // so Close is safe only when the LAST entry backed by it unloads. releaseLocked must report last only
 // then, and (delete-before-decide, tested via the sequence) two siblings can never both decline.
 func TestRetainRelease(t *testing.T) {
-	s := &server{liveness: map[modelHandle]*modelLiveness{}}
-	m := &fakeModel{} // sentinel; never Closed here
+	s := &server{liveness: map[io.Closer]*modelLiveness{}}
+	m := &fakeCloser{} // sentinel; never Closed here
 
 	s.retainLocked(m) // base
 	s.retainLocked(m) // adapter sharing the base's model
@@ -61,8 +62,41 @@ func TestRetainRelease(t *testing.T) {
 	}
 
 	// Releasing an untracked model is safe (defensive: leak-not-crash, never a spurious last-owner).
-	if ml, last := s.releaseLocked(&fakeModel{}); ml != nil || last {
+	if ml, last := s.releaseLocked(&fakeCloser{}); ml != nil || last {
 		t.Errorf("release of untracked model = (%v,%v), want (nil,false)", ml, last)
+	}
+}
+
+// TestLiveness_nilCloserIgnored: a nil closer or a typed nil pointer implementing io.Closer is never retained or
+// released, and an entry with neither a model nor a closer has a nil livenessKey.
+func TestLiveness_nilCloserIgnored(t *testing.T) {
+	var typedNil *fakeCloser
+	empty := &loadedModel{name: "embed-only"}
+	if empty.livenessKey() != nil {
+		t.Fatal("empty entry livenessKey is not nil")
+	}
+	if (&loadedModel{closer: typedNil}).livenessKey() != nil {
+		t.Fatal("typed-nil closer livenessKey is not nil")
+	}
+	for _, c := range []io.Closer{nil, typedNil, empty.livenessKey()} {
+		if !nilCloser(c) {
+			t.Fatalf("nilCloser(%#v) = false", c)
+		}
+		s := &server{}
+		s.retainLocked(c)
+		if len(s.liveness) != 0 {
+			t.Fatalf("retainLocked(%#v) recorded liveness %v, want none", c, s.liveness)
+		}
+		if ml, last := s.releaseLocked(c); ml != nil || last {
+			t.Fatalf("releaseLocked(%#v) = (%v, %v), want (nil, false)", c, ml, last)
+		}
+	}
+	if nilCloser(&fakeCloser{}) {
+		t.Fatal("nilCloser of a non-nil closer is true")
+	}
+	// A model-less entry still answers LoadProfile safely via a nil *decoder.Model.
+	if sum := empty.model.LoadProfile().Summary(); sum != "" {
+		t.Errorf("a model-less entry's load profile summary = %q, want none", sum)
 	}
 }
 

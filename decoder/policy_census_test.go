@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/constrain"
@@ -102,7 +101,7 @@ func TestPolicyStreams_census(t *testing.T) {
 				names = append(names, n)
 			}
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, n := range names {
 			a, _ := json.Marshal(w[n])
 			g, _ := json.Marshal(got[n])

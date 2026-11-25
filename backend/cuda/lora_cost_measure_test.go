@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -23,8 +23,8 @@ import (
 )
 
 func loraMedian(xs []float64) float64 {
-	s := append([]float64(nil), xs...)
-	sort.Float64s(s)
+	s := slices.Clone(xs)
+	slices.Sort(s)
 	return s[len(s)/2]
 }
 

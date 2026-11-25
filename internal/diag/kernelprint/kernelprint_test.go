@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +98,7 @@ func TestCompute_table(t *testing.T) {
 			diffs = append(diffs, k+" (no longer in the suite)")
 		}
 	}
-	sort.Strings(diffs)
+	slices.Sort(diffs)
 	if len(diffs) > 0 {
 		t.Errorf("%s: %d kernel fingerprint(s) differ from %s; a kernel changed (or the suite did): every parity family's key moves with the table, so update it (-update) in the change that moves it:\n  %s",
 			cfg, len(diffs), tablePath, strings.Join(diffs, "\n  "))

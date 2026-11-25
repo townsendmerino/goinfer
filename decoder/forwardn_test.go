@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -127,7 +128,7 @@ func TestForwardN_matchesSequential(t *testing.T) {
 				if err != nil {
 					t.Fatalf("seq forward %d: %v", i, err)
 				}
-				seq[i] = append([]float32(nil), l...)
+				seq[i] = slices.Clone(l)
 			}
 
 			cbat := m.NewCache(K)

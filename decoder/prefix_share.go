@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
@@ -84,7 +85,7 @@ func (c *KVCache) copyStateFrom(src *KVCache) error {
 		}
 		dst.convWin = make([][]float32, len(st.convWin))
 		for i, row := range st.convWin {
-			dst.convWin[i] = append([]float32(nil), row...)
+			dst.convWin[i] = slices.Clone(row)
 		}
 		dst.s = append(dst.s[:0], st.s...)
 	}
@@ -119,7 +120,7 @@ func (m *Model) resumeHidden(ctx context.Context, cp *prefixCheckpoint, suffix [
 		if err != nil {
 			return nil, err
 		}
-		return append([]float32(nil), hN[(len(suffix)-1)*a.HiddenDim:]...), nil
+		return slices.Clone(hN[(len(suffix)-1)*a.HiddenDim:]), nil
 	}
 	var h []float32
 	for _, id := range suffix {
@@ -131,7 +132,7 @@ func (m *Model) resumeHidden(ctx context.Context, cp *prefixCheckpoint, suffix [
 			return nil, err
 		}
 	}
-	out := append([]float32(nil), h[:a.HiddenDim]...)
+	out := slices.Clone(h[:a.HiddenDim])
 	m.finalNorm(out)
 	return out, nil
 }

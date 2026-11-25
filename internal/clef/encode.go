@@ -8,9 +8,10 @@
 package clef
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // DefaultMaxLength is the reference's max_length. The blog claims a 64k window; the code's default is this.
@@ -245,7 +246,7 @@ func questionOptions(id, qtype string, criteria *value) ([]option, error) {
 		for i, k := range criteria.keys {
 			out[i] = option{k, criteria.vals[i]}
 		}
-		sort.Slice(out, func(a, b int) bool { return out[a].id < out[b].id })
+		slices.SortFunc(out, func(a, b option) int { return cmp.Compare(a.id, b.id) })
 		return out, nil
 	default:
 		if criteria == nil || criteria.k != kArray {

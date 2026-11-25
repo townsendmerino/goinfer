@@ -3,6 +3,7 @@ package decoder
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -51,7 +52,7 @@ func TestRing_decodeBitExact(t *testing.T) {
 			global := arch.isGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
-			rk, rv, rq := append([]float32(nil), k...), append([]float32(nil), v...), append([]float32(nil), q...)
+			rk, rv, rq := slices.Clone(k), slices.Clone(v), slices.Clone(q)
 			ringC.Append(l, rk, rv)
 			rCtx := make([]float32, qDim)
 			attendQuery(rq, rCtx, ringC.scr.scoresBuf(ringC.storedRows(l, kvDim)), ringC, l, pos, global, arch)
@@ -155,7 +156,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
 		// Ring: defer write, assemble [base,pos] window, attend, commit.
-		rk, rv := append([]float32(nil), k...), append([]float32(nil), v...)
+		rk, rv := slices.Clone(k), slices.Clone(v)
 		rows := pos - ring.WindowStart(pos, false) + 1
 		lk := make([]float32, rows*kvDim)
 		lv := make([]float32, rows*kvDim)

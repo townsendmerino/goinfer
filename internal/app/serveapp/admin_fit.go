@@ -38,14 +38,14 @@ func (s *server) handleAdminFit(w http.ResponseWriter, r *http.Request) {
 func (s *server) fitAnswer(req adminLoadReq) (map[string]any, error) {
 	c := s.adminLoadConfig(req)
 	spec := modelSpec{path: req.Path}
-	opts := spec.options(c)
+	opts := spec.options(&c)
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
 	if c.drafter != "" {
 		opts.Drafter = true
 	}
-	p, err := modelload.Plan(modelload.Request{Spec: spec.path, Opts: opts, DirectLoad: c.load.DirectLoad, ExplicitQuant: spec.explicitQuant(c)})
+	p, err := modelload.Plan(modelload.Request{Spec: spec.path, Opts: opts, DirectLoad: c.load.DirectLoad, ExplicitQuant: spec.explicitQuant(&c)})
 	if err != nil {
 		return nil, err
 	}

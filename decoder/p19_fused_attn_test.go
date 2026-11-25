@@ -251,9 +251,7 @@ func TestP19FusedAttention(t *testing.T) {
 			if r0 >= r1 {
 				continue
 			}
-			wg.Add(1)
-			go func(w, r0, r1 int) {
-				defer wg.Done()
+			wg.Go(func() {
 				ws := matWS[w]
 				n := r1 - r0
 				sc := matScr[w]
@@ -279,7 +277,7 @@ func TestP19FusedAttention(t *testing.T) {
 					}
 				}
 				ws.MatmulBT(sc, vt, chMatRP[r0*hd:r1*hd], n, nKeys, hd)
-			}(w, r0, r1)
+			})
 		}
 		wg.Wait()
 	}
@@ -320,9 +318,7 @@ func TestP19FusedAttention(t *testing.T) {
 				if r0 >= r1 {
 					continue
 				}
-				wg.Add(1)
-				go func(w, r0, r1 int) {
-					defer wg.Done()
+				wg.Go(func() {
 					ws := fWS[w]
 					nr := r1 - r0
 					sBlk, tmp, acc, mRun, lRun := fS[w], fTmp[w], fAcc[w], fM[w], fL[w]
@@ -378,7 +374,7 @@ func TestP19FusedAttention(t *testing.T) {
 							o[d] = a[d] * inv
 						}
 					}
-				}(w, r0, r1)
+				})
 			}
 			wg.Wait()
 		}
@@ -427,9 +423,7 @@ func TestP19FusedAttention(t *testing.T) {
 			if r0 >= r1 {
 				continue
 			}
-			wg.Add(1)
-			go func(w, r0, r1 int) {
-				defer wg.Done()
+			wg.Go(func() {
 				ws, n := matWS[w], r1-r0
 				sc := matScr[w]
 				ws.MatmulBT(qh[r0*hd:r1*hd], kh, sc, n, hd, nKeys) // full width, as production does
@@ -458,7 +452,7 @@ func TestP19FusedAttention(t *testing.T) {
 					}
 				}
 				ws.MatmulBT(sc, vt, chMatC[r0*hd:r1*hd], n, nKeys, hd)
-			}(w, r0, r1)
+			})
 		}
 		wg.Wait()
 	}
@@ -485,9 +479,7 @@ func TestP19FusedAttention(t *testing.T) {
 				if r0 >= r1 {
 					continue
 				}
-				wg.Add(1)
-				go func(w, r0, r1 int) {
-					defer wg.Done()
+				wg.Go(func() {
 					ws, nr := fWS[w], r1-r0
 					sBlk := make([]float32, nr*kb)
 					tmp := make([]float32, nr*hd)
@@ -555,7 +547,7 @@ func TestP19FusedAttention(t *testing.T) {
 							o[d] = a[d] * inv
 						}
 					}
-				}(w, r0, r1)
+				})
 			}
 			wg.Wait()
 		}

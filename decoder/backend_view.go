@@ -7,191 +7,95 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-// BackendModelView is the narrow, read-only subsystem interface a GPU resident
-// builder or placement planner uses to inspect a loaded Model's architecture,
-// global geometry, and per-layer resident view without coupling to the 200+
-// methods on *Model.
-//
-// Callers obtain it via m.BackendView(). Individual *Resident methods on *Model
-// delegate through this view for backwards compatibility.
-type BackendModelView interface {
-	Dims() ResidentDims
-	NumLayers() int
-	Spec() ResidentSpec
-	Weights() *Weights
-
-	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
-	MoE() (ResidentMoESpec, bool)
-	MLA() (ResidentMLASpec, bool)
-	Qwen35() (ResidentQwen35Spec, bool)
-	Nemotron() (ResidentNemotronSpec, bool)
-	Granite() (ResidentGraniteSpec, bool)
-
-	NormEps() float32
-	AttnScale() float32
-	AttnTempScale(pos int) float32
-	AttnTempParams() (beta, origMaxPos float64)
-	EmbedScale() float64
-	EmbedLen() int
-
-	SlidingWindow() int
-	HasQKNorm() bool
-	QKNormWhole() bool
-	PartialRotary() bool
-	RotaryDim() int
-	RopeInvFreq() []float32
-	PairwiseRoPE() bool
-	MRopeSection() []int
-	MRopeInterleaved() bool
-	MRopeAxis(half int) []int
-
-	RMSAddOne() bool
-	LayerNorm() bool
-	SandwichNorm() bool
-	PostOnlyNorm() bool
-	ParallelBlock() bool
-	NonGatedMLP() bool
-	GatedAct() int
-	OutBias() bool
-	LearnedPos() bool
-	PosEmbed() *linalg.WeightMat
-
-	FinalLogitSoftcap() float32
-	AttnLogitSoftcap() float32
-	LogitScale() (inv float32, ok bool)
-	GptOssAct() (alpha, limit float32, ok bool)
-	HasAttnSinks() bool
-
-	IsGemma4() bool
-	HasGemma4MoE() bool
-	Gemma4PLEDim() int
-	MoEExpertKind() string
-	ProjsInt4() bool
-	LoadAbort() <-chan struct{}
-
-	Layer(i int) ResidentLayerView
-}
-
-// ResidentLayerView exposes one decoder layer's resident operations, geometry,
-// RoPE schedule, and family-specific mixer/FFN weights to a backend builder.
-type ResidentLayerView interface {
-	Index() int
-	Ops() (mixer ResidentMixer, ffn bool)
-
-	HeadDim() int
-	KVHeads() int
-	RotaryDim() int
-	KVSrc() int
-	IsLocal() bool
-	RopeGlobal() bool
-	RopeInvFreq() []float32
-	RopeMscale() float64
-	VFromK() bool
-
-	Gemma4DenseScalar() float32
-	Gemma4MoEBundle() (Gemma4MoEResidentBundle, bool)
-
-	AttnSinks() []float32
-	GptOssExpertBias() []float32
-	GptOssExpertDownBias() []float32
-
-	MLAWeights() (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32)
-
-	GraniteMamba() bool
-	GraniteMambaWeights() (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32)
-	MambaProjInt8() (in, out *linalg.WeightMat)
-	NemotronBlockKind() uint8
-
-	Qwen35Linear() bool
-	Qwen35DeltaWeights() (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32)
-	Qwen35AttnWeights() (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32)
-}
-
-type backendModelView struct {
+// BackendModelView is a read-only view over a loaded Model's architecture,
+// global geometry, and per-layer resident metadata, obtained via m.BackendView().
+type BackendModelView struct {
 	m *Model
 }
 
-type residentLayerView struct {
+// ResidentLayerView is a read-only view of one decoder layer's resident
+// operations, geometry, RoPE schedule, and family-specific mixer/FFN weights.
+type ResidentLayerView struct {
 	m *Model
 	i int
 }
 
 // BackendView returns the read-only BackendModelView for m.
 func (m *Model) BackendView() BackendModelView {
-	return backendModelView{m: m}
+	return BackendModelView{m: m}
 }
 
-func (v backendModelView) Dims() ResidentDims {
+func (v BackendModelView) Dims() ResidentDims {
 	a := v.m.w.arch
 	return ResidentDims{Hidden: a.HiddenDim, Layers: a.NumLayers, Heads: a.NumHeads, KVHeads: a.NumKVHeads, HeadDim: a.HeadDim,
 		Inter: a.IntermediateDim, Vocab: a.VocabSize}
 }
 
-func (v backendModelView) NumLayers() int              { return v.m.w.arch.NumLayers }
-func (v backendModelView) Spec() ResidentSpec          { return v.m.ResidentSpec() }
-func (v backendModelView) Weights() *Weights           { return v.m.w }
-func (v backendModelView) NormEps() float32            { return v.m.NormEps() }
-func (v backendModelView) AttnScale() float32          { return v.m.AttnScale() }
-func (v backendModelView) EmbedScale() float64         { return v.m.w.arch.EmbedScale }
-func (v backendModelView) SlidingWindow() int          { return v.m.w.arch.SlidingWindow }
-func (v backendModelView) HasQKNorm() bool             { return v.m.w.arch.QKNorm }
-func (v backendModelView) QKNormWhole() bool           { return v.m.w.arch.QKNormWhole }
-func (v backendModelView) PairwiseRoPE() bool          { return v.m.w.arch.pairwiseRoPE() }
-func (v backendModelView) MRopeSection() []int         { return v.m.w.arch.MRopeSection }
-func (v backendModelView) MRopeInterleaved() bool      { return v.m.w.arch.MRopeInterleaved }
-func (v backendModelView) RMSAddOne() bool             { return v.m.w.arch.RMSAddOne }
-func (v backendModelView) LayerNorm() bool             { return v.m.w.arch.Norm == NormLayer }
-func (v backendModelView) SandwichNorm() bool          { return v.m.w.arch.NormPlacement == NormSandwich4 }
-func (v backendModelView) PostOnlyNorm() bool          { return v.m.w.arch.NormPlacement == NormPostOnly }
-func (v backendModelView) ParallelBlock() bool         { return v.m.w.arch.NormPlacement == NormParallel }
-func (v backendModelView) NonGatedMLP() bool           { return v.m.w.arch.NonGatedMLP }
-func (v backendModelView) GatedAct() int               { return int(v.m.w.arch.Act) }
-func (v backendModelView) OutBias() bool               { return v.m.w.arch.OutBias }
-func (v backendModelView) LearnedPos() bool            { return v.m.w.arch.LearnedPosEmbed }
-func (v backendModelView) PosEmbed() *linalg.WeightMat { return &v.m.w.PosEmbed }
-func (v backendModelView) FinalLogitSoftcap() float32  { return float32(v.m.w.arch.FinalLogitSoftcap) }
-func (v backendModelView) AttnLogitSoftcap() float32   { return float32(v.m.w.arch.AttnLogitSoftcap) }
-func (v backendModelView) HasAttnSinks() bool          { return v.m.w.arch.hasAttnSinks() }
-func (v backendModelView) IsGemma4() bool              { return v.m.w.arch.gemma4 != nil }
-func (v backendModelView) ProjsInt4() bool             { return v.m.residentProjsInt4() }
-func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.opts.LoadAbort }
+func (v BackendModelView) NumLayers() int              { return v.m.w.arch.NumLayers }
+func (v BackendModelView) Spec() ResidentSpec          { return v.m.ResidentSpec() }
+func (v BackendModelView) Weights() *Weights           { return v.m.w }
+func (v BackendModelView) NormEps() float32            { return v.m.NormEps() }
+func (v BackendModelView) AttnScale() float32          { return v.m.AttnScale() }
+func (v BackendModelView) EmbedScale() float64         { return v.m.w.arch.EmbedScale }
+func (v BackendModelView) SlidingWindow() int          { return v.m.w.arch.SlidingWindow }
+func (v BackendModelView) HasQKNorm() bool             { return v.m.w.arch.QKNorm }
+func (v BackendModelView) QKNormWhole() bool           { return v.m.w.arch.QKNormWhole }
+func (v BackendModelView) PairwiseRoPE() bool          { return v.m.w.arch.pairwiseRoPE() }
+func (v BackendModelView) MRopeSection() []int         { return v.m.w.arch.MRopeSection }
+func (v BackendModelView) MRopeInterleaved() bool      { return v.m.w.arch.MRopeInterleaved }
+func (v BackendModelView) RMSAddOne() bool             { return v.m.w.arch.RMSAddOne }
+func (v BackendModelView) LayerNorm() bool             { return v.m.w.arch.Norm == NormLayer }
+func (v BackendModelView) SandwichNorm() bool          { return v.m.w.arch.NormPlacement == NormSandwich4 }
+func (v BackendModelView) PostOnlyNorm() bool          { return v.m.w.arch.NormPlacement == NormPostOnly }
+func (v BackendModelView) ParallelBlock() bool         { return v.m.w.arch.NormPlacement == NormParallel }
+func (v BackendModelView) NonGatedMLP() bool           { return v.m.w.arch.NonGatedMLP }
+func (v BackendModelView) GatedAct() int               { return int(v.m.w.arch.Act) }
+func (v BackendModelView) OutBias() bool               { return v.m.w.arch.OutBias }
+func (v BackendModelView) LearnedPos() bool            { return v.m.w.arch.LearnedPosEmbed }
+func (v BackendModelView) PosEmbed() *linalg.WeightMat { return &v.m.w.PosEmbed }
+func (v BackendModelView) FinalLogitSoftcap() float32  { return float32(v.m.w.arch.FinalLogitSoftcap) }
+func (v BackendModelView) AttnLogitSoftcap() float32   { return float32(v.m.w.arch.AttnLogitSoftcap) }
+func (v BackendModelView) HasAttnSinks() bool          { return v.m.w.arch.hasAttnSinks() }
+func (v BackendModelView) IsGemma4() bool              { return v.m.w.arch.gemma4 != nil }
+func (v BackendModelView) ProjsInt4() bool             { return v.m.residentProjsInt4() }
+func (v BackendModelView) LoadAbort() <-chan struct{}  { return v.m.opts.LoadAbort }
 
-func (v backendModelView) MoE() (ResidentMoESpec, bool) {
+func (v BackendModelView) MoE() (ResidentMoESpec, bool) {
 	if mo := v.m.ResidentSpec().MoE; mo != nil {
 		return *mo, true
 	}
 	return ResidentMoESpec{}, false
 }
 
-func (v backendModelView) MLA() (ResidentMLASpec, bool) {
+func (v BackendModelView) MLA() (ResidentMLASpec, bool) {
 	if p := v.m.ResidentSpec().MLA; p != nil {
 		return *p, true
 	}
 	return ResidentMLASpec{}, false
 }
 
-func (v backendModelView) Qwen35() (ResidentQwen35Spec, bool) {
+func (v BackendModelView) Qwen35() (ResidentQwen35Spec, bool) {
 	if g := v.m.ResidentSpec().Qwen35; g != nil {
 		return *g, true
 	}
 	return ResidentQwen35Spec{}, false
 }
 
-func (v backendModelView) Nemotron() (ResidentNemotronSpec, bool) {
+func (v BackendModelView) Nemotron() (ResidentNemotronSpec, bool) {
 	if np := v.m.ResidentSpec().Nemotron; np != nil {
 		return *np, true
 	}
 	return ResidentNemotronSpec{}, false
 }
 
-func (v backendModelView) Granite() (ResidentGraniteSpec, bool) {
+func (v BackendModelView) Granite() (ResidentGraniteSpec, bool) {
 	if g := v.m.ResidentSpec().Granite; g != nil {
 		return *g, true
 	}
 	return ResidentGraniteSpec{}, false
 }
 
-func (v backendModelView) AttnTempScale(pos int) float32 {
+func (v BackendModelView) AttnTempScale(pos int) float32 {
 	a := v.m.w.arch
 	if a.AttnTempBeta == 0 {
 		return 1
@@ -199,11 +103,11 @@ func (v backendModelView) AttnTempScale(pos int) float32 {
 	return float32(1 + a.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/a.AttnTempOrigMaxPos)))
 }
 
-func (v backendModelView) AttnTempParams() (beta, origMaxPos float64) {
+func (v BackendModelView) AttnTempParams() (beta, origMaxPos float64) {
 	return v.m.w.arch.AttnTempBeta, v.m.w.arch.AttnTempOrigMaxPos
 }
 
-func (v backendModelView) EmbedLen() int {
+func (v BackendModelView) EmbedLen() int {
 	n := v.m.w.arch.HiddenDim
 	if g4 := v.m.w.arch.gemma4; g4 != nil {
 		n += v.m.w.arch.NumLayers * g4.HiddenSizePerLayerInput
@@ -211,18 +115,18 @@ func (v backendModelView) EmbedLen() int {
 	return n
 }
 
-func (v backendModelView) PartialRotary() bool {
+func (v BackendModelView) PartialRotary() bool {
 	return v.m.w.arch.RotaryDim != 0 && v.m.w.arch.RotaryDim < v.m.w.arch.HeadDim
 }
 
-func (v backendModelView) RotaryDim() int {
+func (v BackendModelView) RotaryDim() int {
 	if v.m.w.arch.RotaryDim != 0 && v.m.w.arch.RotaryDim < v.m.w.arch.HeadDim {
 		return v.m.w.arch.RotaryDim
 	}
 	return v.m.w.arch.HeadDim
 }
 
-func (v backendModelView) RopeInvFreq() []float32 {
+func (v BackendModelView) RopeInvFreq() []float32 {
 	inv := v.m.w.arch.ropeInvFreq(0)
 	out := make([]float32, len(inv))
 	for i, val := range inv {
@@ -231,7 +135,7 @@ func (v backendModelView) RopeInvFreq() []float32 {
 	return out
 }
 
-func (v backendModelView) MRopeAxis(half int) []int {
+func (v BackendModelView) MRopeAxis(half int) []int {
 	sec := v.m.w.arch.MRopeSection
 	if len(sec) != 3 || half <= 0 {
 		return nil
@@ -247,14 +151,14 @@ func (v backendModelView) MRopeAxis(half int) []int {
 	return axis
 }
 
-func (v backendModelView) LogitScale() (inv float32, ok bool) {
+func (v BackendModelView) LogitScale() (inv float32, ok bool) {
 	if v.m.w.arch.LogitScale == 0 || v.m.w.arch.LogitScale == 1 {
 		return 1, false
 	}
 	return float32(1 / v.m.w.arch.LogitScale), true
 }
 
-func (v backendModelView) GptOssAct() (alpha, limit float32, ok bool) {
+func (v BackendModelView) GptOssAct() (alpha, limit float32, ok bool) {
 	gp := v.m.w.arch.gptoss
 	if gp == nil {
 		return 0, 0, false
@@ -262,7 +166,7 @@ func (v backendModelView) GptOssAct() (alpha, limit float32, ok bool) {
 	return float32(gp.SwigluAlpha), float32(gp.SwigluLimit), true
 }
 
-func (v backendModelView) HasGemma4MoE() bool {
+func (v BackendModelView) HasGemma4MoE() bool {
 	if v.m.w.arch.gemma4 == nil {
 		return false
 	}
@@ -274,14 +178,14 @@ func (v backendModelView) HasGemma4MoE() bool {
 	return false
 }
 
-func (v backendModelView) Gemma4PLEDim() int {
+func (v BackendModelView) Gemma4PLEDim() int {
 	if g4 := v.m.w.arch.gemma4; g4 != nil {
 		return g4.HiddenSizePerLayerInput
 	}
 	return 0
 }
 
-func (v backendModelView) MoEExpertKind() string {
+func (v BackendModelView) MoEExpertKind() string {
 	for i := range v.m.w.Layers {
 		lw := &v.m.w.Layers[i]
 		if gm := lw.gemma4moe; gm != nil && len(gm.expertsGateUp) > 0 {
@@ -299,13 +203,13 @@ func (v backendModelView) MoEExpertKind() string {
 	return ""
 }
 
-func (v backendModelView) Layer(i int) ResidentLayerView {
-	return residentLayerView{m: v.m, i: i}
+func (v BackendModelView) Layer(i int) ResidentLayerView {
+	return ResidentLayerView{m: v.m, i: i}
 }
 
-func (lv residentLayerView) Index() int { return lv.i }
+func (lv ResidentLayerView) Index() int { return lv.i }
 
-func (lv residentLayerView) Ops() (mixer ResidentMixer, ffn bool) {
+func (lv ResidentLayerView) Ops() (mixer ResidentMixer, ffn bool) {
 	a := lv.m.w.arch
 	i := lv.i
 	switch {
@@ -328,24 +232,24 @@ func (lv residentLayerView) Ops() (mixer ResidentMixer, ffn bool) {
 	return MixerAttention, true
 }
 
-func (lv residentLayerView) HeadDim() int        { return lv.m.w.arch.headDimAt(lv.i) }
-func (lv residentLayerView) KVHeads() int        { return lv.m.w.arch.kvHeadsAt(lv.i) }
-func (lv residentLayerView) KVSrc() int          { return lv.m.w.arch.gemma4KVSrcAt(lv.i) }
-func (lv residentLayerView) RopeGlobal() bool    { return lv.m.w.arch.isGlobalLayer(lv.i) }
-func (lv residentLayerView) RopeMscale() float64 { return lv.m.w.arch.ropeMscale(lv.i) }
+func (lv ResidentLayerView) HeadDim() int        { return lv.m.w.arch.headDimAt(lv.i) }
+func (lv ResidentLayerView) KVHeads() int        { return lv.m.w.arch.kvHeadsAt(lv.i) }
+func (lv ResidentLayerView) KVSrc() int          { return lv.m.w.arch.gemma4KVSrcAt(lv.i) }
+func (lv ResidentLayerView) RopeGlobal() bool    { return lv.m.w.arch.isGlobalLayer(lv.i) }
+func (lv ResidentLayerView) RopeMscale() float64 { return lv.m.w.arch.ropeMscale(lv.i) }
 
-func (lv residentLayerView) RotaryDim() int {
+func (lv ResidentLayerView) RotaryDim() int {
 	if lv.m.w.arch.gemma4 != nil {
 		return lv.m.w.arch.headDimAt(lv.i)
 	}
 	return lv.m.BackendView().RotaryDim()
 }
 
-func (lv residentLayerView) IsLocal() bool {
+func (lv ResidentLayerView) IsLocal() bool {
 	return lv.m.w.arch.SlidingWindow > 0 && !lv.m.w.arch.isGlobalLayer(lv.i)
 }
 
-func (lv residentLayerView) RopeInvFreq() []float32 {
+func (lv ResidentLayerView) RopeInvFreq() []float32 {
 	a := lv.m.w.arch
 	i := lv.i
 	if a.gemma4 != nil {
@@ -363,7 +267,7 @@ func (lv residentLayerView) RopeInvFreq() []float32 {
 	return lv.m.RopeInvFreqLayer(i)
 }
 
-func (lv residentLayerView) VFromK() bool {
+func (lv ResidentLayerView) VFromK() bool {
 	i := lv.i
 	if lv.m.w.arch.gemma4 == nil {
 		return false
@@ -374,7 +278,7 @@ func (lv residentLayerView) VFromK() bool {
 	return i >= 0 && i < len(lv.m.w.Layers) && lv.m.w.Layers[i].VFromK
 }
 
-func (lv residentLayerView) Gemma4DenseScalar() float32 {
+func (lv ResidentLayerView) Gemma4DenseScalar() float32 {
 	i := lv.i
 	if lv.m.w.arch.gemma4 == nil || i < 0 || i >= len(lv.m.w.Layers) {
 		return 0
@@ -382,7 +286,7 @@ func (lv residentLayerView) Gemma4DenseScalar() float32 {
 	return lv.m.w.Layers[i].LayerScalar
 }
 
-func (lv residentLayerView) Gemma4MoEBundle() (b Gemma4MoEResidentBundle, ok bool) {
+func (lv ResidentLayerView) Gemma4MoEBundle() (b Gemma4MoEResidentBundle, ok bool) {
 	m := lv.m
 	l := lv.i
 	if m.w.arch.gemma4 == nil || l < 0 || l >= len(m.w.Layers) {
@@ -424,7 +328,7 @@ func (lv residentLayerView) Gemma4MoEBundle() (b Gemma4MoEResidentBundle, ok boo
 	}, true
 }
 
-func (lv residentLayerView) AttnSinks() []float32 {
+func (lv ResidentLayerView) AttnSinks() []float32 {
 	l := lv.i
 	if !lv.m.w.arch.hasAttnSinks() || l < 0 || l >= len(lv.m.w.Layers) {
 		return nil
@@ -432,7 +336,7 @@ func (lv residentLayerView) AttnSinks() []float32 {
 	return lv.m.w.Layers[l].AttnSinks
 }
 
-func (lv residentLayerView) GptOssExpertBias() []float32 {
+func (lv ResidentLayerView) GptOssExpertBias() []float32 {
 	m := lv.m
 	l := lv.i
 	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
@@ -451,7 +355,7 @@ func (lv residentLayerView) GptOssExpertBias() []float32 {
 	return out
 }
 
-func (lv residentLayerView) GptOssExpertDownBias() []float32 {
+func (lv ResidentLayerView) GptOssExpertDownBias() []float32 {
 	m := lv.m
 	l := lv.i
 	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
@@ -469,7 +373,7 @@ func (lv residentLayerView) GptOssExpertDownBias() []float32 {
 	return out
 }
 
-func (lv residentLayerView) MLAWeights() (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
+func (lv ResidentLayerView) MLAWeights() (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
 	w := lv.m.w.Layers[lv.i].mla
 	if w == nil {
 		return
@@ -477,9 +381,9 @@ func (lv residentLayerView) MLAWeights() (qA, qANorm, qB, qProj, kvA, kvANorm, k
 	return w.qAProj, w.qALayernorm, w.qBProj, w.qProj, w.kvAProj, w.kvALayernorm, w.kvBProj, w.oProj
 }
 
-func (lv residentLayerView) GraniteMamba() bool { return lv.m.w.arch.isMambaLayer(lv.i) }
+func (lv ResidentLayerView) GraniteMamba() bool { return lv.m.w.arch.isMambaLayer(lv.i) }
 
-func (lv residentLayerView) GraniteMambaWeights() (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
+func (lv ResidentLayerView) GraniteMambaWeights() (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
 	w := lv.m.w.Layers[lv.i].mamba
 	if w == nil {
 		return
@@ -487,7 +391,7 @@ func (lv residentLayerView) GraniteMambaWeights() (inProj, convW, convB, aLog, d
 	return w.inProj, w.convW, w.convB, w.aLog, w.d, w.dtBias, w.normW, w.outProj
 }
 
-func (lv residentLayerView) MambaProjInt8() (in, out *linalg.WeightMat) {
+func (lv ResidentLayerView) MambaProjInt8() (in, out *linalg.WeightMat) {
 	w := lv.m.w.Layers[lv.i].mamba
 	if w == nil || w.inQ.Rows() == 0 {
 		return nil, nil
@@ -495,15 +399,15 @@ func (lv residentLayerView) MambaProjInt8() (in, out *linalg.WeightMat) {
 	return &w.inQ, &w.outQ
 }
 
-func (lv residentLayerView) NemotronBlockKind() uint8 {
+func (lv ResidentLayerView) NemotronBlockKind() uint8 {
 	return lv.m.w.arch.nemotron.blockKind[lv.i]
 }
 
-func (lv residentLayerView) Qwen35Linear() bool {
+func (lv ResidentLayerView) Qwen35Linear() bool {
 	return lv.m.w.arch.isLinearLayer(lv.i)
 }
 
-func (lv residentLayerView) Qwen35DeltaWeights() (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
+func (lv ResidentLayerView) Qwen35DeltaWeights() (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
 	w := lv.m.w.Layers[lv.i].delta
 	if w == nil {
 		return
@@ -511,7 +415,7 @@ func (lv residentLayerView) Qwen35DeltaWeights() (inQKV, inZ, outProj *linalg.We
 	return &w.inProjQKV, &w.inProjZ, &w.outProj, w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW
 }
 
-func (lv residentLayerView) Qwen35AttnWeights() (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32) {
+func (lv ResidentLayerView) Qwen35AttnWeights() (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32) {
 	a := lv.m.w.Layers[lv.i].qattn
 	if a == nil {
 		return

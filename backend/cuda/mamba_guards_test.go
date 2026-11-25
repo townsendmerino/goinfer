@@ -76,8 +76,7 @@ func TestNemotronResidentCUDA_guards(t *testing.T) {
 		var res result
 		_, res.batchHi = r.BatchStepRange()
 		res.copyErr = r.CopyKV(0, 1, 0, decoder.KVBlockRows)
-		var d *decoder.KVCopyDecline
-		if errors.As(res.copyErr, &d) {
+		if d, ok := errors.AsType[*decoder.KVCopyDecline](res.copyErr); ok {
 			res.copyDecl = d.Reason
 		}
 		if d := r.snapshotDecline(decoder.KVBlockRows); d != nil {

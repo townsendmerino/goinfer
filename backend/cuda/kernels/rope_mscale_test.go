@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -66,7 +67,7 @@ func TestRopeMscale(t *testing.T) {
 	// the rotated output. Those two differ, and the second is the wrong one — the kernel
 	// comments say so precisely because it is an easy place to be plausibly wrong.
 	ref := func(x0 []float32, scale float32) []float32 {
-		x := append([]float32(nil), x0...)
+		x := slices.Clone(x0)
 		for head := range nH {
 			for d := range half {
 				b := head * hd

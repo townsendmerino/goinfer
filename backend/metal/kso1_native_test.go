@@ -682,7 +682,7 @@ func TestKSO1_towardTheFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		cc := mc.NewCache(len(ids) + g3NewTokens)
-		seq := append([]int(nil), ids...)
+		seq := slices.Clone(ids)
 		var po, pn float64
 		for i := 0; i < len(ids)+g3NewTokens-1; i++ {
 			cl, err := mc.ForwardForTest(seq[i], cc)

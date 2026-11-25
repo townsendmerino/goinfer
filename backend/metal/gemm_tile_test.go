@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -84,7 +85,7 @@ func TestGemmTile_bitIdentical(t *testing.T) {
 					if err := e.Err(); err != nil {
 						t.Fatalf("%s rows %d mode %d: %v", sh.what, rows, mode, err)
 					}
-					return append([]uint16(nil), c.U16s()[:rows*N]...)
+					return slices.Clone(c.U16s()[:rows*N])
 				}
 				want := run(ref, 64, 64)
 				for _, tl := range tiles {

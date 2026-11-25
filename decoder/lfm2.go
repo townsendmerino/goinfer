@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"slices"
+
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -83,7 +85,7 @@ func (s *shortConvState) push(bx []float32, K int) {
 	if K <= 1 {
 		return // kernel of 1 has no history
 	}
-	s.convWin = append(s.convWin, append([]float32(nil), bx...))
+	s.convWin = append(s.convWin, slices.Clone(bx))
 	if len(s.convWin) > K-1 {
 		s.convWin = s.convWin[len(s.convWin)-(K-1):]
 	}

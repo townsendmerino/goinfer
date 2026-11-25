@@ -3,9 +3,10 @@
 package cuda
 
 import (
+	"cmp"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -115,7 +116,7 @@ func TestGemmaOutlierTrace(t *testing.T) {
 				t.Fatalf("ForwardCapture pos %d: %v", i, err)
 			}
 			if i == probe {
-				got = append([]float32(nil), hid[0]...)
+				got = slices.Clone(hid[0])
 			}
 		}
 		return got
@@ -153,7 +154,7 @@ func TestGemmaOutlierTrace(t *testing.T) {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.Slice(idx, func(a, b int) bool { return math.Abs(float64(cpu4[idx[a]])) > math.Abs(float64(cpu4[idx[b]])) })
+	slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(math.Abs(float64(cpu4[b])), math.Abs(float64(cpu4[a]))) })
 	const topK = 16
 	t.Logf("top-%d massive-activation channels (by |CPU-int4|):", topK)
 	t.Logf("  %-6s %14s %14s %14s   %10s %10s", "chan", "CPU-int4", "CPU-int8", "CUDA-int4", "d(cuda)%", "d(int8)%")
@@ -220,8 +221,8 @@ func TestGemmaOutlierTrace(t *testing.T) {
 	// Also surface the channels where CUDA-int4 diverges MOST from CPU-int4 in absolute terms —
 	// the outlier need not be the same set as the largest magnitudes, and if it is, that IS the
 	// finding.
-	sort.Slice(idx, func(a, b int) bool {
-		return math.Abs(float64(cuda4[idx[a]]-cpu4[idx[a]])) > math.Abs(float64(cuda4[idx[b]]-cpu4[idx[b]]))
+	slices.SortFunc(idx, func(a, b int) int {
+		return cmp.Compare(math.Abs(float64(cuda4[b]-cpu4[b])), math.Abs(float64(cuda4[a]-cpu4[a])))
 	})
 	t.Logf("top-%d channels by |CUDA-int4 - CPU-int4| (where the resident path drifts most):", topK)
 	t.Logf("  %-6s %14s %14s %14s   %12s", "chan", "CPU-int4", "CUDA-int4", "CPU-int8", "abs.drift")

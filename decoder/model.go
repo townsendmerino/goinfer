@@ -1258,7 +1258,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 			// it after this exclusive section, when another generation's token may be rewriting it: copy it while the resident is still
 			// ours (see generateInto's mc3Logits).
 			if err == nil {
-				logits = append([]float32(nil), logits...)
+				logits = slices.Clone(logits)
 			}
 		}
 	})

@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -87,7 +88,7 @@ func TestMLALatentStore_cuda(t *testing.T) {
 			for i := range rank {
 				ref[i] = kvDown[i] * inv * normW[i]
 			}
-			key := append([]float32(nil), kvDown[rank:]...)
+			key := slices.Clone(kvDown[rank:])
 			half := qkRope / 2
 			if interleave {
 				tmp := make([]float32, qkRope)

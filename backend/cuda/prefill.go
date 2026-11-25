@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1271,7 +1272,7 @@ func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepR
 		if e := gpu.ReadToHost(row, r.logitsPinned); e != nil {
 			return nil, nil, e
 		}
-		outs[m] = append([]float32(nil), r.logitsHost...)
+		outs[m] = slices.Clone(r.logitsHost)
 	}
 	return outs, ids, r.launchErr
 }

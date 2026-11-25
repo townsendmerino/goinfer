@@ -1,7 +1,7 @@
 package chat
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"testing"
 )
@@ -134,7 +134,7 @@ func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 		}
 		return true
 	}
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	for _, f := range fixtures {
 		whole := splitHarmony(f)
 		for i := 0; i <= len(f); i++ {
@@ -154,7 +154,7 @@ func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 		for range 300 {
 			var parts []string
 			for rest := f; rest != ""; {
-				k := 1 + rng.Intn(min(len(rest), 12))
+				k := 1 + rng.IntN(min(len(rest), 12))
 				parts, rest = append(parts, rest[:k]), rest[k:]
 			}
 			if got := splitHarmony(parts...); !same(got, whole) {

@@ -90,7 +90,7 @@ func TestSpecOptions_golden(t *testing.T) {
 		if c.serve != nil {
 			c.serve(&cfg)
 		}
-		got[c.name] = specOptionsJSON(t, m[0].options(cfg), fs.Lookup("moe-pager").DefValue)
+		got[c.name] = specOptionsJSON(t, m[0].options(&cfg), fs.Lookup("moe-pager").DefValue)
 	}
 	const path = "testdata/options.golden.json"
 	if *updateOptionsGolden {
@@ -142,7 +142,7 @@ func TestStepFlags_servePath(t *testing.T) {
 			}
 			sf.cfg.load = *sf.lf
 			markGivenFlags(fs, &sf.cfg)
-			v := reflect.ValueOf(modelSpec{path: "/p"}.options(sf.cfg))
+			v := reflect.ValueOf((&modelSpec{path: "/p"}).options(&sf.cfg))
 			r, g := v.FieldByName("ResidentRecurrentStep").Bool(), v.FieldByName("ResidentGemma4Step").Bool()
 			if r != c.wantRecurrent || g != c.want {
 				t.Errorf("recurrent %v, gemma4 %v; want %v, %v", r, g, c.wantRecurrent, c.want)

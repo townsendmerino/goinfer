@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -70,9 +71,9 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			closeAudioEncoder = func(field string, enc interface{ Close() error }) error { closed[field]++; return prev(field, enc) }
 			t.Cleanup(func() { closeAudioEncoder = prev })
 
-			m := &fakeModel{}
-			lm := &loadedModel{name: "t", model: m, audio: c.tower()}
-			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
+			m := &fakeCloser{}
+			lm := &loadedModel{name: "t", closer: m, audio: c.tower()}
+			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[io.Closer]*modelLiveness{m: {refs: 1}},
 				draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 			if c.clip != "" {
 				if err := firstClip[c.clip](lm); err != nil {
@@ -129,11 +130,11 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{models: map[string]*loadedModel{}, liveness: map[modelHandle]*modelLiveness{}, draining: map[string]struct{}{},
+	s := &server{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{}, draining: map[string]struct{}{},
 		cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 	entry := func(name string) *loadedModel {
-		m := &fakeModel{}
-		lm := &loadedModel{name: name, model: m, audio: &voxtralAudio{dir: vox, backend: backend}}
+		m := &fakeCloser{}
+		lm := &loadedModel{name: name, closer: m, audio: &voxtralAudio{dir: vox, backend: backend}}
 		s.models[name], s.liveness[m] = lm, &modelLiveness{refs: 1}
 		enc, err := lm.audio.(*voxtralAudio).encoder(name)
 		if err != nil {

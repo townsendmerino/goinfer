@@ -2,6 +2,7 @@ package quant
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unsafe"
 
@@ -259,7 +260,7 @@ func MLXExpertSlice3D(st *embed.SafetensorsFile, projPrefix string, nExpert, out
 				return nil, err
 			}
 			if wT.DType == "F32" {
-				return append([]float32(nil), f32...), nil
+				return slices.Clone(f32), nil
 			}
 			return f32, nil
 		}, nil

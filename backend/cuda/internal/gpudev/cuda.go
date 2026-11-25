@@ -48,6 +48,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -1118,7 +1119,7 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 		ga[i] = a.a
 	}
 	if TraceForTest != nil {
-		TraceForTest(TraceEvent{Op: TraceLaunch, Pipe: p.Ptr(), Cfg: cfg, Args: append([]KernelArg(nil), args...)})
+		TraceForTest(TraceEvent{Op: TraceLaunch, Pipe: p.Ptr(), Cfg: cfg, Args: slices.Clone(args)})
 	}
 	if q.d != nil {
 		q.d.launches.Add(1)

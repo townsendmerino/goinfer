@@ -1,6 +1,9 @@
 package serveapp
 
-import "strings"
+import (
+	"maps"
+	"strings"
+)
 
 // respStream writes a /v1/responses event stream with the item lifecycle OpenAI's clients read: every output item is
 // announced (response.output_item.added), its parts and deltas follow, and it is closed (…done) before the next one
@@ -135,9 +138,7 @@ func (r *respStream) functionCall(item map[string]any) {
 	r.idx++
 	args, _ := item["arguments"].(string)
 	open := make(map[string]any, len(item))
-	for k, v := range item {
-		open[k] = v
-	}
+	maps.Copy(open, item)
 	open["arguments"], open["status"] = "", "in_progress"
 	r.emit("response.output_item.added", map[string]any{"output_index": idx, "item": open})
 	r.emit("response.function_call_arguments.delta", map[string]any{"item_id": item["id"], "output_index": idx, "delta": args})

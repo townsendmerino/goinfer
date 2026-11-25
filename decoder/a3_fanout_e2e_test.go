@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 )
@@ -100,7 +99,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 		"qwen2.5-coder-0.5b q4_k_m", pairs)
 	fmt.Fprintf(os.Stderr, "  %-8s %12s %12s %8s   %s\n", "K", "pre-A3", "A3", "median", "pairs")
 	for _, r := range rows {
-		sort.Float64s(r.ratios)
+		slices.Sort(r.ratios)
 		fmt.Fprintf(os.Stderr, "  %-8d %11.2fs %11.2fs %7.2fx   %v\n",
 			r.K, r.medOf.Seconds(), r.medOn.Seconds(), float64(r.medOf)/float64(r.medOn), fmtRatios(r.ratios))
 	}
@@ -114,7 +113,7 @@ func medianDur(d []time.Duration) time.Duration {
 	if len(d) == 0 {
 		return 0
 	}
-	c := append([]time.Duration(nil), d...)
+	c := slices.Clone(d)
 	slices.Sort(c)
 	return c[len(c)/2]
 }

@@ -39,8 +39,7 @@ func DeviceAllocFailed(v any) bool {
 		return false
 	}
 	if err, ok := v.(error); ok {
-		var f AllocFailure
-		if errors.As(err, &f) {
+		if _, ok := errors.AsType[AllocFailure](err); ok {
 			return true
 		}
 		return strings.Contains(err.Error(), deviceAllocFailedText)

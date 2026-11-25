@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"maps"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -43,7 +43,7 @@ func RegisteredBackends() []string {
 		}
 	}
 	backendMu.RUnlock()
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 

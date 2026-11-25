@@ -7,6 +7,7 @@ package memgate
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -123,9 +124,7 @@ func Check(r Reading, a Allowance) []Finding {
 		add(Invariant, "", 0, nil, "the build went resident, and the plan declines it: %s", r.Plan.Reason)
 	}
 	planned := Planned(r.Plan, r.KVSlots)
-	for line, b := range r.Named {
-		planned[line] = b
-	}
+	maps.Copy(planned, r.Named)
 	var reserved int
 	for _, s := range r.Open {
 		reserved = max(reserved, s.Usage.Reserved)
@@ -364,8 +363,8 @@ func (g *Gate) match(f Finding) []int {
 	for _, i := range fit {
 		used = append(used, i)
 		if sum += bytes[i]; f.Excess <= sum {
-			for k := len(used) - 1; k >= 0; k-- {
-				if b := bytes[used[k]]; sum-b >= f.Excess {
+			for k, u := range slices.Backward(used) {
+				if b := bytes[u]; sum-b >= f.Excess {
 					sum -= b
 					used = slices.Delete(used, k, k+1)
 				}
@@ -387,11 +386,11 @@ func globMatch(pattern, s string) bool {
 	}
 	s = s[len(parts[0]):]
 	for _, p := range parts[1 : len(parts)-1] {
-		i := strings.Index(s, p)
-		if i < 0 {
+		var ok bool
+		_, s, ok = strings.Cut(s, p)
+		if !ok {
 			return false
 		}
-		s = s[i+len(p):]
 	}
 	return strings.HasSuffix(s, parts[len(parts)-1])
 }

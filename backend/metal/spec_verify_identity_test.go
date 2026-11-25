@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -56,7 +57,7 @@ func TestSpecVerify_forwardNMatchesForward(t *testing.T) {
 		for l := range r.layers {
 			kvDim := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2) + from*kvDim
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*kvDim]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*kvDim]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*kvDim]), slices.Clone(r.vc[l].U16s()[o:o+n*kvDim]))
 		}
 		return out
 	}
@@ -101,7 +102,7 @@ func TestSpecVerify_forwardNMatchesForward(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		seqLogits = append(seqLogits, append([]float32(nil), lg...))
+		seqLogits = append(seqLogits, slices.Clone(lg))
 	}
 	seqKV := kvRows(0, P, N)
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -291,7 +292,7 @@ func TestAttnFused_attendsKeysBeforeStartPos(t *testing.T) {
 		vbase[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
 	}
 	// The perturbed copy differs ONLY in the prefix [0, startPos).
-	pert := append([]float32(nil), vbase...)
+	pert := slices.Clone(vbase)
 	for i := 0; i < startPos*kvDim; i++ {
 		pert[i] += 1.5
 	}
@@ -500,7 +501,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 							tileMax := math.Inf(-1)
 							sc := make([]float64, nkTile)
 							ok := make([]bool, nkTile)
-							for j := 0; j < nkTile; j++ {
+							for j := range nkTile {
 								key := s0 + j
 								if key < win || key >= nk {
 									continue
@@ -520,7 +521,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 							}
 							live := !math.IsInf(mNew, -1)
 							var sum float64
-							for j := 0; j < nkTile; j++ {
+							for j := range nkTile {
 								if ok[j] && live {
 									sc[j] = math.Exp(sc[j] - mNew)
 									sum += sc[j]
@@ -531,7 +532,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 							for d := 0; d < c.hd; d++ {
 								acc[d] *= alpha
 							}
-							for j := 0; j < nkTile; j++ {
+							for j := range nkTile {
 								if sc[j] == 0 {
 									continue
 								}

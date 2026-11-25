@@ -3,9 +3,10 @@ package embeddinggemma2
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,12 +77,7 @@ func (e *Encoder) HiddenDim() int { return e.m.Dim() }
 
 // PromptNames lists the checkpoint's named prompts, sorted.
 func (e *Encoder) PromptNames() []string {
-	names := make([]string, 0, len(e.prompts))
-	for n := range e.prompts {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(e.prompts))
 }
 
 // PromptText returns the text a named prompt prepends. The empty name is no prompt.

@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -114,7 +115,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 		dMixed, dConv, dBt, dAt := d.NewBufferLen(convDim), d.NewBufferLen(convDim), d.NewBufferLen(nv), d.NewBufferLen(nv)
 		dHeadP, dQn, dKn := d.NewBufferLen(nv*2), d.NewBufferLen(keyDim), d.NewBufferLen(keyDim)
 		dCore, dZ, dOut := d.NewBufferLen(valueDim), d.NewBufferLen(valueDim), d.NewBufferLen(valueDim)
-		dWin, dState := NewBufferFloats(d, append([]float32(nil), win0...)), NewBufferFloats(d, append([]float32(nil), state0...))
+		dWin, dState := NewBufferFloats(d, slices.Clone(win0)), NewBufferFloats(d, slices.Clone(state0))
 		var wConv, wHeadP, wQn, wKn, wCore, wOut []float32
 		for r := range M {
 			copy(dMixed.Floats(), mixed[r*convDim:(r+1)*convDim])
@@ -141,7 +142,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 		sBt, sAt := NewBufferFloats(d, bt), NewBufferFloats(d, at)
 		sConvOut, sHeadP := d.NewBufferLen(M*convDim), d.NewBufferLen(M*nv*2)
 		sQn, sKn, sCore, sOut := d.NewBufferLen(M*keyDim), d.NewBufferLen(M*keyDim), d.NewBufferLen(M*valueDim), d.NewBufferLen(M*valueDim)
-		sWin, sState := NewBufferFloats(d, append([]float32(nil), win0...)), NewBufferFloats(d, append([]float32(nil), state0...))
+		sWin, sState := NewBufferFloats(d, slices.Clone(win0)), NewBufferFloats(d, slices.Clone(state0))
 		uM := u(M)
 		e := q.Begin()
 		e.Dispatch(sConv, convDim, 256, sMixed, dConvW, sWin, sConvOut, uConvDim, uK, uM)

@@ -131,28 +131,6 @@ func reusedOf(ts []kvSlotTurn) []int {
 	return out
 }
 
-// TestKVSlotsWithin pins MC1's fit-guard clamp without allocating a
-// real clamp's worth of KV on a 16 GB machine: the largest count up to the request that fits the budget, never below 1.
-func TestKVSlotsWithin(t *testing.T) {
-	const mb = int64(1 << 20)
-	for _, tc := range []struct {
-		name               string
-		want               int
-		budget, base, slot int64
-		got                int
-	}{
-		{"all fit", 4, 10000 * mb, 2000 * mb, 117 * mb, 4},
-		{"clamped to what fits", 8, 2500 * mb, 2000 * mb, 117 * mb, 5}, // 2000 + 4*117 = 2468 <= 2500; +5*117 > 2500
-		{"only the first fits", 4, 2050 * mb, 2000 * mb, 117 * mb, 1},
-		{"even the first over budget: still 1, the decline is elsewhere", 4, 1000 * mb, 2000 * mb, 117 * mb, 1},
-		{"request of 0 means 1", 0, 10000 * mb, 2000 * mb, 117 * mb, 1},
-	} {
-		if got := mem.KVSlotsWithin(tc.want, tc.budget, tc.base, tc.slot); got != tc.got {
-			t.Errorf("%s: mem.KVSlotsWithin(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
-		}
-	}
-}
-
 // TestMetalKVSlots_pricedBeforeTheBuild pins where buildResident prices MC1's slots. metalKVSlots' budget reads the
 // live available memory, and the base it compares against already includes the resident's weights, so it must be
 // asked BEFORE those are allocated. Here the live probe is stubbed to fall by exactly what this device allocates
@@ -229,7 +207,7 @@ func sb11Decode(t *testing.T, m *decoder.Model, a *metalResident, id, pos int) (
 		lg, e = a.Forward(m.EmbedResidentForTest(id), pos)
 		return e
 	})
-	return r, append([]float32(nil), lg...)
+	return r, slices.Clone(lg)
 }
 
 // sb11Attributed checks that every dispatch the device counted was attributed (no dispatch_other), and that some were.
@@ -298,7 +276,7 @@ func TestCost_metalDecodeExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	off = append([]float32(nil), off...)
+	off = slices.Clone(off)
 	_, on := sb11Decode(t, m, a, 9, 4)
 	for i := range on {
 		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {

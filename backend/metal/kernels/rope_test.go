@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -122,7 +123,7 @@ func TestRope_mscale(t *testing.T) {
 	}
 
 	ref := func(x0 []float32, scale float32) []float32 {
-		x := append([]float32(nil), x0...)
+		x := slices.Clone(x0)
 		for head := range nH {
 			for dd := range half {
 				b := head * hd

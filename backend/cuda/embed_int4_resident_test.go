@@ -4,12 +4,13 @@ package cuda
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -149,7 +150,7 @@ func TestEmbedInt4LongContext_grade(t *testing.T) {
 		t.Skip("EI4LC_GRADE_DIR unset")
 	}
 	crit := fidelity.Criteria{AgreeMarginPts: 2.5, KLMargin: 0.25, Alpha: 0.05}
-	for _, model := range strings.Split(os.Getenv("EI4LC_GRADE_MODELS"), ",") {
+	for model := range strings.SplitSeq(os.Getenv("EI4LC_GRADE_MODELS"), ",") {
 		arms := map[string]map[string][]ei4lcRow{}
 		for _, a := range []string{"cuda-int4head", "cuda-int8head", "cpu-int4head"} {
 			rows, err := ei4lcReadRows(filepath.Join(dir, model+"-"+a+".jsonl"))
@@ -186,9 +187,9 @@ func TestEmbedInt4LongContext_grade(t *testing.T) {
 		for k := range byK {
 			ks = append(ks, k)
 		}
-		sort.Ints(ks)
+		slices.Sort(ks)
 		for _, k := range ks {
-			sort.Slice(byK[k], func(i, j int) bool { return byK[k][i].ID < byK[k][j].ID })
+			slices.SortFunc(byK[k], func(a, b fidelity.Prompt) int { return cmp.Compare(a.ID, b.ID) })
 			cells = append(cells, fidelity.Cell{Name: "K" + strconv.Itoa(k), Prompts: byK[k]})
 		}
 		v, err := fidelity.NonInferior(cells, crit)
@@ -261,7 +262,7 @@ func ei4lcReadRefs(dir, only string) ([]ei4lcDoc, error) {
 	if err != nil || len(names) == 0 {
 		return nil, fmt.Errorf("no reference documents in %q (%v)", dir, err)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	var docs []ei4lcDoc
 	for _, n := range names {
 		var h struct {
@@ -362,7 +363,7 @@ func ei4lcLogArm(t *testing.T, model, arm string, rows map[string][]ei4lcRow) {
 	for k := range byK {
 		ks = append(ks, k)
 	}
-	sort.Ints(ks)
+	slices.Sort(ks)
 	for _, k := range ks {
 		a := byK[k]
 		t.Logf("%s %s K=%d vs reference: agree %.2f%% (%d/%d), mean KL %.4f, hard flips %d", model, arm, k, 100*float64(a.agree)/float64(a.n), a.agree, a.n, a.kl/float64(a.n), a.flips)

@@ -159,7 +159,7 @@ func nemotronTier1Cells(spec string, ctrl, c4b, c9bslice, c9b nemotronCell) (cel
 		spec = "4b"
 	}
 	cells = []nemotronCell{ctrl}
-	for _, k := range strings.Split(spec, ",") {
+	for k := range strings.SplitSeq(spec, ",") {
 		c, ok := all[strings.TrimSpace(k)]
 		if !ok {
 			return nil, explicit, fmt.Errorf("NEMOTRON_TIER1 names an unknown cell %q (4b, 9bslice, 9b)", k)

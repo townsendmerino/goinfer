@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -72,13 +73,13 @@ func (g *kv2Rig) fill(slot int, ids []int, from int, batched bool) [][]float32 {
 	if batched {
 		e := make([][]float32, len(ids))
 		for i, id := range ids {
-			e[i] = append([]float32(nil), g.m.EmbedResidentForTest(id)...)
+			e[i] = slices.Clone(g.m.EmbedResidentForTest(id))
 		}
 		lg, err := g.r.PrefillLast(g.ctx, e, from)
 		if err != nil {
 			g.t.Fatalf("PrefillLast(%d rows at %d) in slot %d: %v", len(ids), from, slot, err)
 		}
-		return [][]float32{append([]float32(nil), lg...)}
+		return [][]float32{slices.Clone(lg)}
 	}
 	out := make([][]float32, 0, len(ids))
 	for i, id := range ids {
@@ -86,7 +87,7 @@ func (g *kv2Rig) fill(slot int, ids []int, from int, batched bool) [][]float32 {
 		if err != nil {
 			g.t.Fatalf("Forward at %d in slot %d: %v", from+i, slot, err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out
 }
@@ -260,8 +261,8 @@ func kv2CopyExact(t *testing.T, g *kv2Rig, batched bool) {
 }
 
 func kv2IsDecline(err error) bool {
-	var d *decoder.KVCopyDecline
-	return errors.As(err, &d)
+	_, ok := errors.AsType[*decoder.KVCopyDecline](err)
+	return ok
 }
 
 // kv2PrefixIsComputed is G2-C(b): a prompt sharing a 1,000-token preamble (shorter where the context is) with another
@@ -269,8 +270,8 @@ func kv2IsDecline(err error) bool {
 // prompt prefilled cold in a third slot: every K/V row of the prompt and the last logits.
 func kv2PrefixIsComputed(t *testing.T, g *kv2Rig, batched bool) {
 	pre := g.toks(min(1000, g.r.ctxCap-64), 11)
-	a := append(append([]int(nil), pre...), g.toks(30, 12)...)
-	b := append(append([]int(nil), pre...), g.toks(40, 13)...)
+	a := slices.Concat(pre, g.toks(30, 12))
+	b := slices.Concat(pre, g.toks(40, 13))
 	hit := len(pre) / 64 * 64
 	if hit < 256 {
 		t.Fatalf("context %d is too short for a preamble", g.r.ctxCap)
@@ -399,7 +400,7 @@ func kv2CopyWindowed(t *testing.T, fx string) {
 		// the destination continues as a slot that computed the prompt itself
 		tail := g.toks(200, 24)
 		got := g.fill(1, tail, end, false)
-		want := g.fill(2, append(append([]int(nil), pre...), tail...), 0, false)[end:]
+		want := g.fill(2, slices.Concat(pre, tail), 0, false)[end:]
 		for i := range got {
 			if j, ok := sameBits(got[i], want[i]); !ok {
 				t.Fatalf("held %d: step %d (position %d): logits differ from the slot that computed the prompt (first at %d)", held, i, end+i, j)
@@ -408,7 +409,7 @@ func kv2CopyWindowed(t *testing.T, fx string) {
 	}
 
 	// a source that has moved on past the window the destination needs
-	g.fill(0, append(append([]int(nil), pre...), g.toks(100, 25)...), 0, false)
+	g.fill(0, slices.Concat(pre, g.toks(100, 25)), 0, false)
 	g.fill(1, g.toks(300, 26), 0, false)
 	srcB, sb := g.raw(0)
 	dstB, dbB := g.raw(1)

@@ -256,10 +256,10 @@ func TestIsClefDir_andItsQuantDefault(t *testing.T) {
 	if !isClefDir(clefTinyDir) || isClefDir(clefTinyBackbone) || isClefDir(t.TempDir()) || isClefDir("/does/not/exist") {
 		t.Error("isClefDir does not tell a directory with joint_head.safetensors from one without")
 	}
-	if q := (modelSpec{path: clefTinyDir}).options(config{}).Quant; q != decoder.DecisionHeadQuant {
+	if q := (&modelSpec{path: clefTinyDir}).options(&config{}).Quant; q != decoder.DecisionHeadQuant {
 		t.Errorf("a Clef entry loads at %q, want the decision models' default %q", q, decoder.DecisionHeadQuant)
 	}
-	if q := (modelSpec{path: clefTinyBackbone}).options(config{}).Quant; q == decoder.DecisionHeadQuant && decoder.DecisionHeadQuant != "" {
+	if q := (&modelSpec{path: clefTinyBackbone}).options(&config{}).Quant; q == decoder.DecisionHeadQuant && decoder.DecisionHeadQuant != "" {
 		t.Errorf("an ordinary model was given the decision default %q", q)
 	}
 }

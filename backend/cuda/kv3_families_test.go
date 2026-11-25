@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -92,7 +93,7 @@ func TestKV3Families_pastBoundBatchedEqualsPerToken(t *testing.T) {
 			}
 			g.poison(n)
 			t0, last := time.Now(), time.Now()
-			for i := 0; i < n-1; i++ {
+			for i := range n - 1 {
 				if err := g.r.ForwardNoLogits(e[i], i); err != nil {
 					t.Fatalf("per-token row %d: %v", i, err)
 				}
@@ -105,7 +106,7 @@ func TestKV3Families_pastBoundBatchedEqualsPerToken(t *testing.T) {
 			if err != nil {
 				t.Fatalf("per-token last row: %v", err)
 			}
-			want := append([]float32(nil), out...)
+			want := slices.Clone(out)
 			tp := time.Since(t0)
 			wantKV := g.snapshot(n)
 			kv3NoNaN(t, name, want, wantKV)
@@ -158,7 +159,7 @@ func TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PrefillImageBlocksLast (force=%v): %v", force, err)
 		}
-		return append([]float32(nil), lg...), g.snapshot(lead + rows), g.r.psLaunches - p0
+		return slices.Clone(lg), g.snapshot(lead + rows), g.r.psLaunches - p0
 	}
 	want, wantKV, wantPS := arm(false)
 	got, gotKV, gotPS := arm(true)

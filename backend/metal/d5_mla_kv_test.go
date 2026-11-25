@@ -72,8 +72,8 @@ func TestD5_mlaOnMetal(t *testing.T) {
 	}
 	for _, v := range []string{"f16", "i8"} {
 		m, err := decoder.Load(dir, d5Opts(v))
-		var r *decoder.KVRefusal
-		if !errors.As(err, &r) {
+		r, ok := errors.AsType[*decoder.KVRefusal](err)
+		if !ok {
 			if m != nil {
 				m.Close()
 			}

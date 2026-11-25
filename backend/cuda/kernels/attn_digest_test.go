@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -747,9 +746,9 @@ func TestAttnKernelDigests(t *testing.T) {
 			missing = append(missing, id)
 		}
 	}
-	sort.Strings(diff)
-	sort.Strings(missing)
-	sort.Strings(extra)
+	slices.Sort(diff)
+	slices.Sort(missing)
+	slices.Sort(extra)
 	show := func(what string, ids []string) {
 		if len(ids) == 0 {
 			return

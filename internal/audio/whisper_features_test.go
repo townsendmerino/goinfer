@@ -3,6 +3,7 @@ package audio
 import (
 	"math"
 	"math/cmplx"
+	"slices"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func TestWhisperFFT_matchesDFT(t *testing.T) {
 			want[k] += v * cmplx.Exp(complex(0, -2*math.Pi*float64(k*n)/whisperNFFT))
 		}
 	}
-	buf, out, tmp := append([]complex128(nil), in...), make([]complex128, whisperNFFT), make([]complex128, whisperNFFT)
+	buf, out, tmp := slices.Clone(in), make([]complex128, whisperNFFT), make([]complex128, whisperNFFT)
 	whisperFFT(buf, out, tmp)
 	for k := range want {
 		if d := cmplx.Abs(out[k] - want[k]); d > 1e-9 {

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"io"
 	"maps"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +25,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/app/connect"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -54,7 +55,8 @@ type loadedModel struct {
 	featCacheOnce sync.Once // vision_serve.go: the tower-output cache, made on first image
 	featCache     *featureCache
 	tk            *tokenizer.Tokenizer
-	model         modelHandle
+	model         *decoder.Model
+	closer        io.Closer      // test-only liveness/close stand-in when model is nil; production uses model directly (livenessKey)
 	tmpl          *chat.Template // nil → raw completion
 	stopIDs       []int          // turn-stop token ids from the template
 	eosIDs        []int
@@ -172,7 +174,7 @@ func (lm *loadedModel) promptTooLargeForContext(inputBytes int) error {
 	if lm.model == nil {
 		return nil
 	}
-	return promptByteBudgetError(inputBytes, lm.mdl().Config().MaxPositions, lm.maxTokenBytes())
+	return promptByteBudgetError(inputBytes, lm.model.Config().MaxPositions, lm.maxTokenBytes())
 }
 
 // promptByteBudgetError is the pure guard: input text longer than ctx·maxTokenBytes needs
@@ -221,7 +223,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	switch {
 	case n <= 1 || lm.model == nil || lm.visionCapable():
 		n = 1
-	case lm.mdl().ResidentActive():
+	case lm.model.ResidentActive():
 		// A GPU-resident model runs n generations at once only when its resident can batch their decode tokens
 		// (decoder.Model.EnableResidentConcurrency: a dense family on at least two resident KV slots, capped by the
 		// slot count that --kv-sessions sets). Speculative decode, block drafters and adapters take the resident
@@ -231,12 +233,12 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 		if lm.blockSpec != nil || lm.adapter != "" || (lm.spec && !lm.specAdaptive) {
 			n = 1
 		} else {
-			n = lm.mdl().EnableResidentConcurrency(n)
+			n = lm.model.EnableResidentConcurrency(n)
 			if lm.spec && lm.specAdaptive {
-				lm.mdl().SetSpecAdaptive(n > 1)
+				lm.model.SetSpecAdaptive(n > 1)
 			}
 		}
-	case !lm.mdl().CPUConcurrentSafe():
+	case !lm.model.CPUConcurrentSafe():
 		n = 1
 	}
 	if cfg.kvSessions > 0 {
@@ -245,8 +247,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	// A CPU model's concurrent generations may also join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch decides from -cpu-batch, the family and the model's size).
 	cpuBatched := false
-	if lm.model != nil && !lm.mdl().ResidentActive() {
-		cpuBatched = lm.mdl().EnableCPUBatch(n)
+	if lm.model != nil && !lm.model.ResidentActive() {
+		cpuBatched = lm.model.EnableCPUBatch(n)
 	}
 	lm.concurrent = n
 	lm.turns.setCap(n)
@@ -256,7 +258,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if lm.model == nil {
 		return ""
 	}
-	return concurrencyLine(bannerFacts{resident: lm.mdl().ResidentActive(), kvSlots: lm.mdl().ResidentKVSlots(), concurrent: n,
+	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
 		cpuBatched: cpuBatched}, cfg)
 }
 
@@ -350,7 +352,7 @@ type server struct {
 	// backed by it (refs), so unload can drain in-flight work before freeing native memory instead of racing it into
 	// a use-after-free. A base and its compute-time adapters share one *decoder.Model and thus one entry. Guarded by
 	// regMu; see liveness.go.
-	liveness map[modelHandle]*modelLiveness
+	liveness map[io.Closer]*modelLiveness
 	// draining is the set of served names whose entry has been unpublished but whose native memory
 	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
 	// tell when a 202'd unload has actually reclaimed memory before reloading. Guarded by regMu.
@@ -444,7 +446,7 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, 
 			if lm.model == nil {
 				continue
 			}
-			ctx := lm.mdl().Config().MaxPositions
+			ctx := lm.model.Config().MaxPositions
 			if ctx <= 0 {
 				continue
 			}
@@ -483,7 +485,7 @@ func (s *server) modelByName(name string) *loadedModel {
 // name has no decoder (an embedding-only entry). ONE source for both /v1/models and /health, so the
 // vendor extension and the operator surface can never disagree about what the server resolved to.
 // kvShareField is /v1/models' kv_share vendor field: decoder.Model.KVShareState as "on", or "off: why" and "none: why".
-func kvShareField(m modelHandle) string {
+func kvShareField(m *decoder.Model) string {
 	state, why := m.KVShareState()
 	if why == "" {
 		return state
@@ -496,16 +498,16 @@ func (s *server) pathFields(name string) map[string]any {
 	if lm == nil || lm.model == nil {
 		return nil
 	}
-	batched, why := lm.mdl().PrefillPath()
+	batched, why := lm.model.PrefillPath()
 	f := map[string]any{
-		"decode_path":     lm.mdl().DecodePath(),
-		"kv_share":        kvShareField(lm.mdl()),
+		"decode_path":     lm.model.DecodePath(),
+		"kv_share":        kvShareField(lm.model),
 		"prefill_batched": batched,
 		"prefill_path":    why,
 		// Quant and resident size, so the web UI's Models tab can list what is resident (and size an Unload button)
 		// from the one request it already makes.
-		"quant":          lm.mdl().Quant(),
-		"resident_bytes": lm.mdl().ResidentWeightBytes() + lm.mdl().ExtraResidentBytes(),
+		"quant":          lm.model.Quant(),
+		"resident_bytes": lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes(),
 	}
 	// context_window is the cap a text chat request on a base model is held to (contextWindow). Vision requests are
 	// bounded by MaxPositions, which is never smaller, so this is the conservative number for a client to plan
@@ -520,7 +522,7 @@ func (s *server) pathFields(name string) map[string]any {
 	}
 	// max_positions is the model's own maximum context, which -ctx cannot exceed, so a client told the window is too
 	// small can tell a larger -ctx from a model that cannot hold the request at all.
-	if mp := lm.mdl().Config().MaxPositions; mp > 0 {
+	if mp := lm.model.Config().MaxPositions; mp > 0 {
 		f["max_positions"] = mp
 	}
 	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
@@ -546,7 +548,7 @@ func (s *server) servedNames() []string {
 	if s.embed != nil {
 		names = append(names, s.embedID)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
@@ -597,7 +599,7 @@ type respFormat struct {
 // constrainsOutput reports whether the request's response_format makes a grammar constrain the output from the first
 // token (json_object / json_schema) — the case think.go renders thinking-off, since an open think block in the prompt
 // would contradict the mask.
-func (sm sampling) constrainsOutput() bool {
+func (sm *sampling) constrainsOutput() bool {
 	return sm.ResponseFormat != nil && (sm.ResponseFormat.Type == "json_object" || sm.ResponseFormat.Type == "json_schema")
 }
 
@@ -627,7 +629,7 @@ type chatReq struct {
 }
 
 // think is the request's thinking controls as think.go's input.
-func (r chatReq) think() thinkRequest {
+func (r *chatReq) think() thinkRequest {
 	tr := thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
 	if r.ThinkingTokenBudget != nil {
 		tr.budget = *r.ThinkingTokenBudget
@@ -716,13 +718,13 @@ func functionTools(tools []toolSpec) (kept []toolSpec, dropped []string) {
 	return kept, dropped
 }
 
-// dropUnrunnableTools applies functionTools to a request's tool list in place, setting the header when any is dropped.
-func dropUnrunnableTools(w http.ResponseWriter, tools *[]toolSpec) {
-	kept, dropped := functionTools(*tools)
+// dropUnrunnableTools filters a request's tool list with functionTools, setting the header when any is dropped.
+func dropUnrunnableTools(w http.ResponseWriter, tools []toolSpec) []toolSpec {
+	kept, dropped := functionTools(tools)
 	if len(dropped) > 0 {
 		w.Header().Set("X-Goinfer-Tools-Dropped", strings.Join(dropped, ","))
 	}
-	*tools = kept
+	return kept
 }
 
 // apiToolCall is the OpenAI wire form of a tool call (arguments is a JSON string).
@@ -862,7 +864,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if s.fastRoute(r, &req.Model) {
 		req.applyFast()
 	}
-	dropUnrunnableTools(w, &req.Tools)
+	req.Tools = dropUnrunnableTools(w, req.Tools)
 	if err := validateN(req.N); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1205,9 +1207,9 @@ func (lm *loadedModel) contextWindow(residentPath bool) int {
 	if lm.model == nil {
 		return 0
 	}
-	ctx := lm.mdl().Config().MaxPositions
+	ctx := lm.model.Config().MaxPositions
 	if residentPath {
-		if rc := lm.mdl().ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
+		if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
 			ctx = rc
 		}
 	}
@@ -1220,7 +1222,7 @@ func (lm *loadedModel) modelContextWindow() int {
 	if lm.model == nil {
 		return 0
 	}
-	return lm.mdl().Config().MaxPositions
+	return lm.model.Config().MaxPositions
 }
 
 // residentPath reports whether a text-completion request against lm will run the stateless GPU-resident decode path,
@@ -1231,7 +1233,7 @@ func (lm *loadedModel) modelContextWindow() int {
 // for every other combination: where nothing is resident ResidentContextCap() reports 0, so contextWindow's `rc > 0`
 // guard makes the value irrelevant. Guarded against lm.model == nil (an embedding-only entry) as contextWindow is.
 func (lm *loadedModel) residentPath() bool {
-	return lm.model != nil && lm.mdl().ResidentActive()
+	return lm.model != nil && lm.model.ResidentActive()
 }
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams, wires response_format into a
@@ -1340,7 +1342,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		}
 	}
 	if g != nil {
-		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+		eos := slices.Concat(lm.eosIDs, lm.stopIDs)
 		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
 		if sm.Confidence {
 			m.CaptureConfidence(constrain.ConfidenceOptions{})
@@ -1359,10 +1361,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		// the margin is live memory, which already excludes what the other generations hold. Splitting it there
 		// refuses ordinary prompts (docs/measurements/spec-vs-batching-metal-2026-09-27.md section 5).
 		share := 1
-		if lm.concurrent > 1 && !(residentPath && lm.mdl().ResidentActive()) {
+		if lm.concurrent > 1 && !(residentPath && lm.model.ResidentActive()) {
 			share = min(lm.concurrent, lm.turns.load()+1)
 		}
-		if aerr := lm.mdl().AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {
+		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {
 			return genRequest{}, &prefillMemoryError{aerr}
 		}
 	}
@@ -1394,7 +1396,7 @@ func seedOrRandom(seed *int64) int64 {
 	if seed != nil {
 		return *seed
 	}
-	return rand.Int63()
+	return rand.Int64()
 }
 
 // clampMaxTokens bounds max_tokens by the model's context window. The KV cache is preallocated as
@@ -1877,7 +1879,7 @@ func (lm *loadedModel) expertCacheNow() (decoder.ExpertCacheStats, bool) {
 	if lm.model == nil {
 		return decoder.ExpertCacheStats{}, false
 	}
-	return lm.mdl().ExpertCacheStats()
+	return lm.model.ExpertCacheStats()
 }
 
 // logExpertCache logs one turn's expert-cache lookups: the slots the cache was granted and the turn's hit rate, the figure
@@ -1886,7 +1888,7 @@ func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) 
 	if !ok {
 		return
 	}
-	now, _ := lm.mdl().ExpertCacheStats()
+	now, _ := lm.model.ExpertCacheStats()
 	h, m := now.Hits-before.Hits, now.Misses-before.Misses
 	if h+m == 0 {
 		return

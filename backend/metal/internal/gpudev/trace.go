@@ -2,6 +2,8 @@
 
 package gpudev
 
+import "slices"
+
 // TraceOp is the kind of encoder event TraceForTest sees.
 type TraceOp int
 
@@ -42,6 +44,6 @@ func traceOp(op TraceOp) {
 func traceDispatch(p Pipeline, twoD bool, gx, gy, tgx, tgy, tgBytes int, bufs []Buffer) {
 	if t := TraceForTest; t != nil {
 		t(TraceEvent{Op: TraceDispatch, Pipe: p, TwoD: twoD, Grid: [2]int{gx, gy}, TG: [2]int{tgx, tgy}, TGBytes: tgBytes,
-			Bufs: append([]Buffer(nil), bufs...)})
+			Bufs: slices.Clone(bufs)})
 	}
 }

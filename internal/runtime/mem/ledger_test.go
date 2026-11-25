@@ -76,15 +76,13 @@ func TestLedger_concurrent(t *testing.T) {
 	var l Ledger
 	var wg sync.WaitGroup
 	for g := range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range 500 {
 				ls := l.Reserve(VRAM, LineScratch, int64(g+i), int64(g+i))
 				_ = l.Usage()
 				ls.Release()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if u := l.Usage(); u.Leases != 0 || u.Charged != 0 || u.Reserved != 16*500 {

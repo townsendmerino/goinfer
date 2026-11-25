@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -130,7 +130,7 @@ func TestSpecNonCopyLane(t *testing.T) {
 			for range 3 {
 				xs = append(xs, run(a, 1).ms)
 			}
-			sort.Float64s(xs)
+			slices.Sort(xs)
 			pre[a.name] = xs[1]
 		}
 		times := map[string][]float64{}
@@ -143,7 +143,7 @@ func TestSpecNonCopyLane(t *testing.T) {
 				last[a.name] = r
 			}
 		}
-		med := func(n string) float64 { x := append([]float64(nil), times[n]...); sort.Float64s(x); return x[len(x)/2] }
+		med := func(n string) float64 { x := slices.Clone(times[n]); slices.Sort(x); return x[len(x)/2] }
 		tps := func(n string) float64 { return float64(len(last[n].toks)-1) / (med(n) / 1000) }
 		// lossless on their own tree
 		eq := func(a, b []int) bool {

@@ -2,6 +2,8 @@
 
 package cuda
 
+import "slices"
+
 // Speculative decoding by n-gram / prompt-lookup drafting plus batched verify (docs/ollama-chase.md §D1).
 // Greedy-lossless by construction: the verify's per-position logits (PrefillLastN) are bit-identical to a sequential
 // Forward at each position, so the accepted tokens are exactly the sequential greedy tokens. The drafter is free (a
@@ -38,7 +40,7 @@ func ngramDraft(hist []int, k, ctxLen int) []int {
 		if m <= 0 {
 			return nil
 		}
-		return append([]int(nil), hist[src:src+m]...)
+		return slices.Clone(hist[src : src+m])
 	}
 	return nil
 }

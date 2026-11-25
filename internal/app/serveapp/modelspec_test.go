@@ -65,7 +65,7 @@ func TestModelSpec_options(t *testing.T) {
 	cfg := config{load: loadflags.Flags{Backend: "cpu", Quant: "int8int8", StreamWeights: false, WeightCacheGB: 0, EmbedInt4: false, AcceptSlow: false}, kvQuant: "f32"}
 
 	// No overrides → inherit defaults.
-	base := modelSpec{path: "m.giw"}.options(cfg)
+	base := (&modelSpec{path: "m.giw"}).options(&cfg)
 	if base.Quant != "int8int8" || base.StreamWeights || base.EmbedInt4 || base.WeightCacheBytes != 0 || base.AcceptSlowMoE {
 		t.Fatalf("inherit: %+v", base)
 	}
@@ -74,14 +74,14 @@ func TestModelSpec_options(t *testing.T) {
 	// override — it must reach decoder.Options.AcceptSlowMoE unchanged.
 	acceptCfg := cfg
 	acceptCfg.load.AcceptSlow = true
-	if o := (modelSpec{path: "m.giw"}).options(acceptCfg); !o.AcceptSlowMoE {
+	if o := (&modelSpec{path: "m.giw"}).options(&acceptCfg); !o.AcceptSlowMoE {
 		t.Error("-accept-slow did not reach decoder.Options.AcceptSlowMoE")
 	}
 
 	// Overrides win; an override of "" (f32) is distinct from unset.
 	q, gb, st := "", 16.0, true
 	s := modelSpec{path: "m.giw", quant: &q, weightCache: &gb, stream: &st}
-	o := s.options(cfg)
+	o := s.options(&cfg)
 	if o.Quant != "" {
 		t.Errorf("quant override to f32: got %q", o.Quant)
 	}
@@ -131,7 +131,7 @@ func TestModelSpec_headDefaultsToTheDecisionQuant(t *testing.T) {
 		{"head, -quant int4 passed", modelSpec{path: "m", head: &dir}, passed, "int4"},
 		{"no head keeps the process default", modelSpec{path: "m"}, unset, "int4"},
 	} {
-		if got := tc.spec.options(tc.cfg).Quant; got != tc.want {
+		if got := tc.spec.options(&tc.cfg).Quant; got != tc.want {
 			t.Errorf("%s: Quant = %q, want %q", tc.name, got, tc.want)
 		}
 	}

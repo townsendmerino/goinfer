@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,7 +135,7 @@ func TestPostprocess(t *testing.T) {
 
 	// Truncation renormalizes and does not mutate the original.
 	orig := []float32{1, 2, 2, 10}
-	cp := append([]float32(nil), orig...)
+	cp := slices.Clone(orig)
 	got := postprocess(cp, 2)
 	if len(got) != 2 {
 		t.Fatalf("truncated len = %d, want 2", len(got))

@@ -20,7 +20,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	h := &holdsWalker{l: l}
 	w := reflect.ValueOf(m.w).Elem()
 	weights := func(path string) mem.LineID {
-		for _, f := range strings.Split(path, ".") {
+		for f := range strings.SplitSeq(path, ".") {
 			if f == "Experts" || f == "expertsGateUp" || f == "expertsDown" {
 				return mem.LineExperts
 			}
@@ -235,7 +235,7 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 	"keysH": mem.LineKV, "valsH": mem.LineKV, "rings": mem.LineKV, "mlaLatent": mem.LineKV,
 	"delta": mem.LineState, "conv": mem.LineState, "mamba": mem.LineState, "kda": mem.LineState,
 	"scr": mem.LineScratch, "imgBlocks": mem.LineScratch, "mropePos": mem.LineScratch, "deepstack": mem.LineScratch, "stride": mem.LineScratch, "captureLayers": mem.LineScratch,
-	"captured": mem.LineScratch, "subAttn": mem.LineScratch, "subMLP": mem.LineScratch, "subMLPpre": mem.LineScratch, "subCtx": mem.LineScratch, "subPLE": mem.LineScratch, "treeRowPos": mem.LineScratch,
+	"captured": mem.LineScratch, "layerInputs": mem.LineScratch, "subAttn": mem.LineScratch, "subMLP": mem.LineScratch, "subMLPpre": mem.LineScratch, "subCtx": mem.LineScratch, "subPLE": mem.LineScratch, "treeRowPos": mem.LineScratch,
 	"treeMask": mem.LineScratch, "numLayers": mem.LineScratch, "planRows": mem.LineScratch, "rowCeiling": mem.LineScratch, "regrownBytes": mem.LineScratch, "kvDim": mem.LineScratch,
 	"window": mem.LineScratch, "mropeDelta": mem.LineScratch, "pos": mem.LineScratch, "localAny": mem.LineScratch, "quant": mem.LineScratch, "headDim": mem.LineScratch,
 	"manualPos": mem.LineScratch, "recurrentResets": mem.LineScratch, "latentDim": mem.LineScratch, "subCapture": mem.LineScratch}

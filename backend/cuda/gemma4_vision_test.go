@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,7 +258,7 @@ func TestG4VCUDA_closeAndErrors(t *testing.T) {
 	if _, err := a.Hidden(p[:len(p)-1], pos); err == nil {
 		t.Error("a short patch buffer must be refused")
 	}
-	bad := append([][2]int(nil), pos...)
+	bad := slices.Clone(pos)
 	bad[0] = [2]int{enc.Cfg.PosEmbTableSize, 0}
 	if _, err := a.Hidden(p, bad); err == nil {
 		t.Error("a position past the table must be refused")

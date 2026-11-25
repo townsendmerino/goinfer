@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"unsafe"
@@ -244,7 +245,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 			h[j] = rng.Float32()*2 - 1
 		}
 		toks[i] = h
-		want[i] = gemma4MoEFFN(be, arch, append([]float32(nil), h...), w, nil) // sequential, no pager yet
+		want[i] = gemma4MoEFFN(be, arch, slices.Clone(h), w, nil) // sequential, no pager yet
 	}
 
 	poolPager := gemma4PoolPager(t, w, path, mapping, 2, topK) // deliberately tight: forces eviction under contention
@@ -257,7 +258,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 			rng := rand.New(rand.NewSource(int64(g)))
 			for range itersEach {
 				i := rng.Intn(nToks)
-				got := gemma4MoEFFN(be, arch, append([]float32(nil), toks[i]...), w, poolPager)
+				got := gemma4MoEFFN(be, arch, slices.Clone(toks[i]), w, poolPager)
 				for j := range want[i] {
 					if got[j] != want[i][j] {
 						fails <- "mismatch"

@@ -30,14 +30,8 @@ func decodeVMStats64(b []byte) (vmStats64, bool) {
 // terms, reported as context.
 func fromVMStats64(s vmStats64, pageSize, physical int64) Reading {
 	pg := func(n uint32) int64 { return int64(n) * pageSize }
-	app := pg(s.internal) - pg(s.purgeable)
-	if app < 0 {
-		app = 0
-	}
-	free := pg(s.free) - pg(s.speculative)
-	if free < 0 {
-		free = 0
-	}
+	app := max(pg(s.internal)-pg(s.purgeable), 0)
+	free := max(pg(s.free)-pg(s.speculative), 0)
 	return Reading{Physical: physical, Reclaimable: free + pg(s.external) + pg(s.purgeable),
 		Free: free, Speculative: pg(s.speculative), FileBacked: pg(s.external), Purgeable: pg(s.purgeable),
 		App: app, Wired: pg(s.wire), Compressed: pg(s.compressor)}

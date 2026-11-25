@@ -2,7 +2,10 @@
 
 package kernels
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // cpuLayer is the reference dense decode layer — it mirrors the GPU path EXACTLY,
 // including the lossy quantization (rmsnorm→int8, per-row-int8 weights, int8 GEMV), so
@@ -10,7 +13,7 @@ import "math"
 // assembly shows up as a parity break.
 func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, vcHist []float32,
 	H, nH, nKV, hd, I, pos int, eps, scale float32) []float32 {
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	kvDim := nKV * hd
 	half := hd / 2
 
@@ -58,8 +61,8 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 	v := gemvQ(aq, aSc, Wv, kvDim, H)
 	rope(q, nH)
 	rope(k, nKV)
-	kc := append(append([]float32(nil), kcHist...), k...)
-	vc := append(append([]float32(nil), vcHist...), v...)
+	kc := append(slices.Clone(kcHist), k...)
+	vc := append(slices.Clone(vcHist), v...)
 	nKeys := pos + 1
 	ctx := make([]float32, nH*hd)
 	for qh := range nH {

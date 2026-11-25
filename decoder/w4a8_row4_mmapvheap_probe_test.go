@@ -3,6 +3,7 @@ package decoder
 import (
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,8 +26,8 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 	if !ok {
 		return false
 	}
-	heapRow4 := append([]byte(nil), row4...)
-	heapScales := append([]float32(nil), row4Scales...)
+	heapRow4 := slices.Clone(row4)
+	heapScales := slices.Clone(row4Scales)
 	*wm = wrapInt4Row4F32(q4, q4s, wm.Rows(), wm.Cols(), group, heapRow4, heapScales)
 	return true
 }

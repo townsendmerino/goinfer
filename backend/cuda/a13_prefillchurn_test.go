@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -70,7 +71,7 @@ func TestA13_PrefillChurnPoisons(t *testing.T) {
 	}
 	embs := make([][]float32, M)
 	for i, tok := range prompt {
-		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(tok)...)
+		embs[i] = slices.Clone(mc.EmbedResidentForTest(tok))
 	}
 
 	// POSITIVE CONTROL: force the known stimulus first, so a later clean result cannot be a harness
@@ -104,7 +105,7 @@ func TestA13_PrefillChurnPoisons(t *testing.T) {
 		if e != nil {
 			t.Fatalf("prefill %d: %v", i, e)
 		}
-		cp := append([]float32(nil), lg...)
+		cp := slices.Clone(lg)
 		var nz int
 		for _, v := range cp {
 			if v != 0 {

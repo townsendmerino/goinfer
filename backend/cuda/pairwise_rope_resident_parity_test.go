@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -124,7 +125,7 @@ func measurePairwiseParity(t *testing.T, mRes, mCPU *decoder.Model, cr *cudaResi
 		if err != nil {
 			t.Fatalf("cpu forward[%d]: %v", i, err)
 		}
-		cpu[i] = append([]float32(nil), lc...)
+		cpu[i] = slices.Clone(lc)
 	}
 	// 1. sequential decode.
 	cr.Reset()

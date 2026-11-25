@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,7 +130,7 @@ func TestFlagsDoc(t *testing.T) {
 			missing = append(missing, name)
 		}
 	}
-	sort.Strings(missing)
+	slices.Sort(missing)
 	for _, name := range missing {
 		bad("%s: serve registers this flag but docs/flags.meta.json has no entry — add a group and a one-line summary", name)
 	}

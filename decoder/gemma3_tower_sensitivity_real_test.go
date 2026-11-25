@@ -251,7 +251,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[g3]   (its mean relative L2 from the CPU tower: %.3g)\n", sumRel/float64(n))
 		for seed := int64(1); seed <= 3; seed++ {
 			rng := rand.New(rand.NewSource(seed))
-			f := append([]float32(nil), cpuF...)
+			f := slices.Clone(cpuF)
 			for i := range n {
 				row := f[i*hidden : (i+1)*hidden]
 				noise := make([]float64, hidden)

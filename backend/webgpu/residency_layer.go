@@ -107,11 +107,10 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 		rl.InvFreq = bs.nemoZeroInvFreq
 		kc, e1 := bs.c.NewKVCache(nil, bs.ctxCap*bs.kvDim)
 		vc, e2 := bs.c.NewKVCache(nil, bs.ctxCap*bs.kvDim)
+		bs.keepAll(kc, vc)
 		if e1 != nil || e2 != nil {
 			return fmt.Errorf("gpu: nemotron KV alloc (layer %d): %w", i, errors.Join(e1, e2))
 		}
-		bs.keep(kc.Release)
-		bs.keep(vc.Release)
 		rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
 		if rl.Q, e = bs.proj(&lw.QProj); e != nil {
 			return e
@@ -242,11 +241,10 @@ func (bs *webgpuBuild) gatedAttnMixer(i int, lw *decoder.LayerWeights, rl *kerne
 	rl.QGate = true
 	kc, e1 := bs.c.NewKVCache(nil, bs.ctxCap*bs.kvDim)
 	vc, e2 := bs.c.NewKVCache(nil, bs.ctxCap*bs.kvDim)
+	bs.keepAll(kc, vc)
 	if e1 != nil || e2 != nil {
 		return fmt.Errorf("gpu: qwen35 KV alloc (layer %d): %w", i, errors.Join(e1, e2))
 	}
-	bs.keep(kc.Release)
-	bs.keep(vc.Release)
 	rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
 	qP, kP, vP, oP, qN, kN := m.BackendView().Layer(i).Qwen35AttnWeights()
 	if rl.Q, e = bs.proj(qP); e != nil {
@@ -429,18 +427,12 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 		rl.KCache, rl.VCache, rl.KScale, rl.VScale = sl.KCache, sl.VCache, sl.KScale, sl.VScale
 		rl.KvShared = true
 	} else {
-		var kc, vc *DeviceBuffer
+		var kc, vc, ks, vs *DeviceBuffer
 		var e1, e2 error
 		switch {
 		case bs.kvI8:
-			var ks, vs *DeviceBuffer
 			kc, ks, e1 = bs.c.NewKVCacheI8(nil, bs.ctxCap*lkvDim, lnKV, lhd)
 			vc, vs, e2 = bs.c.NewKVCacheI8(nil, bs.ctxCap*lkvDim, lnKV, lhd)
-			if e1 == nil && e2 == nil {
-				bs.keep(ks.Release)
-				bs.keep(vs.Release)
-				rl.KScale, rl.VScale = (*kernels.DeviceBufferBuf(ks)), (*kernels.DeviceBufferBuf(vs))
-			}
 		case bs.kvF16:
 			kc, e1 = bs.c.NewKVCacheF16(nil, bs.ctxCap*lkvDim)
 			vc, e2 = bs.c.NewKVCacheF16(nil, bs.ctxCap*lkvDim)
@@ -448,8 +440,12 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 			kc, e1 = bs.c.NewKVCache(nil, bs.ctxCap*lkvDim)
 			vc, e2 = bs.c.NewKVCache(nil, bs.ctxCap*lkvDim)
 		}
+		bs.keepAll(kc, ks, vc, vs)
 		if e1 != nil || e2 != nil {
 			return fmt.Errorf("gpu: residency KV alloc (layer %d): %w", i, errors.Join(e1, e2))
+		}
+		if bs.kvI8 {
+			rl.KScale, rl.VScale = (*kernels.DeviceBufferBuf(ks)), (*kernels.DeviceBufferBuf(vs))
 		}
 		// Cross-file invariant guard: the decode runner indexes this cache with strides of g.kvDim = gnKV·ghd up to ctxCap
 		// positions. The alloc above derives lkvDim from the same tuple, so this holds by construction; a builder that sized the
@@ -458,8 +454,6 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 		if want := bs.ctxCap * lkvDim; (*kernels.DeviceBufferN(kc)) < want || (*kernels.DeviceBufferN(vc)) < want {
 			return fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, (*kernels.DeviceBufferN(kc)), (*kernels.DeviceBufferN(vc)), bs.ctxCap, lnKV, lhd, want)
 		}
-		bs.keep(kc.Release)
-		bs.keep(vc.Release)
 		rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
 	}
 	if rl.Q, e = bs.proj(&lw.QProj); e != nil {
@@ -733,7 +727,13 @@ func (bs *webgpuBuild) uploadLayers() error {
 			if rl.AttnNorm, e = bs.up32(lw.PreAttnNorm); e != nil {
 				return e
 			}
-			if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
+			if len(lw.PreAttnNormBias) > 0 || len(lw.PreMLPNormBias) > 0 {
+				return fmt.Errorf("gpu: layer %d: a LayerNorm bias is not implemented on webgpu", i)
+			}
+			if m.BackendView().ParallelBlock() && len(lw.PreMLPNorm) > 0 {
+				return fmt.Errorf("gpu: layer %d: a parallel block with its own MLP norm is not implemented on webgpu (its MLP reads the attention norm's output)", i)
+			}
+			if !isG4MoE && !m.BackendView().ParallelBlock() { // a Gemma 4 MoE layer's feed-forward norms are its block's own; a parallel block has none
 				if rl.MlpNorm, e = bs.up32(lw.PreMLPNorm); e != nil {
 					return e
 				}

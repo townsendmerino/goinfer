@@ -206,7 +206,7 @@ func (r *ogRejectingDrafter) Draft(ctx []int, k int) []int {
 	if k < 2 || i >= len(r.full) {
 		return nil
 	}
-	out := append([]int(nil), r.full[i:min(i+k, len(r.full))]...)
+	out := slices.Clone(r.full[i:min(i+k, len(r.full))])
 	if len(out) < 2 {
 		return nil
 	}
@@ -257,7 +257,7 @@ func TestOptionPath_specVerify(t *testing.T) {
 			}
 			plain := m.NewSession(0)
 			ref := gen(t, func() (<-chan int, *Generation) { return plain.Generate(ctx, prompt, n, greedy) })
-			full := append(append([]int(nil), prompt...), ref...)
+			full := append(slices.Clone(prompt), ref...)
 
 			for _, K := range []int{2, 4} {
 				ngram := &ogCountingDrafter{}

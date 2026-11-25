@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +78,7 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resident forward pos %d: %v", p, err)
 		}
-		gl = append(gl, append([]float32(nil), lg...))
+		gl = append(gl, slices.Clone(lg))
 	}
 
 	cpuLogits := func(opts decoder.Options) [][]float32 {
@@ -94,7 +94,7 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out[p] = append([]float32(nil), lg...)
+			out[p] = slices.Clone(lg)
 		}
 		return out
 	}
@@ -103,7 +103,7 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 		for p := range ids {
 			cs[p] = cosine64(gl[p], ref[p])
 		}
-		sort.Float64s(cs)
+		slices.Sort(cs)
 		t.Logf("%s: %d positions, cosine min %.6f p10 %.6f median %.6f", name, len(ids), cs[0], cs[len(cs)/10], cs[len(cs)/2])
 		return cs[len(cs)/10], cs[len(cs)/2]
 	}
@@ -189,7 +189,7 @@ func g32TestWeight(rf *cudaResident, rng *rand.Rand, kind string, N, K int) cuda
 	case "q6k":
 		T := N * nSB
 		w := words((210*T + 3) / 4)
-		for g := 0; g < T; g++ {
+		for g := range T {
 			byteOff := 208*T + 2*g
 			sh := uint(byteOff%4) * 8
 			w[byteOff/4] = w[byteOff/4]&^(0xffff<<sh) | half()<<sh
@@ -393,7 +393,7 @@ func TestPrefillG32_tinyPassMatchesSequential(t *testing.T) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	embs := make([][]float32, 300)
 	for i := range embs {
-		embs[i] = append([]float32(nil), m.EmbedResidentForTest((i*37+11)%vocab)...)
+		embs[i] = slices.Clone(m.EmbedResidentForTest((i*37 + 11) % vocab))
 	}
 	argmax := func(l []float32) int {
 		b := 0
@@ -406,13 +406,13 @@ func TestPrefillG32_tinyPassMatchesSequential(t *testing.T) {
 	}
 	// Forward's logits slice is reused by the next call, so every step is copied.
 	tail := func(seed []float32, n int) [][]float32 {
-		out := [][]float32{append([]float32(nil), seed...)}
+		out := [][]float32{slices.Clone(seed)}
 		for s := range 4 {
 			l, e := rf.Forward(m.EmbedResidentForTest(argmax(out[len(out)-1])), n+s)
 			if e != nil {
 				t.Fatalf("decode step %d: %v", s, e)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 		}
 		return out
 	}
@@ -520,7 +520,7 @@ func op6cSeq(t *testing.T, rf *cudaResident, embs [][]float32) []float32 {
 	if e != nil {
 		t.Fatalf("sequential last: %v", e)
 	}
-	return append([]float32(nil), l...)
+	return slices.Clone(l)
 }
 
 // op6cBatched is the batched arm: PrefillLast, which must run the pass (the load's PrefillPath reads batched).
@@ -553,13 +553,13 @@ func TestOP6C_q4kPassBitIdentity(t *testing.T) {
 		return b
 	}
 	steps := func(seed []float32, K int) [][]float32 {
-		out := [][]float32{append([]float32(nil), seed...)}
+		out := [][]float32{slices.Clone(seed)}
 		for s := range 16 {
 			l, e := rf.Forward(m.EmbedResidentForTest(argmax(out[len(out)-1])), K+s)
 			if e != nil {
 				t.Fatalf("decode step %d: %v", s, e)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 		}
 		return out
 	}
@@ -595,7 +595,7 @@ func op6cHostOK(needBytes int64) (load float64, availMB int64, ok bool) {
 		fmt.Sscanf(string(b), "%f", &load)
 	}
 	if b, err := os.ReadFile("/proc/meminfo"); err == nil {
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			if strings.HasPrefix(ln, "MemAvailable:") {
 				var kb int64
 				fmt.Sscanf(strings.TrimPrefix(ln, "MemAvailable:"), "%d", &kb)
@@ -669,8 +669,8 @@ func TestOP6C_q4kPassSpeed(t *testing.T) {
 		}
 	}
 	for _, P := range ps {
-		r := append([]float64(nil), ratios[P]...)
-		sort.Float64s(r)
+		r := slices.Clone(ratios[P])
+		slices.Sort(r)
 		above := 0
 		for _, v := range r {
 			if v > 1 {

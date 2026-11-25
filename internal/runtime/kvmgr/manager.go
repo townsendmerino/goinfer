@@ -1,6 +1,9 @@
 package kvmgr
 
-import "errors"
+import (
+	"errors"
+	"slices"
+)
 
 // ErrNoBlocks is returned when a sequence needs a block and none is free or evictable.
 var ErrNoBlocks = errors.New("kvmgr: no free block, and none cached to evict")
@@ -287,7 +290,7 @@ func (m *Manager) Admit(root Root, tokens []int, images []ImageSpan, cold []Clas
 	}
 	hit := len(ids) * BlockRows
 	s.table, s.hashes = ids, hashes
-	s.tokens = append([]int(nil), tokens[:hit]...)
+	s.tokens = slices.Clone(tokens[:hit])
 	for _, sp := range images {
 		if sp.end() <= hit {
 			s.images = append(s.images, sp)
@@ -403,8 +406,8 @@ func (s *Seq) dropBlock(i int) {
 func (s *Seq) Fork() (*Seq, []Copy, error) {
 	m := s.m
 	t := &Seq{m: m, root: s.root, rootHash: s.rootHash, pinned: true, slot: -1,
-		tokens: append([]int(nil), s.tokens...), images: append([]ImageSpan(nil), s.images...),
-		classes: append([]ClassRun(nil), s.classes...), hashes: append([]Hash(nil), s.hashes...)}
+		tokens: slices.Clone(s.tokens), images: slices.Clone(s.images),
+		classes: slices.Clone(s.classes), hashes: slices.Clone(s.hashes)}
 	var copies []Copy
 	for i, id := range s.table {
 		if i < len(s.hashes) {
@@ -430,7 +433,7 @@ func (s *Seq) Release() {
 	if s.released {
 		return
 	}
-	for i := len(s.table) - 1; i >= 0; i-- {
+	for i := range slices.Backward(s.table) {
 		s.dropBlock(i)
 	}
 	s.table, s.hashes, s.released = nil, nil, true

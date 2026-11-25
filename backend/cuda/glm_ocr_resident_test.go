@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,7 +120,7 @@ func TestGlmOcrResidentParityCUDA(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cpu forward[%d]: %v", i, err)
 			}
-			cpu[i] = append([]float32(nil), lc...)
+			cpu[i] = slices.Clone(lc)
 		}
 		cr.Reset()
 		for i := range text {

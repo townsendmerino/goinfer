@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -50,8 +51,8 @@ func windowedPrefillPartial(t *testing.T, fx string) {
 		withPrefillDeclinePass(t, 3)
 		_, err := r.PrefillLast(ctx, emb(start, end), start)
 		prefillDeclinePassForTest = 0
-		var p *decoder.PrefillPartial
-		if !errors.As(err, &p) {
+		p, ok := errors.AsType[*decoder.PrefillPartial](err)
+		if !ok {
 			t.Fatalf("windowed=%v: a third-pass decline returned %v, want a decoder.PrefillPartial", r.kvWin, err)
 		}
 		if !errors.Is(err, errPrefillDeclined) {
@@ -68,9 +69,9 @@ func windowedPrefillPartial(t *testing.T, fx string) {
 			t.Fatalf("windowed=%v: resuming at %d: %v", r.kvWin, p.Next, err)
 		}
 		if r.kvWin {
-			got = append([]float32(nil), lg...)
+			got = slices.Clone(lg)
 		} else {
-			want = append([]float32(nil), lg...)
+			want = slices.Clone(lg)
 		}
 	}
 	if j, ok := sameBits(want, got); !ok {
@@ -109,7 +110,7 @@ func windowedGenerationAfterDecline(t *testing.T, fx string) {
 			a[i] = (i*31 + 7) % vocab
 		}
 		reply, _ := gen(m, a)
-		b := append(append([]int(nil), a...), reply...)
+		b := slices.Concat(a, reply)
 		for i := range 4 * chunk {
 			b = append(b, (i*13+11)%vocab)
 		}

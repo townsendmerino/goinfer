@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -224,7 +224,7 @@ func renderOptionStateGrid() []byte {
 	for n := range ogGrid {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, n := range names {
 		w("| `%s` |", n)
 		for _, p := range ogPaths {
@@ -252,7 +252,7 @@ func renderOptionStateGrid() []byte {
 	for n := range ogLoadOnly {
 		lo = append(lo, n)
 	}
-	sort.Strings(lo)
+	slices.Sort(lo)
 	for _, n := range lo {
 		w("- `%s`: %s\n", n, ogLoadOnly[n])
 	}

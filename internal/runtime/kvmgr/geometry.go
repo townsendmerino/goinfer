@@ -3,6 +3,8 @@ package kvmgr
 // The geometry: what a model's KV is made of, as the manager needs to know it. decoder derives it from an
 // Architecture at load; nothing configures it.
 
+import "slices"
+
 // Retention is how long a layer group keeps a position.
 type Retention uint8
 
@@ -61,10 +63,8 @@ func (g Geometry) GroupOf(layer int) int {
 		layer = src
 	}
 	for gi, grp := range g.Groups {
-		for _, l := range grp.Layers {
-			if l == layer {
-				return gi
-			}
+		if slices.Contains(grp.Layers, layer) {
+			return gi
 		}
 	}
 	return -1

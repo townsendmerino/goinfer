@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -172,15 +173,15 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		e.End()
 		r.recordExecErr(e.Err())
 		r.finalizeLogits()
-		return append([]float32(nil), r.logitsHost...)
+		return slices.Clone(r.logitsHost)
 	}
 
 	// ---- trajectory 1: shipped, end to end via ForwardEmb (the record's reference arm) ----
 	prefill()
 	shippedLogits := make([][]float32, nSteps)
 	for s := 0; s < nSteps; s++ {
-		l := r.ForwardEmb(append([]float32(nil), stepEmbs[s]...), prefillLen+s)
-		shippedLogits[s] = append([]float32(nil), l...)
+		l := r.ForwardEmb(slices.Clone(stepEmbs[s]), prefillLen+s)
+		shippedLogits[s] = slices.Clone(l)
 	}
 	if err := r.takeExecErr(); err != nil {
 		t.Fatalf("trajectory 1: %v", err)
@@ -219,7 +220,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		r.setPosAheadForTest(pos)
 		if mode == modeFA {
 			r.decodeAttnFA = true
-			for l := 0; l < nL; l++ {
+			for l := range nL {
 				if !r.canUseAttnFA(l) {
 					t.Fatalf("step %d layer %d: canUseAttnFA false with the toggle on (curNKeys=%d)", s, l, r.curNKeys)
 				}
@@ -228,16 +229,16 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		}
 		prng := rand.New(rand.NewSource(int64(1000 + s)))
 		recs = make([]layerRec, nL)
-		for l := 0; l < nL; l++ {
-			xPre := append([]float32(nil), r.x.Floats()[:H]...)
+		for l := range nL {
+			xPre := slices.Clone(r.x.Floats()[:H])
 			// shipped arm from xPre
 			r.decodeAttnFA = false
 			e := r.q.Begin()
 			r.encodeLayer(e, l)
 			e.End()
 			r.recordExecErr(e.Err())
-			recs[l].ctxSh = append([]float32(nil), r.ctx.Floats()[:nH*hd]...)
-			recs[l].xSh = append([]float32(nil), r.x.Floats()[:H]...)
+			recs[l].ctxSh = slices.Clone(r.ctx.Floats()[:nH*hd])
+			recs[l].xSh = slices.Clone(r.x.Floats()[:H])
 			switch mode {
 			case modeFA:
 				// attention_fa arm from the SAME xPre and the SAME KV state (the shipped arm's
@@ -249,18 +250,18 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 				e.End()
 				r.recordExecErr(e.Err())
 				r.decodeAttnFA = false
-				recs[l].ctxFA = append([]float32(nil), r.ctx.Floats()[:nH*hd]...)
-				recs[l].xFA = append([]float32(nil), r.x.Floats()[:H]...)
-				recs[l].q = append([]float32(nil), r.qkv.Floats()[:nH*hd]...)
+				recs[l].ctxFA = slices.Clone(r.ctx.Floats()[:nH*hd])
+				recs[l].xFA = slices.Clone(r.x.Floats()[:H])
+				recs[l].q = slices.Clone(r.qkv.Floats()[:nH*hd])
 				// trajectory continues from attention_fa's own layer output (r.x already holds it)
 			case modePerturb:
 				if l == 0 {
 					xs := r.x.Floats()
-					for i := 0; i < H; i++ {
+					for i := range H {
 						xs[i] += float32(prng.NormFloat64() * perturbMag)
 					}
 				}
-				recs[l].xFA = append([]float32(nil), r.x.Floats()[:H]...)
+				recs[l].xFA = slices.Clone(r.x.Floats()[:H])
 			}
 		}
 		logits = logitsFromX()
@@ -303,7 +304,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 			cos, mx := cosMax(lg, shippedLogits[s])
 			bad := cos < 0.9999 || mx > 1e-1
 			logf("step %d pos=%d nKeys=%d: PERTURBED-trajectory logits vs shipped: cosine=%.7f maxAbs=%.4e bad=%v", s, pos, pos+1, cos, mx, bad)
-			for l := 0; l < nL; l++ {
+			for l := range nL {
 				_, acc := cosMax(recs[l].xFA, ctrl[s][l].xSh)
 				n := countAbove(recs[l].xFA, ctrl[s][l].xSh, 1e-3)
 				flag := ""
@@ -332,7 +333,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		// per-layer local kernel comparison on identical inputs, plus the ACCUMULATED trajectory
 		// divergence against the pure shipped trajectory (trajectory 2's per-layer residuals)
 		worstLayer, worstRel := -1, 0.0
-		for l := 0; l < nL; l++ {
+		for l := range nL {
 			rc := recs[l]
 			_, acc := cosMax(rc.xFA, ctrl[s][l].xSh)
 			nAcc := countAbove(rc.xFA, ctrl[s][l].xSh, 1e-3)
@@ -531,7 +532,7 @@ func TestR2_replayDump(t *testing.T) {
 		enc := cq.Begin()
 		enc.Dispatch(pAttn, nH*tgReduceAttn, tgReduceAttn, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, sinks, uZero, kvIdentityTable(d))
 		enc.End()
-		report("isolated shipped attention", append([]float32(nil), out.Floats()...))
+		report("isolated shipped attention", slices.Clone(out.Floats()))
 	}
 	for _, nSplit := range []int{14, 1, 4} {
 		pStride := G * (hd + 2)
@@ -543,6 +544,6 @@ func TestR2_replayDump(t *testing.T) {
 		enc.DispatchTG(pFA, nKV*nSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit, kvIdentityTable(d))
 		enc.Dispatch(pCombine, nH*hd, hd, partial, out, uG, uHd, uNSplit)
 		enc.End()
-		report(fmt.Sprintf("isolated attention_fa S=%d", nSplit), append([]float32(nil), out.Floats()...))
+		report(fmt.Sprintf("isolated attention_fa S=%d", nSplit), slices.Clone(out.Floats()))
 	}
 }

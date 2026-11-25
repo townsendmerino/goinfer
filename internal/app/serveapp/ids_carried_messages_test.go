@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,9 +51,7 @@ func messagesContent(t *testing.T, evs []map[string]any, stream bool) []map[stri
 				t.Fatalf("block %d opened at position %d", i, len(out))
 			}
 			b := map[string]any{}
-			for k, v := range asMap(e["content_block"]) {
-				b[k] = v
-			}
+			maps.Copy(b, asMap(e["content_block"]))
 			out = append(out, b)
 		case "content_block_delta":
 			b, d := out[int(e["index"].(float64))], asMap(e["delta"])
@@ -518,9 +517,7 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 				switch it["type"] {
 				case "function_call":
 					c := map[string]any{}
-					for k, v := range it {
-						c[k] = v
-					}
+					maps.Copy(c, it)
 					if it["arguments"] == args {
 						c["arguments"] = callArgs
 					}
@@ -529,7 +526,7 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 					reply = append(reply, map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": text}}})
 				}
 			}
-			nb["input"] = append(append(append([]any(nil), nb["input"].([]any)...), reply...), rp.Follow...)
+			nb["input"] = slices.Concat(nb["input"].([]any), reply, rp.Follow)
 			m := messagesFromResponses(t, nb)
 			if keepThinking { // the translator put the visible text in the block; the signature is the case's
 				for _, x := range m["messages"].([]any) {

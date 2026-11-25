@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -97,7 +98,7 @@ func goldenAxes() (quants, loaders map[string]bool, ok bool) {
 		return nil, nil, false
 	}
 	files, _ := filepath.Glob(filepath.Join("decoder", "*_test.go"))
-	sort.Strings(files)
+	slices.Sort(files)
 	quants, loaders = map[string]bool{}, map[string]bool{}
 	for _, f := range files {
 		raw, err := os.ReadFile(f)
@@ -156,7 +157,7 @@ func setDiff(a, b map[string]bool) []string {
 			out = append(out, k)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -165,11 +166,7 @@ func counted(xs []string) string {
 	for _, x := range xs {
 		c[x]++
 	}
-	keys := make([]string, 0, len(c))
-	for k := range c {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(c))
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s=%d", k, c[k]))

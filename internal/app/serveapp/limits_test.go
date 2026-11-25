@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -109,7 +109,7 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\(([^\n]*)\{\n(.*?)\n\}`)
 	routes, unguarded := 0, []string{}
 	for _, f := range files {
@@ -492,7 +492,7 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 			} else {
 				c.load.QuantSet = false
 			}
-			if got := (modelSpec{}).explicitQuant(c); got != tc.want {
+			if got := (&modelSpec{}).explicitQuant(&c); got != tc.want {
 				t.Errorf("explicitQuant = %q, want %q — the .giw mismatch check keys on this, so "+
 					"a wrong answer either loads a differently-baked bundle silently or rejects "+
 					"a request that named nothing (N-19)", got, tc.want)

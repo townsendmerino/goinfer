@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"slices"
 )
 
 // flintArchitecture expresses Flint (RecursiveSI/flint; model_type "flint", GGUF
@@ -55,7 +56,7 @@ func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if routedScale == 0 {
 		routedScale = 1.0
 	}
-	layerTypes := append([]string(nil), cfg.LayerTypes...)
+	layerTypes := slices.Clone(cfg.LayerTypes)
 	isGlobal := func(i int) bool {
 		if i >= 0 && i < len(layerTypes) {
 			return layerTypes[i] == "full_attention"

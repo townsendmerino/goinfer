@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -29,7 +30,7 @@ func TestSessionFastAttnDivergence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("prefillLogits(fast=%v, %d tokens): %v", fast, len(prompt), err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	seq := func(n int) []int {
 		ids := make([]int, n)

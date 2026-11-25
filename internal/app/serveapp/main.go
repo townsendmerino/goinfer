@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -38,7 +39,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,8 +102,8 @@ func (m *modelFlag) Set(v string) error {
 	fields := strings.Split(v, ",")
 	spec := modelSpec{path: fields[0]}
 	// "name=path": split the first field on the first '=' (a served name has no '=').
-	if i := strings.IndexByte(fields[0], '='); i > 0 {
-		spec.name, spec.path = fields[0][:i], fields[0][i+1:]
+	if name, path, ok := strings.Cut(fields[0], "="); ok && name != "" {
+		spec.name, spec.path = name, path
 	}
 	if spec.path == "" {
 		return fmt.Errorf("empty model path in %q", v)
@@ -173,7 +173,7 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 // explicitQuant returns the quant the user EXPLICITLY chose for this model: the per-model `quant=` override, else the
 // global --quant if it was actually passed, else "" (the process default). Used only for the .giw mismatch check: a bare
 // default must never conflict with an already-baked bundle.
-func (s modelSpec) explicitQuant(cfg config) string {
+func (s *modelSpec) explicitQuant(cfg *config) string {
 	if s.quant != nil {
 		return *s.quant
 	}
@@ -182,7 +182,7 @@ func (s modelSpec) explicitQuant(cfg config) string {
 
 // options resolves this spec's overrides over the server-global defaults (cfg.load, the flags chat
 // shares) into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
-func (s modelSpec) options(cfg config) decoder.Options {
+func (s *modelSpec) options(cfg *config) decoder.Options {
 	ov := loadflags.Overrides{Quant: s.quant, LoRA: s.lora, KV: s.kvPrec, KVQuant: s.kvQuant, Stream: s.stream,
 		WeightCacheGB: s.weightCache, EmbedInt4: s.embedInt4, Ctx: s.ctxSize, Serve: &loadflags.ServeLoad{
 			KVQuant: cfg.kvQuant, KVSessions: cfg.kvSessions, KVSessionsSet: cfg.kvSessionsSet, PrefillChunk: cfg.prefillChunk,
@@ -502,7 +502,7 @@ func (srv *server) checkpointSessions(cfg config) {
 // validate checks the settings that do not depend on how the server is reached: the session directory, the
 // speculation and tiering choices, the thinking and tool formats, and the decision-route calibration. The listener's
 // own checks (the address, the API key, TLS) stay with the caller.
-func (cfg config) validate() error {
+func (cfg *config) validate() error {
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		return err
 	}
@@ -900,14 +900,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		_ = httpSrv.Shutdown(ctx)
 		// What the CPU batcher did over this server's life: that decode tokens actually ran in batched steps, and how wide.
 		for _, lm := range srv.modelList() {
-			if lm.model != nil && lm.mdl().CPUBatchActive() {
-				st := lm.mdl().CPUBatchStats()
+			if lm.model != nil && lm.model.CPUBatchActive() {
+				st := lm.model.CPUBatchStats()
 				fmt.Fprintf(os.Stderr, "cpu batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
 			}
-			if lm.model != nil && lm.mdl().ResidentConcurrency() > 1 {
+			if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
 				// The resident batcher's counters, the same shape.
-				st := lm.mdl().ResidentBatchStats()
+				st := lm.model.ResidentBatchStats()
 				fmt.Fprintf(os.Stderr, "resident batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
 				// The tokens a lone generation ran with the resident held (the chained decode, holdSolo): the record that
@@ -996,7 +996,7 @@ func newServer(cfg config) (*server, error) {
 	s := &server{
 		models:    map[string]*loadedModel{},
 		speech:    map[string]*speechModel{},
-		liveness:  map[modelHandle]*modelLiveness{},
+		liveness:  map[io.Closer]*modelLiveness{},
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
 		responses: newResponseStore(256),
@@ -1045,7 +1045,7 @@ func newServer(cfg config) (*server, error) {
 			return nil, fmt.Errorf("duplicate served model name %q (use --model name=path to disambiguate)", lm.name)
 		}
 		s.models[lm.name] = lm
-		s.retainLocked(lm.model) // liveness refs (startup is single-threaded; no lock contention)
+		s.retainLocked(lm.livenessKey()) // liveness refs (startup is single-threaded; no lock contention)
 	}
 	if err := s.loadAdapters(cfg); err != nil {
 		return nil, err
@@ -1103,16 +1103,16 @@ func (s *server) loadAdapters(cfg config) error {
 			return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)
 		}
 		t0 := time.Now()
-		if err := base.mdl().LoadAdapter(spec.name, spec.dir); err != nil {
+		if err := base.model.LoadAdapter(spec.name, spec.dir); err != nil {
 			return fmt.Errorf("--adapter %q: %w", spec.name, err)
 		}
 		fp := base.fp + "+adapter:" + spec.name // distinct snapshot namespace from the base + sibling adapters
 		lm := &loadedModel{
-			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
+			tk: base.tk, model: base.model, closer: base.closer, tmpl: base.tmpl, stopIDs: base.stopIDs,
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
 			spec:           cfg.spec == "ngram",
 			specAdaptive:   cfg.specAdaptive,
-			sessions:       newSessionLRU(asDecoder(base.model), cfg.kvSessions, 0, fp),
+			sessions:       newSessionLRU(base.model, cfg.kvSessions, 0, fp),
 			tokenBytesFrom: base,
 		}
 		lm.sessions.adapter = spec.name
@@ -1120,7 +1120,7 @@ func (s *server) loadAdapters(cfg config) error {
 			lm.queue = scheduler.NewQueue(1, cfg.maxQueue)
 		}
 		s.models[spec.name] = lm
-		s.retainLocked(lm.model) // adapter shares base.model → same liveness entry, refs++
+		s.retainLocked(lm.livenessKey()) // adapter shares base.model → same liveness entry, refs++
 		fmt.Fprintf(os.Stderr, "loaded adapter %q on base %q in %s\n", spec.name, spec.base, time.Since(t0).Round(time.Millisecond))
 	}
 	return nil
@@ -1129,7 +1129,7 @@ func (s *server) loadAdapters(cfg config) error {
 // towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
 // both arms.
-func (cfg config) towerBackend() string {
+func (cfg *config) towerBackend() string {
 	if cfg.visionDevice == "cpu" {
 		return "cpu"
 	}
@@ -1162,7 +1162,7 @@ const (
 //     binary has a WebGPU tower for.
 //
 // An audio encoder does not come through here (towerBackend).
-func (cfg config) routeVisionTower(family string, mmproj bool) visionRoute {
+func (cfg *config) routeVisionTower(family string, mmproj bool) visionRoute {
 	be := cfg.towerBackend()
 	if be != "webgpu" {
 		return visionRoute{Backend: be}
@@ -1450,7 +1450,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 		return fmt.Errorf("qwen2.5-vl preprocessor config (%s): %w", dir, err)
 	}
 	for _, lm := range s.models {
-		q := &qwen25Vision{qwenGrid: qwenGrid{pp: pp, merge: enc.Cfg.SpatialMergeSize, imgTok: -1}, enc: enc, require: require}
+		q := &qwen25Vision{pp: pp, merge: enc.Cfg.SpatialMergeSize, imgTok: -1, enc: enc, require: require}
 		lm.vision = q
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
 			q.imgTok = id
@@ -1471,7 +1471,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 // Gemma4Encoder has no EnableResident method.
 func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend string, require bool) error {
 	for _, lm := range s.models {
-		if bd := lm.mdl().Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
+		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
 			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q, not the supported %q value; GenerateGemma4VL only implements the E2B/E4B-class causal case (unset) and the 26B-A4B/31B-class %q blockwise case", lm.name, bd, "vision", "vision")
 		}
 	}
@@ -1572,7 +1572,7 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 	}
 	var m *decoder.Model
 	for _, lm := range models {
-		m = asDecoder(lm.model)
+		m = lm.model
 	}
 	if m == nil {
 		return nil
@@ -1654,7 +1654,7 @@ func servedNameFor(path string) string {
 func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel, error) {
 	// Resolve this model's knobs (per-model overrides over server-global defaults)
 	// and reject invalid enums up front.
-	opts := spec.options(cfg)
+	opts := spec.options(&cfg)
 	head, err := specHead(spec, &opts)
 	if err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
@@ -1705,7 +1705,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// the cache it may have loaded through.
 	res, err := modelload.Load(ctx, modelload.Request{
 		Spec: spec.path, Opts: opts, DirectLoad: cfg.load.DirectLoad,
-		ExplicitQuant: spec.explicitQuant(cfg), GuardAdvice: "use -stream-weights or a smaller quant",
+		ExplicitQuant: spec.explicitQuant(&cfg), GuardAdvice: "use -stream-weights or a smaller quant",
 	})
 	if err != nil {
 		return nil, err
@@ -1727,7 +1727,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: handleOf(model), vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
+		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
 		sampling:     mcfg.Sampling,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
@@ -1780,7 +1780,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// State the RESOLVED paths, not the requested ones. The resident decode path and the batched prefill are optional
 	// capabilities that fall back silently: a model can load clean, report a GPU backend, and still take one forward per
 	// prompt token. Printing them at load makes that visible; -require-backend turns a decline into a startup failure.
-	batched, why := lm.mdl().PrefillPath()
+	batched, why := lm.model.PrefillPath()
 	// The rest of the resolved state — context cap, KV precision, session reuse (and WHY when
 	// it is off), and the features a harness asks about — comes from modelBanner so a test can
 	// hold it to the runtime's own state rather than trusting a run of Fprintf calls.
@@ -1822,17 +1822,17 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 // prefill that declined to the sequential per-token loop. The CPU backend has no resident path by
 // definition, so only the prefill half applies there.
 func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, why string) error {
-	if cfg.load.Backend != "cpu" && !lm.mdl().ResidentActive() {
+	if cfg.load.Backend != "cpu" && !lm.model.ResidentActive() {
 		// Covers the whole ladder, not just an ineligible arch: an untagged build (`--backend cuda`
 		// without `-tags cuda` resolves to the CPU backend), a box with no usable device (the cuda
 		// factory always succeeds — the driver is only touched at BuildResident), and a model shape
 		// the runner refuses. All three otherwise present as a healthy server that is silently on CPU.
-		reason := lm.mdl().ResidentDecline()
+		reason := lm.model.ResidentDecline()
 		if reason == "" {
 			reason = "no reason recorded"
 		}
 		return fmt.Errorf("--require-backend: model %q did not build a resident decode path on backend %q: %s (resolved: %s)",
-			name, cfg.load.Backend, reason, lm.mdl().DecodePath())
+			name, cfg.load.Backend, reason, lm.model.DecodePath())
 	}
 	if !batched {
 		return fmt.Errorf("--require-backend: model %q declined the batched prefill: %s", name, why)
@@ -1935,11 +1935,7 @@ func (s *server) loadEncoder(cfg config) error {
 func (s *server) endpointSummary() string {
 	var parts []string
 	if len(s.models) > 0 {
-		names := make([]string, 0, len(s.models))
-		for n := range s.models {
-			names = append(names, n)
-		}
-		sort.Strings(names)
+		names := slices.Sorted(maps.Keys(s.models))
 		parts = append(parts, fmt.Sprintf("chat:[%s]", strings.Join(names, " ")))
 	}
 	if s.embed != nil {

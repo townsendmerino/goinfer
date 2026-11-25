@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"testing"
 )
@@ -284,8 +284,8 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 	loras := []*loraRuntime{nil, {name: "a"}, {name: "b"}}
 	steps, binds, reused := 0, 0, 0
 	for seed := int64(1); seed <= 24; seed++ {
-		rng := rand.New(rand.NewSource(seed))
-		cfg := equivResident{n: 1 + rng.Intn(4), floor: []int{0, 0, 96, 512}[rng.Intn(4)], window: []int{0, 0, 7}[rng.Intn(3)]}
+		rng := rand.New(rand.NewPCG(uint64(seed), 0))
+		cfg := equivResident{n: 1 + rng.IntN(4), floor: []int{0, 0, 96, 512}[rng.IntN(4)], window: []int{0, 0, 7}[rng.IntN(3)]}
 		rn, ro := cfg, cfg
 		m, o := &Model{resident: &rn}, &oldReuse{resident: &ro}
 		if seed%6 == 0 {
@@ -297,21 +297,21 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 		tokens := func(n int) []int {
 			out := make([]int, n)
 			for i := range out {
-				out[i] = rng.Intn(3)
+				out[i] = rng.IntN(3)
 			}
 			return out
 		}
 		prompt := func() ([]int, []residentImageClaim) {
 			var p []int
-			if len(history) > 0 && rng.Intn(5) != 0 {
-				h := history[rng.Intn(len(history))]
-				p = append(p, h[:rng.Intn(len(h)+1)]...)
+			if len(history) > 0 && rng.IntN(5) != 0 {
+				h := history[rng.IntN(len(history))]
+				p = append(p, h[:rng.IntN(len(h)+1)]...)
 			}
-			p = append(p, tokens(rng.Intn(700)>>uint(rng.Intn(4)))...)
+			p = append(p, tokens(rng.IntN(700)>>uint(rng.IntN(4)))...)
 			var imgs []residentImageClaim
-			if len(p) > 6 && rng.Intn(3) == 0 {
-				at := rng.Intn(len(p) - 4)
-				imgs = append(imgs, residentImageClaim{Start: at, Len: 1 + rng.Intn(min(len(p)-at, 30)), Hash: uint64(rng.Intn(3))})
+			if len(p) > 6 && rng.IntN(3) == 0 {
+				at := rng.IntN(len(p) - 4)
+				imgs = append(imgs, residentImageClaim{Start: at, Len: 1 + rng.IntN(min(len(p)-at, 30)), Hash: uint64(rng.IntN(3))})
 			}
 			return p, imgs
 		}
@@ -326,20 +326,20 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				t.Fatalf("seed %d op %d, after %s: slot %d is bound, the old code bound %d", seed, op, what, rn.bound, ro.bound)
 			}
 		}
-		for op := 0; op < 1500; op++ {
+		for op := range 1500 {
 			steps++
-			switch k := rng.Intn(20); {
+			switch k := rng.IntN(20); {
 			case k < 13: // a generation
 				p, imgs := prompt()
-				lora := loras[rng.Intn(len(loras))]
+				lora := loras[rng.IntN(len(loras))]
 				var busy []bool
-				if rng.Intn(4) == 0 {
+				if rng.IntN(4) == 0 {
 					busy = make([]bool, cfg.n)
 					for i := range busy {
-						busy[i] = rng.Intn(3) == 0
+						busy[i] = rng.IntN(3) == 0
 					}
 				}
-				rn.fail = rng.Intn(25) == 0
+				rn.fail = rng.IntN(25) == 0
 				ro.fail = rn.fail
 				gr, gs := m.residentAcquireSlot(p, imgs, lora, busy)
 				wr, ws := o.residentAcquireSlot(p, imgs, lora, busy)
@@ -354,10 +354,10 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				}
 				m.residentForgetIDs()
 				o.residentForgetIDs()
-				if gs < 0 || len(p) == 0 || rng.Intn(6) == 0 {
+				if gs < 0 || len(p) == 0 || rng.IntN(6) == 0 {
 					break // refused, or cancelled: nothing is committed
 				}
-				gen := tokens(rng.Intn(80))
+				gen := tokens(rng.IntN(80))
 				var blocks []residentImageBlock
 				for _, c := range imgs {
 					blocks = append(blocks, residentImageBlock{start: c.Start, end: c.Start + c.Len, hash: c.Hash})
@@ -371,12 +371,12 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				}
 			case k < 15: // the reuse length of the bound slot, asked directly (the image paths do)
 				p, imgs := prompt()
-				lora := loras[rng.Intn(len(loras))]
+				lora := loras[rng.IntN(len(loras))]
 				if g, w := m.residentReuseLen(p, imgs, lora), o.residentReuseLen(p, imgs, lora); g != w {
 					t.Fatalf("seed %d op %d: residentReuseLen = %d, the old code said %d", seed, op, g, w)
 				}
 			case k < 17: // bind a slot by number (an MC3 generation coming back to commit)
-				sl := rng.Intn(cfg.n)
+				sl := rng.IntN(cfg.n)
 				ge, we := m.residentBind(sl), o.residentBind(sl)
 				if (ge == nil) != (we == nil) {
 					t.Fatalf("seed %d op %d: bind %d: %v, the old code %v", seed, op, sl, ge, we)
@@ -384,8 +384,8 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				binds++
 				same("bind", op)
 			case k < 18: // the fields written directly, as tests do
-				ids := tokens(1 + rng.Intn(200))
-				lora := loras[rng.Intn(len(loras))]
+				ids := tokens(1 + rng.IntN(200))
+				lora := loras[rng.IntN(len(loras))]
 				m.setBoundSeqForTest(slices.Clone(ids), lora, nil)
 				o.resIDs, o.resIDsLora, o.resImg = slices.Clone(ids), lora, nil
 			default:

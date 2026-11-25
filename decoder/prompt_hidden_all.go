@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync/atomic"
 )
 
@@ -118,7 +119,7 @@ func (m *Model) promptHiddenAllSequential(ctx context.Context, prompt []int) ([]
 			return nil, err
 		}
 		// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
-		row := append([]float32(nil), h[:a.HiddenDim]...)
+		row := slices.Clone(h[:a.HiddenDim])
 		m.finalNorm(row)
 		out[i] = row
 	}

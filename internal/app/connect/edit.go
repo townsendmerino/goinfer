@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -55,8 +56,8 @@ func parseObject(raw []byte) (object, error) {
 }
 
 // get returns the value of key as an object, empty when the key is absent, and an error when it holds something else.
-func (o object) get(key string) (object, error) {
-	for _, m := range o {
+func (o *object) get(key string) (object, error) {
+	for _, m := range *o {
 		if m.key == key {
 			sub, err := parseObject(m.val)
 			if err != nil {
@@ -87,10 +88,10 @@ func (o *object) set(key string, v any) {
 	*o = append(*o, member{key, raw})
 }
 
-func (o object) compact() json.RawMessage {
+func (o *object) compact() json.RawMessage {
 	var b bytes.Buffer
 	b.WriteByte('{')
-	for i, m := range o {
+	for i, m := range *o {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -104,7 +105,7 @@ func (o object) compact() json.RawMessage {
 }
 
 // text is the object as an indented file.
-func (o object) text() []byte {
+func (o *object) text() []byte {
 	var b bytes.Buffer
 	_ = json.Indent(&b, o.compact(), "", "  ")
 	b.WriteByte('\n')
@@ -114,8 +115,8 @@ func (o object) text() []byte {
 // tomlHeader reports whether a line opens a TOML table, and its name.
 func tomlHeader(line string) (string, bool) {
 	t := strings.TrimSpace(line)
-	if i := strings.Index(t, "#"); i >= 0 && strings.HasSuffix(strings.TrimSpace(t[:i]), "]") {
-		t = strings.TrimSpace(t[:i])
+	if before, _, ok := strings.Cut(t, "#"); ok && strings.HasSuffix(strings.TrimSpace(before), "]") {
+		t = strings.TrimSpace(before)
 	}
 	if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
 		return strings.TrimSpace(strings.Trim(t, "[]")), true
@@ -126,11 +127,11 @@ func tomlHeader(line string) (string, bool) {
 // tomlKey is the bare key a `key = value` line sets, or "".
 func tomlKey(line string) string {
 	t := strings.TrimSpace(line)
-	i := strings.Index(t, "=")
-	if i <= 0 || strings.HasPrefix(t, "#") {
+	key, _, ok := strings.Cut(t, "=")
+	if !ok || key == "" || strings.HasPrefix(t, "#") {
 		return ""
 	}
-	return strings.TrimSpace(t[:i])
+	return strings.TrimSpace(key)
 }
 
 // tomlEdit patches a TOML file as text, since the standard library reads none: it sets top-level keys (the lines
@@ -164,8 +165,8 @@ func tomlEdit(src string, top []tomlRow, table string, rows []tomlRow) (string, 
 			return "", fmt.Errorf("line %d sets %s inside [%s] without a [%s] table; edit it by hand", i+1, k, parent, table)
 		}
 	}
-	head := append([]string(nil), lines[:first]...)
-	rest := append([]string(nil), lines[first:]...)
+	head := slices.Clone(lines[:first])
+	rest := slices.Clone(lines[first:])
 	for _, kv := range top {
 		line, done := kv.key+" = "+kv.val, false
 		for i, ln := range head {

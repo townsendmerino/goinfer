@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -232,7 +233,7 @@ type flipAt struct {
 
 func (f *flipAt) Write(p []byte) (int, error) {
 	if i := f.at - f.off; i >= 0 && i < int64(len(p)) {
-		q := append([]byte(nil), p...)
+		q := slices.Clone(p)
 		q[i] ^= 0xff
 		p = q
 	}

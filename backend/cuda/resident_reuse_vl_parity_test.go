@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -139,7 +140,7 @@ func TestGemma3ResidentReal_imageBlockAtomicity(t *testing.T) {
 			case 0: // cold: image A
 				prompt, id, pixels, hash = g.InputIDs, "A", g.PixelValues, imgHashA
 			case 1: // the SAME image A, resent as a strict extension (the agent-loop shape)
-				next := append(append([]int(nil), prevIDs...), prevGen...)
+				next := slices.Concat(prevIDs, prevGen)
 				prompt = append(next, prevIDs[len(prevIDs)-1])
 				id, pixels, hash = "A", g.PixelValues, imgHashA
 			case 2: // a DIFFERENT image B at the SAME placeholder slot — the adversarial case.

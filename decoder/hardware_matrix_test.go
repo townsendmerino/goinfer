@@ -13,11 +13,11 @@ package decoder
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -80,7 +80,7 @@ func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 	for k := range registry {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	rows := map[string]*hwRow{}
 	for _, mt := range keys {
@@ -115,7 +115,7 @@ func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 	for _, r := range rows {
 		out = append(out, *r)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Display < out[j].Display })
+	slices.SortFunc(out, func(a, b hwRow) int { return cmp.Compare(a.Display, b.Display) })
 	return out, nil
 }
 
@@ -174,8 +174,7 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("  (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B\n")
 	b.WriteString("  at int4, worst per-position cosine -0.075 / -0.041 against the CPU). Every resident backend binds pairwise twins\n")
 	b.WriteString("  (`backend/cuda/rope_pairwise.cu`, Metal's, `backend/webgpu/internal/kernels/pairwise.go`), each gated against the\n")
-	b.WriteString("  CPU with a NeoX control that must read far below (on peaked tiny fixtures or real checkpoints). Under WebGPU,\n")
-	b.WriteString("  Command-R and Command-R7B still lack the features the table names.\n")
+	b.WriteString("  CPU with a NeoX control that must read far below (on peaked tiny fixtures or real checkpoints).\n")
 	b.WriteString(renderHardwareWhy(rows))
 	b.WriteString(verified)
 	return []byte(b.String())
@@ -255,7 +254,8 @@ func renderHardwareWhy(rows []hwRow) string {
 		b.WriteString("- **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no\n")
 		b.WriteString("  activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do\n")
 		b.WriteString("  not implement, so it runs on the CPU.\n")
-		b.WriteString("- **WebGPU:** neither; the CPU.\n")
+		b.WriteString("- **WebGPU:** every source loads at int8int8 with per-32 activation scales (WebGPU has no q4k kernel) and runs\n")
+		b.WriteString("  resident; the batched prefill does not take per-32 scales, so the prompt runs token by token.\n")
 	}
 	return b.String()
 }
@@ -455,7 +455,7 @@ func renderVerifiedOn(c censusFile) string {
 		for h := range m.hows {
 			hows = append(hows, h)
 		}
-		sort.Strings(hows)
+		slices.Sort(hows)
 		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s |\n", strings.ReplaceAll(name, "|", "/"), strings.Join(hows, ", "), len(m.ids), m.latest))
 	}
 	b.WriteString(fmt.Sprintf("\n**%d of %d hardware-selected paths have no record of ever executing:**\n\n", len(never), len(c.Entries)))

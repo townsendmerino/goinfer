@@ -296,7 +296,7 @@ func TestIDsCarried_tinyFallbackAndKV(t *testing.T) {
 		t.Errorf("turn 1 line: ids=%s ids_fallback=%s div=%s", t1.ids, t1.fb, t1.div)
 	}
 	P1 := t1.promptIDs
-	slot := append(append([]int(nil), P1...), t1.gen...)
+	slot := slices.Concat(P1, t1.gen)
 
 	echo := map[string]any{}
 	for k, v := range msg {
@@ -318,7 +318,7 @@ func TestIDsCarried_tinyFallbackAndKV(t *testing.T) {
 	valid := carrier["encrypted_content"].(string)
 	forgedIDs := nonCanonicalSplit(t, lm, t1.gen)
 	if slices.Equal(forgedIDs, canon) {
-		forgedIDs = append([]int(nil), t1.gen...) // the per-character split is the canonical one here; any split will do without a MAC
+		forgedIDs = slices.Clone(t1.gen) // the per-character split is the canonical one here; any split will do without a MAC
 	}
 	forged := (&idsBlob{whole: true, keyID: key.id, model: lm.idsIdentity(), ids: forgedIDs}).String()
 	otherKey := newIDsKey([]byte("another key for the tier-0 test!")).mint(lm.idsIdentity(), "", "", t1.gen, true)

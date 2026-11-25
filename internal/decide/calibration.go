@@ -3,9 +3,10 @@ package decide
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
-	"sort"
+	"slices"
 )
 
 // Calibration is autotrust's calibration.json (version 1, recorded verbatim in
@@ -91,12 +92,7 @@ func FitTemperatures(rows []FitRow, source, template string) *Calibration {
 	}
 	c := &Calibration{Version: 1, PerKind: map[string]float64{}, PerKindFamily: map[string]any{}, Fit: map[string]FitSummary{},
 		Source: source, FitRows: len(rows), Template: template}
-	kinds := make([]string, 0, len(byKind))
-	for k := range byKind {
-		kinds = append(kinds, k)
-	}
-	sort.Strings(kinds)
-	for _, k := range kinds {
+	for _, k := range slices.Sorted(maps.Keys(byKind)) {
 		rs := byKind[k]
 		obj := func(beta float64) float64 { return meanKL(rs, beta) }
 		lo, hi := betaMin, betaMax

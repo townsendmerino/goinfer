@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -762,9 +763,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 			if h0 >= h1 {
 				continue
 			}
-			wg.Add(1)
-			go func(w, h0, h1 int) {
-				defer wg.Done()
+			wg.Go(func() {
 				ws := &pool[w]
 				lastKVH := -1
 				for qhead := h0; qhead < h1; qhead++ {
@@ -778,7 +777,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 					// by MatmulBT's width contract.
 					attendOneHead(qhead, ws, ws.mmWS.MatmulBT)
 				}
-			}(w, h0, h1)
+			})
 		}
 		h1_0 := min(headsPer, nH)
 		ws0 := &pool[0]
@@ -817,11 +816,9 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 		if h0 >= h1 {
 			continue
 		}
-		wg.Add(1)
-		go func(w, h0, h1 int) {
-			defer wg.Done()
+		wg.Go(func() {
 			runHeadRange(&pool[w], h0, h1)
-		}(w, h0, h1)
+		})
 	}
 	h1_0 := min(headsPer, nH)
 	runHeadRange(&pool[0], 0, h1_0)
@@ -897,7 +894,7 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 			if err != nil {
 				return nil, err
 			}
-			out[i] = append([]float32(nil), l...) // forward reuses scr.logits — copy
+			out[i] = slices.Clone(l) // forward reuses scr.logits — copy
 		}
 		return out, nil
 	}

@@ -92,13 +92,13 @@ type bannerFacts struct {
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
-	_, prefillWhy := lm.mdl().PrefillPath()
+	_, prefillWhy := lm.model.PrefillPath()
 	f := bannerFacts{
-		decodePath:   lm.mdl().DecodePath(),
-		headTable:    lm.mdl().HeadTable(),
+		decodePath:   lm.model.DecodePath(),
+		headTable:    lm.model.HeadTable(),
 		prefillPath:  prefillWhy,
-		resident:     lm.mdl().ResidentActive(),
-		snapshots:    lm.mdl().KVSnapshotsSupported(),
+		resident:     lm.model.ResidentActive(),
+		snapshots:    lm.model.KVSnapshotsSupported(),
 		hasTemplate:  lm.tmpl != nil,
 		spec:         lm.spec,
 		blockDrafter: lm.blockSpec != nil,
@@ -106,24 +106,24 @@ func factsOf(lm *loadedModel) bannerFacts {
 	if lm.tmpl != nil {
 		_, _, _, _, f.toolCallForm = lm.tmpl.ToolCallWrapper()
 	}
-	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.mdl().FitBudgetSummary()
+	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
-	f.maxPositions = lm.mdl().Config().MaxPositions
-	f.kv = lm.mdl().KVPrecisionReports()
-	f.ctxNote = lm.mdl().ResidentContextNote()
-	f.harnessKVBytes = lm.mdl().ResidentContextKVBytes(harnessCtx)
-	f.kvSlots = lm.mdl().ResidentKVSlots()
-	f.kvPoolDetail = lm.mdl().ResidentKVPool()
-	f.kvShareState, f.kvShareWhy = lm.mdl().KVShareState()
+	f.maxPositions = lm.model.Config().MaxPositions
+	f.kv = lm.model.KVPrecisionReports()
+	f.ctxNote = lm.model.ResidentContextNote()
+	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
+	f.kvSlots = lm.model.ResidentKVSlots()
+	f.kvPoolDetail = lm.model.ResidentKVPool()
+	f.kvShareState, f.kvShareWhy = lm.model.KVShareState()
 	f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
-	if lm.mdl().EffectiveBackend() != "cpu" {
-		f.residentDecline = lm.mdl().ResidentDecline()
+	if lm.model.EffectiveBackend() != "cpu" {
+		f.residentDecline = lm.model.ResidentDecline()
 	}
 	f.concurrent = lm.concurrent
 	f.sampling = lm.sampling
-	if v, _ := lm.mdl().Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
+	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
 	return f
@@ -332,7 +332,7 @@ func serverBanner(s *server, cfg config) []string {
 	// "9.2s, 82% build" says the disk is not the problem and a different quant might be. Printed only for a model
 	// whose loader instrumented it.
 	for _, lm := range s.models {
-		if sum := lm.mdl().LoadProfile().Summary(); sum != "" {
+		if sum := lm.model.LoadProfile().Summary(); sum != "" {
 			out = append(out, sum)
 			break // one line; a zoo would otherwise print one per model
 		}
@@ -524,7 +524,7 @@ func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 	if len(reps) == 0 {
 		return " · KV f32"
 	}
-	var s string
+	var s strings.Builder
 	for i, r := range reps {
 		label := "KV"
 		if i > 0 {
@@ -540,7 +540,7 @@ func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 				note += ": " + kvI8Cost
 			}
 		}
-		s += " · " + label + " " + r.Delivered + " (" + note + ")"
+		s.WriteString(" · " + label + " " + r.Delivered + " (" + note + ")")
 	}
-	return s
+	return s.String()
 }

@@ -46,11 +46,9 @@ func BenchmarkMetalAttention(b *testing.B) {
 			for range 3 {
 				run()
 			}
-			b.ResetTimer()
-			for range b.N {
+			for b.Loop() {
 				run()
 			}
-			b.StopTimer()
 			macs := 2.0 * float64(sh.nH) * float64(sh.np) * float64(sh.np) * float64(sh.hd)
 			b.ReportMetric(macs/(b.Elapsed().Seconds()/float64(b.N))/1e9, "GMAC/s")
 		})
@@ -65,11 +63,9 @@ func BenchmarkMetalAttention(b *testing.B) {
 				for range 3 {
 					run()
 				}
-				b.ResetTimer()
-				for range b.N {
+				for b.Loop() {
 					run()
 				}
-				b.StopTimer()
 				macs := 2.0 * float64(sh.nH) * float64(sh.np) * float64(sh.np) * float64(sh.hd)
 				b.ReportMetric(macs/(b.Elapsed().Seconds()/float64(b.N))/1e9, "GMAC/s")
 			})

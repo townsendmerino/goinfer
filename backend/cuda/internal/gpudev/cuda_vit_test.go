@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -560,7 +561,7 @@ func TestCUDA_vitRopeQK(t *testing.T) {
 	cos := randF32(rng, seq*hd, 1)
 	sin := randF32(rng, seq*hd, 1)
 
-	want := append([]float32(nil), qkv...)
+	want := slices.Clone(qkv)
 	half := hd / 2
 	for i := range seq {
 		co, si := cos[i*hd:(i+1)*hd], sin[i*hd:(i+1)*hd]

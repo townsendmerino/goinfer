@@ -112,7 +112,7 @@ func TestR3_startPosSpeed(t *testing.T) {
 			}
 
 			var batchedTimes, seqTimes []time.Duration
-			for rep := 0; rep < nReps; rep++ {
+			for range nReps {
 				batchedTimes = append(batchedTimes, runBatched())
 				seqTimes = append(seqTimes, runSequential())
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 )
 
@@ -47,7 +48,7 @@ func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, image
 			// substitutes the PAD token's embedding at every image position before computing PLE's token-identity term. The feature
 			// row is used as is, with no embed_scale: that scaling is the Gemma 4 program walk's job for a real token embedding, and a
 			// tower's projected output is already in the target embedding space.
-			row := append([]float32(nil), imageEmbeds[off:off+hidden]...)
+			row := slices.Clone(imageEmbeds[off : off+hidden])
 			h, err = m.runLayersFromEmbedPLE(row, padID, cache)
 		} else {
 			h, err = m.runLayers(id, cache)

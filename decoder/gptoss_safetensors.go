@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -195,7 +196,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			l.Experts[e] = expertWeights{
 				Gate: gm, Up: um, Down: dm,
 				GateBias: gb, UpBias: ub,
-				DownBias: append([]float32(nil), dBias[e*hidden:(e+1)*hidden]...),
+				DownBias: slices.Clone(dBias[e*hidden : (e+1)*hidden]),
 			}
 		}
 	}

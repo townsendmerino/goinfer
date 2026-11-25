@@ -1,6 +1,9 @@
 package kvmgr
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // A recurrent sequence with a checkpoint at c, the end of its last prompt,
 // scores c for a request that matches it through c, carries a token past c and does not extend the whole sequence, when the caller
@@ -8,7 +11,7 @@ import "testing"
 func TestScoreRecurrent_checkpoint(t *testing.T) {
 	root := Root{Model: "m"}
 	prompt := []int{1, 2, 3, 4, 5, 6}
-	held := append(append([]int(nil), prompt...), 70, 71, 72) // the prompt, then the reply as generated
+	held := append(slices.Clone(prompt), 70, 71, 72) // the prompt, then the reply as generated
 	c := len(prompt)
 	newSlots := func(ckpt int, imgs []ImageSpan) *Slots {
 		a := NewSlots(1)
@@ -27,7 +30,7 @@ func TestScoreRecurrent_checkpoint(t *testing.T) {
 	}{
 		{"the reply re-rendered differently (B): restore at c", c, nil, []int{1, 2, 3, 4, 5, 6, 70, 99, 100}, true, c},
 		{"one token past c", c, nil, []int{1, 2, 3, 4, 5, 6, 99}, true, c},
-		{"a strict extension continues the live state", c, nil, append(append([]int(nil), held...), 80), true, len(held)},
+		{"a strict extension continues the live state", c, nil, append(slices.Clone(held), 80), true, len(held)},
 		{"the prompt sent again (identical re-request)", c, nil, prompt, true, 0},
 		{"a divergence before c", c, nil, []int{1, 2, 3, 4, 9, 6, 70, 71}, true, 0},
 		{"no checkpoint held", 0, nil, []int{1, 2, 3, 4, 5, 6, 70, 99}, true, 0},

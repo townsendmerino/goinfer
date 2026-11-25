@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -263,10 +264,10 @@ func ggufSeeds() [][]byte {
 	seeds = append(seeds, gU32(0x46554747), buildGGUF(nil, nil)) // raw-edge: truncated, header-only
 	// hostile: a well-formed header claiming absurd tensor + kv counts with no payload — the
 	// count→make DoS surface a parser must bound against the file size before allocating.
-	hostileCounts := append([]byte(nil), gU32(0x46554747)...) // "GGUF"
-	hostileCounts = append(hostileCounts, gU32(3)...)         // version
-	hostileCounts = append(hostileCounts, gU64(1<<48)...)     // tensor_count
-	hostileCounts = append(hostileCounts, gU64(1<<48)...)     // kv_count
+	hostileCounts := slices.Clone(gU32(0x46554747))       // "GGUF"
+	hostileCounts = append(hostileCounts, gU32(3)...)     // version
+	hostileCounts = append(hostileCounts, gU64(1<<48)...) // tensor_count
+	hostileCounts = append(hostileCounts, gU64(1<<48)...) // kv_count
 	seeds = append(seeds, hostileCounts)
 	return seeds
 }

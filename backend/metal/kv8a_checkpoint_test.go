@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
@@ -69,7 +70,7 @@ func kv8aRec(a *metalResident) [][]float32 {
 	a.r.stopExec()
 	out := make([][]float32, len(a.r.ckptSave))
 	for i, c := range a.r.ckptSave {
-		out[i] = append([]float32(nil), c.Src.Floats()...)
+		out[i] = slices.Clone(c.Src.Floats())
 	}
 	return out
 }
@@ -79,7 +80,7 @@ func kv8aCkpt(a *metalResident) [][]float32 {
 	a.r.stopExec()
 	out := make([][]float32, len(a.r.ckptSave))
 	for i, c := range a.r.ckptSave {
-		out[i] = append([]float32(nil), c.Dst.Floats()...)
+		out[i] = slices.Clone(c.Dst.Floats())
 	}
 	return out
 }
@@ -95,7 +96,7 @@ func kv8aKV(a *metalResident, n int) [][]float32 {
 		}
 		for _, b := range []Buffer{a.r.kc[l], a.r.vc[l]} {
 			if a.r.kvF32 {
-				out = append(out, append([]float32(nil), b.Floats()[:n*L.geom.kvDim]...))
+				out = append(out, slices.Clone(b.Floats()[:n*L.geom.kvDim]))
 				continue
 			}
 			h := b.U16s()[:n*L.geom.kvDim]
@@ -199,13 +200,13 @@ func TestKV8aMetal_restoreEqualsColdPrefill(t *testing.T) {
 				mc, rc := kv8aLoad(t, fx)
 				_, _, _, _, _, _, vocab := mc.Dims()
 				a := kv8aIDs(1, sz.n1, vocab)
-				b := append(append(append([]int(nil), a...), kv8aIDs(2, sz.reply, vocab)...), kv8aIDs(3, sz.message, vocab)...)
+				b := append(append(slices.Clone(a), kv8aIDs(2, sz.reply, vocab)...), kv8aIDs(3, sz.message, vocab)...)
 				n1, n2 := len(a), len(b)
 				if (n1 < metalFastPrefillFloor) != (n2 < metalFastPrefillFloor) {
 					t.Fatalf("turns of %d and %d straddle the fast-prefill floor %d", n1, n2, metalFastPrefillFloor)
 				}
 				lc := kv8aPrefill(t, mc, rc, b, 0)
-				cold := append([][]float32{append([]float32(nil), lc...)}, append(kv8aRec(rc), kv8aKV(rc, n2)...)...)
+				cold := append([][]float32{slices.Clone(lc)}, append(kv8aRec(rc), kv8aKV(rc, n2)...)...)
 
 				warm := func(plant string) [][]float32 {
 					m, r := kv8aLoad(t, fx)
@@ -228,7 +229,7 @@ func TestKV8aMetal_restoreEqualsColdPrefill(t *testing.T) {
 						t.Fatal(err)
 					}
 					lw := kv8aPrefill(t, m, r, b[from:], from)
-					return append([][]float32{append([]float32(nil), lw...)}, append(kv8aRec(r), kv8aKV(r, n2)...)...)
+					return append([][]float32{slices.Clone(lw)}, append(kv8aRec(r), kv8aKV(r, n2)...)...)
 				}
 				for _, plant := range []string{"", "no conv window", "from c-1"} {
 					same := kv8aSame(warm(plant), cold)

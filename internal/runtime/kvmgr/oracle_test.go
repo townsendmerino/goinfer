@@ -2,7 +2,7 @@ package kvmgr
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -103,14 +103,14 @@ func (o *oracle) write(q *oseq, from int) {
 
 func (o *oracle) applyCopies(copies []Copy) {
 	for _, c := range copies {
-		o.dev[c.Dst] = append([]orow(nil), o.dev[c.Src][:c.Rows]...)
+		o.dev[c.Dst] = slices.Clone(o.dev[c.Src][:c.Rows])
 	}
 }
 
 func (o *oracle) randRows(n int) []orow {
 	rows := make([]orow, n)
 	for i := range rows {
-		rows[i] = orow{tok: o.rng.Intn(5), class: ClassExact}
+		rows[i] = orow{tok: o.rng.IntN(5), class: ClassExact}
 	}
 	return rows
 }
@@ -118,30 +118,30 @@ func (o *oracle) randRows(n int) []orow {
 // request builds rows for a new sequence: usually a prefix of something seen before (so hits happen) plus a random
 // tail, sometimes with one class changed or under another root (so near-misses happen).
 func (o *oracle) request() *oseq {
-	q := &oseq{root: o.roots[o.rng.Intn(len(o.roots))]}
-	if len(o.hist) > 0 && o.rng.Intn(5) != 0 {
-		h := o.hist[o.rng.Intn(len(o.hist))]
-		k := o.rng.Intn(len(h.rows) + 1)
+	q := &oseq{root: o.roots[o.rng.IntN(len(o.roots))]}
+	if len(o.hist) > 0 && o.rng.IntN(5) != 0 {
+		h := o.hist[o.rng.IntN(len(o.hist))]
+		k := o.rng.IntN(len(h.rows) + 1)
 		q.rows = append(q.rows, h.rows[:k]...)
 		for _, sp := range h.images {
 			if sp.end() <= k {
 				q.images = append(q.images, sp)
 			}
 		}
-		if o.rng.Intn(3) != 0 {
+		if o.rng.IntN(3) != 0 {
 			q.root = h.root
 		}
 	}
-	tail := o.rng.Intn(3 * BlockRows)
+	tail := o.rng.IntN(3 * BlockRows)
 	start := len(q.rows)
 	q.rows = append(q.rows, o.randRows(tail)...)
-	cls := []Class{ClassExact, ClassFast, ClassUnknown}[o.rng.Intn(3)]
+	cls := []Class{ClassExact, ClassFast, ClassUnknown}[o.rng.IntN(3)]
 	for i := start; i < len(q.rows); i++ {
 		q.rows[i].class = cls
 	}
-	if tail > 8 && o.rng.Intn(4) == 0 { // an image span inside the new rows
-		at := start + o.rng.Intn(tail-8)
-		q.images = append(q.images, ImageSpan{Start: at, Len: 1 + o.rng.Intn(min(8+BlockRows, len(q.rows)-at)), Hash: uint64(1 + o.rng.Intn(3))})
+	if tail > 8 && o.rng.IntN(4) == 0 { // an image span inside the new rows
+		at := start + o.rng.IntN(tail-8)
+		q.images = append(q.images, ImageSpan{Start: at, Len: 1 + o.rng.IntN(min(8+BlockRows, len(q.rows)-at)), Hash: uint64(1 + o.rng.IntN(3))})
 	}
 	q.stamp(0)
 	return q
@@ -156,7 +156,7 @@ func (o *oracle) remember(q *oseq) {
 
 func (o *oracle) step() {
 	live := len(o.seqs)
-	switch k := o.rng.Intn(100); {
+	switch k := o.rng.IntN(100); {
 	case k < 22 || live == 0: // admit
 		want := o.request()
 		s, hit := o.m.Admit(want.root, want.tokens(), want.images, want.classes())
@@ -175,27 +175,27 @@ func (o *oracle) step() {
 			}
 		}
 		// The rows it was given must be the rows this request would have computed: the wrong-hit check.
-		for p := 0; p < hit; p++ {
+		for p := range hit {
 			if got := o.dev[s.Table()[p/BlockRows]][p%BlockRows]; got != want.rows[p] {
 				o.failf("WRONG HIT: row %d of the shared prefix is %+v, the request's own is %+v", p, got, want.rows[p])
 			}
 		}
 		o.seqs = append(o.seqs, q)
 		// Sometimes compute the rest at once, as a prefill does.
-		if o.rng.Intn(2) == 0 {
+		if o.rng.IntN(2) == 0 {
 			o.appendRows(q, want.rows[hit:], want.images)
 		}
 	case k < 50: // append
-		q := o.seqs[o.rng.Intn(live)]
-		n := 1 + o.rng.Intn(BlockRows+BlockRows/2)
+		q := o.seqs[o.rng.IntN(live)]
+		n := 1 + o.rng.IntN(BlockRows+BlockRows/2)
 		rows := o.randRows(n)
-		cls := []Class{ClassExact, ClassFast}[o.rng.Intn(2)]
+		cls := []Class{ClassExact, ClassFast}[o.rng.IntN(2)]
 		for i := range rows {
 			rows[i].class = cls
 		}
 		o.appendRows(q, rows, nil)
 	case k < 68: // publish
-		q := o.seqs[o.rng.Intn(live)]
+		q := o.seqs[o.rng.IntN(live)]
 		before := q.s.Published()
 		q.s.Publish()
 		for i := before; i < q.s.Published(); i++ {
@@ -203,8 +203,8 @@ func (o *oracle) step() {
 		}
 		o.remember(q)
 	case k < 78: // truncate
-		q := o.seqs[o.rng.Intn(live)]
-		p := o.rng.Intn(len(q.rows) + 1)
+		q := o.seqs[o.rng.IntN(live)]
+		p := o.rng.IntN(len(q.rows) + 1)
 		want := p
 		for _, sp := range q.images {
 			if sp.Start < want && sp.end() > want {
@@ -231,7 +231,7 @@ func (o *oracle) step() {
 		}
 		q.images = imgs
 	case k < 84: // fork
-		q := o.seqs[o.rng.Intn(live)]
+		q := o.seqs[o.rng.IntN(live)]
 		// A fork needs a block for each of q's private blocks, and takes none when it cannot have them all.
 		need := len(q.s.Table()) - q.s.Published()
 		avail := o.m.limit - o.m.Blocks() + o.m.Cached()
@@ -249,7 +249,7 @@ func (o *oracle) step() {
 		o.applyCopies(copies)
 		o.seqs = append(o.seqs, &oseq{root: q.root, rows: slices.Clone(q.rows), images: slices.Clone(q.images), s: t})
 	case k < 96: // release
-		i := o.rng.Intn(live)
+		i := o.rng.IntN(live)
 		o.seqs[i].s.Release()
 		o.seqs = append(o.seqs[:i], o.seqs[i+1:]...)
 	default: // evict
@@ -484,7 +484,7 @@ func TestOracle_pool(t *testing.T) {
 	for seed := int64(1); seed <= 8; seed++ {
 		t.Run(fmt.Sprintf("seed%d", seed), func(t *testing.T) {
 			t.Parallel()
-			o := &oracle{t: t, rng: rand.New(rand.NewSource(seed)), seed: seed, dev: map[int32][]orow{}, pub: map[int32]opub{},
+			o := &oracle{t: t, rng: rand.New(rand.NewPCG(uint64(seed), 0)), seed: seed, dev: map[int32][]orow{}, pub: map[int32]opub{},
 				m: New([]int{12, 24, 48, 96}[seed%4])}
 			o.roots = []Root{
 				{Model: "m", Precision: "f16"},

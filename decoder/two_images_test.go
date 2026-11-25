@@ -207,7 +207,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		if err != nil {
 			t.Fatalf("prefillLogitsQwenVLSpans: %v", err)
 		}
-		last = append([]float32(nil), lg...)
+		last = slices.Clone(lg)
 		for range l.Continuation {
 			next := sampling.Argmax(lg)
 			cont = append(cont, next)
@@ -262,7 +262,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		red("features swapped", pos, lsw, csw)
 		if name == "adjacent" {
 			// (1) pairing: image B positioned as A's second temporal half.
-			paired := append([][3]int(nil), pos...)
+			paired := slices.Clone(pos)
 			sp := l.spansOf()
 			for k := 0; k < sp[1].Len; k++ {
 				a := pos[sp[0].Pos+k]
@@ -311,7 +311,7 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		last := append([]float32(nil), lg...)
+		last := slices.Clone(lg)
 		var cont []int
 		for range l.Continuation {
 			next := sampling.Argmax(lg)

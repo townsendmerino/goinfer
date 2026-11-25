@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -374,7 +374,7 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	in := parityInputs{Commit: prov.Commit, Realckpt: realckpt, Emit: emitManifest, Ledger: map[string]string{}, Lists: liveParityLists()}
 	in.Checks = parityGates
 	if realckpt {
-		in.Checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
+		in.Checks = slices.Concat(parityGates, parityRealckptGates)
 	}
 	if gateFilter != nil {
 		in.ScopeRaw, in.ScopedFrom = gateRaw, len(in.Checks)
@@ -489,11 +489,10 @@ func emitterCoverage(w io.Writer, res *results, fams map[string]bool) {
 // jsonField pulls one top-level string field out of a compact PARITY_ROW payload without decoding
 // the whole thing — the rows are written by emitParityRow with json.Marshal'd values.
 func jsonField(line, key string) string {
-	i := strings.Index(line, `"`+key+`":"`)
-	if i < 0 {
+	_, rest, ok := strings.Cut(line, `"`+key+`":"`)
+	if !ok {
 		return ""
 	}
-	rest := line[i+len(key)+4:]
 	before, _, ok := strings.Cut(rest, `"`)
 	if !ok {
 		return ""
@@ -613,16 +612,13 @@ func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want f
 	seen := map[string]bool{}
 	for _, d := range dirs {
 		files, _ := filepath.Glob(filepath.Join(root, d, "*_test.go"))
-		sort.Strings(files)
+		slices.Sort(files)
 		for _, f := range files {
 			b, err := os.ReadFile(f)
 			if err != nil {
 				continue
 			}
-			src := string(b)
-			if i := strings.Index(src, "\npackage "); i >= 0 {
-				src = src[:i]
-			}
+			src, _, _ := strings.Cut(string(b), "\npackage ")
 			m := realckptBuildRe.FindStringSubmatch(src)
 			if m == nil || !tagWord.MatchString(m[1]) {
 				continue

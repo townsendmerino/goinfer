@@ -33,7 +33,7 @@ func eModelPrompt(t *testing.T) []int {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatal(err)
 	}
-	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
+	return append(slices.Clone(g.PromptIDs), g.ContinuationIDs...)
 }
 
 // eModelG1 is the measurement G1 grades: Metal resident against the
@@ -103,7 +103,7 @@ func runEModelG1(t *testing.T) eModelG1 {
 		if err != nil {
 			t.Fatalf("cpu f32 pos %d: %v", i, err)
 		}
-		gpu := append([]float32(nil), r.ForwardEmb(mg.EmbedResidentForTest(tok), i)...)
+		gpu := slices.Clone(r.ForwardEmb(mg.EmbedResidentForTest(tok), i))
 		res.metal = append(res.metal, gpu)
 		cm, _ := cosMaxAbs(cpu4, gpu)
 		cc, _ := cosMaxAbs(cpuF, cpu4)
@@ -269,7 +269,7 @@ func gemma4IdentityDiff(t *testing.T, m *decoder.Model, r *resident, depths []in
 			if err := r.useKVSlot(B + s); err != nil {
 				t.Fatal(err)
 			}
-			ref[s] = append([]float32(nil), r.ForwardEmb(seqs[s].emb, seqs[s].pos)...)
+			ref[s] = slices.Clone(r.ForwardEmb(seqs[s].emb, seqs[s].pos))
 		}
 		got := mc3Step(t, r, seqs)
 		for s := range B {

@@ -251,7 +251,7 @@ var kvCacheFieldState = map[string]cacheState{
 	"imgBlocks": stateImageBlocks,
 	"mropePos":  stateMRoPE, "mropeDelta": stateMRoPE,
 	"deepstack":     stateDeepstack,
-	"captureLayers": stateCapture, "captured": stateCapture,
+	"captureLayers": stateCapture, "captured": stateCapture, "layerInputs": stateCapture,
 	"subCapture": stateCapture, "subAttn": stateCapture, "subMLP": stateCapture, "subMLPpre": stateCapture, "subCtx": stateCapture, "subPLE": stateCapture,
 	"treeRowPos": stateTree, "treeMask": stateTree,
 	"lora": stateAdapter,
@@ -302,7 +302,7 @@ func (c *KVCache) holdsState(s cacheState) bool {
 	case stateDeepstack:
 		return c.deepstack != nil
 	case stateCapture:
-		return c.captureLayers != nil || c.subCapture
+		return c.captureLayers != nil || c.subCapture || c.layerInputs != nil
 	case stateTree:
 		return c.treeMask != nil || c.treeRowPos != nil
 	case stateAdapter:

@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -89,7 +90,7 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 					if err != nil {
 						t.Fatalf("par=%v step %d: %v", par, i, err)
 					}
-					all = append(all, append([]float32(nil), lg...))
+					all = append(all, slices.Clone(lg))
 				}
 				return all
 			}

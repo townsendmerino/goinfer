@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,7 +74,7 @@ func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 	}
 	f32 := syntheticEmbedF32(rows, cols)
 
-	repackedOnly := quantizeEmbedWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, false)
+	repackedOnly := quantizeEmbedWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, false)
 	if !repackedOnly.IsInt4() {
 		t.Fatal("needCanonical=false: result is not int4-resident at all")
 	}
@@ -88,7 +89,7 @@ func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 		t.Errorf("needCanonical=false: Int4Layout() = %q, want %q", repackedOnly.Int4Layout(), "row4")
 	}
 
-	both := quantizeEmbedWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true)
+	both := quantizeEmbedWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, true)
 	if !both.IsInt4() {
 		t.Fatal("needCanonical=true: result is not int4-resident")
 	}
@@ -108,8 +109,8 @@ func TestQuantizeEmbedWM_repackedOnlyMatchesCanonical(t *testing.T) {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
-	repackedOnly := quantizeEmbedWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, false)
-	canonical := quantizeEmbedWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true)
+	repackedOnly := quantizeEmbedWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, false)
+	canonical := quantizeEmbedWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, true)
 
 	// Row(): the per-token embedding lookup, layout-independent per aikit's own contract.
 	for r := range rows {
@@ -241,11 +242,11 @@ func TestQuantizeBatchedProjWM_repackedOnlyWhenEligible(t *testing.T) {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
-	repackedOnly := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, false, false)
+	repackedOnly := quantizeBatchedProjWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, false, false)
 	if repackedOnly.Int4Layout() != "row4" {
 		t.Errorf("needCanonical=false: Int4Layout() = %q, want %q", repackedOnly.Int4Layout(), "row4")
 	}
-	both := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true, false)
+	both := quantizeBatchedProjWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4, true, false)
 	if _, _, _, ok := Int4F32(&both); !ok {
 		t.Error("needCanonical=true: Int4()'s ok is false — canonical bytes are not resident")
 	}

@@ -19,7 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -65,7 +65,7 @@ func Load(root string) (*Tree, error) {
 		return nil, fmt.Errorf("qualityscan: git ls-files: %w", err)
 	}
 	t := &Tree{Root: root, Fset: token.NewFileSet()}
-	for _, p := range strings.Split(string(out), "\x00") {
+	for p := range strings.SplitSeq(string(out), "\x00") {
 		if p == "" || skipped(p) {
 			continue
 		}
@@ -86,7 +86,7 @@ func Load(root string) (*Tree, error) {
 }
 
 func skipped(p string) bool {
-	for _, seg := range strings.Split(p, "/") {
+	for seg := range strings.SplitSeq(p, "/") {
 		if seg == "testdata" || seg == "node_modules" || strings.HasPrefix(seg, ".") {
 			return true
 		}
@@ -196,7 +196,7 @@ func Compare(found map[string]int, allow map[string]Entry) (grown, shrunk []stri
 			shrunk = append(shrunk, k+" (gone)")
 		}
 	}
-	sort.Strings(grown)
-	sort.Strings(shrunk)
+	slices.Sort(grown)
+	slices.Sort(shrunk)
 	return grown, shrunk
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 
@@ -116,14 +117,14 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ref[i] = [][]float32{append([]float32(nil), l...)}
+			ref[i] = [][]float32{slices.Clone(l)}
 			teach[i] = []int{argmaxF(l)}
 			for k := range steps {
 				l, err := mc.ForwardForTest(teach[i][k], c)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref[i] = append(ref[i], append([]float32(nil), l...))
+				ref[i] = append(ref[i], slices.Clone(l))
 				teach[i] = append(teach[i], argmaxF(l))
 			}
 		}
@@ -149,7 +150,7 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, append([]float32(nil), l...))
+			got = append(got, slices.Clone(l))
 		}
 		worst = 1
 		for k := range got {
@@ -171,7 +172,7 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		l = append([]float32(nil), l...)
+		l = slices.Clone(l)
 		a.Reset()
 		if err := m.ResidentUploadPrefillForTest(c); err != nil {
 			t.Fatal(err)
@@ -183,7 +184,7 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: resident image prefill declined: %v", tr.name, err)
 		}
-		nw, nr := grade(i, append([]float32(nil), ln...))
+		nw, nr := grade(i, slices.Clone(ln))
 		// The planted defect: no image block.
 		rows := make([][]float32, len(tr.ids))
 		for j, id := range tr.ids {
@@ -198,7 +199,7 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bw, _ := grade(i, append([]float32(nil), lb...))
+		bw, _ := grade(i, slices.Clone(lb))
 		fmt.Fprintf(os.Stderr, "[G-IP3] %-32s worst cos: production %.6f | resident image prefill %.6f (%d non-tie argmax) | planted no-block %.6f\n", tr.name, pw, nw, nr, bw)
 		prodWorst, newWorst, badWorst = math.Min(prodWorst, pw), math.Min(newWorst, nw), math.Min(badWorst, bw)
 		newReal += nr
@@ -285,13 +286,13 @@ func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref, teach = [][]float32{append([]float32(nil), l...)}, []int{argmaxF(l)}
+		ref, teach = [][]float32{slices.Clone(l)}, []int{argmaxF(l)}
 		for k := range steps {
 			l, err := mc.ForwardForTest(teach[k], c)
 			if err != nil {
 				t.Fatal(err)
 			}
-			ref = append(ref, append([]float32(nil), l...))
+			ref = append(ref, slices.Clone(l))
 			teach = append(teach, argmaxF(l))
 		}
 		mc.Close()
@@ -312,7 +313,7 @@ func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, append([]float32(nil), l...))
+			got = append(got, slices.Clone(l))
 		}
 		worst = 1
 		for k := range got {
@@ -334,7 +335,7 @@ func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l = append([]float32(nil), l...)
+	l = slices.Clone(l)
 	a.Reset()
 	if err := m.ResidentUploadPrefillForTest(c); err != nil {
 		t.Fatal(err)
@@ -347,7 +348,7 @@ func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
 		t.Fatalf("the resident two-image prefill declined: %v", err)
 	}
 	fmt.Fprintln(os.Stderr, "[S11 real] the resident two-block prefill:")
-	rw, rr := grade(append([]float32(nil), ln...))
+	rw, rr := grade(slices.Clone(ln))
 	fmt.Fprintf(os.Stderr, "[S11 real] %d positions, blocks %v: worst cos: bridge %.6f (%d non-tie) | resident two-block %.6f (%d non-tie) | bar %.6f\n", len(ids), spans, bw, br, rw, rr, bw-0.005)
 	if rw < bw-0.005 {
 		t.Errorf("the resident two-block prefill: worst %.6f against the bar %.6f", rw, bw-0.005)

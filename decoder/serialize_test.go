@@ -641,7 +641,7 @@ func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
 		t.Fatalf("serialize: %v", err)
 	}
 	for i := 0; i < len(blob)-4; i++ {
-		b := append([]byte(nil), blob...)
+		b := slices.Clone(blob)
 		b[i] ^= 0xFF
 		binary.LittleEndian.PutUint32(b[len(b)-4:], crc32.ChecksumIEEE(b[:len(b)-4])) // make CRC "valid"
 		func() {
@@ -671,8 +671,7 @@ func TestSerializeWeights_refuses16BitWeights(t *testing.T) {
 			defer m.Close()
 			check := func(name string, err error, wrote int64) {
 				t.Helper()
-				var se *SerializeError
-				if !errors.As(err, &se) || !strings.Contains(se.Reason, q) {
+				if se, ok := errors.AsType[*SerializeError](err); !ok || !strings.Contains(se.Reason, q) {
 					t.Errorf("%s at %s: %v, want a *SerializeError naming %s", name, q, err, q)
 				}
 				if wrote != 0 {

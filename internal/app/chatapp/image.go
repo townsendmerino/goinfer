@@ -166,7 +166,7 @@ func (im *imageInput) features() ([]float32, error) {
 // replaced by the template prompt only when it is empty or a bare task prompt; with no schema an empty text becomes plain
 // text recognition (what serve does for an image with no text part).
 func (s *session) imageTurns(turns []chat.Turn) ([]chat.Turn, error) {
-	out := append([]chat.Turn(nil), turns...)
+	out := slices.Clone(turns)
 	idx := -1
 	for i, o := range slices.Backward(out) {
 		if o.Role == "user" {

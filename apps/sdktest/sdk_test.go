@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -189,8 +190,7 @@ func TestOpenAISDK(t *testing.T) {
 	t.Run("overflow is the SDK's typed error", func(t *testing.T) {
 		long := []openai.ChatCompletionMessageParamUnion{openai.UserMessage(strings.Repeat("word ", tinyWindow/4))}
 		_, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{Model: "tiny", Messages: long, MaxTokens: openai.Int(4)})
-		var apiErr *openai.Error
-		if !errors.As(err, &apiErr) || apiErr.StatusCode != 400 || apiErr.Code != "context_length_exceeded" {
+		if apiErr, ok := errors.AsType[*openai.Error](err); !ok || apiErr.StatusCode != 400 || apiErr.Code != "context_length_exceeded" {
 			t.Errorf("a conversation past the window: %v; want a 400 with code context_length_exceeded", err)
 		}
 	})
@@ -204,7 +204,7 @@ func TestAnthropicSDK_cacheRead(t *testing.T) {
 	ctx := context.Background()
 	turns := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(strings.Repeat("a shared prefix ", 16)))}
 	next := func(prev []anthropic.MessageParam, reply string) []anthropic.MessageParam {
-		return append(append([]anthropic.MessageParam{}, prev...),
+		return append(slices.Clone(prev),
 			anthropic.NewAssistantMessage(anthropic.NewTextBlock(reply)), anthropic.NewUserMessage(anthropic.NewTextBlock("go on")))
 	}
 	check := func(what string, msgs []anthropic.MessageParam, u anthropic.Usage) {
@@ -297,8 +297,7 @@ func TestAnthropicSDK(t *testing.T) {
 	t.Run("overflow in Claude Code's words", func(t *testing.T) {
 		long := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(strings.Repeat("word ", tinyWindow/4)))}
 		_, err := client.Messages.New(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Messages: long})
-		var apiErr *anthropic.Error
-		if !errors.As(err, &apiErr) || apiErr.StatusCode != 400 || !strings.Contains(apiErr.RawJSON(), "prompt is too long: ") {
+		if apiErr, ok := errors.AsType[*anthropic.Error](err); !ok || apiErr.StatusCode != 400 || !strings.Contains(apiErr.RawJSON(), "prompt is too long: ") {
 			t.Errorf("a conversation past the window: %v; want a 400 saying \"prompt is too long: N tokens > M maximum\"", err)
 		}
 	})

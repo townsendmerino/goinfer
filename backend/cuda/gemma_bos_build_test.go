@@ -5,6 +5,7 @@ package cuda
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -57,7 +58,7 @@ func TestGemmaBOSBuild(t *testing.T) {
 		mc.Close()
 		t.Fatal("gguf gemma-3 not resident on CUDA")
 	}
-	cudaEmb := append([]float32(nil), mc.EmbedResidentForTest(bos)...)
+	cudaEmb := slices.Clone(mc.EmbedResidentForTest(bos))
 	cAttn, cMLP, _, cMLPpre, err := rf.captureSublayersForTest(cudaEmb, 0)
 	if err != nil {
 		mc.Close()
@@ -70,7 +71,7 @@ func TestGemmaBOSBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load bf16 (f32): %v", err)
 	}
-	fEmb := append([]float32(nil), mf.EmbedResidentForTest(bos)...)
+	fEmb := slices.Clone(mf.EmbedResidentForTest(bos))
 	fcache := mf.NewCache(2)
 	fAttn, fMLP, _, fMLPpre, err := mf.ForwardSubCapture(bos, fcache)
 	mf.Close()

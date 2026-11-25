@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -46,7 +47,7 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 	if ferr != nil {
 		return nil, nil, nil, nil, nil, ferr
 	}
-	return append([]float32(nil), lg...), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
+	return slices.Clone(lg), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
 }
 
 // LayerCaptureForTest is one token's per-layer CPU intermediates from ForwardLayerCaptureLogitsForTest, each [layer][width]:
@@ -93,13 +94,13 @@ func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]floa
 	if a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0 {
 		c.PLE = cache.subPLE
 	}
-	return append([]float32(nil), lg...), c, nil
+	return slices.Clone(lg), c, nil
 }
 
 // FinalNormForTest applies the model's final normalization to a copy of h: the CPU reference for the seam between the trunk
 // and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
-	out := append([]float32(nil), h...)
+	out := slices.Clone(h)
 	m.finalNorm(out)
 	return out
 }
@@ -292,7 +293,7 @@ func SetGemma4HiddenCaptureForTest(on bool) {
 	if on {
 		gemma4HiddenBuf = nil
 		g4traceHidden = func(_ int, h []float32) {
-			gemma4HiddenBuf = append(gemma4HiddenBuf, append([]float32(nil), h...))
+			gemma4HiddenBuf = append(gemma4HiddenBuf, slices.Clone(h))
 		}
 	} else {
 		g4traceHidden = nil
@@ -329,6 +330,10 @@ func SetRouterCaptureForTest(on bool) {
 // LayerKVForTest is KVCache.LayerKV under the name the cross-package (cuda, metal) test call sites use: the cross-backend
 // attention confirmer injects goinfer's exact K/V into another engine.
 func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
+
+// SetLayerInputsForTest makes the next single-token forwards on c start layer l from in[l] wherever in[l] is non-nil (each row
+// [hidden]); nil clears it. c holds the slice until it is cleared, so the caller sets it before each token it isolates.
+func (c *KVCache) SetLayerInputsForTest(in [][]float32) { c.layerInputs = in }
 
 // SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
 // the resident W8A8 path.
@@ -575,7 +580,7 @@ func Int4FloatActMissedForTest() int64 { return int4FloatActMissed.Load() }
 // LogitsFromHiddenForTest is logitsFromHidden on a copy of h (a residual before the final norm): the CPU's final norm, LM
 // head and softcap, for a gate that runs a resident's residual through the CPU head.
 func (m *Model) LogitsFromHiddenForTest(h []float32) []float32 {
-	return append([]float32(nil), m.logitsFromHidden(append([]float32(nil), h...), m.NewCache(1))...)
+	return slices.Clone(m.logitsFromHidden(slices.Clone(h), m.NewCache(1)))
 }
 
 // Gemma4BidirImageRowsForTest exposes the bidirectional image-row builder; a gate builds the rows, then hands them to the
@@ -592,7 +597,7 @@ func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 		c.captureLayers, c.captured = nil, nil
 		return
 	}
-	c.captureLayers = append([]int(nil), layers...)
+	c.captureLayers = slices.Clone(layers)
 	c.captured = make([][]float32, len(layers))
 }
 
@@ -914,12 +919,12 @@ func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kS
 	if !found || p.Order != attnBatchedAcc64 {
 		return nil, fmt.Errorf("decoder: AttendInt8ForTest: layer %d's attention is not the per-token batched order", layer)
 	}
-	cache.keysQ[layer], cache.valsQ[layer] = append([]int8(nil), kQ...), append([]int8(nil), vQ...)
-	cache.keyScale[layer], cache.valScale[layer] = append([]float32(nil), kSc...), append([]float32(nil), vSc...)
+	cache.keysQ[layer], cache.valsQ[layer] = slices.Clone(kQ), slices.Clone(vQ)
+	cache.keyScale[layer], cache.valScale[layer] = slices.Clone(kSc), slices.Clone(vSc)
 	lk, lv := cache.scr.localBufs((pos + 1) * kvDim)
 	nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
 	ctx := make([]float32, nH*hd)
 	pool := cache.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-	attendBatchedHeadsP(append([]float32(nil), q...), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, p, a, true, pool)
+	attendBatchedHeadsP(slices.Clone(q), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, p, a, true, pool)
 	return ctx, nil
 }

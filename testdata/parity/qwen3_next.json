@@ -21,7 +21,7 @@
   "programs": [
     "testdata/qwen3next-tiny"
   ],
-  "deps_hash": "sha256:5e7546064b1890ef1e628d7495823434241047bf2e5a00f1720f159b71dd82f4",
+  "deps_hash": "sha256:18a6decb19176b2068bca3ab74d7f132f74d465db4f54b53b416188170c4542e",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

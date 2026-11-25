@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -62,7 +63,7 @@ func TestB35Snapshot_restoreEqualsCold(t *testing.T) {
 		return rows
 	}
 	read := func(r *cudaResident, lg []float32, n int) out {
-		o := out{logits: append([]float32(nil), lg...)}
+		o := out{logits: slices.Clone(lg)}
 		dl := func(b gpu.Buffer, words int) []float32 {
 			v := make([]float32, words)
 			if err := gpu.Download(b.At(0), v); err != nil {
@@ -98,7 +99,7 @@ func TestB35Snapshot_restoreEqualsCold(t *testing.T) {
 	mc, rc := load()
 	_, _, _, _, _, _, vocab := mc.Dims()
 	a := ids(1, nA, vocab)
-	b := append(append([]int(nil), a[:keepShared]...), ids(2, n2-keepShared, vocab)...)
+	b := slices.Concat(a[:keepShared], ids(2, n2-keepShared, vocab))
 	lc, err := rc.PrefillLast(ctx, emb(mc, b), 0)
 	if err != nil {
 		t.Fatal(err)

@@ -10,9 +10,6 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-func fptr(v float64) *float64 { return &v }
-func iptr(v int) *int         { return &v }
-
 func rsVal(r *RecommendedSampling) any {
 	if r == nil {
 		return nil
@@ -29,7 +26,7 @@ func TestGGUFSampling(t *testing.T) {
 		"general.sampling.min_p":          float32(0.05),
 		"general.sampling.penalty_repeat": float32(1.1),
 	}}
-	want := &RecommendedSampling{Source: "gguf general.sampling", Temperature: fptr(1), TopP: fptr(0.95), TopK: iptr(64), MinP: fptr(0.05), RepetitionPenalty: fptr(1.1)}
+	want := &RecommendedSampling{Source: "gguf general.sampling", Temperature: new(1.0), TopP: new(0.95), TopK: new(64), MinP: new(0.05), RepetitionPenalty: new(1.1)}
 	if got := ggufSampling(g); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", rsVal(got), *want)
 	}
@@ -54,7 +51,7 @@ func TestRecommendedSampling_sources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (&RecommendedSampling{Source: "generation_config.json", Temperature: fptr(0.3), TopK: iptr(7)}); !reflect.DeepEqual(cfg.Sampling, want) {
+	if want := (&RecommendedSampling{Source: "generation_config.json", Temperature: new(0.3), TopK: new(7)}); !reflect.DeepEqual(cfg.Sampling, want) {
 		t.Errorf("HF directory: got %+v, want %+v", rsVal(cfg.Sampling), *want)
 	}
 
@@ -78,7 +75,7 @@ func TestRecommendedSampling_sources(t *testing.T) {
 		t.Errorf("a bare .gguf with no general.sampling keys took %+v from its folder's generation_config.json", *s)
 	}
 
-	m.w.Cfg.Sampling = &RecommendedSampling{Source: "gguf general.sampling", Temperature: fptr(0.6), TopP: fptr(1.5), TopK: iptr(20)}
+	m.w.Cfg.Sampling = &RecommendedSampling{Source: "gguf general.sampling", Temperature: new(0.6), TopP: new(1.5), TopK: new(20)}
 	blob, err := SerializeWeights(m.w, "sampling-test")
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +84,7 @@ func TestRecommendedSampling_sources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (&RecommendedSampling{Source: "gguf general.sampling", Temperature: fptr(0.6), TopK: iptr(20)}); !reflect.DeepEqual(w2.Cfg.Sampling, want) {
+	if want := (&RecommendedSampling{Source: "gguf general.sampling", Temperature: new(0.6), TopK: new(20)}); !reflect.DeepEqual(w2.Cfg.Sampling, want) {
 		t.Errorf("bundle round trip: got %+v, want %+v (top_p 1.5 dropped on read)", rsVal(w2.Cfg.Sampling), *want)
 	}
 }

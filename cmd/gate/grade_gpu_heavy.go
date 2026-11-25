@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -289,15 +291,9 @@ var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
 
 // topTests returns up to n tests of a peak's ByTest, largest first.
 func (p procPeak) topTests(n int) []string {
-	names := make([]string, 0, len(p.ByTest))
-	for k := range p.ByTest {
-		names = append(names, k)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if p.ByTest[names[i]] != p.ByTest[names[j]] {
-			return p.ByTest[names[i]] > p.ByTest[names[j]]
-		}
-		return names[i] < names[j]
+	names := slices.Collect(maps.Keys(p.ByTest))
+	slices.SortFunc(names, func(a, b string) int {
+		return cmp.Or(cmp.Compare(p.ByTest[b], p.ByTest[a]), cmp.Compare(a, b))
 	})
 	if len(names) > n {
 		names = names[:n]

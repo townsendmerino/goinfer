@@ -57,8 +57,7 @@ func TestMaxScanSerial_matchesParallelMax(t *testing.T) {
 
 func benchMaxScan(b *testing.B, n int, parallel bool) {
 	logits := benchRandLogits(n, 1)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if parallel {
 			parallelMax(logits)
 		} else {
@@ -80,8 +79,7 @@ func BenchmarkMaxScan_32kVocab_parallel(b *testing.B)   { benchMaxScan(b, 32064,
 // sampler_filter_parallel_test.go. topK 1/8/40 span greedy-adjacent to a typical sampling config.
 func benchTopKByLogit(b *testing.B, n, k int) {
 	logits := benchRandLogits(n, 2)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		topKByLogit(logits, k)
 	}
 }
@@ -105,8 +103,7 @@ func benchMinPScan(b *testing.B, n int) {
 	maxF := maxScanSerial(logits)
 	thr := float64(maxF) - 4 // keeps a modest, realistic fraction of the vocab as candidates
 	cand := make([]int, 0, n)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cand = minPScanSerial(logits, thr, cand)
 	}
 }
@@ -123,8 +120,7 @@ func benchTopFilterLogits(b *testing.B, topK int, topP, minP float64) {
 	vocabScratch := make([]float64, n)
 	candScratch := make([]int, 0, n)
 	ipsScratch := make([]indexedProb, 0, n)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		topFilterLogits(logits, 1.0, topK, topP, minP, vocabScratch, candScratch, ipsScratch)
 	}
 }
@@ -141,8 +137,7 @@ func BenchmarkTopFilter_Vocab32k(b *testing.B) {
 	ipsScratch := make([]indexedProb, V)
 
 	b.SetBytes(V * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = topFilterLogits(logits, 0.8, 50, 0.9, 0.05, vocabScratch, candScratch, ipsScratch)
 	}
 }

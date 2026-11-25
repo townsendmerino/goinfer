@@ -261,6 +261,12 @@ type KVCache struct {
 	captureLayers []int
 	captured      [][]float32
 
+	// layerInputs, when non-nil, replaces the residual entering layer l with layerInputs[l] wherever that row is non-nil, in the
+	// single-token walk (walkToken) only: a resident diff runs each CPU layer on the GPU's own input, so a layer's difference is
+	// its own rounding and the K/V it appends are computed from the same input. Set through SetLayerInputsForTest; nil in
+	// production, where it costs one nil check per layer.
+	layerInputs [][]float32
+
 	// subCapture, when true, records the per-SUBLAYER contribution added to the residual —
 	// scr.sub after attention (post sandwich-norm) and after the MLP — for every layer, into
 	// subAttn[l]/subMLP[l]. This is finer than captureLayers (which sees only the layer output

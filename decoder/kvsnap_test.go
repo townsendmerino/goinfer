@@ -407,9 +407,7 @@ func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
 	var over atomic.Int64
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 200000 {
 				if st.Reserve(n, true) {
 					st.mu.Lock()
@@ -420,7 +418,7 @@ func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
 					st.Release(n)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if c := over.Load(); c != 0 {

@@ -1,11 +1,11 @@
 package sampling
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
 	"slices"
-	"sort"
 	"sync"
 )
 
@@ -424,11 +424,8 @@ func computeLogprobs(logits []float32, chosen int, temperature float64, topN int
 	// only the N-element result needs a final sort. Its deterministic ties-toward-smaller-id also replaces sort.Slice's
 	// unspecified tie order with a reproducible one.
 	idx := topKByLogit(logits, topN)
-	sort.Slice(idx, func(a, b int) bool {
-		if probs[idx[a]] != probs[idx[b]] {
-			return probs[idx[a]] > probs[idx[b]]
-		}
-		return idx[a] < idx[b] // deterministic: smaller id wins a tie, matching topKByLogit's own convention
+	slices.SortFunc(idx, func(a, b int) int {
+		return cmp.Or(cmp.Compare(probs[b], probs[a]), cmp.Compare(a, b))
 	})
 	top := make([]TokenLogprob, topN)
 	for i, id := range idx {

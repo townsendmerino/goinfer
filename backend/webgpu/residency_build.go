@@ -83,6 +83,17 @@ func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 // keep registers a release for rd.Close to run.
 func (bs *webgpuBuild) keep(f func()) { bs.rd.keep = append(bs.rd.keep, f) }
 
+// keepAll keeps every non-nil buffer in bufs for release with the resident. A KV site calls it on both halves of a pair before
+// it checks either allocation's error, so a failure on one side still releases the other with the rest of a failed build. A
+// constructor that fails returns nil, having released what it made.
+func (bs *webgpuBuild) keepAll(bufs ...*DeviceBuffer) {
+	for _, b := range bufs {
+		if b != nil {
+			bs.keep(func() { _ = b.Close() })
+		}
+	}
+}
+
 // up32 uploads v as a dense f32 buffer.
 func (bs *webgpuBuild) up32(v []float32) (*wgpu.Buffer, error) {
 	d, err := bs.c.UploadF32On(mem.LineDense, v)
@@ -344,7 +355,8 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 			GSize: gNG * gDS, Repeat: gNH / gNG, NormGroups: 1,
 		}
 	}
-	// Every other family's logit scale (dense Granite's, which divides) is the same fold: LogitScale is the factor applied.
+	// Every other family's logit scale (dense Granite's, which divides; Cohere's, which multiplies) is the same fold:
+	// LogitScale is the factor applied.
 	if inv, ok := m.BackendView().LogitScale(); ok && !granOK {
 		lmMult = inv
 	}
@@ -461,7 +473,17 @@ func (bs *webgpuBuild) bindRunner() error {
 	rd.rm.KvF16 = bs.kvF16                            // the runner picks the f16 attn/store kernels off this
 	rd.rm.KvI8 = bs.kvI8                              // …or the int8 kernels + scale binds
 	rd.rm.GatedGELU = m.BackendView().GatedAct() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
-	rd.rm.Pairwise = m.BackendView().PairwiseRoPE()   // FeatPairwiseRoPE — the pairwise rope twins
+	// FeatAttnTemp: folded into the attention score scale per token.
+	if beta, _ := m.BackendView().AttnTempParams(); beta != 0 {
+		rd.rm.AttnTemp = m.BackendView().AttnTempScale
+	}
+	rd.rm.ActG32 = m.ActQuantGroup() == 32          // per-32 activation scales (staticResidentDecline admitted the shape)
+	rd.rm.Pairwise = m.BackendView().PairwiseRoPE() // FeatPairwiseRoPE — the pairwise rope twins
+	rd.rm.LayerNorm = m.BackendView().LayerNorm()   // FeatLayerNorm — LayerNormQuantWGSL for every norm
+	if rd.rm.LayerNorm && len(m.Weights().FinalNormBias) > 0 {
+		return fmt.Errorf("gpu: a LayerNorm bias is not implemented on webgpu")
+	}
+	rd.rm.Parallel = m.BackendView().ParallelBlock() // FeatParallelBlock — the MLP reads the attention's input
 	scale, addOne := m.AttnScale(), m.BackendView().RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(bs.mlaAttnScale)
@@ -475,7 +497,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
 		pp.MropeAxis = rd.mropeAxis
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/per-32 activations/attention temperature/LayerNorm/parallel block/…)")
 		}
 		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
 		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15

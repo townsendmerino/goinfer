@@ -151,7 +151,7 @@ func gradeCommentsOnlyChecks(w io.Writer, checks []commentsOnlyCheck, nGo int) i
 
 func indent(s string) string {
 	var b strings.Builder
-	for _, ln := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+	for ln := range strings.SplitSeq(strings.TrimRight(s, "\n"), "\n") {
 		b.WriteString("      " + ln + "\n")
 	}
 	return b.String()
@@ -169,7 +169,7 @@ func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
 // "verbatim" survives being a blockquote or a code block.
 func normalizeDocs(s string) string {
 	var b strings.Builder
-	for _, ln := range strings.Split(s, "\n") {
+	for ln := range strings.SplitSeq(s, "\n") {
 		ln = strings.TrimSpace(ln)
 		ln = strings.TrimSpace(strings.TrimPrefix(ln, "//"))
 		ln = strings.TrimSpace(strings.TrimPrefix(ln, ">"))
@@ -204,7 +204,7 @@ func (r movedReport) write(w io.Writer, verbose bool) {
 		len(r.found)+len(r.missing), total(r.found)+total(r.missing), total(r.found), total(r.missing))
 	show := func(label string, rs []removedRun) {
 		for _, x := range rs {
-			first := strings.SplitN(x.Text, "\n", 2)[0]
+			first, _, _ := strings.Cut(x.Text, "\n")
 			if len(first) > 90 {
 				first = first[:90] + "…"
 			}

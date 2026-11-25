@@ -212,7 +212,7 @@ func TestKSD5_prefillFusedIdentity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return append([]float32(nil), lg...), prefillScratchSeen.Load() - before
+			return slices.Clone(lg), prefillScratchSeen.Load() - before
 		}
 		want, sTwo := run(true)
 		got, sFused := run(false)

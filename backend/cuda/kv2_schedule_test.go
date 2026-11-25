@@ -217,13 +217,11 @@ func kv2Schedules(t *testing.T, s *kv2Sched) {
 				idsA = append(idsA, <-chA)
 			}
 			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for id := range chA {
 					idsA = append(idsA, id)
 				}
-			}()
+			})
 			chB, gB := g.m.Generate(context.Background(), s.first(1), s.maxTok, s.sp)
 			var idsB []int
 			for id := range chB {

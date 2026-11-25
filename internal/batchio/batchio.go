@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -237,6 +237,6 @@ func Orphans(done map[string]bool, lines []Line) []string {
 			out = append(out, id)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

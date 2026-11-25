@@ -2,7 +2,8 @@ package chat
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -166,25 +167,19 @@ func parseGemma4Tools(out string) ([]ToolCall, string) {
 	}
 	var calls []ToolCall
 	for rest := out; ; {
-		i := strings.Index(rest, "<|tool_call>call:")
-		if i < 0 {
+		_, after, ok := strings.Cut(rest, "<|tool_call>call:")
+		if !ok {
 			break
 		}
-		rest = rest[i+len("<|tool_call>call:"):]
-		brace := strings.IndexByte(rest, '{')
-		if brace < 0 {
+		namePart, bodyRest, ok := strings.Cut(after, "{")
+		if !ok {
 			break
 		}
-		name := strings.TrimSpace(rest[:brace])
-		rest = rest[brace+1:]
-		end := strings.Index(rest, "}<tool_call|>")
-		body := rest
-		if end >= 0 {
-			body = rest[:end]
-			rest = rest[end+len("}<tool_call|>"):]
-		}
+		name := strings.TrimSpace(namePart)
+		body, next, hasEnd := strings.Cut(bodyRest, "}<tool_call|>")
+		rest = next
 		calls = append(calls, ToolCall{Name: name, Arguments: gemmaBodyToJSON(body)})
-		if end < 0 {
+		if !hasEnd {
 			break
 		}
 	}
@@ -198,13 +193,8 @@ func gemmaSchema(raw json.RawMessage) string {
 	if json.Unmarshal(raw, &s) != nil {
 		return "{type:" + gq + "OBJECT" + gq + "}"
 	}
-	keys := make([]string, 0, len(s))
-	for k := range s {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var parts []string
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(s)) {
 		v := s[k]
 		switch k {
 		case "type":
@@ -231,13 +221,8 @@ func gemmaProps(v any) string {
 	if !ok {
 		return "{}"
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var parts []string
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(m)) {
 		sub, _ := json.Marshal(m[k])
 		parts = append(parts, gemmaSafe(k)+":"+gemmaSchema(sub))
 	}
@@ -262,13 +247,8 @@ func gemmaArgs(raw json.RawMessage) string {
 	if json.Unmarshal(raw, &m) != nil {
 		return ""
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var parts []string
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(m)) {
 		parts = append(parts, gemmaSafe(k)+":"+gemmaValue(m[k]))
 	}
 	return strings.Join(parts, ",")
@@ -286,11 +266,7 @@ func gemmaValue(v any) string {
 	case float64:
 		return strconv.FormatFloat(x, 'g', -1, 64)
 	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys) // deterministic, as gemmaArgs does
+		keys := slices.Sorted(maps.Keys(x)) // deterministic, as gemmaArgs does
 		parts := make([]string, 0, len(keys))
 		for _, k := range keys {
 			parts = append(parts, gemmaSafe(k)+":"+gemmaValue(x[k]))

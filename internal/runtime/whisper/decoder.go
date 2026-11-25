@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -197,7 +198,7 @@ func (s *State) Clone() *State {
 	c := *s
 	c.selfK, c.selfV = make([][]float32, len(s.selfK)), make([][]float32, len(s.selfV))
 	for i := range s.selfK {
-		c.selfK[i], c.selfV[i] = append([]float32(nil), s.selfK[i]...), append([]float32(nil), s.selfV[i]...)
+		c.selfK[i], c.selfV[i] = slices.Clone(s.selfK[i]), slices.Clone(s.selfV[i])
 	}
 	return &c
 }
@@ -239,7 +240,7 @@ func (s *State) Forward(tokens []int, all bool) ([][]float32, error) {
 	for li := range d.layers {
 		l := &d.layers[li]
 		// causal self-attention over every token so far, this request's included
-		h := append([]float32(nil), x...)
+		h := slices.Clone(x)
 		layerNorm(h, l.saLnW, l.saLnB, m, D)
 		q := linear(h, l.qW, l.qB, m, D, D)
 		k, v := linear(h, l.kW, nil, m, D, D), linear(h, l.vW, l.vB, m, D, D)
@@ -279,7 +280,7 @@ func (s *State) Forward(tokens []int, all bool) ([][]float32, error) {
 	head := d.embed
 	if d.defect == defectUntiedHead {
 		head = d.pos // a different matrix of the wrong size: only the shape-compatible rows are read, so the test sees it
-		head = append(append([]float32(nil), head...), make([]float32, len(d.embed)-len(head))...)
+		head = append(slices.Clone(head), make([]float32, len(d.embed)-len(head))...)
 	}
 	flat := make([]float32, nOut*c.Vocab)
 	linalg.MatmulBT(rows, head, flat, nOut, D, c.Vocab)
@@ -315,10 +316,8 @@ func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
 	for h := range heads {
-		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			off := h * hd
 			qh := make([]float32, m*hd)
@@ -336,7 +335,7 @@ func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32
 			for i := range m {
 				copy(out[i*D+off:i*D+off+hd], ctx[i*hd:(i+1)*hd])
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return out

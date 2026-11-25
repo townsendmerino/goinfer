@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -49,7 +50,7 @@ func forwardMistralWindow(t *testing.T, m *Model, prompt []int, n int) ([]float3
 			t.Fatal(err)
 		}
 	}
-	last = append([]float32(nil), logits...)
+	last = slices.Clone(logits)
 	var cont []int
 	for range n {
 		next := sampling.Argmax(logits)

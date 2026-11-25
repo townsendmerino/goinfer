@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -138,14 +139,14 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 	}
 	check := func(name string, interleaved bool, qOut, kcOut []float32) {
 		for m, p := range rows {
-			rq := append([]float32(nil), q[m*qDim:(m+1)*qDim]...)
+			rq := slices.Clone(q[m*qDim : (m+1)*qDim])
 			decoder.ApplyMRoPEForTest(rq, nH, hd, p, section, invF64, mscale, interleaved)
 			for d := range rq {
 				if g := qOut[m*qDim+d]; math.Abs(float64(rq[d]-g)) > 1e-4 {
 					t.Fatalf("%s q row %d[%d]: CPU=%v GPU=%v (pos=%v)", name, m, d, rq[d], g, p)
 				}
 			}
-			rk := append([]float32(nil), k[m*kvDim:(m+1)*kvDim]...)
+			rk := slices.Clone(k[m*kvDim : (m+1)*kvDim])
 			decoder.ApplyMRoPEForTest(rk, nKV, hd, p, section, invF64, mscale, interleaved)
 			for d := range rk {
 				if g := kcOut[(startPos+m)*kvDim+d]; math.Abs(float64(rk[d]-g)) > 1e-4 {

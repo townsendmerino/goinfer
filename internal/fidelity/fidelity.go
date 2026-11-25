@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 )
 
 // Position is one scored continuation position of one arm against the reference.
@@ -281,7 +281,7 @@ func WritePositions(w io.Writer, cells []Cell) error {
 	for _, c := range cells {
 		names = append(names, c.Name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	byName := map[string]Cell{}
 	for _, c := range cells {
 		byName[c.Name] = c

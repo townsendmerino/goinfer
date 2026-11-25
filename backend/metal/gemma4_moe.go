@@ -281,19 +281,15 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 					// buffer by slot NUMBER.
 					var wg sync.WaitGroup
 					var errGU, errD, errGS, errDS error
-					wg.Add(2)
-					go func() { defer wg.Done(); errGU = preadIntoPoolSlot(fd, pool.guW, s.slot, pool.nGuW, guOff[ei]) }()
-					go func() { defer wg.Done(); errD = preadIntoPoolSlot(fd, pool.dW, s.slot, pool.nDW, dOff[ei]) }()
+					wg.Go(func() { errGU = preadIntoPoolSlot(fd, pool.guW, s.slot, pool.nGuW, guOff[ei]) })
+					wg.Go(func() { errD = preadIntoPoolSlot(fd, pool.dW, s.slot, pool.nDW, dOff[ei]) })
 					if scalesInFile { // the scales are four more disjoint destinations' worth of the same argument
-						wg.Add(2)
-						go func() {
-							defer wg.Done()
+						wg.Go(func() {
 							errGS = preadScalesIntoPoolSlot(fd, pool.guS, s.slot, pool.nGuS, 0, gsOff[ei], 2*pool.nGuS)
-						}()
-						go func() {
-							defer wg.Done()
+						})
+						wg.Go(func() {
 							errDS = preadScalesIntoPoolSlot(fd, pool.dS, s.slot, pool.nDS, 0, dsOff[ei], 2*pool.nDS)
-						}()
+						})
 					}
 					wg.Wait()
 					for _, e := range []struct {

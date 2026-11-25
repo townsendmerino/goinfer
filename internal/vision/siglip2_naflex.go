@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -188,7 +189,7 @@ func (e *Siglip2NaFlexEncoder) Forward(patches []float32, grid [2]int) ([]float3
 // positions), each block's output, then the post-layernorm's (len = 2 + layers).
 func (e *Siglip2NaFlexEncoder) ForwardStages(patches []float32, grid [2]int) ([][]float32, error) {
 	var st [][]float32
-	_, err := e.forward(patches, grid, func(x []float32) { st = append(st, append([]float32(nil), x...)) })
+	_, err := e.forward(patches, grid, func(x []float32) { st = append(st, slices.Clone(x)) })
 	return st, err
 }
 

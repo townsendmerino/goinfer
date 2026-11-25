@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -33,9 +33,7 @@ var (
 )
 
 func normCmd(s string) string {
-	if i := strings.Index(s, "#"); i >= 0 {
-		s = s[:i]
-	}
+	s, _, _ = strings.Cut(s, "#")
 	return strings.TrimSpace(spacesRE.ReplaceAllString(s, " "))
 }
 
@@ -129,7 +127,7 @@ func CheckInstallLines(root, out string) error {
 		return err
 	}
 	if len(bad) > 0 {
-		sort.Strings(bad)
+		slices.Sort(bad)
 		return fmt.Errorf("the site prints %d install line(s) the README does not (a go get must be a README <!-- smoke --> line):\n  %s",
 			len(bad), strings.Join(bad, "\n  "))
 	}

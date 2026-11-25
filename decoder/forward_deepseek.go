@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
@@ -76,7 +77,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	krj := make([]float32, qkRope)
 	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
-		cn := append([]float32(nil), lat[:rank]...)
+		cn := slices.Clone(lat[:rank])
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
 		kvUp := hybridattn.Matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])

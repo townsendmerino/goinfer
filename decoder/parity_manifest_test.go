@@ -30,7 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -206,7 +206,7 @@ func TestParityManifest_merge(t *testing.T) {
 	if err := writeManifest(&m); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	sort.Strings(applied)
+	slices.Sort(applied)
 	t.Logf("merged %d row(s) into %s at %s (%s): %v", len(applied), parityRecordsPath, sha, date, applied)
 }
 
@@ -226,7 +226,7 @@ func familyDepFiles(m *parityManifest, fam familyParity) []string {
 	for f := range seen {
 		out = append(out, f)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -323,8 +323,8 @@ func programsDigestOf(fixtures []string, tab map[string]map[string]string) (stri
 	if len(tab) == 0 {
 		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the builders", programFingerprintsPath)
 	}
-	fx := append([]string(nil), fixtures...)
-	sort.Strings(fx)
+	fx := slices.Clone(fixtures)
+	slices.Sort(fx)
 	d := sha256.New()
 	for _, a := range sortedKeys(tab) {
 		d.Write([]byte(a + "\n"))
@@ -367,7 +367,7 @@ func TestParityManifest_fresh(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		sort.Strings(missing)
+		slices.Sort(missing)
 		t.Fatalf("parity manifest references missing files (rename?): %v", missing)
 	}
 
@@ -392,8 +392,8 @@ func TestParityManifest_fresh(t *testing.T) {
 		}
 	}
 	if len(inManifestNotMatrix) > 0 || len(inMatrixNotManifest) > 0 {
-		sort.Strings(inManifestNotMatrix)
-		sort.Strings(inMatrixNotManifest)
+		slices.Sort(inManifestNotMatrix)
+		slices.Sort(inMatrixNotManifest)
 		t.Fatalf("parity manifest / capability matrix family mismatch:\n  in manifest but not matrix: %v\n  in matrix but not manifest: %v (add a testdata/parity/<family>.json record)",
 			inManifestNotMatrix, inMatrixNotManifest)
 	}
@@ -403,7 +403,7 @@ func TestParityManifest_fresh(t *testing.T) {
 	for fam := range m.Families {
 		famKeys = append(famKeys, fam)
 	}
-	sort.Strings(famKeys)
+	slices.Sort(famKeys)
 
 	var stale []string
 	var emptyDeps []string
@@ -563,7 +563,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

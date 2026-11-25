@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -238,7 +239,7 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 	// underlying GPU). So this total includes both A's and B's buffers; read via b.d since a's
 	// id goes to 0 once Close runs below.
 	sizeBoth := b.d.CurrentAllocatedSize()
-	want := append([]float32(nil), b.Forward(7, 0)...) // B's output while A is alive
+	want := slices.Clone(b.Forward(7, 0)) // B's output while A is alive
 
 	a.Close() // free A only
 

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -108,7 +109,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 		if err := checkCaptureValues(m, l, c); err != nil {
 			return err
 		}
-		h := append([]float32(nil), hIn...)
+		h := slices.Clone(hIn)
 		addResidual(h, c.Attn[l])
 		addResidual(h, c.MLP[l])
 		addResidual(h, c.PLE[l])
@@ -125,7 +126,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 		}
 		hIn = c.Out[l]
 	}
-	if !sameBits(m.logitsFromHidden(append([]float32(nil), c.Out[arch.NumLayers-1]...), cache), lg) {
+	if !sameBits(m.logitsFromHidden(slices.Clone(c.Out[arch.NumLayers-1]), cache), lg) {
 		return fmt.Errorf("the last layer's captured output through the head is not the logits")
 	}
 
@@ -133,7 +134,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 	if err != nil {
 		return err
 	}
-	lp = append([]float32(nil), lp...)
+	lp = slices.Clone(lp)
 	lc, err := m.forward(ids[0], cache)
 	if err != nil {
 		return err
@@ -218,5 +219,70 @@ func TestLayerCapture_refusesGemma4MoE(t *testing.T) {
 	_, _, err := m.ForwardLayerCaptureLogitsForTest(layerCapturePrompt[0], m.NewCache(4))
 	if err == nil || !strings.Contains(err.Error(), "MoE block") {
 		t.Fatalf("not refused: %v", err)
+	}
+}
+
+// TestLayerInputs_isolateEachLayer holds SetLayerInputsForTest to its contract over three tokens: feeding every layer the input
+// it would have had anyway (the previous layer's captured output) is bit-identical to a plain forward, logits and every layer's
+// output, so the seam does not perturb; and replacing one layer's input with a different vector changes that layer's output and
+// the logits, so the seam is not ignored. The second check fails if walkToken stops reading layerInputs.
+func TestLayerInputs_isolateEachLayer(t *testing.T) {
+	for _, dir := range []string{"../testdata/cohere2-tiny", "../testdata/llama-tiny"} {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+				t.Fatalf("the committed fixture %s: %v", dir, err)
+			}
+			m, err := Load(dir, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			nL := m.w.arch.NumLayers
+			plain, fed := m.NewCache(8), m.NewCache(8)
+			for _, tok := range []int{1, 7, 42} {
+				want, lc, err := m.ForwardLayerCaptureLogitsForTest(tok, plain)
+				if err != nil {
+					t.Fatal(err)
+				}
+				in := make([][]float32, nL)
+				for l := 1; l < nL; l++ {
+					in[l] = lc.Out[l-1]
+				}
+				fed.SetLayerInputsForTest(in)
+				got, gc, err := m.ForwardLayerCaptureLogitsForTest(tok, fed)
+				fed.SetLayerInputsForTest(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(want, got) {
+					t.Fatalf("token %d: the logits moved when every layer was fed its own input", tok)
+				}
+				for l := range nL {
+					if !slices.Equal(lc.Out[l], gc.Out[l]) {
+						t.Fatalf("token %d layer %d: the output moved when every layer was fed its own input", tok, l)
+					}
+				}
+			}
+			probe := m.NewCache(8)
+			ref, lc, err := m.ForwardLayerCaptureLogitsForTest(1, m.NewCache(8))
+			if err != nil {
+				t.Fatal(err)
+			}
+			last := nL - 1
+			other := slices.Clone(lc.Out[0])
+			for j := range other {
+				other[j] = -other[j]
+			}
+			in := make([][]float32, nL)
+			in[last] = other
+			probe.SetLayerInputsForTest(in)
+			got, pc, err := m.ForwardLayerCaptureLogitsForTest(1, probe)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Equal(ref, got) || slices.Equal(lc.Out[last], pc.Out[last]) {
+				t.Errorf("replacing layer %d's input changed nothing: the forward ignores SetLayerInputsForTest", last)
+			}
+		})
 	}
 }

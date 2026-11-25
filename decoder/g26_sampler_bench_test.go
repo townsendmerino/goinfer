@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -30,12 +30,12 @@ import (
 // denormal-heavy tail, say), synthetic logits may not reproduce it, and a flat result here is then evidence about the shape of
 // the cause, not an absence of one.
 func g26BenchLogits(n int, seed int64) []float32 {
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewPCG(uint64(seed), 0))
 	l := make([]float32, n)
 	for i := range l {
 		l[i] = float32(r.NormFloat64() * 2.0)
 	}
-	l[r.Intn(n)] = 14.0 // a peak, as a real next-token distribution has
+	l[r.IntN(n)] = 14.0 // a peak, as a real next-token distribution has
 	return l
 }
 
@@ -43,8 +43,7 @@ func g26BenchSample(b *testing.B, vocab int, temp float64) {
 	logits := g26BenchLogits(vocab, 42)
 	scratch := make([]float32, vocab)
 	s := NewSampler(SamplingParams{Temperature: temp, Seed: 7})
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(scratch, logits) // Sample may modify in place; each iteration sees identical input
 		if _, err := s.Sample(scratch); err != nil {
 			b.Fatal(err)

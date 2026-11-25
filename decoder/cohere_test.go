@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -98,7 +99,7 @@ func TestCohere_forwardParity(t *testing.T) {
 	}
 
 	// Greedy continuation must be byte-identical (argmax at every step).
-	cur := append([]int(nil), g.PromptIDs...)
+	cur := slices.Clone(g.PromptIDs)
 	cont := make([]int, 0, g.NNew)
 	for range g.NNew {
 		c2 := m.NewCache(len(cur))

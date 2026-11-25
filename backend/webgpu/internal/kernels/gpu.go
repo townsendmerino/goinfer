@@ -54,6 +54,9 @@ type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
 	ledger   mem.Ledger // every buffer created on this Context (ledger.go)
+	// createFail, when set, is asked before each leased buffer is created and refuses it by returning an error: the test seam
+	// that fails a build partway (SetCreateFailForTest). nil in production.
+	createFail func(line string, size uint64) error
 	// collected and collectedBytes count the leased buffers the GC freed with their lease open (ledger.go's Collected).
 	collected, collectedBytes atomic.Int64
 	// dispatches, submits and waits are the decode runners' device activity, always counted (cost.go's Activity).
@@ -270,6 +273,10 @@ type Context struct {
 
 	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
 	// producer to shorten the serialized decode dependency chain.
+	// LayerNormQuantWGSL (layernorm.go), compiled on first use by ensureLayerNorm.
+	layerNormQuant layerNormPipe
+	// Per-32 activation twins (actgroup.go), compiled on first use by ensureActG32.
+	actG32 *actG32Pipes
 	// Pairwise RoPE twins (pairwise.go), compiled on first use by ensurePairwise.
 	pairwise *pairwisePipes
 

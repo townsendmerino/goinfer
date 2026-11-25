@@ -107,7 +107,7 @@ func TestGemma4BidirSpanPrefill_real26B(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: PrefillSpansLast: %v", img, err)
 		}
-		gpu = append([]float32(nil), gpu...)
+		gpu = slices.Clone(gpu)
 		tg := time.Since(t1)
 		t2 := time.Now()
 		cpu, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, ids, feats, spans, m.NewCache(len(ids)+1))
@@ -241,7 +241,7 @@ func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return decode(append([]float32(nil), lg...), len(p.ids))
+		return decode(slices.Clone(lg), len(p.ids))
 	}
 	cpuRef := map[string][]int{}
 	runCPU := func(img string) []int {
@@ -379,7 +379,7 @@ func TestGemma4_26BDecodeLocalize(t *testing.T) {
 	if err := m.ResidentUploadPrefillForTest(c); err != nil {
 		t.Fatal(err)
 	}
-	lg := append([]float32(nil), lc...)
+	lg := slices.Clone(lc)
 	firstSplit := -1
 	for i := 0; i < steps; i++ {
 		cos, _ := cosMaxAbs(lg, lc)
@@ -403,7 +403,7 @@ func TestGemma4_26BDecodeLocalize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		lg = append([]float32(nil), g...)
+		lg = slices.Clone(g)
 		if lc, err = m.ForwardForTest(tok, c); err != nil {
 			t.Fatal(err)
 		}
@@ -546,7 +546,7 @@ func TestGemma4_26BActQuantSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nudged := append([]float32(nil), feats...)
+	nudged := slices.Clone(feats)
 	var s uint32 = 12345
 	for i := range nudged {
 		s = s*1664525 + 1013904223
@@ -564,12 +564,12 @@ func TestGemma4_26BActQuantSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	la = append([]float32(nil), la...)
+	la = slices.Clone(la)
 	lb, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, ids, nudged, spans, cb)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lb = append([]float32(nil), lb...)
+	lb = slices.Clone(lb)
 	var toks []int
 	split := -1
 	for i := 0; i < steps; i++ {
@@ -589,15 +589,15 @@ func TestGemma4_26BActQuantSensitivity(t *testing.T) {
 		if la, err = m.ForwardForTest(tok, ca); err != nil {
 			t.Fatal(err)
 		}
-		la = append([]float32(nil), la...)
+		la = slices.Clone(la)
 		if capture {
-			ha = append([][]float32(nil), decoder.Gemma4HiddenCaptureForTest()...)
+			ha = slices.Clone(decoder.Gemma4HiddenCaptureForTest())
 			decoder.SetGemma4HiddenCaptureForTest(true)
 		}
 		if lb, err = m.ForwardForTest(tok, cb); err != nil {
 			t.Fatal(err)
 		}
-		lb = append([]float32(nil), lb...)
+		lb = slices.Clone(lb)
 		if capture {
 			hb := decoder.Gemma4HiddenCaptureForTest()
 			decoder.SetGemma4HiddenCaptureForTest(false)

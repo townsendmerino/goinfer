@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -84,7 +83,7 @@ func TestS17Profile(t *testing.T) {
 			if len(xs) == 0 {
 				return 0
 			}
-			sort.Float64s(xs)
+			slices.Sort(xs)
 			return xs[len(xs)/2]
 		}
 		tot := med("total")
@@ -258,7 +257,7 @@ func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOl
 			}
 		}
 		med := slices.Clone(rs)
-		sort.Float64s(med)
+		slices.Sort(med)
 		fmt.Fprintf(os.Stderr, "| %s | %s | %d | %.3f / %.3f / %.3f | %.3f / %.3f / %.3f | %.2f / %.2f / %.2f | %.2fx | %.9f |\n", tower, img, rows,
 			to[0], to[1], to[2], tf[0], tf[1], tf[2], rs[0], rs[1], rs[2], med[1], worst)
 		if worst < 0.9999 {

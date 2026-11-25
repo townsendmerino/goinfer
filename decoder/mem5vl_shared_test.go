@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 )
@@ -108,7 +109,7 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 
 func v1Decode(t *testing.T, m *Model, cache *KVCache, lg []float32) [][]float32 {
 	t.Helper()
-	out := [][]float32{append([]float32(nil), lg...)}
+	out := [][]float32{slices.Clone(lg)}
 	for range 4 {
 		best := 0
 		for j := range lg {
@@ -120,7 +121,7 @@ func v1Decode(t *testing.T, m *Model, cache *KVCache, lg []float32) [][]float32 
 		if lg, err = m.forward(best, cache); err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out
 }

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 	d := &loraDelta{a: a, b: b, r: r, in: in, out: out, scale: scale}
 
 	// Merge path: fold the delta into a copy of W, then matmul.
-	wm := append([]float32(nil), w...)
+	wm := slices.Clone(w)
 	ad := &loraAdapter{deltas: map[string]loraDelta{"w": *d}}
 	if err := ad.merge("w", wm, out, in); err != nil {
 		t.Fatal(err)
@@ -53,7 +54,7 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 		}
 	}
 	// A nil delta is a no-op (untargeted projection).
-	yNil := append([]float32(nil), yCT...)
+	yNil := slices.Clone(yCT)
 	applyLoRA(nil, x, yCT, &decodeScratch{})
 	for i := range yNil {
 		if yNil[i] != yCT[i] {

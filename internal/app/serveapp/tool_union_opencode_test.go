@@ -3,6 +3,7 @@ package serveapp
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -83,7 +84,7 @@ func TestToolUnion_autoLeavesProseFree(t *testing.T) {
 		base[i] = float32(i%97) / 97
 	}
 	masked := func(gen []int) int {
-		l := append([]float32(nil), base...)
+		l := slices.Clone(base)
 		proc(gen, l)
 		n := 0
 		for i := range l {

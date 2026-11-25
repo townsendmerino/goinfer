@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
@@ -46,7 +47,7 @@ func (w *windowResident) ReusableKV(prefix int) int {
 func TestCacheStateGrid_managerCells(t *testing.T) {
 	const n = 3*kvmgr.BlockRows + 17
 	hist := kvSeq(n, 1)
-	next := append(append([]int(nil), hist...), kvSeq(40, 2)...)
+	next := append(slices.Clone(hist), kvSeq(40, 2)...)
 	committed := func(res ResidentForward, lora *loraRuntime, blocks []residentImageBlock) *Model {
 		m := &Model{resident: res}
 		m.residentAcquire(hist, nil, lora)
@@ -128,7 +129,7 @@ func TestCacheStateGrid_managerCells(t *testing.T) {
 				if got := m.residentReuseLen(next, nil, nil); got != n {
 					t.Errorf("a strict extension reuses %d rows, want %d", got, n)
 				}
-				edited := append([]int(nil), next...)
+				edited := slices.Clone(next)
 				edited[n-1]++
 				if got := m.residentReuseLen(edited, nil, nil); got != 0 {
 					t.Errorf("an edit one token before the end reuses %d rows of a recurrent sequence, want 0", got)

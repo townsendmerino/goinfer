@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -175,7 +175,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 	for k := range registry {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, mt := range keys {
 		cfg := representativeConfig(mt)
 		if cfg == nil {
@@ -210,7 +210,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 		check(filepath.Base(dir), a)
 	}
 	// The towers, encoders and speech models under testdata: a decoder config that stops resolving is red, not a longer list.
-	sort.Strings(unresolved)
+	slices.Sort(unresolved)
 	if want := []string{"embeddinggemma2-tiny", "gemma4-audio-tiny", "gemma4-vision-tiny", "glm-ocr-vision-tiny", "pixtral-projector-tiny",
 		"qwen3vl-vision-tiny", "siglip-tiny", "whisper-tiny-rand", "whisper-tiny-ts"}; !reflect.DeepEqual(unresolved, want) {
 		t.Errorf("the testdata configs that do not resolve are %v, want exactly %v", unresolved, want)

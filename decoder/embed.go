@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync/atomic"
 )
 
@@ -89,7 +90,7 @@ func (m *Model) hiddenLastBatched(ids []int) ([]float32, error) {
 		return nil, err
 	}
 	last := hN[(len(ids)-1)*a.HiddenDim : len(ids)*a.HiddenDim]
-	return append([]float32(nil), last...), nil
+	return slices.Clone(last), nil
 }
 
 // hiddenLastSequential is HiddenLast's original path: one runLayers call per
@@ -107,7 +108,7 @@ func (m *Model) hiddenLastSequential(ids []int) ([]float32, error) {
 	}
 	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place (the
 	// same in-place norm logitsFromHidden does on its way to the head).
-	out := append([]float32(nil), h[:a.HiddenDim]...)
+	out := slices.Clone(h[:a.HiddenDim])
 	m.finalNorm(out)
 	return out, nil
 }
@@ -192,7 +193,7 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 		if err != nil {
 			return nil, err
 		}
-		return append([]float32(nil), hN[(len(prompt)-1)*a.HiddenDim:]...), nil
+		return slices.Clone(hN[(len(prompt)-1)*a.HiddenDim:]), nil
 	}
 	var h []float32
 	for _, id := range prompt {
@@ -205,7 +206,7 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 		}
 	}
 	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
-	out := append([]float32(nil), h[:a.HiddenDim]...)
+	out := slices.Clone(h[:a.HiddenDim])
 	m.finalNorm(out)
 	return out, nil
 }

@@ -58,8 +58,8 @@ func SpliceImageBlocks(segs []tokenizer.Segment, blocks []string) ([]tokenizer.S
 	}
 	head := segs
 	var tail []tokenizer.Segment // already spliced: from the latest block to the end
-	for k := len(blocks) - 1; k >= 0; k-- {
-		out, err := SpliceImageBlock(head, blocks[k])
+	for k, block := range slices.Backward(blocks) {
+		out, err := SpliceImageBlock(head, block)
 		if err != nil {
 			return nil, fmt.Errorf("vision: image %d of %d: %w", k+1, len(blocks), err)
 		}
@@ -67,7 +67,7 @@ func SpliceImageBlocks(segs []tokenizer.Segment, blocks []string) ([]tokenizer.S
 		// and the template's own Special segments never carry a block's text): everything from it on is settled.
 		cut := -1
 		for i, sg := range slices.Backward(out) {
-			if sg.Special && sg.Text == blocks[k] {
+			if sg.Special && sg.Text == block {
 				cut = i
 				break
 			}

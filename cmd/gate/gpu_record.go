@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -163,7 +164,7 @@ func loadGPURecords(dir string) ([]gpuRecord, error) {
 		}
 		recs = append(recs, r)
 	}
-	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
+	slices.SortStableFunc(recs, func(a, b gpuRecord) int { return cmp.Compare(a.Date, b.Date) })
 	return recs, nil
 }
 

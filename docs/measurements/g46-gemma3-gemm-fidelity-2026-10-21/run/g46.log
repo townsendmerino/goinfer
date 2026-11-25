@@ -1,0 +1,33 @@
+=== RUN   TestG46_gemma3GEMMFidelityLadder
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+    g46_gemm_fidelity_test.go:32: KV precision f32
+[g46] seed 4242 (1 of 2) per-token reference: 2942 of 12160 rows, 30 s, run 31 s
+[g46] seed 4242 (1 of 2) per-token reference: 5701 of 12160 rows, 60 s, run 61 s
+[g46] seed 4242 (1 of 2) per-token reference: 8341 of 12160 rows, 90 s, run 91 s
+[g46] seed 4242 (1 of 2) per-token reference: 10867 of 12160 rows, 120 s, run 121 s
+[g46] seed 4242 per-token reference: 12160 rows in 135.9 s
+[g46] control seed 4242 depth 4096 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 4242 depth  4096: batched 5.11 s, 1904 tensor-core launches; logits differing 262144 of 262144 (worst 2.99); cosine 0.994150, argmax equal true: PASS
+[g46] seed 4242 depth  6144: batched 8.96 s, 2856 tensor-core launches; logits differing 262144 of 262144 (worst 2); cosine 0.996105, argmax equal true: PASS
+[g46] seed 4242 depth  8192: batched 13.43 s, 3808 tensor-core launches; logits differing 262144 of 262144 (worst 2.61); cosine 0.995950, argmax equal true: PASS
+[g46] seed 4242 depth 10240: batched 17.81 s, 4760 tensor-core launches; logits differing 262144 of 262144 (worst 3.37); cosine 0.987131, argmax equal true: FAIL
+[g46] seed 4242 depth 12000: batched 22.09 s, 5712 tensor-core launches; logits differing 262144 of 262144 (worst 2.17); cosine 0.996317, argmax equal true: PASS
+[g46] control seed 4242 depth 12160 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 4242 depth 12160: batched 22.44 s, 5712 tensor-core launches; logits differing 262143 of 262144 (worst 2.52); cosine 0.995662, argmax equal true: PASS
+[g46] seed 9001 (2 of 2) per-token reference: 2928 of 12160 rows, 30 s, run 301 s
+[g46] seed 9001 (2 of 2) per-token reference: 5677 of 12160 rows, 60 s, run 331 s
+[g46] seed 9001 (2 of 2) per-token reference: 8310 of 12160 rows, 90 s, run 361 s
+[g46] seed 9001 (2 of 2) per-token reference: 10836 of 12160 rows, 120 s, run 391 s
+[g46] seed 9001 per-token reference: 12160 rows in 136.2 s
+[g46] control seed 9001 depth 4096 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 9001 depth  4096: batched 5.10 s, 1904 tensor-core launches; logits differing 262144 of 262144 (worst 2.33); cosine 0.995975, argmax equal true: PASS
+[g46] seed 9001 depth  6144: batched 8.96 s, 2856 tensor-core launches; logits differing 262144 of 262144 (worst 2.08); cosine 0.996998, argmax equal true: PASS
+[g46] seed 9001 depth  8192: batched 13.43 s, 3808 tensor-core launches; logits differing 262144 of 262144 (worst 2.92); cosine 0.991072, argmax equal true: AMBIGUOUS
+[g46] seed 9001 depth 10240: batched 17.83 s, 4760 tensor-core launches; logits differing 262144 of 262144 (worst 2.51); cosine 0.995030, argmax equal false: FAIL
+[g46] seed 9001 depth 12000: batched 22.01 s, 5712 tensor-core launches; logits differing 262143 of 262144 (worst 2.4); cosine 0.996074, argmax equal true: PASS
+[g46] control seed 9001 depth 12160 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 9001 depth 12160: batched 22.42 s, 5712 tensor-core launches; logits differing 262144 of 262144 (worst 2.69); cosine 0.990061, argmax equal true: AMBIGUOUS
+    g46_gemm_fidelity_test.go:118: G46 FAIL: a cell read under cosine 0.99 or with a different argmax, or a control did not hold (the cell lines above); run 540 s
+--- FAIL: TestG46_gemma3GEMMFidelityLadder (550.28s)
+FAIL
