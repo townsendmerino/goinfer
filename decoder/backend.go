@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -176,7 +176,7 @@ func CompiledBackends() []string {
 		names = append(names, name)
 	}
 	backendMu.RUnlock()
-	sort.Strings(names)
+	slices.Sort(names)
 	return append([]string{"cpu"}, names...)
 }
 

@@ -501,13 +501,7 @@ func (m *Model) HasPerLayerGeometry() bool {
 // the source map read-only from outside the package: a caller or third-party init() cannot add a feature claim its kernels do not
 // implement, nor trigger a concurrent map write during a Load. The package's own admission path reads the unexported map.
 func ResidentBackendFeatures(backend string) map[ResidentFeature]bool {
-	src := residentBackendFeatures[backend]
-	if src == nil {
-		return nil
-	}
-	out := make(map[ResidentFeature]bool, len(src))
-	maps.Copy(out, src)
-	return out
+	return maps.Clone(residentBackendFeatures[backend])
 }
 
 // residentBackendFeatures declares what each resident backend's decode path implements. It lives here, not in the backends, for one

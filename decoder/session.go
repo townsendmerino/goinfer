@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/townsendmerino/goinfer/constrain"
@@ -151,7 +152,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	// After prefill the cache holds the whole prompt; commit appends each generated token as its
 	// forward lands it in the cache, so seq mirrors the cache exactly — including a clean rollback
 	// if a forward errors mid-stream.
-	seq := append([]int(nil), prompt...)
+	seq := slices.Clone(prompt)
 	commit := func(id int) { seq = append(seq, id) }
 
 	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {
@@ -219,7 +220,7 @@ func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, 
 	g := &Generation{Spec: stats}
 
 	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind
-	seq := append([]int(nil), prompt...)
+	seq := slices.Clone(prompt)
 	commit := func(id int) { seq = append(seq, id) }
 
 	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {
@@ -243,7 +244,7 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt) // cold-prefill on an inexact rewind
 	}
-	seq := append([]int(nil), prompt...)
+	seq := slices.Clone(prompt)
 	commit := func(id int) { seq = append(seq, id) }
 
 	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {

@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 	"unsafe"
 )
@@ -57,9 +58,9 @@ func TestConvWin_noSlabRetained(t *testing.T) {
 // TestConvWin_qwen35BitIdentical is CW-G1's model half: on each Qwen3.5 fixture, a batched 40-token prefill
 // (runLayersQwen35N) and 8 greedy decode steps after give the same logits with the window's rows copied as with the old slices.
 func TestConvWin_qwen35BitIdentical(t *testing.T) {
-	run := func(m *Model, slices bool) [][]float32 {
+	run := func(m *Model, sliceWin bool) [][]float32 {
 		prev := convWinSliceForTest
-		convWinSliceForTest = slices
+		convWinSliceForTest = sliceWin
 		defer func() { convWinSliceForTest = prev }()
 		_, _, _, _, _, _, vocab := m.Dims()
 		ids := make([]int, 40)
@@ -78,7 +79,7 @@ func TestConvWin_qwen35BitIdentical(t *testing.T) {
 			t.Fatal(err)
 		}
 		hidden := m.w.arch.HiddenDim
-		lg := append([]float32(nil), m.logitsFromNormed(hn[len(hn)-hidden:], cache)...)
+		lg := slices.Clone(m.logitsFromNormed(hn[len(hn)-hidden:], cache))
 		out := [][]float32{lg}
 		for range 8 {
 			best := 0
@@ -90,7 +91,7 @@ func TestConvWin_qwen35BitIdentical(t *testing.T) {
 			if lg, err = m.forward(best, cache); err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 		}
 		return out
 	}

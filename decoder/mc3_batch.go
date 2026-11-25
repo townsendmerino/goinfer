@@ -3,6 +3,7 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -350,7 +351,7 @@ func (b *residentBatcher) markSlot(slot int, busy bool) {
 func (b *residentBatcher) busySlots() []bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return append([]bool(nil), b.slotBusy...)
+	return slices.Clone(b.slotBusy)
 }
 
 // forward submits one decode token and returns once a run has served it: q.out is set when a batched step did, and
@@ -404,11 +405,11 @@ func (b *tokenCoalescer) serveLocked(done func() bool) {
 				b.stats.Runs++
 				n := min(len(b.pending), b.hi)
 				run := b.pending[:n:n]
-				b.pending = append([]*batchReq(nil), b.pending[n:]...)
+				b.pending = slices.Clone(b.pending[n:])
 				var c *chunkReq
 				if len(b.chunks) > 0 {
 					c = b.chunks[0]
-					b.chunks = append([]*chunkReq(nil), b.chunks[1:]...)
+					b.chunks = slices.Clone(b.chunks[1:])
 				}
 				b.busy = true
 				b.mu.Unlock()

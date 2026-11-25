@@ -2,8 +2,9 @@ package decoder
 
 import (
 	"fmt"
+	"maps"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -207,12 +208,7 @@ func validateConfigBounds(cfg *Config) error {
 }
 
 func knownModelTypes() string {
-	keys := make([]string, 0, len(registry))
-	for k := range registry {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return strings.Join(keys, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(registry)), ", ")
 }
 
 // ggufConfigAdapter builds a *Config from a GGUF file's metadata for one general.architecture value.
@@ -247,12 +243,7 @@ var ggufRegistry = map[string]ggufConfigAdapter{
 }
 
 func knownGGUFArchitectures() string {
-	keys := make([]string, 0, len(ggufRegistry))
-	for k := range ggufRegistry {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return strings.Join(keys, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(ggufRegistry)), ", ")
 }
 
 // backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=5.10's rope_parameters object, for the single-base

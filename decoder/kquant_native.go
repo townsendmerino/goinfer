@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -164,11 +165,9 @@ func (m *Model) kquantSavings(backend string) int64 {
 // KQuantNative is "q5k" or "q6k" when backend's q4k lane uploads wm as the file's blocks (kquantLane), else "". wm is
 // compared by address, so it must be the model's own weight (a pointer into Weights()).
 func (m *Model) KQuantNative(backend string, wm *linalg.WeightMat) string {
-	for _, x := range m.kquantLane(backend) {
-		if x == wm {
-			s, _ := m.w.kquantOf(wm)
-			return s.kind
-		}
+	if slices.Contains(m.kquantLane(backend), wm) {
+		s, _ := m.w.kquantOf(wm)
+		return s.kind
 	}
 	return ""
 }

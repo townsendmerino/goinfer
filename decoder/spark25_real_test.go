@@ -168,8 +168,8 @@ func TestSpark25Real_fitGuardLongContext(t *testing.T) {
 			"(if this machine genuinely has enough free RAM right now, this is not a failure of the " +
 			"guard, just an environment where the negative case doesn't trigger; rerun under load)")
 	}
-	var declErr *FitDeclineError
-	if !errors.As(err, &declErr) {
+	declErr, ok := errors.AsType[*FitDeclineError](err)
+	if !ok {
 		t.Fatalf("Load(ResidentContext=131072) failed with %T, want *FitDeclineError (a controlled refusal, not some other failure mode): %v", err, err)
 	}
 	t.Logf("Load(ResidentContext=131072) correctly refused: %v", declErr)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -60,8 +61,8 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 			wk, wv := r.window(base, n)
 			// reference: the copy path over the same live rows, assembled the way batchReadLocal does for startPos=p with the newest row as "new"
 			dk, dv := make([]float32, n*stride), make([]float32, n*stride)
-			newK := append([]float32(nil), r.k[(p%W)*stride:(p%W+1)*stride]...)
-			newV := append([]float32(nil), r.v[(p%W)*stride:(p%W+1)*stride]...)
+			newK := slices.Clone(r.k[(p%W)*stride : (p%W+1)*stride])
+			newV := slices.Clone(r.v[(p%W)*stride : (p%W+1)*stride])
 			// history = rows [base, p) read from the ring; batchReadLocal reads them from slots, which the newest row's slot may alias only when n == W+1, never here
 			c.rings[0].count-- // batchReadLocal's contract: the new row is NOT yet in the ring
 			c.batchReadLocal(0, p, 1, newK, newV, dk, dv)
@@ -100,7 +101,7 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 				check("truncate")
 			case op < 9 && r.mirrored(): // a snapshot restore rebuilds k/v at w slots: the mirror is gone and must come back coherent
 				ws := r.w * r.stride
-				r.k, r.v = append([]float32(nil), r.k[:ws]...), append([]float32(nil), r.v[:ws]...)
+				r.k, r.v = slices.Clone(r.k[:ws]), slices.Clone(r.v[:ws])
 				if r.mirrored() {
 					t.Fatalf("W=%d: a w-slot ring reports mirrored", W)
 				}
@@ -152,7 +153,7 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 					if err != nil {
 						t.Fatalf("direct=%v step %d: %v", direct, i, err)
 					}
-					all = append(all, append([]float32(nil), lg...))
+					all = append(all, slices.Clone(lg))
 				}
 				return all, cache
 			}

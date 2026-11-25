@@ -17,7 +17,7 @@
   "programs": [
     "testdata/olmo_hybrid-tiny"
   ],
-  "deps_hash": "sha256:22995ea6c710e2d455e06157b8590b6ee8df82338109c94bc5dad57b9ca490d8",
+  "deps_hash": "sha256:a9f4102222ee27387c88f8f7a37af91c6958de50c9e5d65995ad308e1d9be43d",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

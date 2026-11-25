@@ -1,6 +1,9 @@
 package decoder
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":
 // Command-R7B, Command-A, R7B-arabic). It is cohere1's stack (bias-free LayerNorm,
@@ -28,7 +31,7 @@ func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// full-attention layer = NoPE; local = sliding + RoPE (Config.IsGlobalLayer is
 	// the authoritative layer_types-then-pattern rule).
 	pattern := cfg.SlidingWindowPattern
-	layerTypes := append([]string(nil), cfg.LayerTypes...)
+	layerTypes := slices.Clone(cfg.LayerTypes)
 	isGlobal := func(i int) bool {
 		if i >= 0 && i < len(layerTypes) {
 			return layerTypes[i] == "full_attention"

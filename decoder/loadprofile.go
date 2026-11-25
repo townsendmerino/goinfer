@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ func (p *LoadProfile) Phases() []LoadPhase {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]LoadPhase(nil), p.phases...)
+	return slices.Clone(p.phases)
 }
 
 // Total is the sum of the recorded phases. It is deliberately the SUM rather than a wall-clock
