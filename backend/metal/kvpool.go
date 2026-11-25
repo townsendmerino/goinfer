@@ -22,6 +22,60 @@ import (
 
 var ()
 
+// kvPoolState holds the resident's per-layer KV pools, block tables, slot bookkeeping, and KV-precision pipelines.
+// Embedding kvGroup promotes the primary group's fields and methods onto resident directly.
+type kvPoolState struct {
+	kc, vc      []Buffer
+	ks, vs      []Buffer
+	kvSlotBufs  []kvSlotBuf
+	kvSlot      int
+	kvContig    bool
+	kvSlotBytes []int
+	kvNullBytes []int
+	kvGroup
+	kvWin       *kvGroup
+	kvGs        []*kvGroup
+	kvShareCtx  int
+	kvSlotSt    []kvSlotState
+	kvUseTick   uint64
+	kvEvictions int
+	kvReclaimed []int
+	kvUpload    *kvUploadPass
+	kvF32       bool
+	kvI8        bool
+	pKvI8       Pipeline
+	pAttnI8     Pipeline
+	pKvI8Rows   Pipeline
+	pAttnI8Rows Pipeline
+}
+
+// kvPoolState holds the resident's per-layer KV pools, block tables, slot bookkeeping, and KV-precision pipelines.
+// Embedding kvGroup promotes the primary group's fields and methods onto resident directly.
+type kvPoolState struct {
+	kc, vc      []Buffer
+	ks, vs      []Buffer
+	kvSlotBufs  []kvSlotBuf
+	kvSlot      int
+	kvContig    bool
+	kvSlotBytes []int
+	kvNullBytes []int
+	kvGroup
+	kvWin        *kvGroup
+	kvGs         []*kvGroup
+	kvShareCtx   int
+	kvSlotSt     []kvSlotState
+	kvUseTick    uint64
+	kvEvictions  int
+	kvReclaimed  []int
+	kvUpload     *kvUploadPass
+	kvF32        bool
+	kvI8         bool
+	pKvI8        Pipeline
+	pAttnI8      Pipeline
+	pKvI8Rows    Pipeline
+	pAttnI8Rows  Pipeline
+}
+
 // kvUploadPass is an upload in progress (decoder.ResidentKVSubsystem): one write of slot s from position 0, which its first layer maps
 // through end and every layer that owns K/V must land.
 type kvUploadPass struct {

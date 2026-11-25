@@ -8,6 +8,21 @@ import (
 	"runtime"
 )
 
+// gumbelState holds the resident's on-device temperature-only Gumbel-max sampling pipelines, scratch buffers, and uniforms.
+// Always built (like attnFAPartial): SampleAvailable is a per-call gate (finalSoftcap/logitScale), not a build-time one.
+type gumbelState struct {
+	pGumbel1, pGumbel2 Pipeline
+	gumbelNB           int    // stage-1 dispatch size: ceil(V / (4*GB_THREADS))
+	gumbelBKey         Buffer // [gumbelNB] per-threadgroup winning keys
+	gumbelBIdx         Buffer // [gumbelNB] per-threadgroup winning indices (int32)
+	gumbelOut          Buffer // [1] the drawn id (int32), -1 if nothing was comparable
+	// uGumbelV/uGumbelNB are immutable (V and gumbelNB never change for a built resident); the other four are reused scratch,
+	// SetU32'd/Floats-written fresh before each draw (ForwardSample's command buffer is synchronous).
+	uGumbelV, uGumbelNB                        Buffer
+	uGumbelInvT                                Buffer
+	uGumbelK0, uGumbelK1, uGumbelD0, uGumbelD1 Buffer
+}
+
 // gumbelBlocks is the stage-1 dispatch size for a vocabulary of v entries (GB_THREADS threads x
 // 4 vocabulary entries each — gumbel.go's gumbel_stage1).
 func gumbelBlocks(v int) int { return (v + 4*256 - 1) / (4 * 256) }

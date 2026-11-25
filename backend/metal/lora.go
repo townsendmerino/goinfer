@@ -25,6 +25,14 @@ import (
 // LoadAdapter excludes that family only through the checks above, so a qGate family that passed them would silently get no
 // delta on Metal; none does today (docs/code-notes/metal.md#loraQGateGap).
 
+// loraState holds the resident's compute-time LoRA pipeline, active bound layers, and single-adapter device cache.
+type loraState struct {
+	pLoraDelta   Pipeline
+	loraLayers   []residLoRALayer
+	loraCacheSrc []decoder.ResidentAdapterLayer
+	loraCached   []residLoRALayer
+}
+
 // loraRMax bounds the LoRA rank this backend accepts — generous against real adapters (typically
 // rank 4-64, rarely above 128) and small enough that lora_delta's fixed-size threadgroup t[256]
 // scratch (kernels.go) always fits it. SetAdapter declines (does not silently truncate) a

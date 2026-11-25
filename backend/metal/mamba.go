@@ -24,6 +24,18 @@ var mambaSrcPlantForTest [2]string
 // mambaResetSkipForTest makes resetMamba leave the state alone: gate S's planted defect, set by tests in this package only.
 var mambaResetSkipForTest bool
 
+// mambaState holds the resident's Mamba-2 mixer parameters, pipelines, per-token scratch, and geometry uniforms.
+// mamba nil means no Mamba layers; every other field stays zero-valued.
+type mambaState struct {
+	mamba                                                      *mambaParams
+	pMbConv, pMbSSM, pMbGNorm                                  Pipeline
+	pMbConvSeq, pMbSSMSeq, pMbGNormRows                        Pipeline
+	uMbNormGroups                                              Buffer
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc                  Buffer // per-token scratch
+	uMbConvDim, uMbK, uMbDInner, uMbNH, uMbHD, uMbDS           Buffer
+	uMbRep, uMbGSize, uMbDtBase, uMbGroupSize, uMbZero, uMbEps Buffer
+}
+
 // mambaParams is the mixer's model-level geometry, uniform across the Mamba layers.
 type mambaParams struct {
 	nHeads, headDim, dState, nGroups, dConv, normGroups int
