@@ -56,18 +56,19 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 	sidecarHostRAM = func() int64 { return 1 << 40 }
 	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes })
 	hooked := 0
-	afterWriteForTest = func(tmp string) {
-		hooked++
-		if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); err != nil {
-			t.Errorf("the written bundle has no marker before its self-check: %v", err)
-		}
-		flipLastPayloadByte(t, tmp)
-	}
-	t.Cleanup(func() { afterWriteForTest = nil })
+	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+		afterWrite: func(tmp string) {
+			hooked++
+			if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); err != nil {
+				t.Errorf("the written bundle has no marker before its self-check: %v", err)
+			}
+			flipLastPayloadByte(t, tmp)
+		},
+	})
 
 	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	out := filepath.Join(t.TempDir(), "p.giw")
-	if err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone); err != nil {
+	if err := TranscodeGIW(ctx, src, out, "int4", false, GIWTargetNone); err != nil {
 		t.Fatalf("the self-check ran a CRC pass over a bundle the transcode had marked: %v", err)
 	}
 	if hooked != 1 {
@@ -92,35 +93,36 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 // deserialize never becomes the sidecar. The bundle's header is overwritten between the write and the self-check, at
 // the same size and mtime, so the marker still holds and the refusal is the load's own and not the CRC's.
 func TestTranscode_selfCheckStillRefusesAnUnloadableBundle(t *testing.T) {
-	afterWriteForTest = func(tmp string) {
-		fi, err := os.Stat(tmp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		f, err := os.OpenFile(tmp, os.O_RDWR, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		junk := make([]byte, 64)
-		for i := range junk {
-			junk[i] = 0xff
-		}
-		if _, err := f.WriteAt(junk, 8); err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(tmp, fi.ModTime(), fi.ModTime()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Cleanup(func() { afterWriteForTest = nil })
+	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+		afterWrite: func(tmp string) {
+			fi, err := os.Stat(tmp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.OpenFile(tmp, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			junk := make([]byte, 64)
+			for i := range junk {
+				junk[i] = 0xff
+			}
+			if _, err := f.WriteAt(junk, 8); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(tmp, fi.ModTime(), fi.ModTime()); err != nil {
+				t.Fatal(err)
+			}
+		},
+	})
 
 	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	dir := t.TempDir()
 	out := filepath.Join(dir, "p.giw")
-	err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone)
+	err := TranscodeGIW(ctx, src, out, "int4", false, GIWTargetNone)
 	if err == nil {
 		t.Fatal("a bundle with an overwritten header passed the self-check")
 	}
@@ -143,7 +145,7 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 		os.Unsetenv("GOINFER_GIW_VERIFY")
 		t.Cleanup(func() { os.Setenv("GOINFER_GIW_VERIFY", v) })
 	}
-	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes; afterWriteForTest = nil })
+	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes })
 	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 
 	// The bundle's size, from a transcode with memory to spare.
@@ -173,17 +175,19 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 	} {
 		sidecarHostRAM = func() int64 { return c.total }
 		for _, flip := range []bool{true, false} {
-			afterWriteForTest = func(tmp string) {
-				if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
-					t.Errorf("%s: the transcode's own marker is present=%v, want %v", c.name, err == nil, c.marked)
-				}
-				if flip {
-					flipLastPayloadByte(t, tmp)
-				}
-			}
+			ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+				afterWrite: func(tmp string) {
+					if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
+						t.Errorf("%s: the transcode's own marker is present=%v, want %v", c.name, err == nil, c.marked)
+					}
+					if flip {
+						flipLastPayloadByte(t, tmp)
+					}
+				},
+			})
 			dir := t.TempDir()
 			out := filepath.Join(dir, "p.giw")
-			err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone)
+			err := TranscodeGIW(ctx, src, out, "int4", false, GIWTargetNone)
 			switch {
 			case flip && !c.marked:
 				if err == nil || !strings.Contains(err.Error(), "CRC") {
@@ -245,14 +249,16 @@ func (f *flipAt) Write(p []byte) (int, error) {
 // with their own CRC, so a byte that reaches the file different from the one the writer summed fails the transcode
 // before the self-check, and nothing is left behind. An untouched stream passes the same read-back.
 func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
-	t.Cleanup(func() { wrapSinkForTest = nil; afterWriteForTest = nil })
 	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	reachedSelfCheck := false
-	afterWriteForTest = func(string) { reachedSelfCheck = true }
+	afterWrite := func(string) { reachedSelfCheck = true }
 	for _, at := range []int64{0, 4097, 100000} {
-		wrapSinkForTest = func(w io.Writer) io.Writer { return &flipAt{w: w, at: at} }
+		ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+			afterWrite: afterWrite,
+			wrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: at} },
+		})
 		dir := t.TempDir()
-		err := TranscodeGIW(context.Background(), src, filepath.Join(dir, "p.giw"), "int4", false, GIWTargetNone)
+		err := TranscodeGIW(ctx, src, filepath.Join(dir, "p.giw"), "int4", false, GIWTargetNone)
 		if !errors.Is(err, errReadBack) {
 			t.Fatalf("a byte flipped at %d of the weights: want the read-back's error, got: %v", at, err)
 		}
@@ -263,8 +269,11 @@ func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
 			t.Fatalf("a failed transcode left %d files behind (%s first)", len(left), left[0].Name())
 		}
 	}
-	wrapSinkForTest = func(w io.Writer) io.Writer { return &flipAt{w: w, at: -1} }
-	if err := TranscodeGIW(context.Background(), src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone); err != nil {
+	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+		afterWrite: afterWrite,
+		wrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: -1} },
+	})
+	if err := TranscodeGIW(ctx, src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone); err != nil {
 		t.Fatalf("an untouched stream: %v", err)
 	}
 }

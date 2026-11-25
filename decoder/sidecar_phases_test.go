@@ -35,19 +35,21 @@ func TestTranscodeTimed_reportsBothPhases(t *testing.T) {
 		t.Errorf("TranscodePhases.String() = %q", got)
 	}
 	const pause, floor = 80 * time.Millisecond, 40 * time.Millisecond
-	wrapSinkForTest = func(w io.Writer) io.Writer { return &slowOnce{w: w, d: pause} }
+	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
+		wrapSink: func(w io.Writer) io.Writer { return &slowOnce{w: w, d: pause} },
+	})
 	transcodeSelfCheck = func(path string) error { time.Sleep(pause); return selfCheck(path) }
-	t.Cleanup(func() { wrapSinkForTest, transcodeSelfCheck = nil, selfCheck })
+	t.Cleanup(func() { transcodeSelfCheck = selfCheck })
 
 	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
-	ph, err := TranscodeGIWTimed(context.Background(), src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone)
+	ph, err := TranscodeGIWTimed(ctx, src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ph.Stream < floor || ph.SelfCheck < floor {
 		t.Errorf("phases stream %s, self-check %s: each span held a %s pause and must report at least %s", ph.Stream, ph.SelfCheck, pause, floor)
 	}
-	ph, err = TranscodeGIWTimed(context.Background(), src, filepath.Join(t.TempDir(), "bad.giw"), "not-a-real-quant", false, GIWTargetNone)
+	ph, err = TranscodeGIWTimed(ctx, src, filepath.Join(t.TempDir(), "bad.giw"), "not-a-real-quant", false, GIWTargetNone)
 	if err == nil {
 		t.Fatal("an unknown quant transcoded")
 	}

@@ -13,19 +13,15 @@ import (
 // Bit-identical to torchvision 0.29.1 on goinfer's pinned cases and real images (goinfer's
 //  the Phase V resize; moved here from goinfer's embeddinggemma2 on 2026-10-06).
 
-// bicubicFloatForTest (tests only) runs the resize in float64 with one rounding at the end instead of torchvision's
-// fixed-point passes: the control that shows a comparison sees a rounding-level change.
-var bicubicFloatForTest = false
-
 // ResizeBicubicAA resizes packed 8-bit RGB (HWC) from h x w to th x tw with torchvision's antialiased bicubic on uint8.
 func ResizeBicubicAA(src []uint8, h, w, th, tw int) []uint8 {
-	return resizeRGB(src, h, w, th, tw, aaBicubic)
+	return resizeRGB(src, h, w, th, tw, aaBicubic, false)
 }
 
 // ResizeBilinearAA is ResizeBicubicAA with torchvision's antialiased bilinear (the triangle filter, support 1): the resize
 // of the processors that ask for BILINEAR with antialias=True on the torchvision backend (LFM2-VL's).
 func ResizeBilinearAA(src []uint8, h, w, th, tw int) []uint8 {
-	return resizeRGB(src, h, w, th, tw, aaBilinear)
+	return resizeRGB(src, h, w, th, tw, aaBilinear, false)
 }
 
 // aaFilter is one antialiased interpolation filter: its kernel and its support at scale 1 (widened by the scale on
@@ -88,22 +84,23 @@ func aaTaps(in, out int, f aaFilter) aaWeights {
 }
 
 // resizeRGB resizes HWC RGB from (h, w) to (th, tw) with filter f, the horizontal pass first, each pass skipped when its
-// size does not change.
-func resizeRGB(src []uint8, h, w, th, tw int, f aaFilter) []uint8 {
+// size does not change. When useFloat is true (for the rounding-sensitivity control test), each pass accumulates in
+// float64 instead of torchvision's fixed-point integer arithmetic.
+func resizeRGB(src []uint8, h, w, th, tw int, f aaFilter, useFloat bool) []uint8 {
 	cur, cw := src, w
 	if tw != w {
-		cur = resizePass(cur, h, w, tw, true, f)
+		cur = resizePass(cur, h, w, tw, true, f, useFloat)
 		cw = tw
 	}
 	if th != h {
-		cur = resizePass(cur, h, cw, th, false, f)
+		cur = resizePass(cur, h, cw, th, false, f, useFloat)
 	}
 	return cur
 }
 
 // resizePass resizes along one axis: horizontal (w -> n) or vertical (h -> n), in torchvision's uint8 fixed point
-// (or in float64 under bicubicFloatForTest).
-func resizePass(src []uint8, h, w, n int, horizontal bool, f aaFilter) []uint8 {
+// (or in float64 when useFloat is true).
+func resizePass(src []uint8, h, w, n int, horizontal bool, f aaFilter, useFloat bool) []uint8 {
 	in := w
 	if !horizontal {
 		in = h
@@ -147,7 +144,7 @@ func resizePass(src []uint8, h, w, n int, horizontal bool, f aaFilter) []uint8 {
 			}
 			s := taps.start[i]
 			for c := range 3 {
-				if bicubicFloatForTest {
+				if useFloat {
 					var acc float64
 					for j, wt := range taps.w[i] {
 						if horizontal {

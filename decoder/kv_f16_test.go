@@ -237,9 +237,7 @@ func TestKVF16_F1SnapshotAndCopy(t *testing.T) {
 	if d := f1Diff([][]float32{step(cp)}, [][]float32{want}); d != 0 {
 		t.Errorf("the copied session's next step differs in %d values", d)
 	}
-	kvSnapF16ByteF32ForTest = true
-	planted := s.Snapshot("id")
-	kvSnapF16ByteF32ForTest = false
+	planted := s.snapshot("id", true)
 	if _, err := f16.LoadSession(planted, "id"); err == nil {
 		t.Error("a snapshot whose storage byte reads f32 restored into an f16 cache: the plant is not refused")
 	}

@@ -603,7 +603,7 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 			if err != nil {
 				return linalg.WeightMat{}, err
 			}
-			return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return rowInto })
+			return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, streamEmbedWorkers(sink), func() rowReader { return rowInto })
 		}
 		data, err := r.ReconstructMat2D(st, name, rows, cols)
 		if err != nil {
@@ -613,7 +613,7 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 			copy(dst, data[r*cols:(r+1)*cols])
 			return nil
 		}
-		return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return readRow })
+		return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, streamEmbedWorkers(sink), func() rowReader { return readRow })
 	}
 	t, err := st.Tensor(name)
 	if err != nil {
@@ -625,7 +625,7 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 	// Read in blocks of rows: one bf16->f32 conversion per block instead of per row (a 262k-row table is 262k calls
 	// otherwise). A block of the widest table here is about 10 MB, and each row range holds one (its reader's own).
 	const block = 1024
-	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), block, func() rowReader {
+	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), block, streamEmbedWorkers(sink), func() rowReader {
 		var buf []float32
 		base := -1
 		return func(r int, dst []float32) error {

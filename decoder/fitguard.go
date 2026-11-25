@@ -375,6 +375,10 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 // estimateGGUFWeightBreakdown is estimateGGUFWeightBytes plus the share of it that is routed-expert
 // weight (GGUF names carry "_exps"; the small per-expert bias tables are left out).
 func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64) {
+	return estimateGGUFWeightBreakdownWith(path, q, false)
+}
+
+func estimateGGUFWeightBreakdownWith(path string, q quantMode, q4kAsInt4 bool) (total, experts int64) {
 	g, err := OpenGGUFMmap(path)
 	if err != nil {
 		return 0, 0 // unknown ⇒ proceed
@@ -384,7 +388,7 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	// (q4kKeptBytes), every other matrix at int8 W8A8, which q4k makes of them (streamQuantizedRow4).
 	r := fitRates(q)
 	price := q
-	if q == quantQ4K && !q4kPriceAsInt4ForTest {
+	if q == quantQ4K && !q4kAsInt4 {
 		price = quantInt8I8
 		r.Kept = func(name string, dims []int) (float64, bool) { return q4kKeptBytes(g, name, dims) }
 	}
@@ -418,9 +422,6 @@ func q4kKeptBytes(g *embed.GGUFFile, name string, dims []int) (float64, bool) {
 	}
 	return float64(len(raw)), true
 }
-
-// q4kPriceAsInt4ForTest restores the int4 price for q4k, for the test that shows it disagrees with a load.
-var q4kPriceAsInt4ForTest = false
 
 // estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: shape-only, quant-independent accounting (sum every
 // tensor's element count, price 2-D+ tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file and

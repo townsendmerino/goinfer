@@ -17,13 +17,11 @@ import (
 // TestForRowRanges: the ranges cover every row once, each starts on a multiple of align, each gets a reader of its own,
 // and the lowest failing range's error is the one returned.
 func TestForRowRanges(t *testing.T) {
-	defer func() { streamEmbedWorkersForTest = 0 }()
 	for _, c := range []struct{ rows, align, workers int }{{37, 1, 4}, {37, 4, 3}, {4096, 1024, 8}, {5, 1, 16}, {1, 1, 4}, {2500, 1024, 4}} {
-		streamEmbedWorkersForTest = c.workers
 		var mu sync.Mutex
 		seen := make([]int, c.rows)
 		readers := 0
-		err := forRowRanges(c.rows, 8, c.align, func() rowReader {
+		err := forRowRanges(c.rows, 8, c.align, c.workers, func() rowReader {
 			mu.Lock()
 			readers++
 			mu.Unlock()
@@ -49,9 +47,8 @@ func TestForRowRanges(t *testing.T) {
 			t.Errorf("%+v: %d readers made, want one per range and at most %d", c, readers, c.workers)
 		}
 	}
-	streamEmbedWorkersForTest = 4
 	first, second := errors.New("range at row 10"), errors.New("range at row 30")
-	err := forRowRanges(40, 8, 1, func() rowReader { return nil }, func(lo, hi int, _ rowReader) error {
+	err := forRowRanges(40, 8, 1, 4, func() rowReader { return nil }, func(lo, hi int, _ rowReader) error {
 		switch lo {
 		case 10:
 			return first
@@ -119,7 +116,6 @@ func appendF32(dst []byte, f float32) []byte {
 // table built over 2, 3, 5 and 8 row ranges, with a stateless reader and with a block-caching one, is the table one range
 // builds.
 func TestStreamQuantizedEmbed_rangesGiveTheSequentialTable(t *testing.T) {
-	defer func() { streamEmbedWorkersForTest = 0 }()
 	const rows, cols = 148, 64
 	rng := rand.New(rand.NewSource(7))
 	src := make([]float32, rows*cols)
@@ -143,19 +139,17 @@ func TestStreamQuantizedEmbed_rangesGiveTheSequentialTable(t *testing.T) {
 	}
 	for _, mode := range []quantMode{quantNone, quantInt8, quantInt8I8, quantInt4} {
 		for _, pol := range []struct{ needCanonical, skipRow4 bool }{{true, false}, {true, true}, {false, false}} {
-			streamEmbedWorkersForTest = 1
-			ref, err := streamQuantizedEmbed(rows, cols, mode, pol.needCanonical, pol.skipRow4, 1, stateless)
+			ref, err := streamQuantizedEmbed(rows, cols, mode, pol.needCanonical, pol.skipRow4, 1, 1, stateless)
 			if err != nil {
 				t.Fatal(err)
 			}
 			want := embedTableBytes(t, ref)
 			for _, workers := range []int{2, 3, 5, 8} {
-				streamEmbedWorkersForTest = workers
 				for name, rd := range map[string]struct {
 					align int
 					mk    func() rowReader
 				}{"stateless": {1, stateless}, "block-cached": {block, blockCached}} {
-					got, err := streamQuantizedEmbed(rows, cols, mode, pol.needCanonical, pol.skipRow4, rd.align, rd.mk)
+					got, err := streamQuantizedEmbed(rows, cols, mode, pol.needCanonical, pol.skipRow4, rd.align, workers, rd.mk)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -166,9 +160,8 @@ func TestStreamQuantizedEmbed_rangesGiveTheSequentialTable(t *testing.T) {
 			}
 		}
 	}
-	streamEmbedWorkersForTest = 3
 	boom := errors.New("row 100 unreadable")
-	if _, err := streamQuantizedEmbed(rows, cols, quantInt4, true, false, 1, func() rowReader {
+	if _, err := streamQuantizedEmbed(rows, cols, quantInt4, true, false, 1, 3, func() rowReader {
 		return func(r int, dst []float32) error {
 			if r == 100 {
 				return boom
@@ -185,26 +178,25 @@ func TestStreamQuantizedEmbed_rangesGiveTheSequentialTable(t *testing.T) {
 // writes the bytes the one-range transcode writes: a safetensors directory (the block-cached reader), a GGUF (the shared
 // one), with the tables int8-pinned and at int4.
 func TestStreamTranscode_rowRangesWriteTheSameBytes(t *testing.T) {
-	defer func() { streamEmbedWorkersForTest = 0 }()
 	for _, embedInt4 := range []bool{false, true} {
 		for _, c := range []struct {
 			src    string
-			stream func(w io.Writer) error
+			stream func(ctx context.Context, w io.Writer) error
 		}{
-			{"../testdata/olmo3-tiny", func(w io.Writer) error {
-				_, err := StreamTranscodeDir(context.Background(), "../testdata/olmo3-tiny", w, "int4", embedInt4, GIWTargetCPUArm64, "t")
+			{"../testdata/olmo3-tiny", func(ctx context.Context, w io.Writer) error {
+				_, err := StreamTranscodeDir(ctx, "../testdata/olmo3-tiny", w, "int4", embedInt4, GIWTargetCPUArm64, "t")
 				return err
 			}},
-			{"../testdata/gemma2-hd-tiny.gguf", func(w io.Writer) error {
-				_, err := StreamTranscodeGGUF(context.Background(), "../testdata/gemma2-hd-tiny.gguf", w, "int4", embedInt4, GIWTargetCPUArm64, "t")
+			{"../testdata/gemma2-hd-tiny.gguf", func(ctx context.Context, w io.Writer) error {
+				_, err := StreamTranscodeGGUF(ctx, "../testdata/gemma2-hd-tiny.gguf", w, "int4", embedInt4, GIWTargetCPUArm64, "t")
 				return err
 			}},
 		} {
 			var ref []byte
 			for _, workers := range []int{1, 3, 7} {
-				streamEmbedWorkersForTest = workers
+				ctx := withStreamTestHooks(context.Background(), streamTestHooks{embedWorkers: workers})
 				var b bytes.Buffer
-				if err := c.stream(&b); err != nil {
+				if err := c.stream(ctx, &b); err != nil {
 					t.Fatalf("%s, %d ranges: %v", c.src, workers, err)
 				}
 				if workers == 1 {

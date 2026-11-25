@@ -23,9 +23,9 @@ var forTestGlobalsRatchet = map[string]int{
 	"backend/metal/internal/gpudev":   4,
 	"backend/webgpu":                  9,
 	"backend/webgpu/internal/kernels": 29,
-	"decoder":                         30,
+	"decoder":                         22,
 	"internal/diag/towerid":           1,
-	"internal/vision":                 4,
+	"internal/vision":                 3,
 }
 
 // scanForTestGlobals walks root for non-test .go files (skipping testdata, hidden/underscore directories and
