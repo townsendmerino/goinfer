@@ -11,12 +11,16 @@ change to the test on main is seen rather than skipped. A second run changes not
       embed's own hasAVX2); evaluate a cpufeat.HasX selector; and recognise the moved packages' qualifiers in the
       uncalled check.
   hwcensus: scan the go.work aikit when one is in effect (else go.mod's pin), and match Has<X> as well as has<X>.
+  prezerolint (LS4 and LS2): read the output contracts of linalg/attn, linalg/elem and linalg/bitvec too, and name
+      exported writers as its anti-vacuity sentinels (SoftmaxRowInto, ExpF32Into and QuantizeActivationsInto moved
+      to elem or were unexported).
 """
 
 import sys
 
 K3 = "internal/diag/kernelprint/census_test.go"
 HW = "internal/diag/hwcensus/census_test.go"
+PZ = "internal/guard/prezerolint/prezero_test.go"
 
 EDITS = [
     (K3, '''// censusPackages are the aikit packages whose kernels the suite runs.
@@ -94,6 +98,16 @@ func predicateValue(pkg string, k linalg.Kernels) map[string]bool {
 ''', '''	"linalg.repackInt4SplitHalfInPlace": {[]string{"LayoutSplitHalf"}, "RepackInt4InPlace's split-half form: goinfer asks WrapInt4 and RepackInt4InPlace for the canonical and row4 layouts only, and builds split-half through (*WeightMat).RepackInt4SplitHalf"},
 	"linalg.wrapInt4SplitHalfOnly":      {[]string{"LayoutSplitHalf"}, "WrapInt4's split-half form, as repackInt4SplitHalfInPlace"},
 '''),
+    (PZ, '''	for _, sub := range []string{"linalg", "embed", "encoder"} {''',
+     '''	for _, sub := range []string{"linalg", "linalg/attn", "linalg/elem", "linalg/bitvec", "embed", "encoder"} {'''),
+    (PZ, '''	for _, must := range []string{"MatmulBT", "MatmulBTW4A8Into", "SoftmaxRowInto", "ExpF32Into", "QuantizeActivationsInto", "DequantizeRowInt4"} {''',
+     '''	for _, must := range []string{"MatmulBT", "MatmulBTW4A8F16Into", "SoftmaxRowContractInto", "ExpContractInto", "QuantizeActivationsGroupedInto", "DequantizeRowInt4"} {'''),
+    (PZ, '''	if len(writers) < 60 {
+		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 60", len(writers))''',
+     '''	// A floor against a scan that reads nothing; the sentinels above already prove the contracts are there. The
+	// linalg surface rework (aikit LS2, LS6) unexported several writers, so the exported count fell from 60-odd to 56.
+	if len(writers) < 50 {
+		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 50", len(writers))'''),
     (HW, '''// metal/internal/gpudev included) and aikit's root module at the version go.mod pins, where the CPU feature predicates
 // live in linalg. A pinned module that cannot be found FAILS the test rather than skipping it: a census that silently left
 // aikit out would cover nothing, the citation lint's rule for the same situation.''', '''// metal/internal/gpudev included) and aikit's root module: the checkout a go.work in effect uses, or else the version
