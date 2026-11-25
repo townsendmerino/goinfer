@@ -102,7 +102,9 @@ mirroring a whole concrete type only so a test can fake it. Existing consolidate
 `CutSuffix`, `SplitSeq`, `FieldsSeq`), `errors.AsType`, `sync.WaitGroup.Go`, `cmp.Or`, `min`/`max`, `for range n`,
 `new(expr)` and `math/rand/v2`. Keep `math/rand` v1 only where seeded output parity depends on its generator
 (`internal/runtime/sampling/sampler.go`). Run `go fix -diff` on the packages you touch and review each suggestion before
-applying it: keep imports grouped, and check nil-map behavior before a hand copy becomes `maps.Clone` (a nil map clones to nil).
+applying it: check that a hand-written map copy's source can never be nil before accepting `maps.Clone` (`maps.Clone(nil)`
+returns `nil`, so later writes panic — when the source can be nil, keep `make` + `maps.Copy`), rename any local named `maps`
+before accepting a `maps.Copy`/`maps.Clone` rewrite so `go fix` does not alias the import, and regroup imports afterwards.
 
 **One receiver kind per type:** do not mix pointer and value receivers; a type with mutating methods, a lock or a large
 body takes pointer receivers. Return a modified slice instead of taking a `*[]T` out-parameter; explicit allocation-free

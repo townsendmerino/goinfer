@@ -1,13 +1,15 @@
 package whisper
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -40,12 +42,7 @@ func LoadGenConfig(dir string) (GenConfig, error) {
 
 // langIDs is the language tokens' ids, ascending.
 func (g GenConfig) langIDs() []int {
-	ids := make([]int, 0, len(g.LangToID))
-	for _, id := range g.LangToID {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	return ids
+	return slices.Sorted(maps.Values(g.LangToID))
 }
 
 // LanguageToken is the token text of a language code: "en" is "<|en|>".
@@ -253,7 +250,7 @@ func sampleRescale(l []float32, temperature float64) {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.SliceStable(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+	slices.SortStableFunc(idx, func(a, b int) int { return cmp.Compare(l[b], l[a]) })
 	kept := make(map[int]bool, topK)
 	for _, i := range idx[:topK] {
 		kept[i] = true

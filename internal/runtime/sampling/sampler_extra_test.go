@@ -1,9 +1,10 @@
 package sampling
 
 import (
+	"cmp"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -128,11 +129,8 @@ func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
 	for i, p := range probs {
 		ips[i] = ip{i, p}
 	}
-	sort.SliceStable(ips, func(a, b int) bool {
-		if ips[a].p != ips[b].p {
-			return ips[a].p > ips[b].p
-		}
-		return ips[a].id < ips[b].id // matches topKByLogit's smaller-id-wins tie-break
+	slices.SortStableFunc(ips, func(a, b ip) int {
+		return cmp.Or(cmp.Compare(b.p, a.p), cmp.Compare(a.id, b.id))
 	})
 	if topN > len(ips) {
 		topN = len(ips)

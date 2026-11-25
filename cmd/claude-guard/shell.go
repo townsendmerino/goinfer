@@ -473,9 +473,14 @@ func commandsDepth(s string, depth int, exported map[string]string) ([]segment, 
 	if !ok || depth > 4 {
 		return nil, false
 	}
+	if exported == nil {
+		exported = map[string]string{}
+	}
 	var out []segment
 	for _, words := range segs {
-		seg := segment{env: maps.Clone(exported)}
+		env := make(map[string]string, len(exported))
+		maps.Copy(env, exported)
+		seg := segment{env: env}
 		for len(words) > 0 {
 			words = liftEnv(words, seg.env)
 			if len(words) == 0 {
