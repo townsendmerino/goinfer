@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,13 +44,21 @@ func TestRedirectPolicy_refusesDowngradeAndInternalTargets(t *testing.T) {
 		{"public to link-local multicast", public, "https://224.0.0.251/x", true},
 		{"public to unspecified", public, "https://0.0.0.0/x", true},
 		{"public to localhost name", public, "https://localhost/x", true},
+		{"public to CGNAT 100.64/10", public, "https://100.100.1.1/x", true},
+		{"public to this-network 0/8", public, "https://0.1.2.3/x", true},
+		{"public to benchmarking 198.18/15", public, "https://198.19.0.1/x", true},
+		{"public to global multicast", public, "https://239.1.2.3/x", true},
+		{"public to v6 multicast", public, "https://[ff0e::1]/x", true},
+		{"public to broadcast", public, "https://255.255.255.255/x", true},
+		{"public to unresolvable name", public, "https://nonexistent.invalid/x", true},
+		{"unresolvable origin to loopback", "https://nonexistent.invalid/a", "https://127.0.0.1/x", true},
 		{"public to public", public, "https://203.0.113.11/m.gguf", false},
 		{"loopback to loopback", "http://127.0.0.1:8080/a", "http://127.0.0.1:8081/b", false},
 		{"private to private", "https://10.0.0.1/a", "https://10.0.0.2/b", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := redirectPolicy(mustReq(t, c.to), []*http.Request{mustReq(t, c.from)})
+			err := redirectPolicy(nil)(mustReq(t, c.to), []*http.Request{mustReq(t, c.from)})
 			if c.refuse && err == nil {
 				t.Fatalf("redirect %s -> %s was allowed", c.from, c.to)
 			}
@@ -61,15 +70,36 @@ func TestRedirectPolicy_refusesDowngradeAndInternalTargets(t *testing.T) {
 	// The hop checked is the one immediately before the target: a public hop anywhere in the chain cannot hand off to
 	// an internal address.
 	via := []*http.Request{mustReq(t, "http://127.0.0.1/a"), mustReq(t, "http://203.0.113.10/b")}
-	if err := redirectPolicy(mustReq(t, "http://127.0.0.1/c"), via); err == nil {
+	if err := redirectPolicy(nil)(mustReq(t, "http://127.0.0.1/c"), via); err == nil {
 		t.Fatal("loopback -> public -> loopback was allowed")
 	}
 	var ten []*http.Request
 	for range 10 {
 		ten = append(ten, mustReq(t, public))
 	}
-	if err := redirectPolicy(mustReq(t, public), ten); err == nil {
+	if err := redirectPolicy(nil)(mustReq(t, public), ten); err == nil {
 		t.Fatal("an 11th redirect was followed")
+	}
+}
+
+// TestRedirectPolicy_proxy: behind a proxy, a target name this host cannot resolve is left to the proxy, while a
+// literal internal address is still refused, and a source that does not resolve still has its target judged.
+func TestRedirectPolicy_proxy(t *testing.T) {
+	proxyURL, _ := url.Parse("http://proxy.example:3128")
+	viaProxy := redirectPolicy(func(*http.Request) (*url.URL, error) { return proxyURL, nil })
+	noProxy := redirectPolicy(func(*http.Request) (*url.URL, error) { return nil, nil })
+	from := []*http.Request{mustReq(t, "https://huggingface.invalid/o/r/resolve/main/m.gguf")}
+	if err := viaProxy(mustReq(t, "https://cdn.invalid/m.gguf"), from); err != nil {
+		t.Fatalf("an unresolvable target behind a proxy was refused: %v", err)
+	}
+	if err := viaProxy(mustReq(t, "https://169.254.169.254/latest"), from); err == nil {
+		t.Fatal("an unresolvable source behind a proxy redirected to a link-local address")
+	}
+	if err := viaProxy(mustReq(t, "https://10.0.0.1/x"), from); err == nil {
+		t.Fatal("an unresolvable source behind a proxy redirected to a private address")
+	}
+	if err := noProxy(mustReq(t, "https://cdn.invalid/m.gguf"), from); err == nil {
+		t.Fatal("an unresolvable target with no proxy was followed")
 	}
 }
 
@@ -228,5 +258,32 @@ func TestDownload_overshootRefused(t *testing.T) {
 	}
 	if st, err := os.Stat(filepath.Join(dir, "m.gguf.part")); err == nil && st.Size() > 100 {
 		t.Fatalf("a %d-byte .part was kept for a 100-byte file", st.Size())
+	}
+}
+
+// TestDownload_shortBodyRefusedAndKept: a body that ends cleanly short of the declared size, with no digest to catch
+// it, is an error, publishes nothing at the final path, and keeps the .part so a re-run resumes it.
+func TestDownload_shortBodyRefusedAndKept(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("a", 50)))
+	}))
+	defer srv.Close()
+	orig := hfCDN
+	hfCDN = srv.URL
+	t.Cleanup(func() { hfCDN = orig })
+	dir := t.TempDir()
+	_, err := Download(context.Background(), "o/r", File{Path: "m.gguf", Size: 100}, dir, nil)
+	if err == nil {
+		t.Fatal("a 50-byte body for a 100-byte file was accepted")
+	}
+	if !strings.Contains(err.Error(), "ended at") {
+		t.Fatalf("failed for another reason: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "m.gguf")); err == nil {
+		t.Fatal("a short body was published at the final path")
+	}
+	st, err := os.Stat(filepath.Join(dir, "m.gguf.part"))
+	if err != nil || st.Size() != 50 {
+		t.Fatalf("the 50-byte .part was not kept for resume: %v %v", st, err)
 	}
 }

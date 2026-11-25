@@ -85,3 +85,14 @@ func TestNewResponseStore_budgetIsTheProductionConstant(t *testing.T) {
 		t.Errorf("store budget %d (constant %d), want 64 MiB", got, maxResponseStoreBytes)
 	}
 }
+
+// TestResponseEntryBytes_countsCarriedIDs: an assistant message's carried-id blob counts toward the entry's size, at 8 bytes per
+// id, so a long reply's ids cannot grow the store past its byte budget unseen.
+func TestResponseEntryBytes_countsCarriedIDs(t *testing.T) {
+	bare := storeEntry(10)
+	withIDs := storeEntry(10)
+	withIDs.messages[0].carried = &idsCarrier{Blob: &idsBlob{Text: "abc", IDs: make([]int, 1000)}}
+	if got, want := responseEntryBytes(withIDs)-responseEntryBytes(bare), 3+8*1000; got != want {
+		t.Errorf("a 1000-id blob adds %d bytes to the entry's size, want %d", got, want)
+	}
+}

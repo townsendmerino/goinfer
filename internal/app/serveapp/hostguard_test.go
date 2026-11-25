@@ -92,25 +92,31 @@ func TestBrowserGuard_refusesCrossOriginWritesOnAKeyFreeLoopbackServer(t *testin
 	for _, c := range []struct {
 		name, addr, key, method, path, host, origin, fetchSite string
 		want                                                   int
+		allowed                                                string
 	}{
-		{"cross-origin Origin", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://evil.example", "", 403},
-		{"another local port", addr, "", "POST", "/v1/chat/completions", "localhost:8080", "http://localhost:3000", "", 403},
-		{"Origin null", addr, "", "POST", "/v1/messages", "127.0.0.1:8080", "null", "", 403},
-		{"unparsable Origin", addr, "", "POST", "/v1/messages", "127.0.0.1:8080", "http://[::1", "", 403},
-		{"Sec-Fetch-Site cross-site", addr, "", "POST", "/v1/files", "127.0.0.1:8080", "", "cross-site", 403},
-		{"DELETE cross-origin", addr, "", "DELETE", "/v1/jobs/x", "127.0.0.1:8080", "http://evil.example", "", 403},
-		{"PUT cross-origin", addr, "", "PUT", "/v1/x", "127.0.0.1:8080", "http://evil.example", "", 403},
-		{"PATCH cross-origin", addr, "", "PATCH", "/v1/x", "127.0.0.1:8080", "http://evil.example", "", 403},
-		{"same-origin Origin", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://127.0.0.1:8080", "same-origin", 200},
-		{"same-origin, case and default port", "localhost:80", "", "POST", "/v1/chat/completions", "LOCALHOST", "http://localhost:80", "", 200},
-		{"same-origin IPv6", "[::1]:8080", "", "POST", "/v1/chat/completions", "[::1]:8080", "http://[::1]:8080", "", 200},
-		{"absent Origin (SDK, curl)", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "", "", 200},
-		{"GET cross-origin", addr, "", "GET", "/v1/models", "127.0.0.1:8080", "http://evil.example", "cross-site", 200},
-		{"not under /v1/", addr, "", "POST", "/health", "127.0.0.1:8080", "http://evil.example", "", 200},
-		{"keyed server", addr, "k", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://evil.example", "cross-site", 200},
-		{"non-loopback server", "0.0.0.0:8080", "", "POST", "/v1/chat/completions", "10.0.0.5:8080", "http://evil.example", "cross-site", 200},
+		{"cross-origin Origin", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://evil.example", "", 403, ""},
+		{"another local port", addr, "", "POST", "/v1/chat/completions", "localhost:8080", "http://localhost:3000", "", 403, ""},
+		{"Origin null", addr, "", "POST", "/v1/messages", "127.0.0.1:8080", "null", "", 403, ""},
+		{"unparsable Origin", addr, "", "POST", "/v1/messages", "127.0.0.1:8080", "http://[::1", "", 403, ""},
+		{"Sec-Fetch-Site cross-site", addr, "", "POST", "/v1/files", "127.0.0.1:8080", "", "cross-site", 403, ""},
+		{"DELETE cross-origin", addr, "", "DELETE", "/v1/jobs/x", "127.0.0.1:8080", "http://evil.example", "", 403, ""},
+		{"PUT cross-origin", addr, "", "PUT", "/v1/x", "127.0.0.1:8080", "http://evil.example", "", 403, ""},
+		{"PATCH cross-origin", addr, "", "PATCH", "/v1/x", "127.0.0.1:8080", "http://evil.example", "", 403, ""},
+		{"same-origin Origin", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://127.0.0.1:8080", "same-origin", 200, ""},
+		{"same-origin, case and default port", "localhost:80", "", "POST", "/v1/chat/completions", "LOCALHOST", "http://localhost:80", "", 200, ""},
+		{"same-origin IPv6", "[::1]:8080", "", "POST", "/v1/chat/completions", "[::1]:8080", "http://[::1]:8080", "", 200, ""},
+		{"absent Origin (SDK, curl)", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "", "", 200, ""},
+		{"GET cross-origin", addr, "", "GET", "/v1/models", "127.0.0.1:8080", "http://evil.example", "cross-site", 200, ""},
+		{"not under /v1/", addr, "", "POST", "/health", "127.0.0.1:8080", "http://evil.example", "", 200, ""},
+		{"keyed server", addr, "k", "POST", "/v1/chat/completions", "127.0.0.1:8080", "http://evil.example", "cross-site", 200, ""},
+		{"non-loopback server", "0.0.0.0:8080", "", "POST", "/v1/chat/completions", "10.0.0.5:8080", "http://evil.example", "cross-site", 200, ""},
+		// A reverse proxy that rewrites Host to the loopback (nginx's default proxy_set_header Host $proxy_host).
+		{"proxied page under an -allowed-hosts name", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "https://llm.example.com", "same-origin", 200, "llm.example.com"},
+		{"proxied page, name not listed", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "https://llm.example.com", "same-origin", 403, ""},
+		{"foreign Origin with -allowed-hosts set", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "https://evil.example", "", 403, "llm.example.com"},
+		{"listed name but Sec-Fetch-Site cross-site", addr, "", "POST", "/v1/chat/completions", "127.0.0.1:8080", "https://llm.example.com", "cross-site", 403, "llm.example.com"},
 	} {
-		h := serveHandler(inner, c.addr, c.key, "")
+		h := serveHandler(inner, c.addr, c.key, c.allowed)
 		r := httptest.NewRequest(c.method, c.path, nil)
 		r.Host = c.host
 		if c.origin != "" {

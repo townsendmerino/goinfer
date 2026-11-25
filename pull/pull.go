@@ -270,55 +270,82 @@ func newHTTPClient() *http.Client {
 	tr.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	tr.TLSHandshakeTimeout = 15 * time.Second
 	tr.ResponseHeaderTimeout = 30 * time.Second
-	return &http.Client{Transport: tr, CheckRedirect: redirectPolicy}
+	return &http.Client{Transport: tr, CheckRedirect: redirectPolicy(tr.Proxy)}
 }
 
-// redirectPolicy is the client's CheckRedirect. It follows at most maxRedirects, refuses an https -> http downgrade,
-// and refuses a redirect from a public host to a loopback, private, link-local or unspecified address, so a
-// compromised or spoofed upstream cannot steer a pull at the local network. The hop judged is the one immediately
-// before req, so a public hop anywhere in the chain is caught; an internal origin (an httptest server, a local
-// mirror) may still redirect internally.
+// redirectPolicy returns the client's CheckRedirect for a transport whose proxy function is proxy (nil: no proxy).
+// It follows at most maxRedirects, refuses an https -> http downgrade, and refuses a redirect from a public host to
+// an internal address (addrIsInternal), so a compromised or spoofed upstream cannot steer a pull at the local
+// network. The hop judged is the one immediately before req, so a public hop anywhere in the chain is caught; an
+// internal origin (an httptest server, a local mirror) may still redirect internally.
 //
-// A hostname is judged by resolving it here. The dial resolves it again, so a name that changes answer between the
-// two lookups is not caught; the check closes the plain case of a redirect naming an internal host.
-func redirectPolicy(req *http.Request, via []*http.Request) error {
-	if len(via) >= maxRedirects {
-		return fmt.Errorf("stopped after %d redirects", maxRedirects)
-	}
-	if len(via) == 0 {
+// A hostname is judged by resolving it here, and the dial resolves it again, so a name that changes answer between
+// the two lookups is not caught. A source that does not resolve is judged public, so a DNS failure never waives the
+// check. A target name that does not resolve is refused, unless proxy routes req through a proxy: then the proxy, not
+// this host, resolves and dials it, so the local answer says nothing about where the request goes, and only a
+// literal address or a locally internal name is refused.
+func redirectPolicy(proxy func(*http.Request) (*url.URL, error)) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+		if len(via) == 0 {
+			return nil
+		}
+		prev := via[len(via)-1].URL
+		if strings.EqualFold(prev.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+			return fmt.Errorf("refusing redirect from %s to %s: HTTPS downgrade", prev.Host, req.URL.Redacted())
+		}
+		ctx := req.Context()
+		if internal, _ := hostIsInternal(ctx, prev.Hostname()); internal {
+			return nil
+		}
+		internal, resolved := hostIsInternal(ctx, req.URL.Hostname())
+		if internal {
+			return fmt.Errorf("refusing redirect from %s to internal address %s", prev.Host, req.URL.Host)
+		}
+		if !resolved {
+			if proxy != nil {
+				if u, err := proxy(req); err == nil && u != nil {
+					return nil
+				}
+			}
+			return fmt.Errorf("refusing redirect from %s to %s: the host does not resolve", prev.Host, req.URL.Host)
+		}
 		return nil
 	}
-	prev := via[len(via)-1].URL
-	if strings.EqualFold(prev.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
-		return fmt.Errorf("refusing redirect from %s to %s: HTTPS downgrade", prev.Host, req.URL.Redacted())
-	}
-	ctx := req.Context()
-	if hostIsInternal(ctx, prev.Hostname()) {
-		return nil
-	}
-	if hostIsInternal(ctx, req.URL.Hostname()) {
-		return fmt.Errorf("refusing redirect from %s to internal address %s", prev.Host, req.URL.Host)
-	}
-	return nil
 }
 
-// hostIsInternal reports whether host (a literal IP or a name) is, or resolves to any, loopback, private, link-local
-// or unspecified address. A name that does not resolve counts as internal, so redirectPolicy refuses it rather than
-// guessing; for a redirect source, which was just reached, that case does not arise.
-func hostIsInternal(ctx context.Context, host string) bool {
+// hostIsInternal reports whether host (a literal IP or a name) is, or resolves to any, internal address
+// (addrIsInternal). resolved is false for a name that does not resolve, and internal is then false too: the caller
+// decides what an unknown host means.
+func hostIsInternal(ctx context.Context, host string) (internal, resolved bool) {
 	if a, err := netip.ParseAddr(host); err == nil {
-		return addrIsInternal(a)
+		return addrIsInternal(a), true
 	}
 	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 	if err != nil || len(addrs) == 0 {
-		return true
+		return false, false
 	}
-	return slices.ContainsFunc(addrs, addrIsInternal)
+	return slices.ContainsFunc(addrs, addrIsInternal), true
 }
 
+// nonGlobalV4 lists IPv4 ranges that netip reports as global unicast but that no public download host uses: "this
+// network" (0/8), shared address space (100.64/10, CGNAT and Tailscale) and benchmarking (198.18/15).
+var nonGlobalV4 = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+}
+
+// addrIsInternal reports whether a is anything but a public unicast address: loopback, private, link-local, any
+// multicast, unspecified, broadcast, or one of nonGlobalV4.
 func addrIsInternal(a netip.Addr) bool {
 	a = a.Unmap()
-	return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsUnspecified()
+	if !a.IsGlobalUnicast() || a.IsPrivate() {
+		return true
+	}
+	return slices.ContainsFunc(nonGlobalV4, func(p netip.Prefix) bool { return p.Contains(a) })
 }
 
 // CheckAccess reports whether the repo is reachable anonymously, naming the reason when it is not.
@@ -893,6 +920,9 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		// existing .part, so a prior run that fetched every byte but was interrupted before the digest check
 		// re-requests a Range starting exactly at EOF and gets 416, not 206/200. h already covers the whole.
 		// part (hashPrefix, above); verify it directly instead of copying a body a 416 response does not have.
+		if f.Size > 0 && resumeFrom != f.Size {
+			return "", fmt.Errorf("downloading %s: the server has %s of the declared %d bytes; the partial download is kept", f.Path, humanBytes(resumeFrom), f.Size)
+		}
 		if f.SHA256 != "" {
 			if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {
 				os.Remove(part)
@@ -941,6 +971,10 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 	}
 	if closeErr != nil {
 		return "", closeErr
+	}
+	if f.Size > 0 && pw.done < f.Size {
+		// A clean EOF short of the declared size: kept, like a dropped connection, so a re-run resumes it.
+		return "", fmt.Errorf("downloading %s: the body ended at %s of the declared %d bytes (re-run to resume)", f.Path, humanBytes(pw.done), f.Size)
 	}
 	if f.SHA256 != "" {
 		if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {

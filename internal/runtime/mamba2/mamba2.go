@@ -47,8 +47,7 @@ type Weights struct {
 
 // State is one layer's recurrent state: the conv window (the last K-1 xBC vectors, oldest first, each its own convDim floats)
 // and the SSM state [nHeads·P·N]. It belongs to one sequence and is advanced by one goroutine at a time. conv and y are Mix's
-// grow-only scratch, rewritten in full every step: they are not state, so a copy, snapshot or reset of the state carries
-// only ConvWin and SSM and leaves them out.
+// grow-only scratch, rewritten in full every step: they are not state, so a copy or snapshot carries only ConvWin and SSM.
 type State struct {
 	ConvWin [][]float32
 	SSM     []float32
@@ -62,6 +61,15 @@ func sized(buf *[]float32, n int) []float32 {
 		*buf = make([]float32, n)
 	}
 	return (*buf)[:n]
+}
+
+// Reset returns st to the state of a fresh sequence: no conv window and a zero SSM state. It zeroes the scratch too, keeping
+// its capacity, so nothing of the previous sequence stays in st.
+func (st *State) Reset() {
+	st.ConvWin = nil
+	clear(st.SSM)
+	clear(st.conv)
+	clear(st.y)
 }
 
 // NewState returns a zero state for p.

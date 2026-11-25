@@ -270,15 +270,15 @@ func serveAsync(s *server, req *http.Request) <-chan *httptest.ResponseRecorder 
 	return done
 }
 
-// waitAdmitted waits until n requests hold an admission slot on sm, or a second passes.
+// waitAdmitted waits until n requests hold an admission slot on sm, failing the test if 10s pass first.
 func waitAdmitted(t *testing.T, sm *speechModel, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 		if sm.slots.admitted() >= n {
 			return
 		}
 	}
-	t.Logf("%d requests admitted after a second, expected %d", sm.slots.admitted(), n)
+	t.Fatalf("%d requests admitted after 10s, expected %d", sm.slots.admitted(), n)
 }
 
 func blockSpeechServer() (*server, *speechModel, *blockSpeech) {

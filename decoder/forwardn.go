@@ -57,7 +57,7 @@ const attnHeadsParThreshold = 0
 
 // attnGroupedNEONSize is the query-head group size (NumHeads/NumKVHeads) the aikit grouped acc64 kernels
 // (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for. Any other ratio still runs correctly through the Go fallback but
-// slower than separate per-head calls, so attendGroupedHeads is gated to exactly this size rather than trusting the kernel's own
+// slower than separate per-head calls, so kvAttend.groupedHeads is gated to exactly this size rather than trusting the kernel's own
 // dispatch to save a mismatched caller.
 const attnGroupedNEONSize = 6
 
@@ -75,7 +75,7 @@ const attnGroupedMinKeys = 128
 // knobSet.attnGrouped (knobs.go) reports whether the grouped-kernel decode path may run; on unless GOINFER_ATTN_GROUPED=0, which
 // restores the per-head path. The path also needs attnGroupedKernels (a per-architecture default, on for arm64 only).
 
-// attnGroupedRuns counts attendGroupedHeads/attendGroupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
+// attnGroupedRuns counts kvAttend.groupedHeads/groupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
 // that never runs passes every correctness gate), so a test asserts it nonzero above attnGroupedMinKeys and zero below;
 // moeExpertMajorRuns (mlp.go) is the same idiom.
 var attnGroupedRuns int64
@@ -191,7 +191,7 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 
 // attnTask is one unit of work handed to attnWorkerPool: run fn over the
 // caller's own [lo,hi) slice, tagged with worker index w so fn can index its
-// own per-worker scratch (pool[w] in attendGroupedLayer).
+// own per-worker scratch (pool[w] in kvAttend.groupedLayer).
 type attnTask struct {
 	fn        func(w, lo, hi int)
 	w, lo, hi int
@@ -263,7 +263,7 @@ func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 	return attendTileForK(nil, ws, K, nKeys, hd)
 }
 
-// attendTileForK returns how many query rows attendOneHead may process at once with this slot: the cache-sized tile from
+// attendTileForK returns how many query rows kvAttend.oneHead may process at once with this slot: the cache-sized tile from
 // attnRowTileK, clamped to what the slot's buffers hold. The tile is a property of the pool, not of the call: the pool is sized
 // once from maxKeys = startPos+K, but a local layer whose ring has wrapped assembles a shorter window and attnRowTile is inverse
 // in nKeys, so the per-layer tile can exceed the qh the slot was allocated and the Q gather would slice past its length. The
@@ -337,7 +337,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 	// or attention sinks. Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
 	a.fusedOK = !useAcc64 && cache.treeMask == nil && ap.Softcap == 0 && ap.Sinks == nil
 	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
-	// treeMask excludes speculative verify (attendGroupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
+	// treeMask excludes speculative verify (kvAttend.groupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
 	// (not wired); attnGroupedKernels is the per-architecture platform gate.
 	a.groupedOK = useAcc64 && !a.f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
 		a.group == attnGroupedNEONSize && a.nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
@@ -347,7 +347,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 		return
 	}
 
-	// With more than one pool slot, Arm B (attendGroupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
+	// With more than one pool slot, Arm B (kvAttend.groupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
 	// the other slots idle. With one slot Arm B has nothing to parallelise and the serial arm below already takes the grouped kernel
 	// (runHeadRange's [0,nH) range spans whole groups), so Arm B is skipped rather than adding fork-join cost.
 	if a.groupedOK && len(pool) > 1 {

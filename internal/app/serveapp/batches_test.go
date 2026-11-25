@@ -140,8 +140,8 @@ func TestBatchRecord_requestCancel_noOpOnceTerminal(t *testing.T) {
 	}
 }
 
-// A batch line with an image is refused by its part type, before any payload is decoded: a payload that is not valid base64 gets
-// the unsupported-image refusal, never a base64 decode error.
+// A batch line with an image or audio part is refused by its part type, before any payload is decoded: a payload that is not
+// valid base64 gets the unsupported-media refusal, naming what it refuses, never a base64 decode error.
 func TestBatchLines_imagePartsRefusedBeforeDecode(t *testing.T) {
 	bs := newBatchStore(0)
 	s := &server{batches: bs}
@@ -157,9 +157,16 @@ func TestBatchLines_imagePartsRefusedBeforeDecode(t *testing.T) {
 	areq := anthropicReq{MaxTokens: &maxTok, Messages: []anthropicMessage{{Role: "user", Content: json.RawMessage(
 		`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"!!!not-base64!!!"}}]`)}}}
 	runBatchMessageLine(s, ab, 0, areq)
-	for _, r := range append(append([]batchLineResult{}, b.Results...), ab.Results...) {
-		if r.StatusCode != http.StatusBadRequest || !strings.Contains(r.ErrMsg, "do not support image inputs") {
-			t.Errorf("line %s: status %d, message %q; want 400 refusing the image as unsupported", r.CustomID, r.StatusCode, r.ErrMsg)
+	for _, c := range []struct {
+		r    batchLineResult
+		want string
+	}{
+		{b.Results[0], "do not support image or audio inputs"},
+		{b.Results[1], "do not support image or audio inputs"},
+		{ab.Results[0], "do not support image inputs"},
+	} {
+		if c.r.StatusCode != http.StatusBadRequest || !strings.Contains(c.r.ErrMsg, c.want) {
+			t.Errorf("line %s: status %d, message %q; want 400 with %q", c.r.CustomID, c.r.StatusCode, c.r.ErrMsg, c.want)
 		}
 	}
 }

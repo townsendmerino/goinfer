@@ -189,7 +189,8 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
 		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
 		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
-		// multi-gigabyte download). See sameOrigin in webui.go.
+		// multi-gigabyte download). See sameOriginGuard in webui.go.
+		sameOrigin := sameOriginGuard(splitHosts(cfg.allowedHosts))
 		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
 		// Live search-as-you-type suggestions over the repo box (pull.Search): read-only, same origin/auth stack as list.
 		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))

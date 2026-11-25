@@ -258,10 +258,11 @@ func ParseConfig(raw json.RawMessage) (*Config, error) {
 			"%s checkpoint would load one scale step low on EVERY weight without erroring",
 			obj.CheckpointFormat, obj.CheckpointFormat)
 	}
-	// A GEMV export packs qweight along the input dimension where GEMM packs along the output, in the same number of words, so the
-	// reconstructor's length checks cannot tell them apart: refuse it here rather than load finite, wrong weights.
-	if v := strings.ToLower(obj.Version); obj.QuantMethod == "awq" && strings.HasPrefix(v, "gemv") {
-		return nil, fmt.Errorf("quantization_config(awq): version %q unsupported (have: gemm); its qweight layout differs", obj.Version)
+	// Only the GEMM layout (named, or the default when absent) is read. Another layout can hold the same number of words
+	// (GEMV packs along the input dimension where GEMM packs along the output), so the reconstructor's length checks
+	// cannot tell them apart: refuse every other version by name rather than load finite, wrong weights.
+	if v := strings.ToLower(obj.Version); obj.QuantMethod == "awq" && v != "" && v != "gemm" {
+		return nil, fmt.Errorf("quantization_config(awq): version %q unsupported (have: gemm); its qweight layout may differ", obj.Version)
 	}
 	sym := true
 	if obj.Sym != nil {

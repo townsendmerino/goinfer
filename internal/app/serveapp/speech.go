@@ -278,6 +278,8 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "file is required")
 		return
 	}
+	// Admission comes after the whole upload is parsed: the model it queues on is named by a form field, which multipart
+	// carries anywhere in the body. The route's body cap (maxBytes) bounds what a refused request costs.
 	if !sm.slots.tryAdmit() {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("speech model %q is busy: one transcription runs and %d wait; retry later", sm.name, speechMaxWaiting))

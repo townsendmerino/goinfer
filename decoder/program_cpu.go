@@ -84,6 +84,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				m.captureLayer(cache, l, h)
 			}
 			o := &ops[i]
+			if g4 == nil && needsGemma4State(o) {
+				return nil, errNoGemma4State(l, o)
+			}
 			t0 := costStart(cache)
 			switch o.Kind {
 			case opNorm:
@@ -151,11 +154,6 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				}
 				out := m.reg(o.Out, h, scr)
 				if o.FFN.Form == ffnGemma4Dense {
-					// A model without Gemma 4's per-token state gets an error, never a nil dereference: a recovered access
-					// violation here corrupted the Go heap on some Windows hosts.
-					if g4 == nil {
-						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
-					}
 					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), g4); err != nil {
 						return nil, err
 					}
@@ -522,4 +520,24 @@ func (t *attnTimer) attn() {
 		atomic.AddInt64(&dtAttnAll, d)
 		atomic.AddInt64(&dtAttn, d)
 	}
+}
+
+// needsGemma4State reports whether o reads Gemma 4's per-token or per-pass state (PLE inputs, attention and FFN scratch).
+func needsGemma4State(o *op) bool {
+	switch o.Kind {
+	case opGemma4Attn, opGemma4MoE, opPLE:
+		return true
+	case opFFN:
+		return o.FFN.Form == ffnGemma4Dense
+	}
+	return false
+}
+
+// errNoGemma4State is a walker's refusal of an operation needsGemma4State names on a model without that state. The walkers
+// return it rather than dereference the nil state, because a recovered access violation in a walker can corrupt the Go heap.
+func errNoGemma4State(l int, o *op) error {
+	if o.Kind == opFFN {
+		return fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
+	}
+	return fmt.Errorf("decoder: layer %d: Gemma 4 operation %v on a model without Gemma 4 state", l, o.Kind)
 }

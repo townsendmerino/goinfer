@@ -9,7 +9,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -87,23 +86,22 @@ func (p *pullState) release() {
 	p.mu.Unlock()
 }
 
-// sameOrigin refuses a cross-origin request, the same guard demo/agent's web app uses for its own mutating routes
-// (demo/agent/cmd/agent-web/main.go). The routes it wraps act (pull triggers a caller-named multi-gigabyte download), and on the key-free
-// loopback default (requireAuth is a no-op when -api-key is unset) nothing else protects them: any page open in the same
-// browser can send a cross-origin POST (browsers block reading the response, not sending the request). A browser's own
-// fetch()/XHR from the web UI's page always carries a same-origin Origin header; a cross-origin POST carries a foreign one
-// (refused here) or, for a plain form post from outside a browser, none at all, which is why this only checks an Origin header
-// that IS present rather than requiring one.
-func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if o := r.Header.Get("Origin"); o != "" {
-			u, err := url.Parse(o)
-			if err != nil || u.Host != r.Host {
+// sameOriginGuard returns the wrapper for the web UI's own routes: it refuses, with 403, a request a browser sent cross-origin
+// (crossOriginBrowser, with proxied the -allowed-hosts names), the check browserGuard makes for /v1/. The routes it wraps act
+// (pull triggers a caller-named multi-gigabyte download), and on the key-free loopback default (requireAuth is a no-op when
+// -api-key is unset) nothing else protects them: any page open in the same browser can send a cross-origin POST (browsers
+// block reading the response, not sending the request). The web UI's own fetch() carries a same-origin Origin; a request with
+// no Origin (curl, a client outside a browser) passes, since a browser always sends one on these methods.
+func sameOriginGuard(proxied []string) func(http.HandlerFunc) http.HandlerFunc {
+	names := hostSet(proxied)
+	return func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if crossOriginBrowser(r, names) {
 				writeErr(w, http.StatusForbidden, "cross-origin request refused")
 				return
 			}
+			h(w, r)
 		}
-		h(w, r)
 	}
 }
 

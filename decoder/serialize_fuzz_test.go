@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"hash/crc32"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // Fuzz target for LoadSerializedWeights, which deserializes goinfer's own .giw weights blob. A CRC32 over the whole body
 // gates parsing, so raw-byte fuzzing never reaches the body; this target recomputes the CRC for every input so the
 // mutator exercises the config/weightMat/layer reader. Bar: a *SerializeError or a clean *Weights, never a panic/OOM.
 
-// tinyLlamaBlob serializes a minimal valid llama bundle (1 empty layer) using the
-// exact config lora_test loads, so the seed parses all the way through the body.
+// tinyLlamaBlob serializes a minimal valid llama bundle (1 layer, every tensor at its config shape and filled with ones) using
+// the exact config lora_test loads, so the seed parses all the way through the body and passes validateShapes.
 func tinyLlamaBlob() []byte {
 	const cfgJSON = `{"model_type":"llama","vocab_size":16,"hidden_size":8,"num_hidden_layers":1,
 		"num_attention_heads":2,"num_key_value_heads":2,"head_dim":4,"intermediate_size":16,
@@ -21,7 +23,20 @@ func tinyLlamaBlob() []byte {
 	if err := json.Unmarshal([]byte(cfgJSON), &cfg); err != nil {
 		panic(err)
 	}
-	w := &Weights{Cfg: cfg, Layers: make([]LayerWeights, 1)}
+	ones := func(n int) []float32 {
+		f := make([]float32, n)
+		for i := range f {
+			f[i] = 1
+		}
+		return f
+	}
+	mat := func(rows, cols int) linalg.WeightMat { return linalg.WrapF32(ones(rows*cols), rows, cols) }
+	const vocab, hidden, qDim, kvDim, inter = 16, 8, 8, 8, 16
+	w := &Weights{Cfg: cfg, Layers: []LayerWeights{{
+		QProj: mat(qDim, hidden), KProj: mat(kvDim, hidden), VProj: mat(kvDim, hidden), OProj: mat(hidden, qDim),
+		GateProj: mat(inter, hidden), UpProj: mat(inter, hidden), DownProj: mat(hidden, inter),
+		PreAttnNorm: ones(hidden), PreMLPNorm: ones(hidden),
+	}}, Embed: mat(vocab, hidden), FinalNorm: ones(hidden)}
 	blob, err := SerializeWeights(w, "fuzz-seed")
 	if err != nil {
 		panic(err)

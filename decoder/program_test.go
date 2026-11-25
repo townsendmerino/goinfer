@@ -625,3 +625,41 @@ func TestProgram_gemma4DenseFormWithoutStateIsAnError(t *testing.T) {
 		m.Close()
 	}
 }
+
+// TestProgram_gemma4OpsWithoutStateAreErrors holds both CPU walkers to an error, not a nil dereference, when a model without
+// Gemma 4's state carries one of Gemma 4's own operations in place of its attention or FFN. Called without runProgram's
+// recover, so a panic fails the test.
+func TestProgram_gemma4OpsWithoutStateAreErrors(t *testing.T) {
+	m, err := Load("../testdata/llama-tiny", Options{Backend: "cpu", Quant: "f32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	for _, c := range []struct {
+		from, to opKind
+	}{{opAttention, opGemma4Attn}, {opFFN, opGemma4MoE}, {opFFN, opPLE}} {
+		t.Run(c.to.String(), func(t *testing.T) {
+			p := cloneProgram(m.prog)
+			n := 0
+			for _, ops := range p.Layers {
+				for i := range ops {
+					if ops[i].Kind == c.from {
+						ops[i].Kind, n = c.to, n+1
+					}
+				}
+			}
+			if n == 0 {
+				t.Fatalf("no %v operation to change", c.from)
+			}
+			mm := *m
+			mm.prog = p
+			if _, err := mm.forward(programPrompt(m)[0], mm.NewCache(4)); err == nil || !strings.Contains(err.Error(), "without Gemma 4 state") {
+				t.Errorf("per-token walker with %v returned %v, want the without-Gemma-4-state error", c.to, err)
+			}
+			ids := programPrompt(m)
+			if _, err := mm.walkBatch(context.Background(), p, mm.embedN(ids), mm.NewCache(len(ids)), false, len(ids), nil, nil); err == nil || !strings.Contains(err.Error(), "without Gemma 4 state") {
+				t.Errorf("batched walker with %v returned %v, want the without-Gemma-4-state error", c.to, err)
+			}
+		})
+	}
+}

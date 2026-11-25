@@ -155,12 +155,18 @@ func TestParseConfig_refuses(t *testing.T) {
 
 // AutoAWQ's GEMV export packs qweight along the input dimension ([out, in/8]) where GEMM packs along the output ([in, out/8]);
 // both hold in*out/8 words, so AWQReconstruct's length checks cannot tell them apart and a GEMV checkpoint would load
-// finite, wrong weights. Its config names the layout in "version".
-func TestParseConfig_awqGEMVRefused(t *testing.T) {
-	for _, v := range []string{"gemv", "GEMV", "gemv_fast"} {
+// finite, wrong weights. Its config names the layout in "version", and only GEMM (named or absent) is accepted.
+func TestParseConfig_awqOnlyGEMMAccepted(t *testing.T) {
+	for _, v := range []string{"gemv", "GEMV", "gemv_fast", "marlin", "exllama", "ipex", "future_layout"} {
 		raw := `{"quant_method":"awq","bits":4,"group_size":128,"version":"` + v + `"}`
 		if got, err := ParseConfig(json.RawMessage(raw)); err == nil {
 			t.Errorf("ParseConfig accepts AWQ version %q as %+v; AWQReconstruct reads only the GEMM layout", v, got)
+		}
+	}
+	for _, v := range []string{`"version":"gemm",`, `"version":"GEMM",`, ``} {
+		raw := `{"quant_method":"awq",` + v + `"bits":4,"group_size":128}`
+		if _, err := ParseConfig(json.RawMessage(raw)); err != nil {
+			t.Errorf("ParseConfig refuses the GEMM layout (%s): %v", raw, err)
 		}
 	}
 }

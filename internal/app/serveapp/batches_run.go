@@ -65,9 +65,9 @@ func setResult(batch *batchRecord, i int, r batchLineResult) {
 	batch.mu.Unlock()
 }
 
-// hasChatImages reports whether any message carries an image_url or input_audio content part. It reads part types only, so a
+// hasChatMedia reports whether any message carries an image_url or input_audio content part. It reads part types only, so a
 // batch line with media is refused before any base64 payload is decoded.
-func hasChatImages(msgs []chatMessage) bool {
+func hasChatMedia(msgs []chatMessage) bool {
 	for _, m := range msgs {
 		var parts []struct {
 			Type string `json:"type"`
@@ -84,7 +84,7 @@ func hasChatImages(msgs []chatMessage) bool {
 	return false
 }
 
-// hasAnthropicImages reports whether any message carries an image block, reading block types only (see hasChatImages).
+// hasAnthropicImages reports whether any message carries an image block, reading block types only (see hasChatMedia).
 func hasAnthropicImages(req *anthropicReq) bool {
 	for _, m := range req.Messages {
 		var blocks []struct {
@@ -128,9 +128,9 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 			"messages is required and must contain at least one message"))
 		return
 	}
-	if hasChatImages(req.Messages) {
+	if hasChatMedia(req.Messages) {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
-			"batch requests do not support image inputs this pass; use /v1/chat/completions"))
+			"batch requests do not support image or audio inputs this pass; use /v1/chat/completions"))
 		return
 	}
 	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {

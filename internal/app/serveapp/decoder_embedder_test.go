@@ -410,20 +410,41 @@ func TestHandleEmbeddings_cancelledRequestRunsNoForward(t *testing.T) {
 	}
 }
 
+// doneProbeCtx is a context that closes reached the first time its Done channel is asked for.
+type doneProbeCtx struct {
+	context.Context
+	once    sync.Once
+	reached chan struct{}
+}
+
+func (c *doneProbeCtx) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.reached) })
+	return c.Context.Done()
+}
+
 // TestDecoderEmbedder_cancelledWaiterStopsWaiting: a call whose context ends while another call holds the embedder
-// returns the context's error at once instead of queueing behind the holder.
+// returns the context's error at once instead of queueing behind the holder. The context is cancelled only once the waiter
+// has asked for its Done channel, which nothing before acquire's wait does, so the waiter has passed acquire's ctx.Err()
+// check with a live context and can only leave through the wait itself.
 func TestDecoderEmbedder_cancelledWaiterStopsWaiting(t *testing.T) {
 	e := tinyDecoderEmbedder(t)
 	if err := e.acquire(context.Background()); err != nil { // stands in for a long call in flight
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	inner, cancel := context.WithCancel(context.Background())
+	ctx := &doneProbeCtx{Context: inner, reached: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
 		_, _, err := e.EncodeBatchCountedContext(ctx, []string{"hello"}, []bool{false}, 0)
 		done <- err
 	}()
-	time.Sleep(20 * time.Millisecond) // let the waiter block on the held slot
+	select {
+	case <-ctx.reached:
+	case err := <-done:
+		t.Fatalf("the waiter returned %v before waiting on the held slot", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter never reached acquire's wait")
+	}
 	cancel()
 	select {
 	case err := <-done:

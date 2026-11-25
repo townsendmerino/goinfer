@@ -119,6 +119,9 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 		q, ctx := q[:min(len(q), K*qDim)], ctx[:min(len(ctx), K*qDim)]
 		for oi := range ops {
 			o := &ops[oi]
+			if gp == nil && needsGemma4State(o) {
+				return nil, errNoGemma4State(l, o)
+			}
 			t0 := costStart(cache)
 			switch o.Kind {
 			case opNorm:
@@ -221,9 +224,6 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 				}
 			case opFFN:
 				if o.FFN.Form == ffnGemma4Dense {
-					if gp == nil {
-						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
-					}
 					if err := m.gemma4DenseFFNBatch(o.FFN.Act, reg(o.In), reg(o.Out), lw, arch.ffnAt(l), K, hq); err != nil {
 						return nil, err
 					}

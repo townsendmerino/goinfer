@@ -84,14 +84,20 @@ func newResponseStore(cap int) *responseStore {
 }
 
 // responseEntryBytes estimates what e holds: the variable-length text of every message (content, reasoning, tool call
-// ids, names and arguments). Fixed per-message overhead is left out; the estimate bounds what a request can make the
-// store hold, which the text dominates.
+// ids, names and arguments) and of any carried-id blob (its text, ids at 8 bytes each, and MAC). Fixed per-message
+// overhead is left out; the estimate bounds what a request can make the store hold, which this variable part dominates.
 func responseEntryBytes(e *responseEntry) int {
 	n := len(e.model)
 	for _, m := range e.messages {
 		n += len(m.Role) + len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.ReasoningContent) + len(m.Reasoning)
 		for _, tc := range m.ToolCalls {
 			n += len(tc.ID) + len(tc.Type) + len(tc.Function.Name) + len(tc.Function.Arguments)
+		}
+		if c := m.carried; c != nil {
+			n += len(c.Reason)
+			if b := c.Blob; b != nil {
+				n += len(b.Model) + len(b.NS) + len(b.Text) + 8*len(b.IDs) + len(b.MAC)
+			}
 		}
 	}
 	return n

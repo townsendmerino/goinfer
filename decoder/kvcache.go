@@ -858,10 +858,7 @@ func (c *KVCache) resetRecurrent() {
 	}
 	for _, st := range c.mamba {
 		if st != nil {
-			st.ConvWin = nil
-			for i := range st.SSM {
-				st.SSM[i] = 0
-			}
+			st.Reset()
 		}
 	}
 	for _, st := range c.delta {
