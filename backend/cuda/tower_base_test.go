@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -270,7 +271,7 @@ func TestTowerBase_kernels(t *testing.T) {
 		xb, cb, sb := ops.upload(t, x), ops.upload(t, cs), ops.upload(t, sn)
 		ops.mustRun(t, func() { ops.ropeAxialTo(xb, cb, sb, T, heads, hd) })
 		got := ops.download(t, xb, len(x))
-		want := append([]float32(nil), x...)
+		want := slices.Clone(x)
 		half, q := hd/2, hd/4
 		for tt := range T {
 			for h := range heads {
@@ -299,7 +300,7 @@ func TestTowerBase_kernels(t *testing.T) {
 		xb, cb, sb := ops.upload(t, x), ops.upload(t, cs), ops.upload(t, sn)
 		ops.mustRun(t, func() { ops.ropeHalfTo(xb, cb, sb, T, heads, hd) })
 		got := ops.download(t, xb, len(x))
-		want := append([]float32(nil), x...)
+		want := slices.Clone(x)
 		half := hd / 2
 		for tt := range T {
 			for h := range heads {

@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,9 +37,9 @@ func boxState() string {
 	la, _ := os.ReadFile("/proc/loadavg")
 	avail := ""
 	if mi, err := os.ReadFile("/proc/meminfo"); err == nil {
-		for _, ln := range strings.Split(string(mi), "\n") {
-			if strings.HasPrefix(ln, "MemAvailable:") {
-				avail = strings.TrimSpace(strings.TrimPrefix(ln, "MemAvailable:"))
+		for ln := range strings.SplitSeq(string(mi), "\n") {
+			if after, ok := strings.CutPrefix(ln, "MemAvailable:"); ok {
+				avail = strings.TrimSpace(after)
 			}
 		}
 	}
@@ -96,7 +97,7 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 		s := seed
 		for i := range embs {
 			s = s*1664525 + 1013904223
-			embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+			embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 		}
 		return embs
 	}
@@ -157,7 +158,7 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 			t.Fatalf("PrefillLast (grouped=%v): %v", grouped, err)
 		}
 		d := time.Since(w)
-		runs = append(runs, run{grouped, d, append([]float32(nil), lg...)})
+		runs = append(runs, run{grouped, d, slices.Clone(lg)})
 		fmt.Fprintf(os.Stderr, "[rows-ab] run %d/4 grouped=%v: %v (%.1f tok/s, %.2f ms/token)\n", i+1, grouped, d.Round(time.Millisecond), float64(M)/d.Seconds(), 1000*d.Seconds()/float64(M))
 	}
 	for _, x := range runs[1:] {

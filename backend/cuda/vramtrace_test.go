@@ -3,12 +3,13 @@
 package cuda
 
 import (
+	"cmp"
 	"fmt"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -123,7 +124,7 @@ func takeUnplannedSites(d *Device) string {
 	for k := range sites {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool { return sites[keys[i]] > sites[keys[j]] })
+	slices.SortFunc(keys, func(a, b string) int { return cmp.Compare(sites[b], sites[a]) })
 	var b strings.Builder
 	for _, k := range keys {
 		fmt.Fprintf(&b, "\n      %d bytes leased in all, %s", sites[k], k)
@@ -159,7 +160,7 @@ func openDevices() []string {
 	for _, name := range openDevs {
 		out = append(out, name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -207,7 +208,7 @@ func testsInFlight() []string {
 		buf = make([]byte, 2*len(buf))
 	}
 	seen := map[string]bool{}
-	for _, line := range strings.Split(string(buf), "\n") {
+	for line := range strings.SplitSeq(string(buf), "\n") {
 		if line == "" || line[0] == '\t' || strings.HasPrefix(line, "goroutine ") || strings.HasPrefix(line, "created by ") {
 			continue
 		}
@@ -220,7 +221,7 @@ func testsInFlight() []string {
 	for t := range seen {
 		out = append(out, t)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

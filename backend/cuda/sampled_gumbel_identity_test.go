@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"flag"
+	"maps"
 	"math"
 	"math/rand"
 	"os"
@@ -155,9 +156,7 @@ func TestSB5ResidentStreams(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for k, v := range cs {
-			got[k] = v
-		}
+		maps.Copy(got, cs)
 	}
 	diffs, err := decoder.CompareResidentStreamsForTest(got, *sb5Out, *sb5Want)
 	if err != nil {

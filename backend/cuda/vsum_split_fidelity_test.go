@@ -24,6 +24,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -79,7 +80,7 @@ func TestVsumSplitFidelity(t *testing.T) {
 	var s uint32 = 987654321
 	for i := range prefill {
 		s = s*1664525 + 1013904223
-		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+		prefill[i] = slices.Clone(emb(int(s>>8) % vocab))
 	}
 
 	// Force the split path regardless of the per-geometry depth gate, or both arms would run
@@ -94,16 +95,16 @@ func TestVsumSplitFidelity(t *testing.T) {
 	}
 	refPer := make([][]float32, 0, N)
 	refToks := make([]int, 0, N)
-	cur := append([]float32(nil), refLogits...)
+	cur := slices.Clone(refLogits)
 	for i := range N {
 		tok := argmaxF(cur)
 		refToks = append(refToks, tok)
-		refPer = append(refPer, append([]float32(nil), cur...))
+		refPer = append(refPer, slices.Clone(cur))
 		l, err := rf.Forward(emb(tok), D+i)
 		if err != nil {
 			t.Fatalf("ref decode %d: %v", i, err)
 		}
-		cur = append([]float32(nil), l...)
+		cur = slices.Clone(l)
 	}
 
 	// spike: same prefill, but TEACHER-FORCED on the reference's tokens.
@@ -113,14 +114,14 @@ func TestVsumSplitFidelity(t *testing.T) {
 		t.Fatalf("prefill (spike): %v", e)
 	}
 	spkPer := make([][]float32, 0, N)
-	cur = append([]float32(nil), spkLogits...)
+	cur = slices.Clone(spkLogits)
 	for i := range N {
-		spkPer = append(spkPer, append([]float32(nil), cur...))
+		spkPer = append(spkPer, slices.Clone(cur))
 		l, err := rf.Forward(emb(refToks[i]), D+i) // reference's token, not the spike's own
 		if err != nil {
 			t.Fatalf("spike decode %d: %v", i, err)
 		}
-		cur = append([]float32(nil), l...)
+		cur = slices.Clone(l)
 	}
 
 	agree, firstDiv := decoder.TeacherForcedTop1AgreementForTest(spkPer, refToks)

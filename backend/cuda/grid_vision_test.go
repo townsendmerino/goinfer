@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -299,7 +300,7 @@ func TestGridVisionCUDA_real(t *testing.T) {
 			}
 			pp, cpu, dev, out, closeFn := f.run(t, f.dir)
 			defer closeFn()
-			all := append(append([]string(nil), images...), f.extra...)
+			all := slices.Concat(images, f.extra)
 			for _, img := range all[:min(caseCount(t, "GOINFER_GRID_IMAGES", 2, 5), len(all))] {
 				data, err := os.ReadFile(filepath.Join("../../testdata", img))
 				if err != nil {

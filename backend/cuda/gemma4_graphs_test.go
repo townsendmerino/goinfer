@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -81,7 +82,7 @@ func graphsBitExact(t *testing.T, dir string, cache bool) {
 			if err != nil {
 				t.Fatalf("forward pos %d (graphs=%v cache=%v): %v", i, graphs, cache, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}
@@ -149,7 +150,7 @@ func TestGemma4Graphs_sameModelUnderLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward pos %d (graphs=%v): %v", i, useGraphs, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}
@@ -188,7 +189,7 @@ func TestGemma4Graphs_offVsOffControl(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward pos %d: %v", i, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -79,12 +80,8 @@ func (r *VisionEncoder) planBlock(prog vision.TowerBlock, L *visionLayer, s *int
 	hidden, inter := r.hidden, r.inter
 	width := func(n vision.TowerReg) int { return vision.TowerRegWidth(n, hidden, inter) }
 	int8, stale = map[vision.TowerReg]bool{}, map[vision.TowerReg]bool{}
-	for k, v := range s.int8 {
-		int8[k] = v
-	}
-	for k, v := range s.stale {
-		stale[k] = v
-	}
+	maps.Copy(int8, s.int8)
+	maps.Copy(stale, s.stale)
 	floatOK := func(n vision.TowerReg) error {
 		if _, ok := s.f[n]; !ok {
 			return fmt.Errorf("register %d has no float buffer on this tower", n)

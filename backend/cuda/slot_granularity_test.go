@@ -4,7 +4,7 @@ package cuda
 
 import (
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -78,7 +78,7 @@ func TestSlotAllocation_matchesGranularityForm(t *testing.T) {
 	for n := range counts {
 		sizes = append(sizes, n)
 	}
-	sort.Ints(sizes)
+	slices.Sort(sizes)
 	for _, n := range sizes {
 		t.Logf("  buffer size %12d B  x%d", n, counts[n])
 	}

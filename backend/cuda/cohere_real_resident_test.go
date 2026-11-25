@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -133,7 +134,7 @@ func cohereRealResidentParity(t *testing.T, ckpt, goldenPath string) {
 			if err != nil {
 				t.Fatalf("cpu forward[%d]: %v", i, err)
 			}
-			out[i] = append([]float32(nil), lc...)
+			out[i] = slices.Clone(lc)
 		}
 		cpuMemo[key] = out
 		return out

@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -29,8 +30,8 @@ func pwReference(q, k, v, invF []float32, nH, nKV, hd, rhalf, M, startPos int, m
 	comp func(m, d int) int, qTemp func(m int) float64) pwRef {
 	qDim, kvDim := nH*hd, nKV*hd
 	out := pwRef{
-		q:  append([]float32(nil), q...),
-		k:  append([]float32(nil), k...),
+		q:  slices.Clone(q),
+		k:  slices.Clone(k),
 		kc: make([]float32, (startPos+M)*kvDim),
 		vc: make([]float32, (startPos+M)*kvDim),
 	}

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -153,7 +154,7 @@ func (r *qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32,
 	}
 	cos, sin := plan.Cos, plan.Sin
 	if a.planted.swapRope { // the row and column quarters swapped within each half of the cat(f, f) row
-		cos, sin = append([]float32(nil), cos...), append([]float32(nil), sin...)
+		cos, sin = slices.Clone(cos), slices.Clone(sin)
 		half, q := hd/2, hd/4
 		for i := range np {
 			for base := 0; base < hd; base += half {

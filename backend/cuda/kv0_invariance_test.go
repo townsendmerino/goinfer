@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -198,7 +197,7 @@ func kv0LoadCtxAny(t *testing.T, path, kv string, ctxCap int, tokens func(vocab 
 func (g *kv0Rig) embs(ids []int) [][]float32 {
 	out := make([][]float32, len(ids))
 	for i, id := range ids {
-		out[i] = append([]float32(nil), g.m.EmbedResidentForTest(id)...)
+		out[i] = slices.Clone(g.m.EmbedResidentForTest(id))
 	}
 	return out
 }
@@ -283,7 +282,7 @@ func (g *kv0Rig) prefill(e [][]float32, start int) []float32 {
 	if err != nil {
 		g.t.Fatalf("PrefillLast(%d rows at %d): %v", len(e), start, err)
 	}
-	return append([]float32(nil), lg...)
+	return slices.Clone(lg)
 }
 
 func (g *kv0Rig) launches() (attn, gemm int) { return g.r.fastAttnLaunches, g.r.fastGemmLaunches }
@@ -320,7 +319,7 @@ func kv0TextTokens(t *testing.T, ggufPath string) func(int) func(n, off int) []i
 		t.Fatalf("tokenizer: %v", err)
 	}
 	files, _ := filepath.Glob("../../decoder/*.go")
-	sort.Strings(files)
+	slices.Sort(files)
 	var sb strings.Builder
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -342,7 +341,7 @@ func kv0TextTokens(t *testing.T, ggufPath string) func(int) func(n, off int) []i
 	return func(int) func(n, off int) []int {
 		return func(n, off int) []int {
 			off %= max(1, len(ids)-n)
-			return append([]int(nil), ids[off:off+n]...)
+			return slices.Clone(ids[off : off+n])
 		}
 	}
 }
@@ -580,7 +579,7 @@ func kv0Continuation(t *testing.T, g *kv0Rig) {
 	}
 	var all []stat
 	n := np + d
-	for i := 0; i < trials; i++ {
+	for i := range trials {
 		ids := g.tokens(n, i*997)
 		e := g.embs(ids)
 		decodeRun := func(floor string) (kv0KV, []float32) {
@@ -588,12 +587,12 @@ func kv0Continuation(t *testing.T, g *kv0Rig) {
 			g.poison(n)
 			g.prefill(e[:np], 0)
 			var lg []float32
-			for k := 0; k < d; k++ {
+			for k := range d {
 				out, err := g.r.Forward(e[np+k], np+k)
 				if err != nil {
 					t.Fatalf("trial %d decode step %d: %v", i, k, err)
 				}
-				lg = append([]float32(nil), out...)
+				lg = slices.Clone(out)
 			}
 			return g.snapshot(n), lg
 		}
@@ -667,7 +666,7 @@ func kv0Continuation(t *testing.T, g *kv0Rig) {
 		}
 		margins = append(margins, s.marginB)
 	}
-	sort.Float64s(margins)
+	slices.Sort(margins)
 	log("continuation, KV f16=%v, %d trials, np=%d d=%d, same teacher-forced tokens:", g.r.layers[0].kvHalf, trials, np, d)
 	log("  decode rows vs fast-prefill rows (A vs B): %d of %d elements differ; max |diff| %.3g (largest |value| %.3g); rms diff / rms value mean %.3g worst %.3g",
 		diffAB, totAB, maxAbs, maxVal, sumRel/trials, worstRel)

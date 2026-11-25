@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -103,7 +104,7 @@ func TestSpecDecodeCurve(t *testing.T) {
 			t.Fatalf("poison(%d): %v", depth, e)
 		}
 		cur := argmaxF(prime())
-		hist := append([]int(nil), seed...)
+		hist := slices.Clone(seed)
 		drafted, accepted, rounds := 0, 0, 0
 		t1 := time.Now()
 		for len(hist)-depth < N {

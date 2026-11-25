@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -51,7 +52,7 @@ func TestImagePrefillResident_twoImagesTinyCUDA(t *testing.T) {
 	if !r.imgPrefillReady {
 		t.Skip("attn_img_batched did not load on this build")
 	}
-	feats := append(append([]float32(nil), g.ImageFeatures[0]...), g.ImageFeatures[1]...)
+	feats := slices.Concat(g.ImageFeatures[0], g.ImageFeatures[1])
 	for _, name := range []string{"interleaved", "adjacent"} {
 		l := g.Layouts[name]
 		spans := []decoder.ImageSpan{{Pos: l.Spans[0][0], Len: l.Spans[0][1]}, {Pos: l.Spans[1][0], Len: l.Spans[1][1]}}
@@ -61,14 +62,14 @@ func TestImagePrefillResident_twoImagesTinyCUDA(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := [][]float32{append([]float32(nil), first...)}
+		want := [][]float32{slices.Clone(first)}
 		teach := []int{argmaxF(first)}
 		for k := range steps {
 			lg, err := ref.ForwardForTest(teach[k], rc)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want = append(want, append([]float32(nil), lg...))
+			want = append(want, slices.Clone(lg))
 			teach = append(teach, argmaxF(lg))
 		}
 		rf.Reset()
@@ -79,13 +80,13 @@ func TestImagePrefillResident_twoImagesTinyCUDA(t *testing.T) {
 		if gpuPos != n {
 			t.Fatalf("%s: gpuPos %d, want %d", name, gpuPos, n)
 		}
-		got := [][]float32{append([]float32(nil), lg...)}
+		got := [][]float32{slices.Clone(lg)}
 		for k := range steps {
 			lg, err := rf.Forward(m.EmbedResidentForTest(teach[k]), n+k)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, append([]float32(nil), lg...))
+			got = append(got, slices.Clone(lg))
 		}
 		worstCos, worstRel := 1.0, 0.0
 		for i := range got {

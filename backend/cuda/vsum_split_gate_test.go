@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -327,7 +328,7 @@ func vsumArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 		t.Fatalf("PrefillLast (split=%d): %v", split, err)
 	}
 	out := make([][]float32, len(refTokens))
-	out[0] = append([]float32(nil), seed...)
+	out[0] = slices.Clone(seed)
 	pos := K - 1
 	for i := 1; i < len(refTokens); i++ {
 		pos++
@@ -335,7 +336,7 @@ func vsumArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 		if err != nil {
 			t.Fatalf("teacher-forced Forward pos=%d (split=%d): %v", pos, split, err)
 		}
-		out[i] = append([]float32(nil), lg...)
+		out[i] = slices.Clone(lg)
 	}
 	return out
 }

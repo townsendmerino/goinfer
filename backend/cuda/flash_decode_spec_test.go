@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -290,7 +291,7 @@ func TestFlashDecodeForwardNBitIdentical(t *testing.T) {
 	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*2654435761 + 5) % (vocab - 1)) }
 	prefill := make([][]float32, P)
 	for i := range prefill {
-		prefill[i] = append([]float32(nil), emb(i*7+1)...)
+		prefill[i] = slices.Clone(emb(i*7 + 1))
 	}
 	prime := func() {
 		rf.faSplit = 16
@@ -314,7 +315,7 @@ func TestFlashDecodeForwardNBitIdentical(t *testing.T) {
 				if e != nil {
 					t.Fatalf("Forward: %v", e)
 				}
-				seq[i] = append([]float32(nil), l...)
+				seq[i] = slices.Clone(l)
 			}
 			// one batched verify pass
 			prime()
@@ -340,7 +341,7 @@ func TestFlashDecodeForwardNBitIdentical(t *testing.T) {
 					if e != nil {
 						t.Fatalf("Forward(exact): %v", e)
 					}
-					ex[i] = append([]float32(nil), l...)
+					ex[i] = slices.Clone(l)
 				}
 				for i := range ex {
 					if !sameLogits(ex[i], seq[i]) {

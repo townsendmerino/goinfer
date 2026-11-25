@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -408,7 +409,7 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 		}
 		snap := make([][]float32, len(taps))
 		for i, v := range r.HiddenCapture() {
-			snap[i] = append([]float32(nil), v...)
+			snap[i] = slices.Clone(v)
 		}
 		perTok[m] = snap
 	}

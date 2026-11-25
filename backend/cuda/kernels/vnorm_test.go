@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -44,7 +45,7 @@ func TestQKNorm_widths(t *testing.T) {
 	const eps = float32(1e-6)
 
 	cpuNorm := func(x, w []float32, rows, hd int) []float32 {
-		out := append([]float32(nil), x...)
+		out := slices.Clone(x)
 		for r := range rows {
 			var ss float64
 			for d := range hd {
@@ -170,7 +171,7 @@ func TestVNorm_scaleless(t *testing.T) {
 	}
 
 	// CPU oracle: rmsNormNoWeight per head (the exact scale-less norm the forward applies to V).
-	ref := append([]float32(nil), vh...)
+	ref := slices.Clone(vh)
 	for r := range nKV {
 		var ss float64
 		for d := range hd {

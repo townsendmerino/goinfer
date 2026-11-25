@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -115,7 +115,7 @@ func TestDefaultVerifyWidth_sweep(t *testing.T) {
 		for k := range widthSweepSuites {
 			suites = append(suites, k)
 		}
-		sort.Strings(suites)
+		slices.Sort(suites)
 
 		for _, suite := range suites {
 			// tok/s per width, pooled over prompts x repeats

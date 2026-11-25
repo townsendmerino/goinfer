@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -72,7 +73,7 @@ func TestPrefillStartOffset(t *testing.T) {
 		if e != nil {
 			t.Fatalf("one-shot: %v", e)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	split := func(r int) []float32 {
 		rf.Reset()
@@ -83,7 +84,7 @@ func TestPrefillStartOffset(t *testing.T) {
 		if e != nil {
 			t.Fatalf("second call r=%d: %v", r, e)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	compare := func(ref, got []float32) (diff int, maxAbs float64) {
 		if len(ref) != len(got) || len(ref) == 0 {

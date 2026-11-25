@@ -38,7 +38,7 @@ func TestCUDA_graphDependentChain(t *testing.T) {
 	nb := NewBufferOf(d, []uint32{n})
 
 	chain := func() error {
-		for i := 0; i < N; i++ {
+		for range N {
 			if e := q.launch(p, n, n, []Buffer{x, one, x, nb}); e != nil { // x = x + one, in place (RAW chain)
 				return e
 			}
@@ -53,7 +53,7 @@ func TestCUDA_graphDependentChain(t *testing.T) {
 
 	const reps = 200
 	bad := 0
-	for r := 0; r < reps; r++ {
+	for r := range reps {
 		if e := Upload(x, make([]float32, n)); e != nil { // reset x = 0
 			t.Fatalf("Upload: %v", e)
 		}

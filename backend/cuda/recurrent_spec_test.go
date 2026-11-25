@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -200,7 +201,7 @@ func verifyFoldFailures(t *testing.T, mc *decoder.Model, r *cudaResident) []stri
 			}
 			wantState := dnSnapshot(t, r)
 			dnRestore(t, r, base)
-			wantNext, err := r.PrefillLastNArgmax(embsOf(mc, append(append([]int(nil), rows[:n]...), next...)), pos)
+			wantNext, err := r.PrefillLastNArgmax(embsOf(mc, slices.Concat(rows[:n], next)), pos)
 			if err != nil {
 				t.Fatalf("w=%d n=%d: reference prefill with the next rows: %v", w, n, err)
 			}
@@ -435,14 +436,14 @@ func TestRecurrentSpec_commitAgreesWithKVManager(t *testing.T) {
 			}
 
 			// (2) plain B on the warm slot, then cold B, then speculative B on the warm slot.
-			promptB := append(append(append([]int(nil), promptA...), outA...), idsFor(5, 22, vocab)...)
+			promptB := append(slices.Concat(promptA, outA), idsFor(5, 22, vocab)...)
 			warmB, gen := plainGreedy(t, mc, r, promptB, maxNew)
 			if gen.PrefillReused != len(promptA)+len(outA) {
 				t.Errorf("kvmgr reused %d of B's prompt, want A's prompt plus output, %d", gen.PrefillReused, len(promptA)+len(outA))
 			}
 
 			// (1) the state A left against a cold prefill of A's prompt and output.
-			if _, err := r.PrefillLastNArgmax(embsOf(mc, append(append([]int(nil), promptA...), outA...)), 0); err != nil {
+			if _, err := r.PrefillLastNArgmax(embsOf(mc, slices.Concat(promptA, outA)), 0); err != nil {
 				t.Fatalf("cold prefill of A: %v", err)
 			}
 			if dd := snapDiff(dnSnapshot(t, r), afterA); dd != "" {
@@ -572,7 +573,7 @@ func TestRecurrentSpec_seedChunksKeepTheCapture(t *testing.T) {
 	}
 	var one [][]float32 // a copy: the next call's passes write the resident's slice in place
 	for _, rows := range r.BatchedCapture() {
-		one = append(one, append([]float32(nil), rows...))
+		one = append(one, slices.Clone(rows))
 	}
 	r.prefillChunkCap.Store(8) // passes of 8 rows from here on
 	defer r.prefillChunkCap.Store(0)

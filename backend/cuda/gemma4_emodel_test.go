@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,7 +47,7 @@ func eModelPrompt(t *testing.T) []int {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatal(err)
 	}
-	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
+	return slices.Concat(g.PromptIDs, g.ContinuationIDs)
 }
 
 // eModelG1 is the measurement G1c grades: the CUDA resident against the CPU, int4 on
@@ -143,7 +144,7 @@ func runEModelG1Mode(t *testing.T, batched bool) eModelG1 {
 			if gpuL, err = r.Forward(mg.EmbedResidentForTest(tok), i); err != nil {
 				t.Fatalf("cuda pos %d: %v", i, err)
 			}
-			gpuL = append([]float32(nil), gpuL...)
+			gpuL = slices.Clone(gpuL)
 		}
 		res.cuda = append(res.cuda, gpuL)
 		cm, _ := cosMaxAbs(cpu4, gpuL)

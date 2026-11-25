@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func ttftMeasure(t *testing.T, path, quant string) {
 		var s uint32 = 12345
 		for i := range embs {
 			s = s*1664525 + 1013904223
-			embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+			embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 		}
 		return embs
 	}

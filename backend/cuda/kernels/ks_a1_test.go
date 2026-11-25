@@ -9,7 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -425,8 +425,8 @@ func TestKSA1_gemvTiming(t *testing.T) {
 			}
 		}
 		med := func(xs []float64) float64 {
-			s := append([]float64(nil), xs...)
-			sort.Float64s(s)
+			s := slices.Clone(xs)
+			slices.Sort(s)
 			return s[len(s)/2]
 		}
 		int8ms := med(times[0])
@@ -460,7 +460,7 @@ func TestKSA1_gemvTiming(t *testing.T) {
 		for n := range sums[kind] {
 			names = append(names, n)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		best := math.Inf(1)
 		for _, n := range names {
 			fmt.Fprintf(os.Stderr, "  %s %-16s %.4f ms  /int8 %.4f (int8 %.4f)\n", kind, n, sums[kind][n], sums[kind][n]/base, base)

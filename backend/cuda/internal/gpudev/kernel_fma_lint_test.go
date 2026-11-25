@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,7 +47,7 @@ func discoverKernels(t *testing.T) []string {
 		}
 		out = append(out, m...)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	if len(out) == 0 {
 		t.Fatal("no .cu sources found — this lint is no longer measuring anything")
 	}

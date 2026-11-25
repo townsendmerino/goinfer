@@ -198,7 +198,7 @@ func TestCUDAStepBatch_concurrentMatchesAlone(t *testing.T) {
 							return
 						}
 						ids[c], reused[c] = append(ids[c], out), append(reused[c], gen.PrefillReused)
-						prompt = append(append(append([]int(nil), prompt...), out...), (c*7+tn)%vocab, (c*11+tn)%vocab)
+						prompt = append(slices.Concat(prompt, out), (c*7+tn)%vocab, (c*11+tn)%vocab)
 					}
 				}
 				if !concurrent {
@@ -524,7 +524,7 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 			run := func(n int) ([]float32, int, int) {
 				fast0 := r.fastAttnLaunches + r.fastGemmLaunches
 				var fast int
-				pos := append([]int(nil), depths...)
+				pos := slices.Clone(depths)
 				var last []float32
 				differ := 0
 				for pass := range 2 {

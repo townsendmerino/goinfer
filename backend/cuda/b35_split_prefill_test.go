@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -60,7 +61,7 @@ func TestB35SplitPrefill(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PrefillLast [%d,%d): %v", from, to, err)
 			}
-			a.logits = append([]float32(nil), lg...)
+			a.logits = slices.Clone(lg)
 			from = to
 			if zeroBetween && from < n {
 				for l := range r.layers {
@@ -221,7 +222,7 @@ func (g *realCutRig) embOf(ids []int) [][]float32 {
 // dump reads the slot's state and K/V rows for the first n positions, then runs steps greedy decode steps from the prompt's last row.
 func (g *realCutRig) dump(t *testing.T, last []float32, steps int) realCutDump {
 	t.Helper()
-	d := realCutDump{logits: append([]float32(nil), last...)}
+	d := realCutDump{logits: slices.Clone(last)}
 	d.argmaxes = append(d.argmaxes, realCutArgmax(last))
 	r := g.r
 	if err := r.do(func() error {
@@ -259,7 +260,7 @@ func (g *realCutRig) dump(t *testing.T, last []float32, steps int) realCutDump {
 		if err != nil {
 			t.Fatalf("decode step %d: %v", i, err)
 		}
-		d.steps = append(d.steps, append([]float32(nil), lg...))
+		d.steps = append(d.steps, slices.Clone(lg))
 		next = realCutArgmax(lg)
 		d.argmaxes = append(d.argmaxes, next)
 	}
@@ -284,7 +285,7 @@ func (g *realCutRig) prefillCut(t *testing.T, between func(at int), cuts ...int)
 	return lg
 }
 
-func slicesClone(a []int) []int { return append([]int(nil), a...) }
+func slicesClone(a []int) []int { return slices.Clone(a) }
 
 // minPass is the shortest call of a cut over n rows.
 func realCutMinPass(n int, cuts []int) int {

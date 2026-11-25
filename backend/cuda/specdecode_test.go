@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestSpecDecode(t *testing.T) {
 	// --- speculative decode (re-prime KV first) ---
 	prime()
 	const k, ctxLen = 8, 2
-	hist := append([]int(nil), seed...)
+	hist := slices.Clone(seed)
 	var st GPUSpecStats
 	t1 := time.Now()
 	for len(hist)-S < N {

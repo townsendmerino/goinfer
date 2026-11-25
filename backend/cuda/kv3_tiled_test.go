@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -117,7 +118,7 @@ func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
 			if err != nil {
 				t.Fatalf("per-token last row: %v", err)
 			}
-			want := append([]float32(nil), out...)
+			want := slices.Clone(out)
 			tp := time.Since(t0)
 			wantKV := g.snapshot(n)
 			kv3NoNaN(t, name, want, wantKV)
@@ -259,7 +260,7 @@ func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[kv3-tiled] gemma-3-4b: %d-token lead prefilled in %.1f s\n", lead, time.Since(t0).Seconds())
 	var ref []float32
 	var refKV kv0KV
-	for pair := 0; pair < 3; pair++ {
+	for pair := range 3 {
 		for _, force := range []bool{false, true} {
 			prefillSplitKVForceForTest = force
 			p0 := g.r.psLaunches
@@ -338,7 +339,7 @@ func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
 			if err != nil {
 				t.Fatalf("per-token last row: %v", err)
 			}
-			want := append([]float32(nil), out...)
+			want := slices.Clone(out)
 			tp := time.Since(t0)
 			wantKV := g.snapshot(n)
 			kv3NoNaN(t, mdl.name+" per-token", want, wantKV)
@@ -437,7 +438,7 @@ func TestG46_gemma3GEMMFidelityLadder(t *testing.T) {
 				if err != nil {
 					t.Fatalf("seed %d per-token row %d: %v", seed, i, err)
 				}
-				want[i+1] = append([]float32(nil), out...)
+				want[i+1] = slices.Clone(out)
 			} else if err := g.r.ForwardNoLogits(e[i], i); err != nil {
 				t.Fatalf("seed %d per-token row %d: %v", seed, i, err)
 			}

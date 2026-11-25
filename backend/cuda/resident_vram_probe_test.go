@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -150,7 +150,7 @@ func TestResidentSlotConsumption(t *testing.T) {
 	for n := range counts {
 		sizes = append(sizes, n)
 	}
-	sort.Ints(sizes)
+	slices.Sort(sizes)
 	var distinctSum int
 	for _, n := range sizes {
 		distinctSum += n

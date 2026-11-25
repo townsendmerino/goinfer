@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func windowedOffsetsStorage(t *testing.T, fx string) {
 			if err != nil {
 				t.Fatalf("split at %d, full prefill of rows [%d, %d): %v", s, call.lo, call.hi, err)
 			}
-			a = append([]float32(nil), a...)
+			a = slices.Clone(a)
 			b, err := win.PrefillLast(context.Background(), rows[call.lo:call.hi], call.lo)
 			if err != nil {
 				t.Fatalf("split at %d, windowed prefill of rows [%d, %d): %v", s, call.lo, call.hi, err)

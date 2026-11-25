@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -108,7 +109,7 @@ func TestGemma2Softcap_prefillBitIdentical(t *testing.T) {
 			const n = 40
 			embs := make([][]float32, n)
 			for i := range n {
-				embs[i] = append([]float32(nil), mc.EmbedResidentForTest((i*53+7)%(vocab-1))...)
+				embs[i] = slices.Clone(mc.EmbedResidentForTest((i*53 + 7) % (vocab - 1)))
 			}
 			rf.Reset()
 			for i := range n - 1 {
@@ -120,7 +121,7 @@ func TestGemma2Softcap_prefillBitIdentical(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			seq = append([]float32(nil), seq...)
+			seq = slices.Clone(seq)
 			seqK, seqV := make([][]float32, nLayers), make([][]float32, nLayers)
 			for l := range nLayers {
 				seqK[l], seqV[l] = rf.readKVForTest(l, n)

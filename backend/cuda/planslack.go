@@ -16,8 +16,7 @@ func init() { decoder.RegisterPlanSlack("cuda", planSlack) }
 
 func planSlack(m *decoder.Model) (int64, bool) {
 	_, _, err := (&cudaBackend{}).buildResident(m, true)
-	var s planOnlySlack
-	if errors.As(err, &s) {
+	if s, ok := errors.AsType[planOnlySlack](err); ok {
 		return int64(s), true
 	}
 	return 0, false

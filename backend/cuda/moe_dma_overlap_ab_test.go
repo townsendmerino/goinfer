@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -137,7 +137,7 @@ func TestMoEDMAOverlapAB(t *testing.T) {
 		t.Logf("pair %d: off %.2f tok/s | on %.2f tok/s | on/off speedup %.3fx",
 			p, nTok/dOff.Seconds(), nTok/dOn.Seconds(), ratio)
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	median := ratios[len(ratios)/2]
 	if len(ratios)%2 == 0 {
 		median = (ratios[len(ratios)/2-1] + ratios[len(ratios)/2]) / 2
