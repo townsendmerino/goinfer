@@ -123,7 +123,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 		resp["kv_snapshots"] = kv
 	}
 	// Carried token ids (carried_ids.go): turns that carried a blob, turns that used its ids, and the fallbacks by reason.
-	resp["carried_ids"] = s.idsStats.report()
+	resp["carried_ids"] = s.idsStats.Report()
 	writeJSON(w, http.StatusOK, resp)
 }
 

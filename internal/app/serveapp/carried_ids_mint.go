@@ -47,7 +47,7 @@ func (m *carriedMint) blob(text string) string {
 	if len(ids) == 0 {
 		return ""
 	}
-	return m.key.mint(m.model, m.ns, text, ids, whole)
+	return m.key.Mint(m.model, m.ns, text, ids, whole)
 }
 
 // wantsCarrier reports whether a Responses request asked for encrypted reasoning back (include: reasoning.encrypted_content),
@@ -83,7 +83,7 @@ func withCarrier(rs *respStream, mint *carriedMint, include []string, id string,
 
 // noteIDs records a request's carried-id outcome: the server's totals, and the request's -log-requests line.
 func (s *server) noteIDs(r *http.Request, o idsOutcome) {
-	s.idsStats.add(o)
+	s.idsStats.Add(o)
 	if tr := traceFrom(r.Context()); tr != nil {
 		tr.carried(o)
 	}

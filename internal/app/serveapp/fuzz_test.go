@@ -136,20 +136,20 @@ func FuzzServeResponsesInput(f *testing.F) {
 func FuzzParseIDsBlob(f *testing.F) {
 	k := newIDsKey([]byte("fuzz key"))
 	sealed := func() *idsBlob {
-		b := &idsBlob{whole: true, model: "m", ns: "n", text: "t", ids: []int{0, 1, 300, 1<<31 - 1}}
-		k.seal(b)
+		b := &idsBlob{Whole: true, Model: "m", NS: "n", Text: "t", IDs: []int{0, 1, 300, 1<<31 - 1}}
+		k.Seal(b)
 		return b
 	}
 	for _, edit := range []func(b *idsBlob){
 		func(*idsBlob) {},
-		func(b *idsBlob) { b.whole = false },
-		func(b *idsBlob) { b.keyID[0] ^= 1 },
-		func(b *idsBlob) { b.model = "x" },
-		func(b *idsBlob) { b.ns = "x" },
-		func(b *idsBlob) { b.ids[0] = 1 },
-		func(b *idsBlob) { b.ids = b.ids[:3] },
-		func(b *idsBlob) { b.text = "edited, and outside the MAC" },
-		func(b *idsBlob) { b.mac = nil },
+		func(b *idsBlob) { b.Whole = false },
+		func(b *idsBlob) { b.KeyID[0] ^= 1 },
+		func(b *idsBlob) { b.Model = "x" },
+		func(b *idsBlob) { b.NS = "x" },
+		func(b *idsBlob) { b.IDs[0] = 1 },
+		func(b *idsBlob) { b.IDs = b.IDs[:3] },
+		func(b *idsBlob) { b.Text = "edited, and outside the MAC" },
+		func(b *idsBlob) { b.MAC = nil },
 	} {
 		b := sealed()
 		edit(b)
@@ -172,7 +172,7 @@ func FuzzParseIDsBlob(f *testing.F) {
 		if again.String() != b.String() {
 			t.Fatalf("a blob does not rewrite as itself: %q then %q", b.String(), again.String())
 		}
-		if k.verifyMAC(b) && (b.whole != want.whole || b.keyID != want.keyID || b.model != want.model || b.ns != want.ns || !slices.Equal(b.ids, want.ids)) {
+		if k.VerifyMAC(b) && (b.Whole != want.Whole || b.KeyID != want.KeyID || b.Model != want.Model || b.NS != want.NS || !slices.Equal(b.IDs, want.IDs)) {
 			t.Fatalf("a blob with changed signed fields verified: %q", enc)
 		}
 	})
