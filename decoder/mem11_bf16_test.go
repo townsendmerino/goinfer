@@ -252,7 +252,7 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stIsland(%s): %v", name, err)
 		}
-		if m.Kind() != want {
+		if m.Kind().String() != want {
 			t.Errorf("stIsland(%s) = %s, want %s", name, m.Kind(), want)
 		}
 		row := make([]float32, 4)

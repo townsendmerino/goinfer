@@ -19,6 +19,11 @@ moved symbol; those are edited by hand.
 - `bitvec.rules` (sign-bit packing and Hamming): goinfer calls none of them; ken's one use (`internal/search/dense_store.go`)
   is rewritten by the same script, run in ken.
 
+- LS6, typed `Kind` (aikit `linalg.Kind`, a string type whose `String()` keeps today's names): `kind_string_fix.py`
+  adds `.String()` wherever goinfer uses `Kind()` as a plain string (a return, an argument, a map key, a comparison with a
+  string variable): 12 files. Two test interfaces in `backend/cuda` (`reale2e_test.go`, `realforward_test.go`) declare
+  `Kind() linalg.Kind` by hand.
+
 ## Proof, per move
 
 - `testdata/kernel_fingerprints.json` byte-identical and `TestCompute_table` passing without `-update`, on each

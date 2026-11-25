@@ -69,7 +69,7 @@ func TestForRowRanges(t *testing.T) {
 func embedTableBytes(t *testing.T, w linalg.WeightMat) []byte {
 	t.Helper()
 	var b bytes.Buffer
-	b.WriteString(w.Kind() + "/" + w.Int4Layout() + ";")
+	b.WriteString(w.Kind().String() + "/" + w.Int4Layout() + ";")
 	put := func(v any) {
 		switch x := v.(type) {
 		case []float32:

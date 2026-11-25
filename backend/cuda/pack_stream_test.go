@@ -257,7 +257,7 @@ func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 		if k := wm.Kind(); k != "f32" && k != "bf16" {
 			continue
 		}
-		kinds[wm.Kind()] = true
+		kinds[wm.Kind().String()] = true
 		wm := wm
 		N, K := wm.Rows(), wm.Cols()
 		eager, err := packWeight(&wm)

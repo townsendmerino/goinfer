@@ -81,7 +81,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 	pack := func(pw interface {
 		Rows() int
 		Cols() int
-		Kind() string
+		Kind() linalg.Kind
 		Int4() ([]byte, []float32, int, bool)
 		Int8() ([]int8, []float32, bool, bool)
 		F32() ([]float32, bool)

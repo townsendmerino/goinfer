@@ -199,7 +199,7 @@ func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	// byte is written, not emitted as a bundle that leaves them out.
 	for _, m := range w.matmulWeights() {
 		if k := m.Kind(); k == "bf16" || k == "f16" {
-			return &SerializeError{"a .giw has no " + k + " matmul weight kind: serialize a load at int4, int8, int8int8 or f32"}
+			return &SerializeError{"a .giw has no " + k.String() + " matmul weight kind: serialize a load at int4, int8, int8int8 or f32"}
 		}
 	}
 	wr.arch = w.arch // gates the gemma4 model-level PLE + per-layer tail

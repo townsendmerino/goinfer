@@ -114,7 +114,7 @@ func moeInt4Tiny(t *testing.T) *Model {
 	kinds := map[string]int{}
 	for _, wm := range m.w.bodyMatmulWeights() {
 		if wm.Rows() > 0 {
-			kinds[wm.Kind()]++
+			kinds[wm.Kind().String()]++
 		}
 	}
 	if kinds["int4"] == 0 || kinds["f32"] == 0 || len(kinds) != 2 {
