@@ -1,12 +1,34 @@
 package serveapp
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"runtime/debug"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
+
+// blockDrafter is an attached pretrained block drafter as the shell holds it. Assign one only through drafterOf.
+type blockDrafter interface {
+	GenerateStream(ctx context.Context, prompt []int, maxTokens int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation, error)
+}
+
+var _ blockDrafter = (*decoder.BlockSpec)(nil)
+
+// drafterOf is b as a blockDrafter: nil for a nil b.
+func drafterOf(b *decoder.BlockSpec) blockDrafter {
+	if b == nil {
+		return nil
+	}
+	return b
+}
+
+// asBlockSpec is the *decoder.BlockSpec behind b, for the engine; nil for a nil or fake drafter.
+func asBlockSpec(b blockDrafter) *decoder.BlockSpec {
+	s, _ := b.(*decoder.BlockSpec)
+	return s
+}
 
 // minDrafterWidth is the narrowest -drafter-width serve takes. The acceptance guard (decoder/blockspec.go:breakEvenTokensPerRound)
 // stops drafting when a generation commits under 2.5 tokens a round, and a round of width w commits at most w, so under 4 it
@@ -26,12 +48,12 @@ const minDrafterWidth = 4
 // The one exception is a sampler the spec path does not support, a per-request property that falls back per request
 // by design.
 func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter, width int) error {
-	if lm.model == nil || !lm.mdl().BlockSpecCapable() {
+	if lm.model == nil || !lm.model.BlockSpecCapable() {
 		return fmt.Errorf("this model has no resident GPU decode path that can host a block " +
 			"drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model " +
 			"that actually resolved to it — check the startup banner for a residency decline")
 	}
-	spec, err := lm.mdl().NewBlockSpec(dw, dw.TargetLayerIDs())
+	spec, err := lm.model.NewBlockSpec(dw, dw.TargetLayerIDs())
 	if err != nil {
 		if decoder.ErrBlockSpecUnsupported(err) {
 			return fmt.Errorf("backend cannot host a block drafter: %w", err)

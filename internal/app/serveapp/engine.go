@@ -21,7 +21,7 @@ func (lm *loadedModel) genEngine() engine.Engine {
 	if lm.fakeEngine != nil {
 		return lm.fakeEngine
 	}
-	return engine.Local{Model: asDecoder(lm.model), Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Speculative: lm.spec, AdapterBound: lm.adapter != "",
+	return engine.Local{Model: lm.model, Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Speculative: lm.spec, AdapterBound: lm.adapter != "",
 		Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }}
 }
 

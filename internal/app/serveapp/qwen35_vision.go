@@ -203,7 +203,7 @@ func setupQwen35MMProj(path, modelType string, textHidden int, int8Tower bool) (
 // loadQwen35MMProj attaches a Qwen3.5+ tower from a GGUF mmproj to the single loaded model.
 func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, require bool) error {
 	for _, lm := range s.models {
-		c := lm.mdl().Config()
+		c := lm.model.Config()
 		tower, pp, err := setupQwen35MMProj(path, c.ModelType, c.HiddenDim, int8Tower)
 		if err != nil {
 			return err

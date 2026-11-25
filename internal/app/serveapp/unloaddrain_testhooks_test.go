@@ -4,6 +4,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,14 +12,14 @@ import (
 	"time"
 )
 
-// newDrainTestServer wires a server around a fake model handle, whose Close is a no-op, so the drain machinery runs
+// newDrainTestServer wires a server around a fake closer, whose Close is a no-op, so the drain machinery runs
 // end-to-end with no backend. allowAdmin is on.
-func newDrainTestServer(wait time.Duration) (*server, modelHandle) {
-	m := &fakeModel{}
-	lm := &loadedModel{name: "t", model: m}
+func newDrainTestServer(wait time.Duration) (*server, io.Closer) {
+	m := &fakeCloser{}
+	lm := &loadedModel{name: "t", closer: m}
 	s := &server{
 		models:   map[string]*loadedModel{"t": lm},
-		liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
+		liveness: map[io.Closer]*modelLiveness{m: {refs: 1}},
 		draining: map[string]struct{}{},
 		cfg:      config{allowAdmin: true, unloadDrainWait: wait},
 	}

@@ -1,6 +1,10 @@
 package serveapp
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,4 +74,90 @@ func TestDrafterWidth_validate(t *testing.T) {
 			t.Errorf("-drafter %q -drafter-width %d: err %v, want a -drafter-width refusal %v", c.drafter, c.width, err, !c.ok)
 		}
 	}
+}
+
+// TestBlockDrafter_assignedThroughDrafterOf holds blockDrafter's rule: a loadedModel's blockSpec is set only to
+// drafterOf(...), another blockSpec (x.blockSpec) or nil, so a nil *decoder.BlockSpec never becomes a non-nil
+// interface.
+func TestBlockDrafter_assignedThroughDrafterOf(t *testing.T) {
+	if drafterOf(nil) != nil {
+		t.Fatal("drafterOf(nil) is not nil")
+	}
+	if asBlockSpec(&fakeDrafter{}) != nil {
+		t.Fatal("asBlockSpec of a fake is not nil")
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	okFor := func(e ast.Expr) bool {
+		switch v := e.(type) {
+		case *ast.CallExpr:
+			id, isID := v.Fun.(*ast.Ident)
+			return isID && id.Name == "drafterOf"
+		case *ast.SelectorExpr:
+			return v.Sel.Name == "blockSpec"
+		case *ast.Ident:
+			return v.Name == "nil"
+		}
+		return false
+	}
+	fset := token.NewFileSet()
+	checked := 0
+	for _, p := range files {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, p, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.CompositeLit:
+				if id, isID := v.Type.(*ast.Ident); !isID || id.Name != "loadedModel" {
+					return true
+				}
+				for _, el := range v.Elts {
+					if kv, isKV := el.(*ast.KeyValueExpr); isKV {
+						if k, isID := kv.Key.(*ast.Ident); isID && k.Name == "blockSpec" {
+							checked++
+							if !okFor(kv.Value) {
+								t.Errorf("%s: a loadedModel's blockSpec is set to %s, not drafterOf(...)", fset.Position(kv.Pos()), exprString(kv.Value))
+							}
+						}
+					}
+				}
+			case *ast.AssignStmt:
+				for i, l := range v.Lhs {
+					sel, isSel := l.(*ast.SelectorExpr)
+					if !isSel || sel.Sel.Name != "blockSpec" || i >= len(v.Rhs) {
+						continue
+					}
+					if x, isID := sel.X.(*ast.Ident); isID && (x.Name == "lm" || x.Name == "base") {
+						checked++
+						if !okFor(v.Rhs[i]) {
+							t.Errorf("%s: .blockSpec is assigned %s, not drafterOf(...)", fset.Position(v.Pos()), exprString(v.Rhs[i]))
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+	if checked == 0 {
+		t.Fatal("found no loadedModel blockSpec assignment: the scan checks nothing")
+	}
+}
+
+func exprString(e ast.Expr) string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.SelectorExpr:
+		return exprString(v.X) + "." + v.Sel.Name
+	case *ast.CallExpr:
+		return exprString(v.Fun) + "(...)"
+	}
+	return "an expression"
 }
