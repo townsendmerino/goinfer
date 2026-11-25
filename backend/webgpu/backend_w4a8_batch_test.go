@@ -12,8 +12,8 @@ import (
 )
 
 // buildW4A8Op builds one random int4 projection (decoder's native 2-nibble/byte packed layout)
-// of shape [N,K] and its linalg.W4A8Op, sharing K with the caller's activation.
-func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.W4A8Op, []float32) {
+// of shape [N,K] and its linalg.BatchOp, sharing K with the caller's activation.
+func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.BatchOp, []float32) {
 	rowBytes := (K + 1) / 2
 	bQ4 := make([]byte, N*rowBytes)
 	for i := range bQ4 {
@@ -25,13 +25,13 @@ func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.W4A8Op, []float32) {
 		scales[i] = 0.01 + rng.Float32()*0.05
 	}
 	dst := make([]float32, N)
-	return linalg.W4A8Op{W4: bQ4, Scales: scales, Dst: dst, N: N}, dst
+	return linalg.BatchOp{W4: bQ4, Scales: scales, Dst: dst, N: N}, dst
 }
 
 // TestWebGPUBackend_MatmulW4A8Batch_matchesCPU is the batched int4 twin of
 // TestWebGPUBackend_MatmulW4A8_matchesCPU: three ops sharing one activation, the way the
 // qkv/gate-up call sites in decoder/attention.go and decoder/mlp.go build them. It compares the
-// one-submit GPU batch against linalg.MatmulBTW4A8Batch, the CPU reference matmulW4A8Batch falls
+// one-submit GPU batch against linalg.MatmulBTBatchInto, the CPU reference matmulW4A8Batch falls
 // back to when no backend implements QuantBatchBackend4.
 func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 	be, err := newWebGPUBackend("decoder")
@@ -50,13 +50,13 @@ func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 		a[i] = rng.Float32()*2 - 1
 	}
 
-	gpuOps := make([]linalg.W4A8Op, len(shapes))
-	cpuOps := make([]linalg.W4A8Op, len(shapes))
+	gpuOps := make([]linalg.BatchOp, len(shapes))
+	cpuOps := make([]linalg.BatchOp, len(shapes))
 	for i, n := range shapes {
 		op, _ := buildW4A8Op(rng, n, K)
 		gpuOps[i] = op
 		// Independent Dst backing arrays: the GPU and CPU runs must not alias each other's output.
-		cpuOps[i] = linalg.W4A8Op{W4: op.W4, Scales: op.Scales, Dst: make([]float32, n), N: n}
+		cpuOps[i] = linalg.BatchOp{W4: op.W4, Scales: op.Scales, Dst: make([]float32, n), N: n}
 	}
 
 	if !be.MatmulW4A8Batch(a, 1, K, group, gpuOps) {
@@ -64,7 +64,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 	}
 
 	var ws linalg.Workspace
-	linalg.MatmulBTW4A8Batch(&ws, a, 1, K, group, cpuOps)
+	linalg.MatmulBTBatchInto(&ws, a, 1, cpuOps)
 
 	for i := range shapes {
 		var dot, na, nb, maxAbs float64
@@ -99,7 +99,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_declinesPrefill(t *testing.T) {
 	rng := rand.New(rand.NewSource(13))
 	op, _ := buildW4A8Op(rng, N, K)
 	a := make([]float32, M*K)
-	if be.MatmulW4A8Batch(a, M, K, kernels.W4a8GroupSize, []linalg.W4A8Op{op}) {
+	if be.MatmulW4A8Batch(a, M, K, kernels.W4a8GroupSize, []linalg.BatchOp{op}) {
 		t.Error("MatmulW4A8Batch must decline for M>1 (no int4 prefill kernel on this backend)")
 	}
 }
@@ -133,8 +133,8 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 	cached := be.q4resident[&op.W4[0]]
 
 	dst2 := make([]float32, N)
-	op2 := linalg.W4A8Op{W4: op.W4, Scales: op.Scales, Dst: dst2, N: N}
-	if !be.MatmulW4A8Batch(a, 1, K, kernels.W4a8GroupSize, []linalg.W4A8Op{op2}) {
+	op2 := linalg.BatchOp{W4: op.W4, Scales: op.Scales, Dst: dst2, N: N}
+	if !be.MatmulW4A8Batch(a, 1, K, kernels.W4a8GroupSize, []linalg.BatchOp{op2}) {
 		t.Fatal("MatmulW4A8Batch declined — expected it to run on a real device")
 	}
 	if len(be.q4resident) != 1 {

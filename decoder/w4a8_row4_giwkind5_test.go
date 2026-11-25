@@ -190,13 +190,13 @@ func TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad(t *testing.
 
 // TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only pins the OTHER
 // named decline: a kind-5 tensor whose
-// shape this core's Int4Row4Usable rejects (rows not a multiple of 4 — the same
+// shape this core's PreferredInt4Layout rejects (rows not a multiple of 4 — the same
 // constraint repackRow4ForEmit enforces at WRITE time) must fail readWeightMat
 // with a named error, not a panic. Hand-built bytes, bypassing the normal
 // write-time eligibility gate on purpose — the only way to observe this branch on
 // a box where write-time and read-time eligibility are otherwise the same check.
 func TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only(t *testing.T) {
-	const rows, cols, group = 3, 32, 32 // rows%4 != 0 — Int4Row4Usable must reject this
+	const rows, cols, group = 3, 32, 32 // rows%4 != 0 — PreferredInt4Layout must reject this
 	wantQ4 := rows * ((cols + 1) / 2)
 	wantScales := rows * ((cols + group - 1) / group)
 

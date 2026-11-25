@@ -450,12 +450,13 @@ var suite = []kernel{
 				for _, K := range kG32 {
 					for _, M := range mLarge {
 						a := g.vec(M*K, 1)
-						var ops []linalg.W8A8Op
+						var ops []linalg.BatchOp
 						for _, N := range []int{8, 4, 12} {
 							q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
-							ops = append(ops, linalg.W8A8Op{BQ: q, Scales: sc, Dst: make([]float32, M*N), N: N})
+							wm := linalg.WrapInt8(q, sc, N, K, true)
+							ops = append(ops, linalg.BatchOp{W: &wm, Dst: make([]float32, M*N)})
 						}
-						linalg.MatmulBTW8A8Batch(workspace(thr, group), a, M, K, ops)
+						linalg.MatmulBTBatchInto(workspace(thr, group), a, M, ops)
 						s.tag("batch", group, thr, M, K)
 						for _, op := range ops {
 							s.f32(op.Dst)
@@ -585,17 +586,15 @@ var suite = []kernel{
 					for _, M := range mLarge {
 						a := g.vec(M*K, 1)
 						for _, repack := range []bool{false, true} {
-							var ops []linalg.W4A8Op
+							var ops []linalg.BatchOp
 							for _, N := range []int{8, 4, 12} {
 								wm := linalg.QuantizeInt4(g.mat(N, K, 0.25), N, K, 32)
 								if repack {
 									wm.RepackInt4Row4()
 								}
-								q4, q4s, _, _ := wm.Int4F16()
-								row4, row4s, _ := wm.Int4Row4F16()
-								ops = append(ops, linalg.W4A8Op{W4: q4, ScalesF16: q4s, Row4: row4, Row4ScalesF16: row4s, Dst: make([]float32, M*N), N: N})
+								ops = append(ops, linalg.BatchOp{W: &wm, Dst: make([]float32, M*N)})
 							}
-							linalg.MatmulBTW4A8Batch(workspace(thr, group), a, M, K, 32, ops)
+							linalg.MatmulBTBatchInto(workspace(thr, group), a, M, ops)
 							s.tag("batch", group, thr, M, K)
 							s.ok(repack)
 							for _, op := range ops {

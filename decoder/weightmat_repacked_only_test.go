@@ -51,7 +51,7 @@ func TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly(t *testing.T) {
 }
 
 // syntheticEmbedF32 builds a deterministic, non-trivial [rows,cols] f32 matrix — large enough
-// (rows=8, cols=64) to satisfy Int4Row4Usable's rows%4==0/cols%group==0 shape gate on a core that
+// (rows=8, cols=64) to satisfy PreferredInt4Layout's rows%4==0/cols%group==0 shape gate on a core that
 // supports it at all, small enough to keep the test fast.
 func syntheticEmbedF32(rows, cols int) []float32 {
 	f32 := make([]float32, rows*cols)
@@ -164,7 +164,7 @@ func TestQuantizeEmbedWM_repackedOnlyMatchesCanonical(t *testing.T) {
 	}
 }
 
-// TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical: a shape Int4Row4Usable rejects (rows
+// TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical: a shape PreferredInt4Layout rejects (rows
 // not a multiple of 4) must still produce a WORKING WeightMat via the existing
 // repackW4A8IfEligible policy even when needCanonical is false — no silent data loss, matching
 // what every other int4 tensor already gets from quantizeWM.
@@ -312,7 +312,7 @@ func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 	}
 	run := func(wms []linalg.WeightMat) []float32 {
 		dst := make([]float32, 3*rows)
-		ops := make([]linalg.W4A8Op, 3)
+		ops := make([]linalg.BatchOp, 3)
 		var group int
 		for i := range wms {
 			ops[i], group = wmW4A8Op(&wms[i], dst[i*rows:(i+1)*rows])

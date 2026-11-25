@@ -330,9 +330,9 @@ func applyNorm(p normParams, dst, src, w, b []float32, dim int) {
 func projQKVToken(be Backend, scr *decodeScratch, lw *LayerWeights, x, q, k, v []float32, ld *loraLayerDelta, p projParams) {
 	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 		// One batched dispatch: the activation is quantized once and the weights are read in place.
-		scr.qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
-		scr.qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
-		scr.qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
+		scr.qkvOps[0] = linalg.BatchOp{W: &lw.QProj, Dst: q}
+		scr.qkvOps[1] = linalg.BatchOp{W: &lw.KProj, Dst: k}
+		scr.qkvOps[2] = linalg.BatchOp{W: &lw.VProj, Dst: v}
 		matmulW8A8Batch(be, scr.ws, x, 1, lw.QProj.Cols(), scr.qkvOps[:], lw.QProj.ActQuantGroup())
 	} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {
 		var group int

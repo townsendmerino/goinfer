@@ -9,7 +9,7 @@ import "github.com/townsendmerino/aikit/linalg"
 //
 // It does not gate on the WRITING machine's DotProd support, unlike aikit's RepackInt4Row4, whose in-RAM repack serves
 // this process's own decode: a prequant tool may run on any arm64 box, and the bytes are read back on whatever machine
-// loads the .giw. The READ side (linalg.WrapInt4Row4OnlyF16) is where the DotProd gate belongs.
+// loads the .giw. The READ side (linalg.WrapInt4 (LayoutRow4)) is where the DotProd gate belongs.
 //
 // ok=false for a shape the repack rejects: group != 32, rows not a multiple of 4, or cols not a multiple of group. The
 // caller then writes kind 3.

@@ -257,7 +257,7 @@ func TestGIWTargetForBackend_cpuArm64NeedsDotProd(t *testing.T) {
 			want = GIWTargetCPUArm64
 		}
 		if got != want {
-			t.Errorf("GIWTargetForBackend(cpu) = %q on an arm64 core with Int4Row4Usable=%v, want %q", got, linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4, want)
+			t.Errorf("GIWTargetForBackend(cpu) = %q on an arm64 core with PreferredInt4Layout==row4 %v, want %q", got, linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4, want)
 		}
 		// And what it returns is something this core can load back: the round trip the bug broke.
 		src := alignFixtureWeights(t)

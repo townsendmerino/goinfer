@@ -200,7 +200,7 @@ func (b *webgpuBackend) residentW4A8For(bQ4 []byte, scales16 []uint16, scales32 
 // quantize once, dispatch all, sync once. The int4 twin of MatmulW8A8Batch. Returns false for M>1, a group other than
 // w4a8GroupSize, or any GPU error, and the caller then uses the CPU batch kernel.
 // History: docs/code-notes/gpu.md#webgpuBackend.MatmulW4A8Batch.
-func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool {
+func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.BatchOp) bool {
 	if M != 1 || len(ops) == 0 || group != kernels.W4a8GroupSize {
 		return false
 	}
@@ -208,10 +208,11 @@ func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []lina
 	defer b.mu.Unlock()
 	rms := make([]kernels.DecodeWeight, len(ops))
 	for i, op := range ops {
-		if len(op.W4) == 0 {
+		q4, s16, _, ok := op.W.Int4F16()
+		if !ok || len(q4) == 0 {
 			return false
 		}
-		qr, ok := b.residentW4A8For(op.W4, op.ScalesF16, op.Scales, op.N, K)
+		qr, ok := b.residentW4A8For(q4, s16, nil, op.W.Rows(), K)
 		if !ok {
 			return false
 		}
@@ -267,7 +268,7 @@ func (b *webgpuBackend) matmulLocked(a, bMat []float32, M, K, N int) ([]float32,
 // MatmulW8A8Batch runs the fused qkv / gate-up projections (shared activation,
 // M=1 decode) as one GPU submit — quantize once, dispatch all, sync once. Falls
 // back (returns false) for M>1 or any GPU error.
-func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8Op) bool {
+func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.BatchOp) bool {
 	if M < 1 || len(ops) == 0 {
 		return false
 	}
@@ -275,18 +276,19 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 	defer b.mu.Unlock()
 	rms := make([]*ResidentW8A8, len(ops))
 	for i, op := range ops {
-		if len(op.BQ) == 0 {
+		bq, scales, _, ok := op.W.Int8()
+		if !ok || len(bq) == 0 {
 			return false
 		}
-		qr := b.qresident[&op.BQ[0]]
+		qr := b.qresident[&bq[0]]
 		if qr == nil {
-			rm, err := b.ctx.UploadW8A8(op.BQ, op.Scales, op.N, K)
+			rm, err := b.ctx.UploadW8A8(bq, scales, op.W.Rows(), K)
 			if err != nil {
 				b.fallbacks++
 				return false
 			}
 			qr = &qResident{rm: rm}
-			b.qresident[&op.BQ[0]] = qr
+			b.qresident[&bq[0]] = qr
 		}
 		rms[i] = qr.rm
 	}

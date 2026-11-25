@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""LS6 step 1 (aikit's one int4 constructor with a layout): rewrite goinfer's calls of the fourteen names it replaces.
+"""LS6 (aikit's WeightMat door): rewrite goinfer's calls of the names steps 1 and 2 replace.
 
-Usage: python3 scripts/aikit_surface/int4_layout_fix.py [--check] ROOT...
+Usage: python3 scripts/aikit_surface/ls6_fix.py [--check] RULES... -- ROOT...
+       (today: scripts/aikit_surface/int4_layout.rules scripts/aikit_surface/batch.rules)
 
-  1. The calls that map one to one are `gofmt -r` rules (int4_layout.rules): `Int4Row4Usable` becomes a comparison of
-     `PreferredInt4Layout` with `LayoutRow4`, and the repacked-only constructors and in-place repacks take their layout.
+  1. The calls that map one to one are `gofmt -r` rules, one a line, applied in file order. Step 1
+     (int4_layout.rules): `Int4Row4Usable` becomes a comparison of `PreferredInt4Layout` with `LayoutRow4`, and the
+     repacked-only constructors and in-place repacks take their layout. Step 2 (batch.rules): the op types become
+     `BatchOp`, a W8A8 op literal built from one weight becomes `BatchOp{W: w, Dst: d}`, and both batch calls become
+     `MatmulBTBatchInto`.
   2. `WrapInt4F16` has no single-value replacement (`WrapInt4` also reports ok, always true for `LayoutCanonical`). The
      two statement forms it appears in are rewritten here: `x = linalg.WrapInt4F16(...)` (or `:=`) becomes
      `x, _ = linalg.WrapInt4(..., linalg.LayoutCanonical)`, and `return linalg.WrapInt4F16(...)` gets a local first.
@@ -19,21 +23,21 @@ import re
 import subprocess
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 SKIP_DIRS = {"testdata", "vendor", ".git", "node_modules"}
 REPLACED = [
     "WrapInt4F16", "WrapInt4Row4", "WrapInt4Row4F16", "WrapInt4Row4Only", "WrapInt4Row4OnlyF16",
     "WrapInt4SplitHalfOnly", "WrapInt4SplitHalfOnlyF16", "RepackInt4Row4InPlace", "RepackInt4Row4InPlaceF16",
     "RepackInt4SplitHalfInPlace", "RepackInt4SplitHalfInPlaceF16", "Int4Row4Usable", "Int4SplitHalfUsable",
+    "W8A8Op", "W4A8Op", "MatmulBTW8A8Batch", "MatmulBTW4A8Batch",
 ]
 # The old f32-scale WrapInt4(q4, q4s, rows, cols, group) had five arguments; the new one has six. A five-argument call
 # left anywhere is a site by hand.
 OLD_WRAPINT4 = re.compile(r"\blinalg\.WrapInt4\((?:[^()]|\([^()]*\))*\)")
 
 
-def rules():
+def rules(paths):
     out = []
-    for ln in open(os.path.join(HERE, "int4_layout.rules")):
+    for ln in (ln for p in paths for ln in open(p)):
         ln = ln.strip()
         if ln and not ln.startswith("#"):
             out.append(ln)
@@ -84,10 +88,12 @@ def gofmt_rule(path, rule, src):
 
 
 def main():
-    args = sys.argv[1:]
-    check = "--check" in args
-    roots = [a for a in args if a != "--check"] or ["."]
-    rs = rules()
+    args = [a for a in sys.argv[1:] if a != "--check"]
+    check = "--check" in sys.argv[1:]
+    if "--" not in args:
+        sys.exit("usage: ls6_fix.py [--check] RULES... -- ROOT...")
+    i = args.index("--")
+    rs, roots = rules(args[:i]), args[i + 1:] or ["."]
     changed, by_hand = [], []
     for path in go_files(roots):
         src = open(path).read()
@@ -95,7 +101,7 @@ def main():
             continue
         new = src
         for r in rs:
-            name = re.match(r"!?linalg\.(\w+)\(", r).group(1)
+            name = re.match(r"!?linalg\.(\w+)", r).group(1)
             if re.search(r"\blinalg\." + name + r"\b", code_only(new)):
                 new = gofmt_rule(path, r, new)
         new = statement_forms(new)
