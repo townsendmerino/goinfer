@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // Config is the decoder's shape, read from the checkpoint's config.json.
@@ -328,7 +329,7 @@ func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32
 			linalg.MatmulBT(qh, kh[h], sc, m, hd, n)
 			for i := range m {
 				row := sc[i*n : (i+1)*n]
-				linalg.SoftmaxRowContractInto(row, row)
+				elem.SoftmaxRowContractInto(row, row)
 			}
 			ctx := make([]float32, m*hd)
 			linalg.MatmulBT(sc, vt[h], ctx, m, n, hd)

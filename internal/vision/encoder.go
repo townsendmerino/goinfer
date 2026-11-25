@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // SigLIP / ViT vision encoder (the Gemma 3 vision tower) as a pure-Go forward —
@@ -655,7 +656,7 @@ func geluTanh(x []float32) {
 	// split is numerically inert. This is the heaviest transcendental pass in
 	// the kit — 476M elements per so400m image — and it ran on one goroutine.
 	parallelChunks(len(x), func(lo, hi int) {
-		linalg.GELUTanhContractInto(x[lo:hi], x[lo:hi])
+		elem.GELUTanhContractInto(x[lo:hi], x[lo:hi])
 	})
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // Config is the dispatch configuration a fingerprint holds for: two builds that agree on it run the same kernels.
@@ -730,11 +731,11 @@ var suite = []kernel{
 					}
 				}
 				dst := make([]float32, n)
-				linalg.SoftmaxRowContractInto(dst, src)
+				elem.SoftmaxRowContractInto(dst, src)
 				s.tag("sm", n, masked)
 				s.f32(dst)
 				// In place, as internal/whisper calls it.
-				linalg.SoftmaxRowContractInto(src, src)
+				elem.SoftmaxRowContractInto(src, src)
 				s.f32(src)
 			}
 		}
@@ -744,18 +745,18 @@ var suite = []kernel{
 			for _, scale := range []float32{1, 0.125} {
 				src := g.vec(n, 4)
 				dst := make([]float32, n)
-				linalg.SoftmaxRowScaledContractInto(dst, src, scale)
+				elem.SoftmaxRowScaledContractInto(dst, src, scale)
 				s.tag("sms", n)
 				s.f32(dst)
 				// In place, as internal/audio's Whisper encoder calls it.
-				linalg.SoftmaxRowScaledContractInto(src, src, scale)
+				elem.SoftmaxRowScaledContractInto(src, src, scale)
 				s.f32(src)
 			}
 		}
 	}},
-	{"linalg.SiLUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "silu", linalg.SiLUContractInto) }},
-	{"linalg.GELUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelu", linalg.GELUContractInto) }},
-	{"linalg.GELUTanhContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelutanh", linalg.GELUTanhContractInto) }},
+	{"linalg.SiLUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "silu", elem.SiLUContractInto) }},
+	{"linalg.GELUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelu", elem.GELUContractInto) }},
+	{"linalg.GELUTanhContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelutanh", elem.GELUTanhContractInto) }},
 	{"linalg.GatherVBlockMajor", func(s *sink, g *gen) {
 		for _, hd := range []int{16, 64} {
 			for _, nKeys := range []int{1, 5, 512, 513, 1100} {

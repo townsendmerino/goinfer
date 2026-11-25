@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // Qwen2.5-VL vision tower — aikit's second ViT family (after SigLIP / encoder.go),
@@ -614,7 +615,7 @@ func (e *QwenVisionEncoder) mlpInto(down, x []float32, b *qwenBlock, seq int, s 
 	n := len(gate)
 	parallelChunks(n, func(lo, hi int) {
 		g := gate[lo:hi]
-		linalg.SiLUContractInto(g, g)
+		elem.SiLUContractInto(g, g)
 		u := up[lo:hi]
 		k := len(g)
 		if k > 0 {
@@ -831,6 +832,6 @@ func rmsNormRows(out, x, w []float32, start, end, dim int) {
 // (distinct from SigLIP's gelu-tanh).
 func geluErf(x []float32) {
 	parallelChunks(len(x), func(lo, hi int) {
-		linalg.GELUContractInto(x[lo:hi], x[lo:hi])
+		elem.GELUContractInto(x[lo:hi], x[lo:hi])
 	})
 }
