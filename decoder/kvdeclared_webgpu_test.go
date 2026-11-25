@@ -191,7 +191,7 @@ func TestWebGPUKVBuffersOf_plantedShortRowGoesRed(t *testing.T) {
 			if len(oracle) == 0 {
 				continue
 			}
-			short := append([]program.Buf(nil), m.LayerBuffers(l)...)
+			short := slices.Clone(m.LayerBuffers(l))
 			for i := range short {
 				if short[i].Unit == program.PerPosition {
 					short[i].Elems--

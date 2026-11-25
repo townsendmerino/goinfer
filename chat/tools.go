@@ -356,17 +356,12 @@ func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 	}
 	var calls []ToolCall
 	for rest := out; ; {
-		i := strings.Index(rest, "<tool_call>")
-		if i < 0 {
+		_, after, ok := strings.Cut(rest, "<tool_call>")
+		if !ok {
 			break
 		}
-		rest = rest[i+len("<tool_call>"):]
-		j := strings.Index(rest, "</tool_call>")
-		body := rest
-		if j >= 0 {
-			body = rest[:j]
-			rest = rest[j+len("</tool_call>"):]
-		}
+		body, next, hasEnd := strings.Cut(after, "</tool_call>")
+		rest = next
 		if c, ok := callFromJSON(strings.TrimSpace(body), "arguments"); ok {
 			calls = append(calls, c)
 		} else if strings.Contains(body, "<function=") {
@@ -374,7 +369,7 @@ func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 				calls = append(calls, c)
 			}
 		}
-		if j < 0 {
+		if !hasEnd {
 			break
 		}
 	}
@@ -634,17 +629,15 @@ func parseFlintTools(out string, tools []Tool) ([]ToolCall, string) {
 	}
 	var calls []ToolCall
 	for rest := out; ; {
-		i := strings.Index(rest, "<tool_call>")
-		if i < 0 {
+		_, after, ok := strings.Cut(rest, "<tool_call>")
+		if !ok {
 			break
 		}
-		rest = rest[i+len("<tool_call>"):]
-		j := strings.Index(rest, "</tool_call>")
-		if j < 0 {
+		body, next, ok := strings.Cut(after, "</tool_call>")
+		if !ok {
 			break
 		}
-		body := rest[:j]
-		rest = rest[j+len("</tool_call>"):]
+		rest = next
 		if c, ok := parseFlintCall(body, tools); ok {
 			calls = append(calls, c)
 		}
@@ -672,20 +665,18 @@ func parseFlintCall(body string, tools []Tool) (ToolCall, bool) {
 		if rest == "" {
 			break
 		}
-		if !strings.HasPrefix(rest, "<arg_key>") {
+		afterKey, ok := strings.CutPrefix(rest, "<arg_key>")
+		if !ok {
 			return ToolCall{}, false
 		}
-		rest = rest[len("<arg_key>"):]
-		ke := strings.Index(rest, "</arg_key>")
-		if ke <= 0 {
+		key, afterClose, ok := strings.Cut(afterKey, "</arg_key>")
+		if !ok || key == "" {
 			return ToolCall{}, false
 		}
-		key := rest[:ke]
-		rest = strings.TrimSpace(rest[ke+len("</arg_key>"):])
-		if !strings.HasPrefix(rest, "<arg_value>") {
+		rest, ok = strings.CutPrefix(strings.TrimSpace(afterClose), "<arg_value>")
+		if !ok {
 			return ToolCall{}, false
 		}
-		rest = rest[len("<arg_value>"):]
 		ve := closeFlintArgValue(rest)
 		if ve < 0 {
 			return ToolCall{}, false

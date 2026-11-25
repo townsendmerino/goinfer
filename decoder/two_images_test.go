@@ -262,7 +262,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		red("features swapped", pos, lsw, csw)
 		if name == "adjacent" {
 			// (1) pairing: image B positioned as A's second temporal half.
-			paired := append([][3]int(nil), pos...)
+			paired := slices.Clone(pos)
 			sp := l.spansOf()
 			for k := 0; k < sp[1].Len; k++ {
 				a := pos[sp[0].Pos+k]
