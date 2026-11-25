@@ -1,0 +1,39 @@
+=== RUN   TestG46_gemma3GEMMFidelityLadder
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7185 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7185 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7185 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 7053 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (348 MiB of scratch; 1285 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_tiled_test.go:410: KV precision f32
+[g46] seed 4242 (1 of 2) per-token reference: 2943 of 12160 rows, 30 s, run 31 s
+[g46] seed 4242 (1 of 2) per-token reference: 5697 of 12160 rows, 60 s, run 61 s
+[g46] seed 4242 (1 of 2) per-token reference: 8329 of 12160 rows, 90 s, run 91 s
+[g46] seed 4242 (1 of 2) per-token reference: 10849 of 12160 rows, 120 s, run 121 s
+[g46] seed 4242 per-token reference: 12160 rows in 136.1 s
+[g46] control seed 4242 depth 4096 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 4242 depth  4096: batched 5.57 s, 476 tensor-core launches; logits differing 262144 of 262144 (worst 2.33); cosine 0.994949, argmax equal true: PASS
+[g46] seed 4242 depth  6144: batched 9.78 s, 714 tensor-core launches; logits differing 262144 of 262144 (worst 2.17); cosine 0.994929, argmax equal true: PASS
+[g46] seed 4242 depth  8192: batched 14.13 s, 952 tensor-core launches; logits differing 262144 of 262144 (worst 1.88); cosine 0.996313, argmax equal true: PASS
+[g46] seed 4242 depth 10240: batched 19.05 s, 1190 tensor-core launches; logits differing 262144 of 262144 (worst 2.31); cosine 0.996370, argmax equal true: PASS
+[g46] seed 4242 depth 12000: batched 23.68 s, 1428 tensor-core launches; logits differing 262144 of 262144 (worst 3.05); cosine 0.994378, argmax equal true: PASS
+[g46] control seed 4242 depth 12160 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 4242 depth 12160: batched 24.11 s, 1428 tensor-core launches; logits differing 262144 of 262144 (worst 2.01); cosine 0.994849, argmax equal true: PASS
+[g46] seed 9001 (2 of 2) per-token reference: 2926 of 12160 rows, 30 s, run 310 s
+[g46] seed 9001 (2 of 2) per-token reference: 5663 of 12160 rows, 60 s, run 340 s
+[g46] seed 9001 (2 of 2) per-token reference: 8287 of 12160 rows, 90 s, run 370 s
+[g46] seed 9001 (2 of 2) per-token reference: 10799 of 12160 rows, 120 s, run 400 s
+[g46] seed 9001 per-token reference: 12160 rows in 136.8 s
+[g46] control seed 9001 depth 4096 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 9001 depth  4096: batched 5.51 s, 476 tensor-core launches; logits differing 262144 of 262144 (worst 2.72); cosine 0.994757, argmax equal true: PASS
+[g46] seed 9001 depth  6144: batched 9.81 s, 714 tensor-core launches; logits differing 262144 of 262144 (worst 2.05); cosine 0.995513, argmax equal true: PASS
+[g46] seed 9001 depth  8192: batched 14.18 s, 952 tensor-core launches; logits differing 262144 of 262144 (worst 3.18); cosine 0.994981, argmax equal true: PASS
+[g46] seed 9001 depth 10240: batched 19.10 s, 1190 tensor-core launches; logits differing 262144 of 262144 (worst 2.8); cosine 0.994360, argmax equal true: PASS
+[g46] seed 9001 depth 12000: batched 23.68 s, 1428 tensor-core launches; logits differing 262143 of 262144 (worst 1.68); cosine 0.993700, argmax equal true: PASS
+[g46] control seed 9001 depth 12160 levers off: logits differing 0 of 262144 (worst 0), 0 row groups, 0 tensor-core launches
+[g46] seed 9001 depth 12160: batched 24.12 s, 1428 tensor-core launches; logits differing 262144 of 262144 (worst 2.63); cosine 0.990694, argmax equal true: AMBIGUOUS
+    kv3_tiled_test.go:498: G46 AMBIGUOUS: no cell under 0.99, at least one under 0.992; parked, read cell by cell; run 558 s
+--- PASS: TestG46_gemma3GEMMFidelityLadder (569.87s)
+PASS
+ledger: 5 device(s) released in this run
