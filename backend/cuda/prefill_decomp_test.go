@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func TestPrefillDecomp(t *testing.T) {
 		var s uint32 = uint32(n*2654435761 + 1)
 		for i := range embs {
 			s = s*1664525 + 1013904223
-			embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+			embs[i] = slices.Clone(mc.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 		}
 		return embs
 	}

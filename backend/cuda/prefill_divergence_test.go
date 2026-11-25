@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -97,7 +98,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 		if e != nil {
 			t.Fatalf("seq last: %v", e)
 		}
-		lgB = append([]float32(nil), lgB...)
+		lgB = slices.Clone(lgB)
 		streamB := decodeFrom(lgB, promptLen)
 
 		first := -1

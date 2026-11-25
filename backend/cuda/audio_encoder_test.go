@@ -5,6 +5,7 @@ package cuda
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -104,7 +105,7 @@ func TestAudioIm2col_bothStems(t *testing.T) {
 		want := make([]float32, n)
 		for r := 0; r < tc.Tout; r++ {
 			for ch := 0; ch < tc.C; ch++ {
-				for k := 0; k < 3; k++ {
+				for k := range 3 {
 					if ti := r*tc.stride - 1 + k; ti >= 0 && ti < tc.Tin {
 						want[r*tc.C*3+ch*3+k] = src[ch*tc.chStride+ti*tc.tStride]
 					}
@@ -139,7 +140,7 @@ func audioMinCosine(a, b []float32, d int) float64 {
 	worst := 1.0
 	for r := 0; r+d <= len(a); r += d {
 		var dot, na, nb float64
-		for j := 0; j < d; j++ {
+		for j := range d {
 			x, y := float64(a[r+j]), float64(b[r+j])
 			dot += x * y
 			na += x * x
@@ -244,7 +245,7 @@ func TestAudioEncoder_streamedIsBitIdenticalToResident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for pass := 0; pass < 2; pass++ { // the second pass proves the slot is refilled, not left holding the last layer
+	for pass := range 2 { // the second pass proves the slot is refilled, not left holding the last layer
 		got, err := str.Forward(feats)
 		if err != nil {
 			t.Fatal(err)
@@ -256,7 +257,7 @@ func TestAudioEncoder_streamedIsBitIdenticalToResident(t *testing.T) {
 		}
 	}
 	// a streamed tower with its first layer's weights left in the slot for every layer would NOT match: the check has teeth
-	str.host = append([]audio.WhisperLayerWeights(nil), str.host...)
+	str.host = slices.Clone(str.host)
 	str.host[1] = str.host[0]
 	bad, _ := str.Forward(feats)
 	same := true

@@ -9,12 +9,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,12 +54,10 @@ func (b *censusBackend) SelfTestEligible() (bool, string) { return false, "admis
 
 func (b *censusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
 	_, _, err := (&cudaBackend{}).buildResident(m, true)
-	var s planOnlySlack
 	ans := "plan returned no answer"
-	switch {
-	case errors.As(err, &s):
+	if s, ok := errors.AsType[planOnlySlack](err); ok {
 		ans = fmt.Sprintf("plan slack=%d", int64(s))
-	case err != nil:
+	} else if err != nil {
 		ans = "decline " + err.Error()
 	}
 	b.mu.Lock()
@@ -675,7 +673,7 @@ func expertVariantFixture(t *testing.T, src string, inter int) string {
 		}
 		names = append(names, k)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	out := map[string]tensor{}
 	var body []byte
 	seed := uint32(1)
@@ -1433,7 +1431,7 @@ func b26Load() float64 {
 
 func b26AvailMB() int64 {
 	b, _ := os.ReadFile("/proc/meminfo")
-	for _, ln := range strings.Split(string(b), "\n") {
+	for ln := range strings.SplitSeq(string(b), "\n") {
 		if f := strings.Fields(ln); len(f) >= 2 && f[0] == "MemAvailable:" {
 			kb, _ := strconv.ParseInt(f[1], 10, 64)
 			return kb >> 10
@@ -1817,9 +1815,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		p := *program.CUDAStep
 		p.Kinds = slices.Clone(program.CUDAStep.Kinds)
 		p.FFN = map[program.FFNForm][]program.ActKind{}
-		for f, acts := range program.CUDAStep.FFN {
-			p.FFN[f] = acts
-		}
+		maps.Copy(p.FFN, program.CUDAStep.FFN)
 		edit(&p)
 		return &p
 	}
@@ -2166,7 +2162,7 @@ func cudaMemGaps(t testing.TB) []memgate.Gap {
 		t.Fatal(err)
 	}
 	var gaps []memgate.Gap
-	for _, l := range strings.Split(string(b), "\n") {
+	for l := range strings.SplitSeq(string(b), "\n") {
 		if l == "" {
 			continue
 		}
@@ -2673,7 +2669,7 @@ func TestMemGate_cuda(t *testing.T) {
 	}
 	g.Finish(t)
 	if *cudaGateRowsUpdate {
-		sort.Strings(builtRows)
+		slices.Sort(builtRows)
 		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -41,7 +41,7 @@ func newKV8Case(nKeys, nKV, hd int, seed uint32) kv8Case {
 	for r := 0; r < nKeys*nKV; r++ {
 		c.ksc[r] = float32(math.Ldexp(1, -9+int(next()%5))) // 2^-9 .. 2^-5: distinct per (position, head)
 		c.vsc[r] = float32(math.Ldexp(1, -8+int(next()%5)))
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			i := r*hd + d
 			c.kq[i], c.vq[i] = int8(int(next()%255)-127), int8(int(next()%255)-127)
 			if r%37 == 0 && d == 3 {
@@ -447,7 +447,7 @@ func TestKV8_store_matchesTheCPUQuantizer(t *testing.T) {
 			t.Errorf("%+v: %d of %d (token, head, K/V) differ from the CPU quantizer", g, bad, checked)
 		}
 		// nothing is written outside the stored rows
-		for r := 0; r < phys; r++ {
+		for r := range phys {
 			stored := false
 			for m := 0; m < g.M; m++ {
 				p := g.startPos + m

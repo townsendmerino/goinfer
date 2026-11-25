@@ -103,8 +103,8 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	// warm-up and first-use pipeline compiles excluded.
 	rb := map[string]any{}
 	for _, lm := range s.modelList() {
-		if lm.model != nil && lm.mdl().ResidentConcurrency() > 1 {
-			rb[lm.name] = lm.mdl().ResidentBatchStats()
+		if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
+			rb[lm.name] = lm.model.ResidentBatchStats()
 		}
 	}
 	if len(rb) > 0 {
@@ -114,7 +114,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	kv := map[string]any{}
 	for _, lm := range s.modelList() {
 		if lm.model != nil {
-			if st, ok := lm.mdl().KVSnapshotStats(); ok {
+			if st, ok := lm.model.KVSnapshotStats(); ok {
 				kv[lm.name] = st
 			}
 		}
@@ -198,13 +198,14 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 		//
 		// Safe to Close unconditionally: loadDecoder always builds a fresh decoder.Load, so this entry shares its
 		// weights with no other registry entry, and retainLocked has not run for it.
-		model := lm.mdl()
-		model.Close()
+		if lm.model != nil {
+			_ = lm.model.Close()
+		}
 		lm.closeEntryNatives()
 		return false
 	}
 	s.models[lm.name] = lm
-	s.retainLocked(lm.model) // one more registry entry backed by this *decoder.Model (liveness refs)
+	s.retainLocked(lm.livenessKey()) // one more registry entry backed by this *decoder.Model (liveness refs)
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
 		// The model is now published, so a request can already acquire it. lm.sessMu guards the sessionLRU
@@ -259,8 +260,8 @@ func (s *server) unloadByName(name string, wait time.Duration) (status int, body
 		s.regMu.Unlock()
 		return 0, nil, false
 	}
-	delete(s.models, name)                // unpublish: no new request can resolve it
-	ml, last := s.releaseLocked(lm.model) // decrement refs + last-owner decision (delete-before-decide)
+	delete(s.models, name)                        // unpublish: no new request can resolve it
+	ml, last := s.releaseLocked(lm.livenessKey()) // decrement refs + last-owner decision (delete-before-decide)
 	s.regMu.Unlock()
 
 	// Detached drain-and-close: waits out in-flight holders, checkpoints KV, frees native memory.

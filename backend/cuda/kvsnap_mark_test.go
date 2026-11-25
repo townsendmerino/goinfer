@@ -23,7 +23,7 @@ const kv7MarkSlack, kv7MarkStep = 63, 8
 func (g *kv2Rig) embeds(ids []int) [][]float32 {
 	e := make([][]float32, len(ids))
 	for i, id := range ids {
-		e[i] = append([]float32(nil), g.m.EmbedResidentForTest(id)...)
+		e[i] = slices.Clone(g.m.EmbedResidentForTest(id))
 	}
 	return e
 }

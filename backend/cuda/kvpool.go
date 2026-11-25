@@ -5,6 +5,7 @@ package cuda
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -51,8 +52,8 @@ func newKVPool(blocks int) kvPool {
 	p := kvPool{blocks: blocks, free: make([]int32, 0, max(0, blocks-1)), refs: make([]int32, max(0, blocks))}
 	if kvPoolOrderForTest != nil && blocks > 1 {
 		order := kvPoolOrderForTest(blocks)
-		for i := len(order) - 1; i >= 0; i-- {
-			p.free = append(p.free, order[i])
+		for _, o := range slices.Backward(order) {
+			p.free = append(p.free, o)
 		}
 		return p
 	}

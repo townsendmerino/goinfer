@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -76,7 +77,7 @@ func kv4SharedPreamble(t *testing.T, kv string) {
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	tok := func(i, salt int) []float32 {
-		return append([]float32(nil), m.EmbedResidentForTest((i*31+salt*7+3)%vocab)...)
+		return slices.Clone(m.EmbedResidentForTest((i*31 + salt*7 + 3) % vocab))
 	}
 	prompt := func(s int) [][]float32 {
 		e := make([][]float32, pre+tail)
@@ -109,7 +110,7 @@ func kv4SharedPreamble(t *testing.T, kv string) {
 		if err != nil {
 			t.Fatalf("slot %d prefill from %d: %v", s, from, err)
 		}
-		got[s] = append([]float32(nil), lg...)
+		got[s] = slices.Clone(lg)
 	}
 	inUse := 0
 	if err := r.do(func() error { inUse = r.kvPools[kvGroupFull].inUse(); return nil }); err != nil {
@@ -138,7 +139,7 @@ func kv4SharedPreamble(t *testing.T, kv string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want2 := append([]float32(nil), next2...)
+	want2 := slices.Clone(next2)
 	bind(1)
 	for i := range 40 { // positions [pre-32, pre+8): the last shared block and past it
 		if _, err := r.Forward(tok(i, 11), pre-kvBlock/2+i); err != nil {
@@ -159,7 +160,7 @@ func kv4SharedPreamble(t *testing.T, kv string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got1 := append([]float32(nil), next1...)
+	got1 := slices.Clone(next1)
 	if _, err := rc.PrefillLast(context.Background(), prompt(1), 0); err != nil {
 		t.Fatal(err)
 	}

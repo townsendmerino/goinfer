@@ -6,7 +6,7 @@ import (
 	"context"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -285,7 +285,7 @@ func runDeltaNetChain(t *testing.T, g chainGeom) chainResult {
 			}
 		}
 	}
-	sort.Float64s(coreMS)
+	slices.Sort(coreMS)
 	t.Logf("DeltaNet mixer chain vs CPU on CUDA, %d steps at REAL geometry (nk=%d nv=%d hk=%d hv=%d, beta scale %g, norm eps %g):",
 		steps, nk, nv, hk, hv, g.betaScale, g.gnormEps)
 	return chainResult{stages: worst, coreMS: coreMS[len(coreMS)/2]}

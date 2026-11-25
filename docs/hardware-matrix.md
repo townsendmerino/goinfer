@@ -11,8 +11,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 
 | Family | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
-| Command-R | ✅ | CPU | ✅ resident | ✅ resident |
-| Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
+| Command-R | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Command-R7B | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Flint | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -86,8 +86,7 @@ features). Two load-time notes the taxonomy does not encode:
   (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B
   at int4, worst per-position cosine -0.075 / -0.041 against the CPU). Every resident backend binds pairwise twins
   (`backend/cuda/rope_pairwise.cu`, Metal's, `backend/webgpu/internal/kernels/pairwise.go`), each gated against the
-  CPU with a NeoX control that must read far below (on peaked tiny fixtures or real checkpoints). Under WebGPU,
-  Command-R and Command-R7B still lack the features the table names.
+  CPU with a NeoX control that must read far below (on peaked tiny fixtures or real checkpoints).
 
 ## Why a cell reads CPU
 
@@ -100,9 +99,7 @@ admission runs.
 
 | Family | CPU on | Why |
 |---|---|---|
-| Command-R | WebGPU | missing: `layer-norm`, `parallel-block` |
-| Command-R7B | WebGPU | missing: `layer-norm`, `parallel-block` |
-| GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
+| GPT-2 | WebGPU | missing: `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block |
 | Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
 | Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |

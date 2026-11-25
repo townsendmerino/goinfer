@@ -3,11 +3,12 @@
 package cuda
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -223,7 +224,7 @@ func klSplit(pLogits, qLogits []float32, k int) (head, tail float64) {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.Slice(idx, func(a, b int) bool { return p[idx[a]] > p[idx[b]] })
+	slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(p[b], p[a]) })
 	inHead := make([]bool, len(p))
 	for _, i := range idx[:min(k, len(idx))] {
 		inHead[i] = true

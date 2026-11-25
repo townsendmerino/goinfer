@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -80,10 +81,10 @@ func kv4Prefill(m *decoder.Model, r *cudaResident, s int, ids []int, from int) (
 	}
 	e := make([][]float32, len(ids))
 	for i, id := range ids {
-		e[i] = append([]float32(nil), m.EmbedResidentForTest(id)...)
+		e[i] = slices.Clone(m.EmbedResidentForTest(id))
 	}
 	lg, err := r.PrefillLast(context.Background(), e, from)
-	return append([]float32(nil), lg...), err
+	return slices.Clone(lg), err
 }
 
 // TestKV4_pressureFollowsD5 is G3d: four slots; three idle ones hold conversations of about their share; the fourth, running, grows past
@@ -329,7 +330,7 @@ func TestKV7_generationReportsThePromotion(t *testing.T) {
 		gen(m, a)
 		// A long prompt of another conversation, past its share by more than the free blocks: it must take the idle slot's.
 		gen(m, kv4Ids(2*share-512, 2, vocab))
-		next := append(append([]int(nil), a...), kv4Ids(256, 3, vocab)...)
+		next := slices.Concat(a, kv4Ids(256, 3, vocab))
 		g := gen(m, next)
 		t.Logf("%s: reused %d of %d, promoted %d blocks (%d rows)", c.name, g.PrefillReused, len(next), g.KVPromotedBlocks, g.KVPromotedRows)
 		if c.budget > 0 && (g.PrefillReused <= 0 || g.KVPromotedBlocks != (len(a)+kvBlock-1)/kvBlock || g.KVPromotedRows != g.PrefillReused) {
@@ -410,8 +411,7 @@ func TestKV7_copyFailureKeepsDemotedDst(t *testing.T) {
 		t.Fatal("the copy did not fail: the test reads nothing")
 	}
 	t.Logf("the copy failed: %v", err)
-	var d *decoder.KVCopyDecline
-	if !errors.As(err, &d) {
+	if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 		t.Errorf("a copy that leaves dst as it was returned %v, not a decline", err)
 	}
 	st, _ = m.KVSnapshotStats()
@@ -579,7 +579,7 @@ func TestKV7_copyFromDemoted(t *testing.T) {
 		t.Fatalf("slot 0 not demoted: released %v", r.kvReleased(0))
 	}
 	const lead = 1024 // below half of a, so the request does not take a's slot in place
-	c := append(append([]int(nil), a[:lead]...), kv4Ids(4096, 3, vocab)...)
+	c := slices.Concat(a[:lead], kv4Ids(4096, 3, vocab))
 	g := gen(m, c)
 	st, _ := m.KVSnapshotStats()
 	t.Logf("reused %d, shared %d, promoted %d blocks (%d rows); declined %q; stats promoted %d, %d blocks", g.PrefillReused, g.PrefillShared, g.KVPromotedBlocks, g.KVPromotedRows, g.KVCopyDeclined, st.Promoted, st.PromotedBlocks)
@@ -654,16 +654,16 @@ func TestKV7_copyOntoDemoted(t *testing.T) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	share := r.kvShareBlocks * kvBlock
 	p, q := kv4Ids(2048, 1, vocab), kv4Ids(4096, 2, vocab)
-	lead := append(append([]int(nil), p...), q...)
-	long := append(append([]int(nil), lead...), kv4Ids(8000, 4, vocab)...)
-	gen(m, long)                                                                     // slot 0: holds the longer run, and gives up too much to be taken in place
-	gen(m, append(append([]int(nil), p...), kv4Ids(share-1024-len(p), 3, vocab)...)) // slot 1: shares p
-	gen(m, append(append([]int(nil), long...), kv4Ids(64, 7, vocab)...))             // slot 0 again, so slot 1 is the least recently used
-	gen(m, kv4Ids(share+5616, 5, vocab))                                             // slot 2: releases slot 1 and no more
+	lead := slices.Concat(p, q)
+	long := slices.Concat(lead, kv4Ids(8000, 4, vocab))
+	gen(m, long)                                                  // slot 0: holds the longer run, and gives up too much to be taken in place
+	gen(m, slices.Concat(p, kv4Ids(share-1024-len(p), 3, vocab))) // slot 1: shares p
+	gen(m, slices.Concat(long, kv4Ids(64, 7, vocab)))             // slot 0 again, so slot 1 is the least recently used
+	gen(m, kv4Ids(share+5616, 5, vocab))                          // slot 2: releases slot 1 and no more
 	if r.kvDemoted[1] == nil || r.kvReleased(0) {
 		t.Fatalf("slot 1's copy %v, slot 0 released %v; want only slot 1 released", r.kvDemoted[1] != nil, r.kvReleased(0))
 	}
-	g := gen(m, append(append([]int(nil), lead...), kv4Ids(1024, 6, vocab)...))
+	g := gen(m, slices.Concat(lead, kv4Ids(1024, 6, vocab)))
 	st, _ := m.KVSnapshotStats()
 	t.Logf("slot %d: reused %d, shared %d, promoted %d blocks (%d rows); declined %q; %d host bytes charged", r.kvSlot, g.PrefillReused, g.PrefillShared, g.KVPromotedBlocks, g.KVPromotedRows, g.KVCopyDeclined, st.Used)
 	if r.kvSlot != 1 {
@@ -772,19 +772,19 @@ func TestKV7_copyOntoDemotedWithItsOwnPrefix(t *testing.T) {
 	m, r := kv7Load(t, 3, 1<<30)
 	_, _, _, _, _, _, vocab := m.Dims()
 	p, q := kv4Ids(2048, 1, vocab), kv4Ids(4096, 2, vocab)
-	lead := append(append([]int(nil), p...), q...)
-	long := append(append([]int(nil), lead...), kv4Ids(8000, 4, vocab)...)
-	gen(m, long)                                                         // slot 0: holds the longer run, and gives up too much to be taken in place
-	gen(m, append(append([]int(nil), p...), kv4Ids(1024, 3, vocab)...))  // slot 1: 3,072 tokens sharing 2,048
-	gen(m, append(append([]int(nil), long...), kv4Ids(64, 7, vocab)...)) // slot 0 again, so slot 1 is the least recently used
-	gen(m, kv4Ids(34500, 5, vocab))                                      // slot 2: releases slot 1 and no more
+	lead := slices.Concat(p, q)
+	long := slices.Concat(lead, kv4Ids(8000, 4, vocab))
+	gen(m, long)                                      // slot 0: holds the longer run, and gives up too much to be taken in place
+	gen(m, slices.Concat(p, kv4Ids(1024, 3, vocab)))  // slot 1: 3,072 tokens sharing 2,048
+	gen(m, slices.Concat(long, kv4Ids(64, 7, vocab))) // slot 0 again, so slot 1 is the least recently used
+	gen(m, kv4Ids(34500, 5, vocab))                   // slot 2: releases slot 1 and no more
 	if r.kvDemoted[1] == nil || r.kvReleased(0) {
 		t.Fatalf("slot 1's copy %v, slot 0 released %v; want only slot 1 released", r.kvDemoted[1] != nil, r.kvReleased(0))
 	}
 	if got := r.ReusableKVSlot(1, len(p)); got != len(p) {
 		t.Fatalf("slot 1 answers %d for its %d shared rows: the test reads nothing", got, len(p))
 	}
-	g := gen(m, append(append([]int(nil), lead...), kv4Ids(1024, 6, vocab)...))
+	g := gen(m, slices.Concat(lead, kv4Ids(1024, 6, vocab)))
 	t.Logf("slot %d: reused %d, shared %d, promoted %d blocks (%d rows); declined %q", r.kvSlot, g.PrefillReused, g.PrefillShared, g.KVPromotedBlocks, g.KVPromotedRows, g.KVCopyDeclined)
 	if r.kvSlot != 1 {
 		t.Fatalf("the request bound slot %d: the test reads nothing", r.kvSlot)
@@ -1107,7 +1107,7 @@ func TestKV7_validRowsKeepOrdinaryReuse(t *testing.T) {
 			if err := g.Err(); err != nil {
 				t.Fatal(err)
 			}
-			next := append(append(append([]int(nil), prompt...), turn...), kv4Ids(512, 2, vocab)...)
+			next := append(slices.Concat(prompt, turn), kv4Ids(512, 2, vocab)...)
 			out, g = m.Generate(context.Background(), next, 1, decoder.SamplingParams{})
 			for range out {
 			}
@@ -1139,13 +1139,13 @@ func TestKV7_copyPoolFullFallsBackToTheSlotsOwnRows(t *testing.T) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	share := r.kvShareBlocks * kvBlock
 	p := kv4Ids(2048, 1, vocab)
-	lead := append(append([]int(nil), p...), kv4Ids(share+share/8-len(p), 2, vocab)...) // past dst's share
-	long := append(append([]int(nil), lead...), kv4Ids(share+share/4, 4, vocab)...)     // gives up too much to be taken in place
-	gen(m, long)                                                                        // slot 0, the source
-	gen(m, append(append([]int(nil), p...), kv4Ids(1024, 3, vocab)...))                 // slot 1, 3,072 tokens sharing p
-	gen(m, append(append([]int(nil), long...), kv4Ids(64, 7, vocab)...))                // slot 0 again, so slot 1 is the least recently used
-	gen(m, kv4Ids(256, 8, vocab))                                                       // slot 2
-	gen(m, kv4Ids(256, 9, vocab))                                                       // slot 3, and bound: the running borrower below
+	lead := slices.Concat(p, kv4Ids(share+share/8-len(p), 2, vocab)) // past dst's share
+	long := slices.Concat(lead, kv4Ids(share+share/4, 4, vocab))     // gives up too much to be taken in place
+	gen(m, long)                                                     // slot 0, the source
+	gen(m, slices.Concat(p, kv4Ids(1024, 3, vocab)))                 // slot 1, 3,072 tokens sharing p
+	gen(m, slices.Concat(long, kv4Ids(64, 7, vocab)))                // slot 0 again, so slot 1 is the least recently used
+	gen(m, kv4Ids(256, 8, vocab))                                    // slot 2
+	gen(m, kv4Ids(256, 9, vocab))                                    // slot 3, and bound: the running borrower below
 	r.SetKVSlotBusy(2, true)
 	r.SetKVSlotBusy(3, true)
 	t.Cleanup(func() { r.SetKVSlotBusy(2, false); r.SetKVSlotBusy(3, false) })
@@ -1167,7 +1167,7 @@ func TestKV7_copyPoolFullFallsBackToTheSlotsOwnRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	kv7FillPool(t, r, 3, r.kvHeld(3)*kvBlock)
-	next := append(append([]int(nil), lead...), kv4Ids(1024, 6, vocab)...)
+	next := slices.Concat(lead, kv4Ids(1024, 6, vocab))
 	gen(m, next)
 	st, _ := m.KVSnapshotStats()
 	t.Logf("slot %d: promoted %d times, %d blocks; declined %v; the slot's copy kept: %v", r.kvSlot, st.Promoted, st.PromotedBlocks, st.Declined, r.kvDemoted[1] != nil)
@@ -1194,12 +1194,12 @@ func TestKV7_copyFromDemotedKeepsWhatDstHolds(t *testing.T) {
 	m, r := kv7Load(t, 3, 1<<30)
 	_, _, _, _, _, _, vocab := m.Dims()
 	p, q := kv4Ids(2048, 1, vocab), kv4Ids(4096, 2, vocab)
-	lead := append(append([]int(nil), p...), q...)
-	long := append(append([]int(nil), lead...), kv4Ids(8000, 4, vocab)...)
-	gen(m, long)                                                         // slot 0, the source
-	gen(m, append(append([]int(nil), p...), kv4Ids(1024, 3, vocab)...))  // slot 1, 3,072 tokens sharing p
-	gen(m, append(append([]int(nil), long...), kv4Ids(64, 7, vocab)...)) // slot 0 again, so slot 1 is the least recently used
-	gen(m, kv4Ids(256, 8, vocab))                                        // slot 2, and bound
+	lead := slices.Concat(p, q)
+	long := slices.Concat(lead, kv4Ids(8000, 4, vocab))
+	gen(m, long)                                      // slot 0, the source
+	gen(m, slices.Concat(p, kv4Ids(1024, 3, vocab)))  // slot 1, 3,072 tokens sharing p
+	gen(m, slices.Concat(long, kv4Ids(64, 7, vocab))) // slot 0 again, so slot 1 is the least recently used
+	gen(m, kv4Ids(256, 8, vocab))                     // slot 2, and bound
 	r.SetKVSlotBusy(1, true)
 	if err := r.do(func() error {
 		if !r.kvEvictIdle(2) {
@@ -1213,7 +1213,7 @@ func TestKV7_copyFromDemotedKeepsWhatDstHolds(t *testing.T) {
 	if r.kvDemoted[0] == nil || r.kvReleased(1) {
 		t.Fatalf("slot 0's copy %v, slot 1 released %v; want the source released and dst live", r.kvDemoted[0] != nil, r.kvReleased(1))
 	}
-	g := gen(m, append(append([]int(nil), lead...), kv4Ids(1024, 6, vocab)...))
+	g := gen(m, slices.Concat(lead, kv4Ids(1024, 6, vocab)))
 	t.Logf("slot %d: reused %d, shared %d, promoted %d blocks; declined %q", r.kvSlot, g.PrefillReused, g.PrefillShared, g.KVPromotedBlocks, g.KVCopyDeclined)
 	if r.kvSlot != 1 {
 		t.Fatalf("the request bound slot %d: the test reads nothing", r.kvSlot)
@@ -1317,8 +1317,9 @@ func TestKV7_declineLeavesALiveDstAlone(t *testing.T) {
 		t.Fatalf("dst answers %d for its %d rows before the copy", got, own)
 	}
 	r.kvBases[0] = own // the source's window has moved past anything the copy could continue from
-	var d *decoder.KVCopyDecline
-	if err := r.CopyKV(0, 1, 0, own/kvBlock*kvBlock); !errors.As(err, &d) {
+	if err := r.CopyKV(0, 1, 0, own/kvBlock*kvBlock); err == nil {
+		t.Fatalf("the copy succeeded, want a decline")
+	} else if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 		t.Fatalf("the copy: %v, want a decline", err)
 	}
 	if got := r.ReusableKVSlot(1, own); got != own {
@@ -1577,11 +1578,12 @@ func TestKV7_rangeChecks(t *testing.T) {
 	if blocks, _, err := r.CopyDemotedKV(1, 3, 4*kvBlock, conv); err != nil || blocks != (conv-kvBlock)/kvBlock {
 		t.Errorf("a start past what dst holds: %d blocks, %v; want %d", blocks, err, (conv-kvBlock)/kvBlock)
 	}
-	var d *decoder.KVCopyDecline
 	if err := r.do(func() error { r.kvValid[2] = kvBlock; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.CopyKV(2, 3, 0, 2*kvBlock); !errors.As(err, &d) {
+	if err := r.CopyKV(2, 3, 0, 2*kvBlock); err == nil {
+		t.Errorf("a copy past what the source wrote succeeded, want a decline")
+	} else if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 		t.Errorf("a copy past what the source wrote: %v, want a decline", err)
 	}
 }
@@ -2228,7 +2230,7 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 	if err := r.UseKVSlot(0); err != nil { // bind the idle, least recently written slot without writing it
 		t.Fatal(err)
 	}
-	emb := func(i int) []float32 { return append([]float32(nil), m.EmbedResidentForTest(3+i%(vocab-3))...) }
+	emb := func(i int) []float32 { return slices.Clone(m.EmbedResidentForTest(3 + i%(vocab-3))) }
 	if _, err := r.StepBatch([]decoder.ResidentBatchSeq{{Slot: 1, Pos: run * kvBlock, Emb: emb(1)}, {Slot: 2, Pos: run * kvBlock, Emb: emb(2)}}); err != nil {
 		t.Fatalf("the batched step: %v", err)
 	}

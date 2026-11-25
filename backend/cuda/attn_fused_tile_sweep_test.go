@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -97,8 +96,8 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 						}
 						a, b = append(a, x), append(b, y)
 					}
-					sort.Float64s(a)
-					sort.Float64s(b)
+					slices.Sort(a)
+					slices.Sort(b)
 					t64us, ratio = a[reps/2], b[reps/2]/a[reps/2]
 					return nil
 				})

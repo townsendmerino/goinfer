@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -112,7 +113,7 @@ func (s *spanRig) grade(t *testing.T) []spanGrade {
 		if err != nil {
 			t.Fatalf("%s: PrefillSpansLast: %v", lay.name, err)
 		}
-		gpu = append([]float32(nil), gpu...)
+		gpu = slices.Clone(gpu)
 		cpu, err := s.mc4.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, ids, feats, lay.spans, s.mc4.NewCache(len(ids)+1))
 		if err != nil {
 			t.Fatalf("%s: cpu reference: %v", lay.name, err)
@@ -157,7 +158,7 @@ func TestGemma4BidirSpanPrefill_matchesCPU(t *testing.T) {
 		if txt, err := s.r.PrefillLast(ctx, er, 0); err != nil {
 			t.Fatal(err)
 		} else {
-			txt = append([]float32(nil), txt...)
+			txt = slices.Clone(txt)
 			cpu, err := s.mc4.PrefillLogitsForTest(ctx, ids0, s.mc4.NewCache(len(ids0)+1))
 			if err != nil {
 				t.Fatal(err)
@@ -180,7 +181,7 @@ func TestGemma4BidirSpanPrefill_matchesCPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			one = append([]float32(nil), one...)
+			one = slices.Clone(one)
 			restore := decoder.SetKnobForTest(s.mg, "GOINFER_PREFILL_CHUNK", "4")
 			cut, err := s.r.PrefillSpansLast(ctx, rows, 0, spanBlocks(lay.spans))
 			restore()

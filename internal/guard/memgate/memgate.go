@@ -386,11 +386,11 @@ func globMatch(pattern, s string) bool {
 	}
 	s = s[len(parts[0]):]
 	for _, p := range parts[1 : len(parts)-1] {
-		i := strings.Index(s, p)
-		if i < 0 {
+		var ok bool
+		_, s, ok = strings.Cut(s, p)
+		if !ok {
 			return false
 		}
-		s = s[i+len(p):]
 	}
 	return strings.HasSuffix(s, parts[len(parts)-1])
 }

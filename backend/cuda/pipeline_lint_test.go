@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -51,7 +51,7 @@ func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 	for f := range fields {
 		names = append(names, f)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	all := strings.Join(valuesOf(src), "\n")
 	var dead, unbound []string
@@ -123,7 +123,7 @@ func valuesOf(m map[string]string) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
 		out = append(out, m[k])
 	}

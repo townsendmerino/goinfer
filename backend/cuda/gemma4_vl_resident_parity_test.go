@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -110,17 +111,17 @@ func TestGemma4VLResident_bidirParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cuda decode step %d: %v", i, err)
 		}
-		cuda[i] = append([]float32(nil), l...)
+		cuda[i] = slices.Clone(l)
 		l, err = mc4.ForwardForTest(tok, c4)
 		if err != nil {
 			t.Fatalf("cpu int4 decode step %d: %v", i, err)
 		}
-		cpu4[i] = append([]float32(nil), l...)
+		cpu4[i] = slices.Clone(l)
 		l, err = mcF.ForwardForTest(tok, cF)
 		if err != nil {
 			t.Fatalf("cpu f32 decode step %d: %v", i, err)
 		}
-		cpuF[i] = append([]float32(nil), l...)
+		cpuF[i] = slices.Clone(l)
 	}
 
 	byteIdentityCensus(t, "CUDA-resident vs CPU-int4 (both W4A8), bidirectional-block prefill -> decode", cuda, cpu4)

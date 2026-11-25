@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -112,7 +113,7 @@ func qwen35ResidentParityCUDA(t *testing.T, ckpt, quant string) {
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
 		if len(firstRun) < 16 {
-			firstRun = append(firstRun, append([]float32(nil), lr...))
+			firstRun = append(firstRun, slices.Clone(lr))
 		}
 		if argmaxF32(lc) == argmaxF32(lr) {
 			agree++
@@ -209,7 +210,7 @@ func olmoCPULogits(t *testing.T, ckpt, quant string) ([][]float32, int) {
 		if err != nil {
 			t.Fatalf("cpu forward[%d]: %v", i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 	}
 	return out, vocab
 }
@@ -236,7 +237,7 @@ func olmoCUDARun(t *testing.T, ckpt, quant string, cpu [][]float32, vocab, plant
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
 		if len(opening) < 16 {
-			opening = append(opening, append([]float32(nil), lr...))
+			opening = append(opening, slices.Clone(lr))
 		}
 		if argmaxF32(cpu[i]) == argmaxF32(lr) {
 			p.agree++

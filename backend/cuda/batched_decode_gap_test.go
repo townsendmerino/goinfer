@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -62,7 +63,7 @@ func TestBatchedVsDecodeGap(t *testing.T) {
 		if e != nil {
 			t.Fatalf("Forward: %v", e)
 		}
-		ff := append([]float32(nil), f...)
+		ff := slices.Clone(f)
 		if startPos > 0 {
 			se := make([][]float32, startPos)
 			for i := range se {

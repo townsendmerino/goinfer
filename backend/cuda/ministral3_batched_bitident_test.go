@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -46,7 +47,7 @@ func TestMinistral3BatchedPrefillMatchesSequentialCUDA(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
-		seq[i] = append([]float32(nil), l...)
+		seq[i] = slices.Clone(l)
 	}
 	rf.Reset()
 	bat, err := cr.PrefillLastN(embs, 0)

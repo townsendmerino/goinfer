@@ -181,8 +181,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 
 	// stopped turns a build phase's error into the build's return: a decline goes through declined, anything else is returned as it is.
 	stopped := func(err error) (decoder.ResidentForward, bool, error) {
-		var d buildDecline
-		if errors.As(err, &d) {
+		if d, ok := errors.AsType[buildDecline](err); ok {
 			return declined(d.error)
 		}
 		return nil, false, err

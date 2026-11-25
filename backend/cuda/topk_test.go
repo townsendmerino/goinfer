@@ -3,10 +3,11 @@
 package cuda
 
 import (
+	"cmp"
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -50,11 +51,8 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 		for i := range idx {
 			idx[i] = i
 		}
-		sort.SliceStable(idx, func(a, b int) bool {
-			if l[idx[a]] != l[idx[b]] {
-				return l[idx[a]] > l[idx[b]]
-			}
-			return idx[a] < idx[b]
+		slices.SortStableFunc(idx, func(a, b int) int {
+			return cmp.Or(cmp.Compare(l[b], l[a]), cmp.Compare(a, b))
 		})
 		ids, vals := make([]int32, k), make([]float32, k)
 		for i := range k {

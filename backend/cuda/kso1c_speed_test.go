@@ -24,7 +24,7 @@ func kso1cLoad1() float64 {
 // kso1cMemAvailGB is /proc/meminfo's MemAvailable in GB.
 func kso1cMemAvailGB() float64 {
 	b, _ := os.ReadFile("/proc/meminfo")
-	for _, l := range strings.Split(string(b), "\n") {
+	for l := range strings.SplitSeq(string(b), "\n") {
 		if f := strings.Fields(l); len(f) >= 2 && f[0] == "MemAvailable:" {
 			kb, _ := strconv.ParseFloat(f[1], 64)
 			return kb / (1 << 20)

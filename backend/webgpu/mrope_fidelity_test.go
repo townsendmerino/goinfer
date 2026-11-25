@@ -5,6 +5,7 @@ package webgpu
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/fidelity"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -434,4 +436,281 @@ func b2i(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// cohPeaked copies a tiny safetensors fixture with every 2-D F32 tensor scaled by factor, as Metal's and CUDA's pairwise
+// gates do: the committed fixtures' ~0.02-std weights give nearly uniform attention, where a wrong rotation hides.
+func cohPeaked(t *testing.T, src string, factor float32) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(src, "model.safetensors"))
+	if err != nil {
+		t.Fatalf("the committed fixture %s: %v", src, err)
+	}
+	n := binary.LittleEndian.Uint64(raw[:8])
+	var hdr map[string]json.RawMessage
+	if err := json.Unmarshal(raw[8:8+n], &hdr); err != nil {
+		t.Fatal(err)
+	}
+	data, scaled := raw[8+n:], 0
+	for name, h := range hdr {
+		if name == "__metadata__" {
+			continue
+		}
+		var e struct {
+			Dtype   string   `json:"dtype"`
+			Shape   []int    `json:"shape"`
+			Offsets [2]int64 `json:"data_offsets"`
+		}
+		if err := json.Unmarshal(h, &e); err != nil {
+			t.Fatal(err)
+		}
+		if len(e.Shape) != 2 {
+			continue
+		}
+		if e.Dtype != "F32" {
+			t.Fatalf("tensor %s is %s: F32 only", name, e.Dtype)
+		}
+		for off := e.Offsets[0]; off < e.Offsets[1]; off += 4 {
+			binary.LittleEndian.PutUint32(data[off:], math.Float32bits(math.Float32frombits(binary.LittleEndian.Uint32(data[off:]))*factor))
+		}
+		scaled++
+	}
+	if scaled < 8 {
+		t.Fatalf("scaled only %d tensors", scaled)
+	}
+	dst := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dst, "model.safetensors"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"config.json", "generation_config.json"} {
+		if b, err := os.ReadFile(filepath.Join(src, f)); err == nil {
+			if err := os.WriteFile(filepath.Join(dst, f), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return dst
+}
+
+// TestCohereResidentParityWebGPU is Metal's G-PR2 on WebGPU: Cohere (cohere-tiny) and Cohere2 (cohere2-tiny: sliding window and
+// a NoPE global layer), every 2-D weight scaled by 12.5 so attention is peaked, resident at int8int8 against the CPU int8int8
+// over 40 decoded positions. Bars, Metal's: worst cosine >= 0.995 and relL2 <= 0.15. Each plant must miss them: the NeoX
+// rotation (kernels.PairwiseNeoXForTest), RMSNorm in LayerNorm's place (kernels.LayerNormAsRMSForTest), and the parallel
+// block's MLP fed from the post-attention residual (kernels.ParallelFromResidualForTest). The batched prefill declines.
+func TestCohereResidentParityWebGPU(t *testing.T) {
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	const n, cosBar, relBar = 40, 0.995, 0.15
+	for _, fx := range []string{"cohere-tiny", "cohere2-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			ckpt := cohPeaked(t, filepath.Join("../../testdata", fx), 12.5)
+			cpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int8int8"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cpu.Close()
+			_, _, _, _, _, _, vocab := cpu.Dims()
+			toks := make([]int, n)
+			for i := range toks {
+				toks[i] = (i*37 + 3) % vocab
+			}
+			c := cpu.NewCache(n)
+			want := make([][]float32, n)
+			for i, tok := range toks {
+				l, err := cpu.ForwardForTest(tok, c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want[i] = append([]float32(nil), l...)
+			}
+			run := func(plant *bool) (cosW, relW float64) {
+				if plant != nil {
+					*plant = true
+					defer func() { *plant = false }()
+				}
+				m, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+				if !ok || !rd.rm.LayerNorm || !rd.rm.Parallel || !rd.rm.Pairwise {
+					t.Fatalf("not resident with LayerNorm, the parallel block and pairwise RoPE: %s", m.ResidentDecline())
+				}
+				rd.Reset()
+				cosW, relW = 1, 0
+				embs := make([][]float32, n)
+				for i, tok := range toks {
+					embs[i] = m.EmbedResidentForTest(tok)
+					l, err := rd.Forward(embs[i], i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var ab, aa, bb, dd float64
+					for j := range l {
+						g, r := float64(l[j]), float64(want[i][j])
+						ab, aa, bb, dd = ab+g*r, aa+g*g, bb+r*r, dd+(g-r)*(g-r)
+					}
+					c, r := ab/math.Sqrt(aa*bb), math.Sqrt(dd/bb)
+					if math.IsNaN(c) || math.IsNaN(r) { // NaN, or an all-zero row, is the worst reading
+						c, r = -2, math.Inf(1)
+					}
+					cosW, relW = math.Min(cosW, c), math.Max(relW, r)
+				}
+				rd.Reset()
+				if _, err := rd.PrefillLast(context.Background(), embs[:4], 0); err == nil {
+					t.Error("the batched prefill ran on a LayerNorm / parallel-block model")
+				}
+				return cosW, relW
+			}
+			cw, rw := run(nil)
+			t.Logf("COHERE  worst cos %.6f relL2 %.3g", cw, rw)
+			if !(cw >= cosBar && rw <= relBar) {
+				t.Errorf("diverges from the CPU: worst cosine %.6f (want >= %g), relL2 %.3g (want <= %g)", cw, cosBar, rw, relBar)
+			}
+			for name, p := range map[string]*bool{"NeoX rotation": &kernels.PairwiseNeoXForTest, "RMSNorm for LayerNorm": &kernels.LayerNormAsRMSForTest,
+				"MLP from the post-attention residual": &kernels.ParallelFromResidualForTest} {
+				cw, rw := run(p)
+				t.Logf("plant %-38s worst cos %.6f relL2 %.3g", name, cw, rw)
+				if !(cw < cosBar || rw > relBar) {
+					t.Errorf("the gate is BLIND to %s: worst cosine %.6f, relL2 %.3g", name, cw, rw)
+				}
+			}
+		})
+	}
+}
+
+// TestPairwiseRoPERealWebGPU is Metal's G-PR4 (TestPairwiseRoPERealMetal) on WebGPU: GLM-OCR's text decoder, Command-R7B and
+// Aya-expanse-8B from ~/models, resident at int4 against the CPU int4, 64 tokens of README.md and a 16-token greedy
+// continuation the CPU chose, teacher-forced. Bars, CUDA's real-checkpoint tier: mean per-position cosine >= 0.99, worst
+// >= 0.90, and every continuation argmax difference a near-tie (within 3% of the CPU's logit range). With the NeoX kernels
+// bound (kernels.PairwiseNeoXForTest) each model must miss the mean or the worst bar. The CPU reference is computed and its
+// model closed before each WebGPU load. GOINFER_HEAVY_TESTS=1; a model missing from ~/models is skipped by name.
+func TestPairwiseRoPERealWebGPU(t *testing.T) {
+	testgate.RequireHeavy(t)
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	home, _ := os.UserHomeDir()
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const nPrompt, nCont = 64, 16
+	argmax := func(v []float32) int {
+		b := 0
+		for i := range v {
+			if v[i] > v[b] {
+				b = i
+			}
+		}
+		return b
+	}
+	ran, cohRan := 0, 0
+	t.Cleanup(func() { // a heavy run that gates no Cohere checkpoint (LayerNorm, parallel block) is a failure, not a pass
+		if (ran == 0 || cohRan == 0) && !t.Failed() {
+			t.Errorf("no checkpoint of command-r7b or aya-expanse-8b under %s (%d of glm-ocr ran): the Cohere path was not gated", filepath.Join(home, "models"), ran)
+		}
+	})
+	for _, name := range []string{"glm-ocr", "command-r7b", "aya-expanse-8b"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(home, "models", name)
+			if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+				t.Skipf("no %s", dir)
+			}
+			ran++
+			if name != "glm-ocr" {
+				cohRan++
+			}
+			tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids, err := tk.Encode(string(readme), false)
+			if err != nil || len(ids) < nPrompt {
+				t.Fatalf("encode README: %d ids, %v", len(ids), err)
+			}
+			toks := append([]int(nil), ids[:nPrompt]...)
+			mc, err := decoder.Load(dir, decoder.Options{Backend: "cpu", Quant: "int4"})
+			if err != nil {
+				t.Fatalf("load cpu: %v", err)
+			}
+			c := mc.NewCache(nPrompt + nCont)
+			var ref [][]float32
+			for i := 0; i < nPrompt+nCont; i++ {
+				l, err := mc.ForwardForTest(toks[i], c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref = append(ref, append([]float32(nil), l...))
+				if i >= nPrompt-1 && len(toks) < nPrompt+nCont {
+					toks = append(toks, argmax(l))
+				}
+			}
+			mc.Close()
+			measure := func() (mean, worst float64, real, ties int) {
+				m, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 512})
+				if err != nil {
+					t.Fatalf("load webgpu: %v", err)
+				}
+				defer m.Close()
+				rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+				if !ok || !rd.rm.Pairwise {
+					t.Fatalf("not resident with the pairwise twins: %s", m.ResidentDecline())
+				}
+				rd.Reset()
+				worst = 1
+				for i, tok := range toks {
+					l, err := rd.Forward(m.EmbedResidentForTest(tok), i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var ab, aa, bb float64
+					for j := range l {
+						ab, aa, bb = ab+float64(l[j])*float64(ref[i][j]), aa+float64(l[j])*float64(l[j]), bb+float64(ref[i][j])*float64(ref[i][j])
+					}
+					cs := ab / math.Sqrt(aa*bb)
+					if math.IsNaN(cs) { // NaN, or an all-zero row, is the worst reading
+						cs = -2
+					}
+					mean, worst = mean+cs, math.Min(worst, cs)
+					if cs < 0.95 {
+						t.Logf("  %s position %d (%s): cosine %.6f", name, i, map[bool]string{true: "prompt", false: "continuation"}[i < nPrompt], cs)
+					}
+					if i >= nPrompt-1 && i < len(toks)-1 {
+						if want, got := argmax(ref[i]), argmax(l); want != got {
+							lo, hi := ref[i][0], ref[i][0]
+							for _, v := range ref[i] {
+								lo, hi = min(lo, v), max(hi, v)
+							}
+							if float64(ref[i][want]-ref[i][got])/float64(hi-lo) <= 0.03 {
+								ties++
+							} else {
+								real++
+							}
+						}
+					}
+				}
+				return mean / float64(len(toks)), worst, real, ties
+			}
+			mean, worst, real, ties := measure()
+			t.Logf("PAIRWISE %s: %d positions, mean cos %.6f, worst %.6f; continuation flips %d near-tie, %d real", name, len(toks), mean, worst, ties, real)
+			if !(mean >= 0.99 && worst >= 0.90 && real == 0) {
+				t.Errorf("%s: mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, worst, real)
+			}
+			kernels.PairwiseNeoXForTest = true
+			t.Cleanup(func() { kernels.PairwiseNeoXForTest = false })
+			nm, nw, _, _ := measure()
+			kernels.PairwiseNeoXForTest = false
+			t.Logf("NeoX     %s: mean cos %.6f, worst %.6f", name, nm, nw)
+			if !(nm < 0.99 || nw < 0.90) {
+				t.Errorf("%s: the gate is BLIND: with the NeoX kernels it reads mean %.6f, worst %.6f", name, nm, nw)
+			}
+		})
+	}
 }

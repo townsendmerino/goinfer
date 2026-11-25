@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -77,7 +78,7 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward %d (cache=%v): %v", i, cache, err)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 		}
 		return out
 	}
@@ -156,7 +157,7 @@ func TestFlintResidentParityCUDA(t *testing.T) {
 		cos, _ := cosF32(lr, lc)
 		worstCos = math.Min(worstCos, cos)
 		worstRel = math.Max(worstRel, relL2(lr, lc))
-		allResLogits = append(allResLogits, append([]float32(nil), lr...))
+		allResLogits = append(allResLogits, slices.Clone(lr))
 	}
 	t.Logf("flint-tiny CUDA decode (%d positions across window=8) vs CPU int4: worst cosine %.6f, worst relL2 %.4e",
 		ntok, worstCos, worstRel)

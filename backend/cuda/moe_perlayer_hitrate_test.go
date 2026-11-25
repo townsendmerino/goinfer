@@ -3,11 +3,12 @@
 package cuda
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -99,7 +100,7 @@ func TestMoEPerLayerHitRate(t *testing.T) {
 	if len(moeRows) == 0 {
 		t.Fatal("no MoE layer reported any cache traffic — instrument or routing is broken")
 	}
-	sort.Slice(moeRows, func(i, j int) bool { return moeRows[i].rate < moeRows[j].rate })
+	slices.SortFunc(moeRows, func(a, b row) int { return cmp.Compare(a.rate, b.rate) })
 
 	var sumRate, sumHits, sumMiss float64
 	for _, rw := range moeRows {
@@ -209,7 +210,7 @@ func TestKV11TradeCurve(t *testing.T) {
 	}
 	readAvail := func() float64 {
 		b, _ := os.ReadFile("/proc/meminfo")
-		for _, l := range strings.Split(string(b), "\n") {
+		for l := range strings.SplitSeq(string(b), "\n") {
 			if f := strings.Fields(l); len(f) >= 2 && f[0] == "MemAvailable:" {
 				kb, _ := strconv.ParseFloat(f[1], 64)
 				return kb / (1 << 20)

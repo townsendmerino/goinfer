@@ -498,7 +498,7 @@ func runModelToModelW(rm *RunModel, hd int) (ModelW, bool) {
 // hd is the model's head dimension, used to tell genuine partial RoPE (declined) from a half set explicitly to hd/2.
 func RunModelToPrefill(rm *RunModel, hd int) (ModelW, prefillProjs, bool) {
 	none := func() (ModelW, prefillProjs, bool) { return ModelW{}, prefillProjs{}, false }
-	if rm.Moe != nil || rm.G4moe || rm.Mla != nil || rm.Mamba != nil || rm.Dnet != nil || rm.KvI8 || rm.QKNormWhole || rm.PostOnlyNorm || rm.ActG32 || rm.AttnTemp != nil || rm.Pairwise {
+	if rm.Moe != nil || rm.G4moe || rm.Mla != nil || rm.Mamba != nil || rm.Dnet != nil || rm.KvI8 || rm.QKNormWhole || rm.PostOnlyNorm || rm.ActG32 || rm.AttnTemp != nil || rm.Pairwise || rm.LayerNorm || rm.Parallel {
 		return none()
 	}
 	view := func(b *wgpu.Buffer) *DeviceBuffer {

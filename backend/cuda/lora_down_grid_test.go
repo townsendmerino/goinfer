@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -69,7 +70,7 @@ func TestLoRADownGridBitIdenticalCUDA(t *testing.T) {
 			}
 			last = lr
 		}
-		return append([]float32(nil), last...)
+		return slices.Clone(last)
 	}
 
 	base := run() // no adapter bound yet

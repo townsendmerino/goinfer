@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -172,12 +172,12 @@ func TestAudioEncoderSpeed_record(t *testing.T) {
 		cpuOnce()
 		gpuOnce()
 		var cs, gs, ratio []float64
-		for r := 0; r < rounds; r++ {
+		for r := range rounds {
 			c, g := cpuOnce(), gpuOnce()
 			cs, gs, ratio = append(cs, c), append(gs, g), append(ratio, c/g)
 			t.Logf("SPEED %s round %d cpu_s=%.3f cuda_s=%.3f ratio=%.2f", name, r+1, c, g, c/g)
 		}
-		med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+		med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 		t.Logf("SPEED %s median cpu_s=%.3f cuda_s=%.3f ratio_of_medians=%.2f median_pair_ratio=%.2f vram_mib=%d", name, med(cs), med(gs), med(cs)/med(gs), med(ratio), held)
 		_ = tw.Close()
 	}
@@ -216,7 +216,7 @@ func TestWhisperSmall_clipsOnDevice(t *testing.T) {
 	for id := range refs {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	type row struct {
 		Text string `json:"text"`
 		Lang string `json:"lang"`

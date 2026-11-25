@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -254,7 +255,7 @@ func (a *gridTower) hiddenLocked(pixels []float32, gridTHW [][3]int, tapBlocks [
 		return nil, nil, fmt.Errorf("cuda: rope tables %d/%d for %d patches of head_dim %d", len(cos), len(sin), np, hd)
 	}
 	if a.planted.swapRope { // the row and column quarters swapped within each half of the cat(f, f) row
-		cos, sin = append([]float32(nil), cos...), append([]float32(nil), sin...)
+		cos, sin = slices.Clone(cos), slices.Clone(sin)
 		half, q := hd/2, hd/4
 		for i := range np {
 			for base := 0; base < hd; base += half {

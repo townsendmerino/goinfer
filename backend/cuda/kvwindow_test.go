@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -157,7 +158,7 @@ func TestWindowedKV_view(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = read(d)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if got[i] != float32(20+i) {
 			t.Fatalf("after compaction slot %d = %v, want %v", i, got[i], 20+i)
 		}
@@ -202,7 +203,7 @@ func TestWindowedKV_allocation(t *testing.T) {
 func decodeSteps(t *testing.T, full, win *cudaResident, m *decoder.Model, start, n int) {
 	t.Helper()
 	_, _, _, _, _, _, vocab := m.Dims()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		pos := start + i
 		emb := m.EmbedResidentForTest((pos*29 + 5) % vocab)
 		a, err := full.Forward(emb, pos)
@@ -306,7 +307,7 @@ func windowedVerifyIdentity(t *testing.T, fx string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a[i] = append([]float32(nil), l...) // Forward returns the resident's reused host buffer
+		a[i] = slices.Clone(l) // Forward returns the resident's reused host buffer
 
 	}
 	b, err := win.ForwardN(wide, pos)
@@ -328,7 +329,7 @@ func windowedReuseFloor(t *testing.T, fx string) {
 	_, win, _, mw := loadWindowedPair(t, fx, 1)
 	_, _, _, _, _, _, vocab := mw.Dims()
 	emb := func(i int) []float32 { return mw.EmbedResidentForTest((i*29 + 5) % vocab) }
-	for pos := 0; pos < 200; pos++ {
+	for pos := range 200 {
 		if _, err := win.Forward(emb(pos), pos); err != nil {
 			t.Fatal(err)
 		}
@@ -536,9 +537,9 @@ func windowedAgentTurns(t *testing.T, fx string) {
 		}
 		for tn := range 8 {
 			ids := gen(prompt)
-			prompt = append(append(append([]int(nil), prompt...), ids...), (tn*7+3)%vocab, (tn*11+5)%vocab)
+			prompt = append(slices.Concat(prompt, ids), (tn*7+3)%vocab, (tn*11+5)%vocab)
 		}
-		edited := append(append([]int(nil), prompt[:20]...), (3*vocab/4)%vocab, 9, 8, 7)
+		edited := append(slices.Clone(prompt[:20]), (3*vocab/4)%vocab, 9, 8, 7)
 		gen(edited)
 		return out
 	}
@@ -610,12 +611,12 @@ func windowedRollbackReuse(t *testing.T, fx string) {
 		if err != nil {
 			t.Fatalf("turn %d full prefill: %v", turn, err)
 		}
-		a = append([]float32(nil), a...)
+		a = slices.Clone(a)
 		b, err := win.PrefillLast(ctx, emb(pos, end), pos)
 		if err != nil {
 			t.Fatalf("turn %d windowed prefill at %d: %v", turn, pos, err)
 		}
-		b = append([]float32(nil), b...)
+		b = slices.Clone(b)
 		if j, ok := sameBits(a, b); !ok {
 			t.Fatalf("turn %d: reused prefill logits differ from the full-KV resident's at %d (base %d)", turn, j, win.kvBases[win.kvSlot])
 		}

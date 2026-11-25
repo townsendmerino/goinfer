@@ -4,7 +4,7 @@ package cuda
 
 import (
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,7 +83,7 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resident forward pos %d: %v", p, err)
 		}
-		gl = append(gl, append([]float32(nil), lg...))
+		gl = append(gl, slices.Clone(lg))
 	}
 
 	cpuLogits := func(opts decoder.Options) [][]float32 {
@@ -99,7 +99,7 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out[p] = append([]float32(nil), lg...)
+			out[p] = slices.Clone(lg)
 		}
 		return out
 	}
@@ -108,7 +108,7 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 		for p := range ids {
 			cs[p] = cosine64(a[p], ref[p])
 		}
-		sort.Float64s(cs)
+		slices.Sort(cs)
 		t.Logf("%s: %d positions, cosine min %.6f p10 %.6f median %.6f", name, len(ids), cs[0], cs[len(cs)/10], cs[len(cs)/2])
 		return cs[len(cs)/10], cs[len(cs)/2]
 	}

@@ -205,11 +205,9 @@ func (s *kvSnapStore) use(x *kvSnap, rows int, d time.Duration) {
 }
 
 func (s *kvSnapStore) sortLocked() {
-	for i := 1; i < len(s.list); i++ {
-		for j := i; j > 0 && s.list[j].last > s.list[j-1].last; j-- {
-			s.list[j], s.list[j-1] = s.list[j-1], s.list[j]
-		}
-	}
+	slices.SortFunc(s.list, func(a, b *kvSnap) int {
+		return cmp.Compare(b.last, a.last)
+	})
 }
 
 // removeLocked drops x, releasing its host memory.

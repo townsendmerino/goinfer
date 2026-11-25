@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -228,7 +229,7 @@ func TestKSO1C_sidecarCarriesNative(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			p.lg = append(p.lg, append([]float32(nil), lg...))
+			p.lg = append(p.lg, slices.Clone(lg))
 		}
 		return p
 	}

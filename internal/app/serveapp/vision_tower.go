@@ -66,7 +66,7 @@ func (g *gemma3Vision) imageTok() int  { return g.imgTok }
 func (g *gemma3Vision) close()         { g.enc.Close() }
 
 func (g *gemma3Vision) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
 	pv, err := vision.Preprocess(img.data, g.cfg)
 	if err != nil {
@@ -172,7 +172,7 @@ func (g *glmVision) close() {
 
 // qwenPrep prepares one image for a Qwen-shaped tower: the smart-resized grid, the merged-row count, and the lazy tower.
 func qwenPrep(lm *loadedModel, t qwenGridTower, img imageRef) (imagePrep, error) {
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
 	g := t.grid()
 	pv, grid, err := multimodal.QwenPreprocess(img.data, g.pp)
@@ -224,7 +224,7 @@ func (g *gemma4Vision) close() {
 }
 
 func (g *gemma4Vision) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
 	patches, positionIDs, err := vision.Gemma4Preprocess(img.data, g.maxSoft)
 	if err != nil {

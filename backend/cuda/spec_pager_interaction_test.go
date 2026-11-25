@@ -38,7 +38,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -108,8 +108,8 @@ func specPagerMedian(xs []float64) float64 {
 	if len(xs) == 0 {
 		return 0
 	}
-	c := append([]float64(nil), xs...)
-	sort.Float64s(c)
+	c := slices.Clone(xs)
+	slices.Sort(c)
 	if n := len(c); n%2 == 1 {
 		return c[n/2]
 	}

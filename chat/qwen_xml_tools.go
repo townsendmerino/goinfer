@@ -229,13 +229,11 @@ func parseQwenXMLCall(body string, tools []Tool) (ToolCall, bool) {
 	if !ok {
 		return ToolCall{}, false
 	}
-	rest := after
-	end := strings.Index(rest, ">")
-	if end <= 0 {
+	namePart, rest, ok := strings.Cut(after, ">")
+	if !ok || namePart == "" {
 		return ToolCall{}, false
 	}
-	name := strings.TrimSpace(rest[:end])
-	rest = rest[end+1:]
+	name := strings.TrimSpace(namePart)
 	fn := rest
 	if j := strings.LastIndex(rest, "</function>"); j >= 0 {
 		fn = rest[:j]
@@ -248,17 +246,16 @@ func parseQwenXMLCall(body string, tools []Tool) (ToolCall, bool) {
 	buf.WriteByte('{')
 	n := 0
 	for {
-		p := strings.Index(fn, "<parameter=")
-		if p < 0 {
+		_, afterParam, ok := strings.Cut(fn, "<parameter=")
+		if !ok {
 			break
 		}
-		fn = fn[p+len("<parameter="):]
-		e := strings.Index(fn, ">")
-		if e <= 0 {
+		keyPart, afterKey, ok := strings.Cut(afterParam, ">")
+		if !ok || keyPart == "" {
 			return ToolCall{}, false
 		}
-		key := strings.TrimSpace(fn[:e])
-		fn = fn[e+1:]
+		key := strings.TrimSpace(keyPart)
+		fn = afterKey
 		c := closeParam(fn)
 		if c < 0 {
 			return ToolCall{}, false

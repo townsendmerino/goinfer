@@ -3,9 +3,10 @@
 package cuda
 
 import (
+	"cmp"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -227,7 +228,7 @@ func TestGemmaContextCUDA(t *testing.T) {
 			idx[i] = i
 		}
 		fl := f32Ctx[l]
-		sort.Slice(idx, func(a, b int) bool { return math.Abs(float64(fl[idx[a]])) > math.Abs(float64(fl[idx[b]])) })
+		slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(math.Abs(float64(fl[b])), math.Abs(float64(fl[a]))) })
 		t.Logf("   top-6 |ctx| qDim-idx:  %-8s %12s %12s %12s", "idx", "f32", "CUDA-int4", "CPU-int4")
 		for r := 0; r < 6 && r < qDim; r++ {
 			q := idx[r]

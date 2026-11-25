@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestClefFidelityCUDA_run(t *testing.T) {
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 1<<20), 1<<26)
 		for sc.Scan() {
-			each(append([]byte(nil), sc.Bytes()...))
+			each(slices.Clone(sc.Bytes()))
 		}
 	}
 	var recs []rec

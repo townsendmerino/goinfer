@@ -1133,8 +1133,8 @@ func pickDemo(arg string) (demo, bool) {
 
 // firstLine renders a one-line preview of a (possibly multi-line) prompt.
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i] + " …"
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		s = before + " …"
 	}
 	if len(s) > 60 {
 		s = s[:57] + "..."

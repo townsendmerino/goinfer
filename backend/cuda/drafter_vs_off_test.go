@@ -9,10 +9,11 @@
 package cuda
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -148,7 +149,7 @@ func TestDrafterVsOff_perSuite(t *testing.T) {
 	for k := range adaptiveSuites {
 		suiteNames = append(suiteNames, k)
 	}
-	sort.Strings(suiteNames)
+	slices.Sort(suiteNames)
 
 	for _, suite := range suiteNames {
 		t.Run(suite, func(t *testing.T) {
@@ -213,7 +214,7 @@ func TestDrafterVsOff_perSuite(t *testing.T) {
 			for k, v := range results {
 				rows = append(rows, row{k, mean(v)})
 			}
-			sort.Slice(rows, func(i, j int) bool { return rows[i].ratio > rows[j].ratio })
+			slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.ratio, a.ratio) })
 			bestStatic, bestStaticLabel := 0.0, ""
 			for _, r := range rows {
 				t.Logf("   %-10s %.3fx", r.label, r.ratio)

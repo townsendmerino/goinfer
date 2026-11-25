@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,11 +37,11 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 			g4.audio.(*gemma4Audio).acc = g4a
 			qv.acc, gv.acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
-		s := &server{models: map[string]*loadedModel{}, liveness: map[modelHandle]*modelLiveness{},
+		s := &server{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{},
 			draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 		for _, lm := range entries {
-			m := &fakeModel{}
-			lm.model = m
+			m := &fakeCloser{}
+			lm.closer = m
 			s.models[lm.name], s.liveness[m] = lm, &modelLiveness{refs: 1}
 		}
 		for _, lm := range entries {

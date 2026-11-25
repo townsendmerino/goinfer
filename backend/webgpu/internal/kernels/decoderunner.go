@@ -304,7 +304,15 @@ type RunModel struct {
 	// Pairwise (decoder.FeatPairwiseRoPE) binds the pairwise twins of the decode rope kernels (pairwise.go) in place of the
 	// NeoX ones; the batched prefill declines (RunModelToPrefill).
 	Pairwise bool
+	// LayerNorm (decoder.FeatLayerNorm, bias-free) runs every pre-norm and the final norm as LayerNorm
+	// (LayerNormQuantWGSL); Parallel (decoder.FeatParallelBlock) feeds the MLP the attention's normed input, so a layer
+	// carries no MlpNorm. The batched prefill declines both (RunModelToPrefill).
+	LayerNorm, Parallel bool
 }
+
+// The plants of the Cohere gates, read at newDecodeRunner: LayerNormAsRMSForTest binds RMSNorm for a LayerNorm model, and
+// ParallelFromResidualForTest feeds a parallel block's MLP the post-attention residual, normed again.
+var LayerNormAsRMSForTest, ParallelFromResidualForTest bool
 
 // AttnTempOffForTest is the attention temperature's plant: a runner built while it is set ignores RunModel.AttnTemp.
 var AttnTempOffForTest bool
@@ -457,6 +465,20 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMambaConv, c.ensureDeltaRule, c.ensureDeltaNorm,
 			c.ensureDeltaGates, c.ensureDeltaGNorm, c.ensureDeltaQSplit, c.ensureDeltaAttnGate)
 	}
+	if m.LayerNorm {
+		ensures = append(ensures, c.ensureLayerNorm)
+	}
+	if (m.LayerNorm || m.Parallel) && (m.Moe != nil || m.G4moe || m.Mla != nil || m.Mamba != nil || m.Dnet != nil || m.PleDim > 0 || m.PostOnlyNorm) {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: LayerNorm and the parallel block are implemented on the dense attention path only")
+	}
+	// LayerNorm reaches only the norms rmsQuant builds (every pre-norm and the final norm). The unfused ones (QK-norm, V-norm,
+	// the post-sublayer norms) bind RMSNorm kernels, so a LayerNorm model carrying any of them is refused rather than run
+	// with RMSNorm there.
+	if m.LayerNorm && (m.QKNormWhole || slices.ContainsFunc(m.Layers, func(l RunLayer) bool {
+		return l.QNorm != nil || l.KNorm != nil || l.VNorm || l.GKEqV || l.PostAttnNorm != nil || l.PostMLPNorm != nil || l.PostPLENorm != nil
+	})) {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: a LayerNorm model's QK-, V- or post-sublayer norms would run as RMSNorm; only its pre-norms and final norm take LayerNorm")
+	}
 	if m.AttnTemp != nil && m.Mla != nil {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: the attention temperature on the MLA path is not implemented")
 	}
@@ -464,6 +486,8 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		switch {
 		case m.Moe != nil || m.G4moe:
 			return nil, fmt.Errorf("gpu: newDecodeRunner: per-32 activations: the MoE kernels read per-vector activation scales")
+		case m.LayerNorm:
+			return nil, fmt.Errorf("gpu: newDecodeRunner: per-32 activations: LayerNorm has no per-32 quantize twin")
 		case m.Mla != nil || m.Mamba != nil || m.Dnet != nil || m.PleDim > 0:
 			return nil, fmt.Errorf("gpu: newDecodeRunner: per-32 activations: the MLA, SSM, DeltaNet and per-layer-embedding paths are not implemented")
 		}
@@ -563,7 +587,9 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		q, s := storF(kp/4), scaleBuf(kp)
 		p := uni([]uint32{uint32(K), F32bits(eps), BoolU32(addOne), uint32(kp)})
 		pl, ly := c.rmsQuantPipeline, c.rmsQuantLayout
-		if m.ActG32 {
+		if m.LayerNorm && !LayerNormAsRMSForTest { // FeatLayerNorm: the same bindings, LayerNorm in place of RMSNorm
+			pl, ly = c.layerNormQuant.pl, c.layerNormQuant.ly
+		} else if m.ActG32 {
 			pl, ly = c.actG32.rmsQuant.pl, c.actG32.rmsQuant.ly
 		}
 		add(pl, bind(ly, in, w, q, s, p), 1, 1)
@@ -1273,6 +1299,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	}
 	for i := range m.Layers {
 		lw := &m.Layers[i]
+		var parAq, parAs *wgpu.Buffer // the attention's quantized input, which a parallel block's MLP reads too
 		if ssmStopLayer >= 0 && i > ssmStopLayer {
 			break // layer-sweep seam: logits from xd after this layer
 		}
@@ -1394,6 +1421,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			} else {
 				aq, as = rmsQuant(r.xd, lw.AttnNorm, hidden)
 			}
+			parAq, parAs = aq, as
 			// Resolve this layer's attention geometry: its own head_dim/KV-heads/rotaryDim, or the model-level shape when the layer
 			// carries no override. geomFor dedups by value, so uniform models reuse one geom.
 			ghd, gnKV, ghalf := hd, nKV, half
@@ -1611,7 +1639,11 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			continue
 		}
 		var mq, ms *wgpu.Buffer
-		if lw.MlpNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
+		if m.Parallel && ParallelFromResidualForTest {
+			mq, ms = rmsQuant(r.xd, lw.AttnNorm, hidden)
+		} else if m.Parallel { // FeatParallelBlock: the MLP reads the attention's normed input, quantized once
+			mq, ms = parAq, parAs
+		} else if lw.MlpNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
 			mq, ms = quant(r.xd, hidden)
 		} else {
 			mq, ms = rmsQuant(r.xd, lw.MlpNorm, hidden)

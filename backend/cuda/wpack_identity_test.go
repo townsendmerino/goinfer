@@ -13,7 +13,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,7 +37,7 @@ func TestWeightPackers_bitIdentity(t *testing.T) {
 		for n := range got {
 			names = append(names, n)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, n := range names {
 			fmt.Fprintf(&b, "%s %s\n", n, got[n])
 		}
@@ -142,7 +142,7 @@ func wpackHashes(t *testing.T) map[string]string {
 	for k := range mats {
 		kinds = append(kinds, k)
 	}
-	sort.Strings(kinds)
+	slices.Sort(kinds)
 	for _, k := range kinds {
 		for _, sh := range [][2]int{{3, 256}, {17, 512}} {
 			w := mats[k](sh[0], sh[1])

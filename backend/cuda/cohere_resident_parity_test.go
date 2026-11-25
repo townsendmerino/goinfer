@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -150,7 +151,7 @@ func TestGraniteDenseResidentPrefillLogitScaleCUDA(t *testing.T) {
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
 	}
-	seq = append([]float32(nil), seq...)
+	seq = slices.Clone(seq)
 	rf.Reset()
 	got, err := cr.PrefillLast(context.Background(), embs, 0)
 	if err != nil {

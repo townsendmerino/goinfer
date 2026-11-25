@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -225,8 +225,8 @@ func ladderMedian(x []float64) float64 {
 	if len(x) == 0 {
 		return 0
 	}
-	y := append([]float64(nil), x...)
-	sort.Float64s(y)
+	y := slices.Clone(x)
+	slices.Sort(y)
 	if len(y)%2 == 1 {
 		return y[len(y)/2]
 	}

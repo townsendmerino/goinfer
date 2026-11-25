@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -62,8 +63,8 @@ func TestSlidingWindowAttention(t *testing.T) {
 	}
 	// The trailing `window` keys, as their own contiguous cache.
 	start := nKeys - window
-	kTail := append([]float32(nil), kFull[start*kvDim:]...)
-	vTail := append([]float32(nil), vFull[start*kvDim:]...)
+	kTail := slices.Clone(kFull[start*kvDim:])
+	vTail := slices.Clone(vFull[start*kvDim:])
 
 	run := func(k, v []float32, nk, win int) []float32 {
 		dq := mustAlloc[float32](t, cx, len(q))

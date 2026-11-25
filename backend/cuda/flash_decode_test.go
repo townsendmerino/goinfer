@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -219,7 +220,7 @@ func flashEndToEnd(t *testing.T, file string) {
 	var s uint32 = 987654321
 	for i := range prefill {
 		s = s*1664525 + 1013904223
-		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+		prefill[i] = slices.Clone(emb(int(s>>8) % vocab))
 	}
 	rf.skMinKeys = 0
 	var runArm func(split, vsum int) [][]float32
@@ -237,7 +238,7 @@ func flashEndToEnd(t *testing.T, file string) {
 			if e != nil {
 				t.Fatalf("decode step %d (split=%d): %v", i, split, e)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}

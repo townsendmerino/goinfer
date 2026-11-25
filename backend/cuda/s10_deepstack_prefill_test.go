@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -113,7 +114,7 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refLast = append([]float32(nil), refLast...)
+	refLast = slices.Clone(refLast)
 	r.Reset()
 	if err := m.ResidentUploadPrefillForTest(cache); err != nil {
 		t.Fatal(err)
@@ -129,7 +130,7 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 			toks = append(toks, argmaxF(lg))
 		}
 		return out, toks
@@ -151,7 +152,7 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		got, _ := decode(append([]float32(nil), newLast...), teacher)
+		got, _ := decode(slices.Clone(newLast), teacher)
 		worst, agree, real := 1.0, 0, 0
 		for k := range ref {
 			worst = math.Min(worst, dsCosine(ref[k], got[k]))
@@ -315,7 +316,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			refLast = append([]float32(nil), refLast...)
+			refLast = slices.Clone(refLast)
 			r.Reset()
 			if err := m.ResidentUploadPrefillForTest(cache); err != nil {
 				t.Fatal(err)
@@ -331,7 +332,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					out = append(out, append([]float32(nil), lg...))
+					out = append(out, slices.Clone(lg))
 					toks = append(toks, argmaxF(lg))
 				}
 				return out, toks
@@ -343,7 +344,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: resident DeepStack prefill: %v", name, err)
 			}
-			got, _ := decode(append([]float32(nil), newLast...), teacher)
+			got, _ := decode(slices.Clone(newLast), teacher)
 			worst, ties, real := 1.0, 0, 0
 			for k := range ref {
 				worst = math.Min(worst, dsCosine(ref[k], got[k]))
@@ -374,7 +375,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 					t.Fatal(err)
 				}
 				textDecode := func(first []float32, forced []int) ([][]float32, []int) {
-					out, toks := [][]float32{append([]float32(nil), first...)}, []int{argmaxF(first)}
+					out, toks := [][]float32{slices.Clone(first)}, []int{argmaxF(first)}
 					for k := range steps {
 						tok := toks[k]
 						if forced != nil {
@@ -384,7 +385,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						out = append(out, append([]float32(nil), lg...))
+						out = append(out, slices.Clone(lg))
 						toks = append(toks, argmaxF(lg))
 					}
 					return out, toks
@@ -503,7 +504,7 @@ func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			refLast = append([]float32(nil), refLast...)
+			refLast = slices.Clone(refLast)
 			r.Reset()
 			if err := m.ResidentUploadPrefillForTest(cache); err != nil {
 				t.Fatal(err)
@@ -519,7 +520,7 @@ func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					out = append(out, append([]float32(nil), lg...))
+					out = append(out, slices.Clone(lg))
 					toks = append(toks, argmaxF(lg))
 				}
 				return out, toks
@@ -535,7 +536,7 @@ func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, _ := decode(append([]float32(nil), newLast...), teacher)
+			got, _ := decode(slices.Clone(newLast), teacher)
 			line := ""
 			for k := range ref {
 				line += fmt.Sprintf(" %.4f", dsCosine(ref[k], got[k]))

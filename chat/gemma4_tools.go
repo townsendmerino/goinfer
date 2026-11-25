@@ -167,25 +167,19 @@ func parseGemma4Tools(out string) ([]ToolCall, string) {
 	}
 	var calls []ToolCall
 	for rest := out; ; {
-		i := strings.Index(rest, "<|tool_call>call:")
-		if i < 0 {
+		_, after, ok := strings.Cut(rest, "<|tool_call>call:")
+		if !ok {
 			break
 		}
-		rest = rest[i+len("<|tool_call>call:"):]
-		brace := strings.IndexByte(rest, '{')
-		if brace < 0 {
+		namePart, bodyRest, ok := strings.Cut(after, "{")
+		if !ok {
 			break
 		}
-		name := strings.TrimSpace(rest[:brace])
-		rest = rest[brace+1:]
-		end := strings.Index(rest, "}<tool_call|>")
-		body := rest
-		if end >= 0 {
-			body = rest[:end]
-			rest = rest[end+len("}<tool_call|>"):]
-		}
+		name := strings.TrimSpace(namePart)
+		body, next, hasEnd := strings.Cut(bodyRest, "}<tool_call|>")
+		rest = next
 		calls = append(calls, ToolCall{Name: name, Arguments: gemmaBodyToJSON(body)})
-		if end < 0 {
+		if !hasEnd {
 			break
 		}
 	}
