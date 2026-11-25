@@ -16,6 +16,8 @@ moved symbol; those are edited by hand.
 - `elem.rules` (the elementwise kernels): the two comments the script lists, in `backend/cuda/audio_encoder_test.go`
   and `backend/cuda/kernels/gelu_quant_test.go`.
 - `attn.rules` (the attention kernels): nothing.
+- `bitvec.rules` (sign-bit packing and Hamming): goinfer calls none of them; ken's one use (`internal/search/dense_store.go`)
+  is rewritten by the same script, run in ken.
 
 ## Proof, per move
 
