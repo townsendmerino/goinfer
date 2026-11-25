@@ -21,7 +21,6 @@ import (
 	"math"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -30,7 +29,7 @@ import (
 )
 
 func statsD(d []time.Duration) (lo, med, hi time.Duration) {
-	s := append([]time.Duration(nil), d...)
+	s := slices.Clone(d)
 	slices.Sort(s)
 	return s[0], s[len(s)/2], s[len(s)-1]
 }
@@ -181,7 +180,7 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 	for i := range dec {
 		ratios[i] = float64(snap[i]+rest[i]) / float64(dec[i])
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	rMedian, mean := ratios[len(ratios)/2], 0.0
 	for _, r := range ratios {
 		mean += r

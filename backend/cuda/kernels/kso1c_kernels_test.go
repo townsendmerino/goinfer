@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -46,7 +47,7 @@ func kso1cRef(kind string, raw []byte, N, K int, codes []int8, scales []float32,
 	want, bar = make([]float64, N), make([]float64, N)
 	wrow := make([]float64, K)
 	for n := range N {
-		r := append([]byte(nil), raw[n*nSB*bs:(n+1)*nSB*bs]...)
+		r := slices.Clone(raw[n*nSB*bs : (n+1)*nSB*bs])
 		if plant == 4 && nSB > 1 {
 			r = append(r[bs:], r[:bs]...)
 		}

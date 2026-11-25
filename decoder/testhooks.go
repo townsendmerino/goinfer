@@ -331,6 +331,10 @@ func SetRouterCaptureForTest(on bool) {
 // attention confirmer injects goinfer's exact K/V into another engine.
 func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
 
+// SetLayerInputsForTest makes the next single-token forwards on c start layer l from in[l] wherever in[l] is non-nil (each row
+// [hidden]); nil clears it. c holds the slice until it is cleared, so the caller sets it before each token it isolates.
+func (c *KVCache) SetLayerInputsForTest(in [][]float32) { c.layerInputs = in }
+
 // SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
 // the resident W8A8 path.
 func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }

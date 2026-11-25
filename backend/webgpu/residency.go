@@ -209,6 +209,8 @@ func actG32Decline(m *decoder.Model, ssm bool) string {
 		return "the MoE kernels read per-vector activation scales"
 	case mlaOK || ssm || dnetOK:
 		return "the MLA, SSM and DeltaNet paths are not implemented"
+	case m.BackendView().LayerNorm():
+		return "LayerNorm has no per-32 quantize twin"
 	}
 	d := m.BackendView().Dims()
 	if d.Hidden%32 != 0 || d.Inter%32 != 0 || d.Heads*d.HeadDim%32 != 0 {

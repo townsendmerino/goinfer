@@ -1,10 +1,11 @@
 package sampling
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -17,12 +18,8 @@ func refTopKRow(logits []float32, k int, texp float64, wantZ bool) TopKRow {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.SliceStable(idx, func(a, b int) bool {
-		la, lb := logits[idx[a]], logits[idx[b]]
-		if la != lb {
-			return la > lb
-		}
-		return idx[a] < idx[b]
+	slices.SortStableFunc(idx, func(a, b int) int {
+		return cmp.Or(cmp.Compare(logits[b], logits[a]), cmp.Compare(a, b))
 	})
 	if k > len(idx) {
 		k = len(idx)

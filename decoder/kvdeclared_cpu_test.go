@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -76,7 +77,7 @@ func TestKVBytesForRows_plantedShortRowGoesRed(t *testing.T) {
 	for _, fx := range hostKVFixtures(t) {
 		a := fx.m.w.arch
 		short := func(l int) []program.Buf {
-			bufs := append([]program.Buf(nil), layerBuffers(a, l)...)
+			bufs := slices.Clone(layerBuffers(a, l))
 			for i := range bufs {
 				if bufs[i].Unit == program.PerPosition && bufs[i].Elems > 0 {
 					bufs[i].Elems--

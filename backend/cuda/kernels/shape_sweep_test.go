@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -166,15 +167,15 @@ func TestGemvShapeSweep(t *testing.T) {
 			// sentinel reproduces that condition.
 			const band = 64
 			poison := func32Poison
-			Wpad := append(append([]uint32(nil), Wp...), make([]uint32, band)...)
+			Wpad := slices.Concat(Wp, make([]uint32, band))
 			for i := len(Wp); i < len(Wpad); i++ {
 				Wpad[i] = 0x7BADF00D
 			}
-			aPad := append(append([]int32(nil), aPacked...), make([]int32, band)...)
+			aPad := slices.Concat(aPacked, make([]int32, band))
 			for i := len(aPacked); i < len(aPad); i++ {
 				aPad[i] = poison
 			}
-			gsPad := append(append([]uint16(nil), gsH...), make([]uint16, band)...)
+			gsPad := slices.Concat(gsH, make([]uint16, band))
 			for i := len(gsH); i < len(gsPad); i++ {
 				gsPad[i] = f32tof16(7.5) // a large, obviously-wrong scale
 			}

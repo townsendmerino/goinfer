@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -83,7 +84,7 @@ func TestLoRAResidentParityCUDA(t *testing.T) {
 			}
 			last = lr
 		}
-		return append([]float32(nil), last...)
+		return slices.Clone(last)
 	}
 
 	if err := ra.SetAdapter(mRes.ResidentAdapterLayersForTest("a")); err != nil {

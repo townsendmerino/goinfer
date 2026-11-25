@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -99,7 +99,7 @@ func TestVisionTowerTiming(t *testing.T) {
 	if len(secs) == 0 { // GOINFER_VISION_REPS=0: one forward only (for ncu)
 		return
 	}
-	sort.Float64s(secs)
+	slices.Sort(secs)
 	fmt.Printf("=== VISION TOWER (resident CUDA, %d patches, %d layers): min %.3f  median %.3f  max %.3f s over %d runs ===\n",
 		cfg.ImageSize/cfg.PatchSize*cfg.ImageSize/cfg.PatchSize, cfg.NumHiddenLayers, secs[0], secs[len(secs)/2], secs[len(secs)-1], len(secs))
 	if p := os.Getenv("GOINFER_VISION_SAVE"); p != "" {

@@ -13,7 +13,7 @@ func f16Value(h uint16) float64 { return float64(linalg.F16ToF32(h)) }
 // TestF32ToF16RNE_ties: every exact midpoint between two adjacent finite f16 values rounds to the one with an even mantissa, and anything a
 // hair either side of a midpoint rounds to the nearer value. Every f16 value round-trips. Overflow and the specials behave as __float2half_rn.
 func TestF32ToF16RNE_ties(t *testing.T) {
-	for h := uint32(0); h < 0x7C00; h++ { // 0 .. the largest finite, positive
+	for h := range uint32(0x7C00) { // 0 .. the largest finite, positive
 		lo, hi := uint16(h), uint16(h+1)
 		if got := F32ToF16RNE(float32(f16Value(lo))); got != lo {
 			t.Fatalf("%#04x does not round-trip: %#04x", lo, got)

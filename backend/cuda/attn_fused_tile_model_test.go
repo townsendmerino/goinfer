@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -49,7 +50,7 @@ func TestAttnFusedTile_defaultBitIdenticalWholeModel(t *testing.T) {
 			var s uint32 = uint32(M)*7 + 1
 			for i := range embs {
 				s = s*1664525 + 1013904223
-				embs[i] = append([]float32(nil), m.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+				embs[i] = slices.Clone(m.EmbedResidentForTest(int(s>>8) % (vocab - 1)))
 			}
 			run := func(tile int) ([]float32, int) {
 				rf.attnTile, rf.tile128Launches = tile, 0
@@ -57,7 +58,7 @@ func TestAttnFusedTile_defaultBitIdenticalWholeModel(t *testing.T) {
 				if e != nil {
 					t.Fatalf("%s M=%d tile=%d: %v", mdl.file, M, tile, e)
 				}
-				return append([]float32(nil), out...), rf.tile128Launches
+				return slices.Clone(out), rf.tile128Launches
 			}
 			run(-1) // warm
 			forced, nForced := run(-1)

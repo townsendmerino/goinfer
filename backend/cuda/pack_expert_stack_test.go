@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -49,7 +50,7 @@ func stagedPinned(r *cudaResident, ws []*linalg.WeightMat) cudaWQ {
 		panic(err)
 	}
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K}
-	w.srcW, w.srcS = r.mapBytes(append([]byte(nil), u32bytes(h.wpk)...)), r.mapBytes(append([]byte(nil), u16bytes(h.ws16)...))
+	w.srcW, w.srcS = r.mapBytes(slices.Clone(u32bytes(h.wpk))), r.mapBytes(slices.Clone(u16bytes(h.ws16)))
 	return w
 }
 

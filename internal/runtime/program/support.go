@@ -205,9 +205,12 @@ var (
 
 // withNonGatedReLU2 is s, a copy, with the step's non-gated FFN block at ReLU².
 func withNonGatedReLU2(s *Support) *Support {
-	s.FFN = maps.Clone(s.FFN)
-	s.FFN[FfnNonGated] = []ActKind{ActReLU2}
-	return s
+	c := *s
+	ffn := make(map[FFNForm][]ActKind, len(s.FFN)+1)
+	maps.Copy(ffn, s.FFN)
+	ffn[FfnNonGated] = []ActKind{ActReLU2}
+	c.FFN = ffn
+	return &c
 }
 
 // MetalStepGemma4 is MetalStep with the step's per-row Gemma 4 layers: Gemma 4 attention, its dense FFN, its per-layer

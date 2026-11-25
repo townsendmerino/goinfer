@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -95,7 +96,7 @@ func TestPrefillNonUniform_bitIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sequential Forward(%d): %v", M-1, err)
 	}
-	seq := append([]float32(nil), seqLogits...)
+	seq := slices.Clone(seqLogits)
 
 	rf.Reset()
 	bat, err := rf.PrefillLast(context.Background(), embs, 0)

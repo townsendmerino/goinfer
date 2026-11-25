@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -289,10 +289,10 @@ func TestSP2_identity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	promptB := append(append(append([]int(nil), promptA...), outA...), suffix...)
+	promptB := append(slices.Concat(promptA, outA), suffix...)
 	warmB, gen := plainGreedy(t, g.mc, g.r, promptB, 96)
 	reused := gen.PrefillReused
-	if _, err := g.r.PrefillLastNArgmax(embsOf(g.mc, append(append([]int(nil), promptA...), outA...)), 0); err != nil {
+	if _, err := g.r.PrefillLastNArgmax(embsOf(g.mc, slices.Concat(promptA, outA)), 0); err != nil {
 		t.Fatalf("G5 cold prefill of A: %v", err)
 	}
 	stateDiff := snapDiff(dnSnapshot(t, g.r), afterA)
@@ -343,8 +343,8 @@ func (g *sp2Rig) sp2ValidCell(t *testing.T, what string) map[string]any {
 }
 
 func sp2Median(xs []float64) float64 {
-	s := append([]float64(nil), xs...)
-	sort.Float64s(s)
+	s := slices.Clone(xs)
+	slices.Sort(s)
 	if len(s)%2 == 1 {
 		return s[len(s)/2]
 	}
@@ -352,8 +352,8 @@ func sp2Median(xs []float64) float64 {
 }
 
 func sp2Quartiles(xs []float64) (q1, q3 float64) {
-	s := append([]float64(nil), xs...)
-	sort.Float64s(s)
+	s := slices.Clone(xs)
+	slices.Sort(s)
 	return s[len(s)/4], s[(3*len(s))/4]
 }
 
@@ -429,7 +429,7 @@ func TestSP2_foldCost(t *testing.T) {
 			return float64(time.Since(t0).Microseconds()) / 1000
 		}
 		for rep := range 23 {
-			order := append([]string(nil), arms...)
+			order := slices.Clone(arms)
 			k := rep % len(order)
 			order = append(order[k:], order[:k]...)
 			if rep%2 == 1 {

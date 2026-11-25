@@ -3,13 +3,14 @@
 package cuda
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 		if err != nil {
 			t.Fatalf("cuda forward at pos %d: %v", pos, err)
 		}
-		return append([]float32(nil), l...)
+		return slices.Clone(l)
 	}
 	argmaxTie := func(cpu []float32, ga int) (int, float64) {
 		ca := argmaxF(cpu)
@@ -67,7 +68,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 		n := len(ids) + g3NewTokens
 		// CPU free run: prefill token by token, then 32 greedy tokens.
 		cc := mc.NewCache(n)
-		cpuSeq := append([]int(nil), ids...)
+		cpuSeq := slices.Clone(ids)
 		for i := 0; i < n-1; i++ {
 			cpuL, err := mc.ForwardForTest(cpuSeq[i], cc)
 			if err != nil {
@@ -78,7 +79,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 			}
 		}
 		// CUDA free run, same shape.
-		gpuSeq := append([]int(nil), ids...)
+		gpuSeq := slices.Clone(ids)
 		for i := 0; i < n-1; i++ {
 			l := fwd(gpuSeq[i], i)
 			if i >= len(ids)-1 {
@@ -93,7 +94,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 			if err != nil {
 				t.Fatal(err)
 			}
-			cl = append([]float32(nil), cl...)
+			cl = slices.Clone(cl)
 			gl := fwd(cpuSeq[i], i)
 			ca, gap := argmaxTie(cl, argmaxF(gl))
 			if ca == argmaxF(gl) {
@@ -247,8 +248,8 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 	for _, v := range per {
 		sum += v
 	}
-	sorted := append([]float64(nil), per...)
-	sort.Float64s(sorted)
+	sorted := slices.Clone(per)
+	slices.Sort(sorted)
 	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
 		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
 }
@@ -338,7 +339,7 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 		for i := range idx {
 			idx[i] = i
 		}
-		sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+		slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(l[b], l[a]) })
 		o := top{IDs: idx[:k], Logits: make([]float32, k)}
 		for i, id := range o.IDs {
 			o.Logits[i] = l[id]
@@ -361,7 +362,7 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 		}
 		n := len(ids) + g3NewTokens
 		cc := mc.NewCache(n)
-		seq := append([]int(nil), ids...)
+		seq := slices.Clone(ids)
 		var cpuTop []top
 		for i := 0; i < n-1; i++ {
 			l, err := mc.ForwardForTest(seq[i], cc)
@@ -443,7 +444,7 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 		for i := range idx {
 			idx[i] = i
 		}
-		sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+		slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(l[b], l[a]) })
 		o := top{IDs: idx[:k], Logits: make([]float32, k)}
 		for i, id := range o.IDs {
 			o.Logits[i] = l[id]

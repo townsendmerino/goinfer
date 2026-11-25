@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -810,7 +811,7 @@ func (p *prefillPass) tailResidualAll() error {
 	}
 	p.outs = make([][]float32, M)
 	for m := range p.outs {
-		p.outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
+		p.outs[m] = slices.Clone(xhost[m*hidden : (m+1)*hidden])
 	}
 	return r.launchErr
 }
@@ -895,7 +896,7 @@ func (p *prefillPass) tailLastRow() error {
 		if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
 			return e
 		}
-		p.outs[m] = append([]float32(nil), r.logitsHost...)
+		p.outs[m] = slices.Clone(r.logitsHost)
 	}
 	return r.launchErr
 }

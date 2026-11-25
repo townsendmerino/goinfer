@@ -9,7 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,7 +86,7 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cpu pos %d: %v", i, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out
 	}
@@ -97,7 +97,7 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cuda pos %d: %v", i, err)
 		}
-		cuda[i] = append([]float32(nil), l...)
+		cuda[i] = slices.Clone(l)
 	}
 
 	cos := func(a, b []float32) float64 { c, _ := cosMaxAbs(a, b); return c }
@@ -180,7 +180,7 @@ func byteIdentityCensus(t *testing.T, label string, a, b [][]float32) {
 			}
 		}
 	}
-	sort.Float64s(ulps)
+	slices.Sort(ulps)
 	pick := func(q float64) float64 {
 		if len(ulps) == 0 {
 			return 0

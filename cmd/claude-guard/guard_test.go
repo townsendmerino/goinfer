@@ -254,3 +254,14 @@ func TestRun_badInputAllows(t *testing.T) {
 		t.Errorf("unparseable input: exit %d, want 0 (fail open)", code)
 	}
 }
+
+func TestCommandsDepth_nilExportedDoesNotPanic(t *testing.T) {
+	segs, ok := commandsDepth("FOO=1 echo hi", 0, nil)
+	if !ok || len(segs) != 1 || segs[0].env["FOO"] != "1" {
+		t.Fatalf("commandsDepth(FOO=1 echo hi, nil) = %+v, %v", segs, ok)
+	}
+	segs, ok = commandsDepth("export BAR=2; echo hi", 0, nil)
+	if !ok || len(segs) != 1 || segs[0].env["BAR"] != "2" {
+		t.Fatalf("commandsDepth(export BAR=2; echo hi, nil) = %+v, %v", segs, ok)
+	}
+}

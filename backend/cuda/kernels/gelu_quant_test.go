@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -31,7 +32,7 @@ func TestGeluQuantBatched_matchesCPUReference(t *testing.T) {
 		// (GELU_tanh(x) -> x for x >> 0), matching what a real FC1 output distribution covers.
 		x[i] = float32(math.Sin(float64(i)*0.023)) * 15.0
 	}
-	ref := append([]float32(nil), x...)
+	ref := slices.Clone(x)
 	linalg.GELUTanhInto(ref, ref)
 
 	q := dev.NewCommandQueue()

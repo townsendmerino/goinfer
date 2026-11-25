@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,7 +57,7 @@ func TestS896_gateDump(t *testing.T) {
 	// GOINFER_S896G_PLANTED: a comma list of the planted DeepStack defects to dump as extra ON arms (late = every set one layer late, notadded = no sets, textrows = the sets added to the text rows too).
 	plantedList := map[string]int{"late": deepDefectOneLayerLate, "notadded": deepDefectNotAdded, "textrows": deepDefectTextRows}
 	planted := map[string]int{}
-	for _, nm := range strings.Split(os.Getenv("GOINFER_S896G_PLANTED"), ",") {
+	for nm := range strings.SplitSeq(os.Getenv("GOINFER_S896G_PLANTED"), ",") {
 		if nm = strings.TrimSpace(nm); nm != "" {
 			code, ok := plantedList[nm]
 			if !ok {
@@ -107,11 +109,9 @@ func TestS896_gateDump(t *testing.T) {
 	if kv := os.Getenv("GOINFER_S896G_KNOBS"); kv != "" {
 		knobs := decoder.Knobs{}
 		if opts.Knobs != nil {
-			for k, v := range *opts.Knobs {
-				knobs[k] = v
-			}
+			maps.Copy(knobs, *opts.Knobs)
 		}
-		for _, p := range strings.Split(kv, ",") {
+		for p := range strings.SplitSeq(kv, ",") {
 			k, v, _ := strings.Cut(p, "=")
 			knobs[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
@@ -195,7 +195,7 @@ func TestS896_gateDump(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			refLast = append([]float32(nil), refLast...)
+			refLast = slices.Clone(refLast)
 			r.Reset()
 			if err := m.ResidentUploadPrefillForTest(cache); err != nil {
 				t.Fatal(err)
@@ -211,7 +211,7 @@ func TestS896_gateDump(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					o = append(o, append([]float32(nil), lg...))
+					o = append(o, slices.Clone(lg))
 					toks = append(toks, argmaxF(lg))
 				}
 				return o, toks
@@ -228,7 +228,7 @@ func TestS896_gateDump(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s: resident DeepStack prefill: %v", utag, err)
 				}
-				o, _ := decode(append([]float32(nil), last...), teacher)
+				o, _ := decode(slices.Clone(last), teacher)
 				return o
 			}
 			on := arm(0)

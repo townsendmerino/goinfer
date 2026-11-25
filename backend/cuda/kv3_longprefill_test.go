@@ -133,7 +133,7 @@ func kv3Score(t *testing.T, g *kv0Rig, ids []int, controlIDs []int) (batched, re
 	if err != nil {
 		t.Fatalf("per-token last row: %v", err)
 	}
-	ref = append([]float32(nil), out...)
+	ref = slices.Clone(out)
 	return batched, ref, ctl, launches
 }
 
@@ -182,9 +182,9 @@ func TestKV3_batchedPrefillPastTheSpanBound_tiny(t *testing.T) {
 		t.Run(kv, func(t *testing.T) {
 			g := kv0LoadCtx(t, dir, kv, 17000, kv0RandomTokens)
 			for _, n := range []int{12400, 14000, 16384} {
-				for seed := 0; seed < 3; seed++ {
+				for seed := range 3 {
 					ids := g.tokens(n, seed*7919)
-					ctlIDs := append(append([]int(nil), ids[:n-8]...), g.tokens(8, seed*7919+31)...)
+					ctlIDs := slices.Concat(ids[:n-8], g.tokens(8, seed*7919+31))
 					b, ref, ctl, l := kv3Score(t, g, ids, ctlIDs)
 					kv3Check(t, fmt.Sprintf("tiny %s n=%d seed=%d", kv, n, seed), b, ref, ctl, l, len(g.r.layers), false)
 				}
@@ -220,7 +220,7 @@ func TestKV3_batchedPrefillPastTheSpanBound_real1p5B(t *testing.T) {
 			for _, n := range lengths {
 				for w := 0; w < windows; w++ {
 					ids := g.tokens(n, 40000*(w+1)+n)
-					ctlIDs := append(append([]int(nil), ids[:n-8]...), g.tokens(8, 99+w)...)
+					ctlIDs := slices.Concat(ids[:n-8], g.tokens(8, 99+w))
 					b, ref, ctl, l := kv3Score(t, g, ids, ctlIDs)
 					kv3Check(t, fmt.Sprintf("1.5B %s n=%d window=%d", kv, n, w), b, ref, ctl, l, len(g.r.layers), true)
 				}
@@ -585,7 +585,7 @@ func kv10Tail(t *testing.T, ckpt, kv string, ids []int, tail int) [][]float32 {
 	}
 	out := make([][]float32, len(outs))
 	for i := range outs {
-		out[i] = append([]float32(nil), outs[i]...)
+		out[i] = slices.Clone(outs[i])
 	}
 	return out
 }
@@ -718,7 +718,7 @@ func TestKV10_longContextFidelity(t *testing.T) {
 	depths := []int{3900, 65536, 131000}
 	if v := os.Getenv("GOINFER_KV10_DEPTHS"); v != "" {
 		depths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil || n < 64 {
 				t.Fatalf("GOINFER_KV10_DEPTHS: %q", f)

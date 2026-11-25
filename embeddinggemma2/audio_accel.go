@@ -2,7 +2,8 @@ package embeddinggemma2
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
@@ -34,12 +35,7 @@ func RegisterAudioAccelerator(name string, factory func(*audio.Gemma4AudioEncode
 func AudioAccelerators() []string {
 	accelMu.Lock()
 	defer accelMu.Unlock()
-	var n []string
-	for k := range audAccels {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(audAccels))
 }
 
 // NewAudioAccelerator builds the named audio-tower accelerator over a loaded tower.

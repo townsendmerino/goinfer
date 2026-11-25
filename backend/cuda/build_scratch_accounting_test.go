@@ -339,7 +339,6 @@ func TestConcurrentMinFree_7BServe(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	gen := func(name string, ids []int, maxNew int, started chan<- struct{}) {
-		defer wg.Done()
 		ch, g := m.Generate(context.Background(), ids, maxNew, decoder.SamplingParams{})
 		first := true
 		for range ch {
@@ -355,14 +354,14 @@ func TestConcurrentMinFree_7BServe(t *testing.T) {
 	t0 := time.Now()
 	started := make(chan struct{}, 3)
 	for i := range 3 {
-		wg.Add(1)
-		go gen(fmt.Sprintf("decoder %d", i), prompt(64, i), 512, started)
+		name, ids := fmt.Sprintf("decoder %d", i), prompt(64, i)
+		wg.Go(func() { gen(name, ids, 512, started) })
 	}
 	for range 3 {
 		<-started // all three are decoding
 	}
-	wg.Add(1)
-	go gen("the long prompt", prompt(2048, 9), 32, nil)
+	longIDs := prompt(2048, 9)
+	wg.Go(func() { gen("the long prompt", longIDs, 32, nil) })
 	wg.Wait()
 	close(stop)
 	<-sampled

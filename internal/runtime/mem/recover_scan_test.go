@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -179,7 +179,7 @@ func TestRecover_everyBroadRecoverLetsABugThrough(t *testing.T) {
 	if read < 500 {
 		t.Fatalf("read %d non-test files: a scan that reads little proves nothing", read)
 	}
-	sort.Strings(bad)
+	slices.Sort(bad)
 	for _, b := range bad {
 		t.Error(b)
 	}

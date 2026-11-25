@@ -212,7 +212,7 @@ func windowedStepIdentity64(t *testing.T, fx string) {
 	compactions, lastBase := 0, 0
 	for done := 0; done < steps; done += 50 {
 		n := min(50, steps-done)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			decodeSteps(t, full, win, mw, done+i, 1)
 			if win.kvBases[win.kvSlot] != lastBase {
 				compactions++

@@ -1,12 +1,13 @@
 package sampling
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,11 +36,8 @@ func refTopFilter(logits []float32, temperature float64, topK int, topP, minP fl
 	for i, v := range logits {
 		ips[i] = indexedProb{id: i, p: math.Exp((float64(v) - maxL) / texp)} // e (unnormalized)
 	}
-	sort.SliceStable(ips, func(a, b int) bool {
-		if ips[a].p != ips[b].p {
-			return ips[a].p > ips[b].p
-		}
-		return ips[a].id < ips[b].id // tie-break: ascending id
+	slices.SortStableFunc(ips, func(a, b indexedProb) int {
+		return cmp.Or(cmp.Compare(b.p, a.p), cmp.Compare(a.id, b.id))
 	})
 	if topK > 0 && topK < len(ips) {
 		ips = ips[:topK]

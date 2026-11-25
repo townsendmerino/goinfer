@@ -2,6 +2,7 @@ package decide
 
 import (
 	"errors"
+	"slices"
 	"unicode/utf8"
 )
 
@@ -32,7 +33,7 @@ func truncateState(tok Tokenizer, state string) (string, bool, error) {
 		return "", false, errors.New("decide: this state is over the decision head's 1024 tokens and the tokenizer cannot decode it back to cut it")
 	}
 	head := MaxStateTokens * 6 / 10
-	kept := append(append([]int(nil), ids[:head]...), ids[len(ids)-(MaxStateTokens-head):]...)
+	kept := slices.Concat(ids[:head], ids[len(ids)-(MaxStateTokens-head):])
 	s, err := dec.DecodePlain(kept)
 	return s, true, err
 }

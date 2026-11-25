@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"math"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -90,7 +91,7 @@ func runEModelImageG1q(t *testing.T) []eModelImageGrade {
 		if err != nil {
 			t.Fatalf("%s: PrefillLast: %v", lay.name, err)
 		}
-		batched = append([]float32(nil), batched...)
+		batched = slices.Clone(batched)
 		g := eModelImageGrade{name: lay.name, nonVacuous: r.passPromptLen == len(ids)}
 		// The same rows, one token at a time on the same resident: the batched pass must be bit-identical (the rows are the variable under test, not the pass).
 		seq := seqLogits(t, r, rows)

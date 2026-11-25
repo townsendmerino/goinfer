@@ -10,7 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,7 +44,7 @@ func TestKV3_prefillDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	files, _ := filepath.Glob("../../decoder/*.go")
-	sort.Strings(files)
+	slices.Sort(files)
 	var sb strings.Builder
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -64,7 +64,7 @@ func TestKV3_prefillDigest(t *testing.T) {
 		window := ids[1000 : 1000+n]
 		e := make([][]float32, n)
 		for i, id := range window {
-			e[i] = append([]float32(nil), m.EmbedResidentForTest(id)...)
+			e[i] = slices.Clone(m.EmbedResidentForTest(id))
 		}
 		lg, err := r.PrefillLast(context.Background(), e, 0)
 		if err != nil {

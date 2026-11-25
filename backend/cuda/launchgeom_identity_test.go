@@ -11,7 +11,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,7 +33,7 @@ func TestLaunchGeometry_identity(t *testing.T) {
 		for n := range got {
 			names = append(names, n)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		var b strings.Builder
 		for _, n := range names {
 			fmt.Fprintf(&b, "%s %s\n", n, got[n])

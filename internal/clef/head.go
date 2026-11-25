@@ -25,7 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -134,7 +134,7 @@ func (r *tensorReader) get(name string, shape ...int) []float32 {
 	// An F32 read is a zero-copy view into the file's mapping, and LoadHead closes the file when it returns; a bf16 or f16 read has already been widened into a
 	// new slice. Copy the view so the head owns its weights whatever the checkpoint's dtype (a head read from an F32 file used to fault on first use).
 	if t.DType == "F32" {
-		data = append([]float32(nil), data...)
+		data = slices.Clone(data)
 	}
 	r.used[name] = true
 	return data
@@ -199,7 +199,7 @@ func buildHead(cfg HeadConfig, st *embed.SafetensorsFile) (*Head, error) {
 		}
 	}
 	if len(extra) > 0 {
-		sort.Strings(extra)
+		slices.Sort(extra)
 		return nil, fmt.Errorf("clef: joint_head.safetensors carries %d tensor(s) this layout does not use (%s ...); refusing a head that differs from the one this port was verified against", len(extra), extra[0])
 	}
 	return h, nil

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,7 +68,7 @@ func TestLoRAAdapterCacheCUDA(t *testing.T) {
 			}
 			last = lr
 		}
-		return append([]float32(nil), last...)
+		return slices.Clone(last)
 	}
 	bind := func(name string) {
 		t.Helper()

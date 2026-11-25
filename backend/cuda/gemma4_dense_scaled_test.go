@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -56,7 +57,7 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cpu int4 pos %d: %v", i, err)
 		}
-		cpu4[i] = append([]float32(nil), l...)
+		cpu4[i] = slices.Clone(l)
 	}
 	cpuF := make([][]float32, len(prompt))
 	cFc := mcF.NewCache(len(prompt))
@@ -65,7 +66,7 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cpu f32 pos %d: %v", i, err)
 		}
-		cpuF[i] = append([]float32(nil), l...)
+		cpuF[i] = slices.Clone(l)
 	}
 	cuda := make([][]float32, len(prompt))
 	for i, tok := range prompt {
@@ -73,7 +74,7 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cuda pos %d: %v", i, err)
 		}
-		cuda[i] = append([]float32(nil), l...)
+		cuda[i] = slices.Clone(l)
 	}
 
 	byteIdentityCensus(t, "CUDA-resident vs CPU-int4 (both W4A8), DENSE", cuda, cpu4)

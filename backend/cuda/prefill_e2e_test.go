@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -81,7 +82,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	}
 	embs := make([][]float32, n)
 	for i, tok := range prompt {
-		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(tok)...)
+		embs[i] = slices.Clone(mc.EmbedResidentForTest(tok))
 	}
 
 	// --- sequential reference: ForwardNoLogits for [:-1], Forward for the last → seqLogits + KV.
@@ -94,7 +95,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	if err != nil {
 		t.Fatalf("seq Forward last: %v", err)
 	}
-	seqLogits = append([]float32(nil), seqLogits...)
+	seqLogits = slices.Clone(seqLogits)
 	seqK := make([][]float32, nLayers)
 	seqV := make([][]float32, nLayers)
 	for l := range nLayers {

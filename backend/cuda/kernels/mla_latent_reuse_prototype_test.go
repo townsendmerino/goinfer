@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		lat[i] = rnd()
 	}
 	// DUPLICATE, do not alias (see the header note).
-	latV := append([]float32(nil), lat...)
+	latV := slices.Clone(lat)
 
 	dQ := mustAlloc[float32](t, cx, len(qAbs))
 	dK := mustAlloc[float32](t, cx, len(lat))
@@ -179,7 +180,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	// ---- (2b) per-dim independence VERIFIED, not assumed: the wasted rope-tail accumulate must not
 	// perturb the rank dims at all. Zero the VALUE buffer's rope tail and require the first `rank`
 	// output dims to come back BIT-IDENTICAL. (A shared reduction across dims would show up here.)
-	latVzero := append([]float32(nil), latV...)
+	latVzero := slices.Clone(latV)
 	for j := range nKeys {
 		for d := rank; d < latDim; d++ {
 			latVzero[j*latDim+d] = 0

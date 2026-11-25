@@ -202,7 +202,7 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 			}
 		}
 		rows := make([][]float32, len(refTokens[pi]))
-		rows[0] = append([]float32(nil), seed...)
+		rows[0] = slices.Clone(seed)
 		pos := K - 1
 		for i := 1; i < len(rows); i++ {
 			pos++
@@ -210,7 +210,7 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 			if err != nil {
 				t.Fatalf("Forward (-kv %s) prompt %d pos %d: %v", kv, pi, pos, err)
 			}
-			rows[i] = append([]float32(nil), lg...)
+			rows[i] = slices.Clone(lg)
 		}
 		return rows
 	}

@@ -33,9 +33,7 @@ var (
 )
 
 func normCmd(s string) string {
-	if i := strings.Index(s, "#"); i >= 0 {
-		s = s[:i]
-	}
+	s, _, _ = strings.Cut(s, "#")
 	return strings.TrimSpace(spacesRE.ReplaceAllString(s, " "))
 }
 

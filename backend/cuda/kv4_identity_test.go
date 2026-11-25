@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ type kv4Trace struct {
 
 func (tr *kv4Trace) add(step string, lg []float32) {
 	tr.steps = append(tr.steps, step)
-	tr.logits = append(tr.logits, append([]float32(nil), lg...))
+	tr.logits = append(tr.logits, slices.Clone(lg))
 }
 
 // kv4Workload drives one resident through every KV path a table must serve: a batched prefill (or per-token where the fixture declines
@@ -53,7 +54,7 @@ func kv4Workload(t *testing.T, m *decoder.Model, r *cudaResident, prompt int) kv
 	t.Helper()
 	_, _, _, _, _, _, vocab := m.Dims()
 	id := func(i, salt int) int { return (i*31 + salt*17 + 7) % vocab }
-	emb := func(i, salt int) []float32 { return append([]float32(nil), m.EmbedResidentForTest(id(i, salt))...) }
+	emb := func(i, salt int) []float32 { return slices.Clone(m.EmbedResidentForTest(id(i, salt))) }
 	var tr kv4Trace
 	prefill := func(label string, n, start, salt int) {
 		e := make([][]float32, n)
@@ -243,8 +244,7 @@ func kv4F16Refusal(t *testing.T, fx string, opts decoder.Options) string {
 	opts.Backend, opts.Quant, opts.KVPrecision = "cuda", "int4", "f16"
 	m, err := decoder.Load(filepath.Join("../../testdata", fx), opts)
 	if err != nil {
-		var r *decoder.KVRefusal
-		if errors.As(err, &r) {
+		if _, ok := errors.AsType[*decoder.KVRefusal](err); ok {
 			return err.Error()
 		}
 		t.Fatalf("load %s at f16: %v", fx, err)
@@ -310,8 +310,7 @@ func TestKV4_windowedFlashAndSplitKV(t *testing.T) {
 				trace := func(win bool) (kv4Trace, *cudaResident) {
 					m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: maxPos,
 						ResidentWindowedKV: win, Knobs: &knobs})
-					var refused *decoder.KVRefusal
-					if errors.As(err, &refused) && kv == "f16" {
+					if _, ok := errors.AsType[*decoder.KVRefusal](err); ok && kv == "f16" {
 						t.Skipf("f16 windowed KV is KV4b's: %v", err)
 					}
 					if err != nil {
@@ -325,7 +324,7 @@ func TestKV4_windowedFlashAndSplitKV(t *testing.T) {
 					_, _, _, _, _, _, vocab := m.Dims()
 					e := make([][]float32, prompt)
 					for i := range e {
-						e[i] = append([]float32(nil), m.EmbedResidentForTest((i*31+7)%vocab)...)
+						e[i] = slices.Clone(m.EmbedResidentForTest((i*31 + 7) % vocab))
 					}
 					var tr kv4Trace
 					lg, err := r.PrefillLast(context.Background(), e, 0)

@@ -199,13 +199,13 @@ func TestKV8a_restoreEqualsColdPrefill(t *testing.T) {
 				mc, rc := kv8aLoad(t, fx)
 				_, _, _, _, _, _, vocab := mc.Dims()
 				a := kv8aIDs(1, n1, vocab)
-				b := append(append(append([]int(nil), a...), kv8aIDs(2, 15, vocab)...), kv8aIDs(3, 45, vocab)...)
+				b := append(slices.Concat(a, kv8aIDs(2, 15, vocab)), kv8aIDs(3, 45, vocab)...)
 				n2 := len(b)
 				if (n1 < fastPrefillFloor) != (n2 < fastPrefillFloor) {
 					t.Fatalf("turns of %d and %d straddle the fast-prefill floor %d", n1, n2, fastPrefillFloor)
 				}
 				lc := kv8aPrefill(t, mc, rc, b, 0)
-				cold := append([][]float32{append([]float32(nil), lc...)}, append(kv8aRec(t, rc), kv8aKV(t, rc, n2)...)...)
+				cold := append([][]float32{slices.Clone(lc)}, append(kv8aRec(t, rc), kv8aKV(t, rc, n2)...)...)
 
 				warm := func(plant string) [][]float32 {
 					m, r := kv8aLoad(t, fx)
@@ -232,7 +232,7 @@ func TestKV8a_restoreEqualsColdPrefill(t *testing.T) {
 						t.Fatal(err)
 					}
 					lw := kv8aPrefill(t, m, r, b[from:], from)
-					return append([][]float32{append([]float32(nil), lw...)}, append(kv8aRec(t, r), kv8aKV(t, r, n2)...)...)
+					return append([][]float32{slices.Clone(lw)}, append(kv8aRec(t, r), kv8aKV(t, r, n2)...)...)
 				}
 				for _, plant := range []string{"", "no conv window", "from c-1"} {
 					same := kv8aSame(warm(plant), cold)
@@ -487,7 +487,7 @@ func TestKV8Mamba_snapshotRestoreEqualsColdAndPlantsAreRed(t *testing.T) {
 		if len(kv) == 0 {
 			t.Fatal("compared no attention K/V rows: the fixture must have attention layers")
 		}
-		return out{append([]float32(nil), lg...), rec, kv}
+		return out{slices.Clone(lg), rec, kv}
 	}
 	same := func(x, y out) bool {
 		return logitsDiffer(x.logits, y.logits) == 0 && kv8aSame(x.rec, y.rec) && kv8aSame(x.kv, y.kv)

@@ -115,8 +115,8 @@ func (o *object) text() []byte {
 // tomlHeader reports whether a line opens a TOML table, and its name.
 func tomlHeader(line string) (string, bool) {
 	t := strings.TrimSpace(line)
-	if i := strings.Index(t, "#"); i >= 0 && strings.HasSuffix(strings.TrimSpace(t[:i]), "]") {
-		t = strings.TrimSpace(t[:i])
+	if before, _, ok := strings.Cut(t, "#"); ok && strings.HasSuffix(strings.TrimSpace(before), "]") {
+		t = strings.TrimSpace(before)
 	}
 	if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
 		return strings.TrimSpace(strings.Trim(t, "[]")), true
@@ -127,11 +127,11 @@ func tomlHeader(line string) (string, bool) {
 // tomlKey is the bare key a `key = value` line sets, or "".
 func tomlKey(line string) string {
 	t := strings.TrimSpace(line)
-	i := strings.Index(t, "=")
-	if i <= 0 || strings.HasPrefix(t, "#") {
+	key, _, ok := strings.Cut(t, "=")
+	if !ok || key == "" || strings.HasPrefix(t, "#") {
 		return ""
 	}
-	return strings.TrimSpace(t[:i])
+	return strings.TrimSpace(key)
 }
 
 // tomlEdit patches a TOML file as text, since the standard library reads none: it sets top-level keys (the lines

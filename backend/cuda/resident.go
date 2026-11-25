@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1731,7 +1732,7 @@ func (r *cudaResident) allocSlotStacks(moeLayers []int, record bool) {
 				slotReq{w, r.cacheSlots * w.perExpertS, r.cacheSlots * w.perExpertS * 2, false})
 		}
 	}
-	sort.SliceStable(reqs, func(a, b int) bool { return reqs[a].size > reqs[b].size })
+	slices.SortStableFunc(reqs, func(a, b slotReq) int { return cmp.Compare(b.size, a.size) })
 	for _, q := range reqs {
 		if q.isW {
 			q.w.W = r.au32(q.n)
@@ -2447,7 +2448,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 			if e != nil {
 				return e
 			}
-			out[i] = append([]float32(nil), l...) // each row kept, so copy off the reused host buf
+			out[i] = slices.Clone(l) // each row kept, so copy off the reused host buf
 		}
 		return nil
 	})
@@ -4337,7 +4338,7 @@ func (r *cudaResident) SetHiddenCapture(taps []int) error {
 		}
 		prev = t
 	}
-	r.hidCapTaps = append([]int(nil), taps...)
+	r.hidCapTaps = slices.Clone(taps)
 	r.hidCapOut = make([][]float32, len(taps))
 	return nil
 }

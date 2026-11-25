@@ -2,7 +2,9 @@ package serveapp
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"reflect"
 	"sync"
 )
 
@@ -22,41 +24,62 @@ type modelLiveness struct {
 	refs int          // registry entries backed by this model; Close is safe only at refs==0
 }
 
-// retainLocked records one more registry entry backed by m. CALLER HOLDS regMu.Lock. Called at every
+// nilCloser reports whether c is nil or holds a typed nil pointer (which c == nil does not catch).
+func nilCloser(c io.Closer) bool {
+	if c == nil {
+		return true
+	}
+	v := reflect.ValueOf(c)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
+
+// livenessKey is this entry's model identity in server.liveness and its unload Close target: the concrete model when
+// loaded, else a test-supplied closer; nil when the entry holds neither.
+func (lm *loadedModel) livenessKey() io.Closer {
+	if lm.model != nil {
+		return lm.model
+	}
+	if nilCloser(lm.closer) {
+		return nil
+	}
+	return lm.closer
+}
+
+// retainLocked records one more registry entry backed by c. CALLER HOLDS regMu.Lock. Called at every
 // publish site (startup --model / --adapter, admin load) so refs always matches the live entry count.
-func (s *server) retainLocked(m modelHandle) {
-	if nilHandle(m) {
+func (s *server) retainLocked(c io.Closer) {
+	if nilCloser(c) {
 		return
 	}
 	if s.liveness == nil {
-		s.liveness = map[modelHandle]*modelLiveness{}
+		s.liveness = map[io.Closer]*modelLiveness{}
 	}
-	ml := s.liveness[m]
+	ml := s.liveness[c]
 	if ml == nil {
 		ml = &modelLiveness{}
-		s.liveness[m] = ml
+		s.liveness[c] = ml
 	}
 	ml.refs++
 }
 
-// releaseLocked drops one entry backed by m and reports (its liveness, whether this was the LAST
+// releaseLocked drops one entry backed by c and reports (its liveness, whether this was the LAST
 // owner). CALLER HOLDS regMu.Lock and MUST HAVE ALREADY deleted the entry from s.models — the
 // delete-before-decide invariant: it makes "am I the last owner?" a question about a registry that
 // no longer contains me, so of two concurrent sibling unloads the second to run necessarily sees
 // refs==0 and closes. Reverse it and both can read refs>0 and both decline, orphaning the model
 // with no entry left to retry — and double-decline is unrecoverable where double-Close is idempotent.
-func (s *server) releaseLocked(m modelHandle) (*modelLiveness, bool) {
-	if nilHandle(m) {
+func (s *server) releaseLocked(c io.Closer) (*modelLiveness, bool) {
+	if nilCloser(c) {
 		return nil, false
 	}
-	ml := s.liveness[m]
+	ml := s.liveness[c]
 	if ml == nil {
 		return nil, false // never retained (defensive): treat as not-closable, leak-not-crash
 	}
 	ml.refs--
 	last := ml.refs <= 0
 	if last {
-		delete(s.liveness, m)
+		delete(s.liveness, c)
 	}
 	return ml, last
 }
@@ -72,8 +95,10 @@ func (s *server) resolveAndLock(name string) (*loadedModel, func()) {
 	lm := s.lookupLocked(name)
 	var ml *modelLiveness
 	if lm != nil {
-		if ml = s.liveness[lm.model]; ml != nil {
-			ml.rw.RLock()
+		if k := lm.livenessKey(); k != nil {
+			if ml = s.liveness[k]; ml != nil {
+				ml.rw.RLock()
+			}
 		}
 	}
 	s.regMu.RUnlock()
@@ -187,8 +212,10 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 			lm.sessMu.Unlock()
 		}
 		lm.closeEntryNatives()
-		if last && lm.model != nil {
-			_ = lm.model.Close()
+		if last {
+			if c := lm.livenessKey(); c != nil {
+				_ = c.Close()
+			}
 		}
 		if ml != nil {
 			ml.rw.Unlock()

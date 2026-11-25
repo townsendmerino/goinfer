@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -143,7 +144,7 @@ func Load(dir string) (*Model, error) {
 			return nil, fmt.Errorf("embeddinggemma2: %s: %w", name, err)
 		}
 		// An F32 tensor comes back aliasing the mapping, which Close unmaps; own a copy.
-		return append([]float32(nil), v...), nil
+		return slices.Clone(v), nil
 	}
 	H, I, P, L := cfg.Hidden, cfg.Intermediate, cfg.PLEDim, cfg.Layers
 	m := &Model{cfg: cfg, layers: make([]layer, L)}
@@ -291,7 +292,7 @@ func (m *Model) EmbedTokens(ids []int) ([]float32, error) {
 // ForwardEmbedsCPU runs the encoder on T prepared input rows x [T, hidden] (EmbedTokens, with any image rows spliced
 // in), returning the projected last hidden state as forward does. x is not modified.
 func (m *Model) ForwardEmbedsCPU(x []float32, T int, keepLayers bool) ([]float32, [][]float32, error) {
-	return m.forwardEmbeds(append([]float32(nil), x...), T, keepLayers)
+	return m.forwardEmbeds(slices.Clone(x), T, keepLayers)
 }
 
 // forwardEmbeds is the encoder from its input rows; it works in x in place.
@@ -317,7 +318,7 @@ func (m *Model) forwardEmbeds(x []float32, T int, keepLayers bool) ([]float32, [
 	var hidden [][]float32
 	keep := func() {
 		if keepLayers {
-			hidden = append(hidden, append([]float32(nil), x...))
+			hidden = append(hidden, slices.Clone(x))
 		}
 	}
 	keep()

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,7 +71,7 @@ func f1Decode(t *testing.T, m *Model, ids []int) [][]float32 {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out
 }
@@ -124,7 +125,7 @@ func f1Cells(t *testing.T, m *Model, n int, setup func(*KVCache)) map[string]int
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 		}
 		return out
 	}
@@ -211,14 +212,14 @@ func TestKVF16_F1SnapshotAndCopy(t *testing.T) {
 	if _, err := f16.forwardN(context.Background(), ids, s.cache); err != nil {
 		t.Fatal(err)
 	}
-	s.tokens = append([]int(nil), ids...)
+	s.tokens = slices.Clone(ids)
 	next := (ids[len(ids)-1] + 1) % vocab
 	step := func(c *KVCache) []float32 {
 		lg, err := f16.forward(next, c)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	blob := s.Snapshot("id")
 	back, err := f16.LoadSession(blob, "id")

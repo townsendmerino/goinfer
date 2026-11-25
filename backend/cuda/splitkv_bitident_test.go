@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -59,7 +60,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	var s uint32 = 987654321
 	for i := range prefill {
 		s = s*1664525 + 1013904223
-		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+		prefill[i] = slices.Clone(emb(int(s>>8) % vocab))
 	}
 
 	// Force the split path whenever the flag is on, bypassing the per-geometry depth gate. Without
@@ -76,7 +77,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 		if e != nil {
 			t.Fatalf("prefill (splitKV=%v): %v", useSplitKV, e)
 		}
-		cur := append([]float32(nil), lg...)
+		cur := slices.Clone(lg)
 		stream := make([]int, 0, 24)
 		for i := range 24 {
 			tok := argmaxF(cur)
@@ -85,7 +86,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 			if e != nil {
 				t.Fatalf("decode (splitKV=%v) step %d: %v", useSplitKV, i, e)
 			}
-			cur = append([]float32(nil), l...)
+			cur = slices.Clone(l)
 		}
 		return cur, stream
 	}
@@ -160,7 +161,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 	var s uint32 = 424242
 	for i := range prefill {
 		s = s*1664525 + 1013904223
-		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+		prefill[i] = slices.Clone(emb(int(s>>8) % vocab))
 	}
 	// Force the split path whenever the flag is on, bypassing the per-geometry depth gate. Without
 	// this the test would be VACUOUS for any geometry whose threshold exceeds D: both arms would run
@@ -176,7 +177,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 		if e != nil {
 			t.Fatalf("prefill (splitKV=%v): %v", useSplitKV, e)
 		}
-		cur := append([]float32(nil), lg...)
+		cur := slices.Clone(lg)
 		stream := make([]int, 0, 16)
 		for i := range 16 {
 			tok := argmaxF(cur)
@@ -185,7 +186,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 			if e != nil {
 				t.Fatalf("decode (splitKV=%v) step %d: %v", useSplitKV, i, e)
 			}
-			cur = append([]float32(nil), l...)
+			cur = slices.Clone(l)
 		}
 		return cur, stream
 	}

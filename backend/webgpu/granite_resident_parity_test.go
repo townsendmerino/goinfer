@@ -96,7 +96,7 @@ func TestGraniteResidentParity(t *testing.T) {
 }
 
 // TestLogitScaleResidentWebGPU holds the head's logit-scale fold on the dense families that carry one (dense Granite
-// divides) to the CPU's scale: relL2 <= 1e-3 over 16 decoded positions at int8int8 and with an int4 head
+// divides, Cohere multiplies) to the CPU's scale: relL2 <= 1e-3 over 16 decoded positions at int8int8 and with an int4 head
 // (EmbedInt4), where a missing or inverted fold reads relL2 of |1/s - 1| or more. Cosine cannot see a constant factor.
 func TestLogitScaleResidentWebGPU(t *testing.T) {
 	if c, err := New(); err != nil {
@@ -104,7 +104,7 @@ func TestLogitScaleResidentWebGPU(t *testing.T) {
 	} else {
 		c.Close()
 	}
-	for _, fx := range []string{"granite-dense-tiny"} {
+	for _, fx := range []string{"granite-dense-tiny", "cohere-tiny"} {
 		for _, int4Head := range []bool{false, true} {
 			opts := decoder.Options{Quant: "int8int8"}
 			if int4Head {
@@ -146,12 +146,16 @@ func TestLogitScaleResidentWebGPU(t *testing.T) {
 					d := float64(got[j]) - float64(want[j])
 					dd, bb = dd+d*d, bb+float64(want[j])*float64(want[j])
 				}
-				worst = math.Max(worst, math.Sqrt(dd/bb))
+				r := math.Sqrt(dd / bb)
+				if math.IsNaN(r) { // NaN, or an all-zero reference, is the worst reading
+					r = math.Inf(1)
+				}
+				worst = math.Max(worst, r)
 			}
 			m.Close()
 			cpu.Close()
 			t.Logf("%s int4 head %v: worst relL2 %.3g", fx, int4Head, worst)
-			if worst > 1e-3 {
+			if !(worst <= 1e-3) {
 				t.Errorf("%s int4 head %v: worst relL2 %.3g against the CPU, want <= 1e-3", fx, int4Head, worst)
 			}
 		}

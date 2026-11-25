@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 
@@ -263,7 +264,7 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 			return e
 		}
 		for i := range n {
-			out[i] = append([]float32(nil), host[i*hidden:(i+1)*hidden]...)
+			out[i] = slices.Clone(host[i*hidden : (i+1)*hidden])
 		}
 		return d.r.launchErr
 	})
@@ -597,7 +598,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 			return e
 		}
 		for i := range M {
-			out[i] = append([]float32(nil), host[i*hidden:(i+1)*hidden]...)
+			out[i] = slices.Clone(host[i*hidden : (i+1)*hidden])
 		}
 		return d.r.launchErr
 	})
@@ -626,7 +627,7 @@ func (r *cudaResident) SetBatchedCapture(taps []int) error {
 		}
 		prev = t
 	}
-	r.capBTaps = append([]int(nil), taps...)
+	r.capBTaps = slices.Clone(taps)
 	r.capBOut = make([][]float32, len(taps))
 	return nil
 }

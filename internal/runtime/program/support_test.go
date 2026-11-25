@@ -1,6 +1,7 @@
 package program
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -153,7 +154,7 @@ func TestSupport_metalStepDeclinesEachPlacement(t *testing.T) {
 	attn := []Op{{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormRMS}}, {Kind: OpProjQKV}, {Kind: OpAttention}, {Kind: OpProjO},
 		{Kind: OpResidual}}
 	with := func(i int, o Op) *Program {
-		ops := append([]Op(nil), attn...)
+		ops := slices.Clone(attn)
 		ops[i] = o
 		return layer(ops...)
 	}
@@ -163,7 +164,7 @@ func TestSupport_metalStepDeclinesEachPlacement(t *testing.T) {
 		want   string
 		byKind bool // a kind or form the step lacks, which decode's table may lack too
 	}{
-		{"a sandwich norm", layer(append(append([]Op(nil), attn[:4]...), Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPostAttn, Form: NormRMS}}, attn[4])...),
+		{"a sandwich norm", layer(append(slices.Clone(attn[:4]), Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPostAttn, Form: NormRMS}}, attn[4])...),
 			"a norm on a sublayer's output", false},
 		{"post-only placement", with(0, Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormCopy}}), "post-only placement", false},
 		{"a parallel block's residual", with(4, Op{Kind: OpResidual, Res: ResidualParams{Two: true}}), "residual of two outputs", false},
@@ -199,5 +200,16 @@ func TestSupport_metalStepDeclinesEachPlacement(t *testing.T) {
 		{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormLayer}}, attn[1], attn[2], attn[3], attn[4]}}}
 	if g := MetalStep.Gaps(ln); len(g) != 1 {
 		t.Errorf("a LayerNorm model: the step's gaps %q, want LayerNorm named once", g)
+	}
+}
+
+func TestWithNonGatedReLU2_nilFFN(t *testing.T) {
+	base := &Support{Backend: "test"}
+	got := withNonGatedReLU2(base)
+	if !slices.Equal(got.FFN[FfnNonGated], []ActKind{ActReLU2}) {
+		t.Fatalf("got FFN[%v] = %v, want [%v]", FfnNonGated, got.FFN[FfnNonGated], ActReLU2)
+	}
+	if base.FFN != nil {
+		t.Errorf("withNonGatedReLU2 mutated caller's FFN map")
 	}
 }

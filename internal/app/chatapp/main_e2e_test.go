@@ -50,13 +50,12 @@ func runMain(t *testing.T, stdin string, args ...string) (code int, stdout, stde
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e
 	err = cmd.Run()
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-	case errors.As(err, &exit):
-		code = exit.ExitCode()
-	default:
-		t.Fatalf("running goinfer-chat %q: %v\nstderr:\n%s", args, err, e.String())
+	if err != nil {
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+			code = exit.ExitCode()
+		} else {
+			t.Fatalf("running goinfer-chat %q: %v\nstderr:\n%s", args, err, e.String())
+		}
 	}
 	if ctx.Err() != nil {
 		t.Fatalf("goinfer-chat %q did not finish in a minute\nstderr:\n%s", args, e.String())

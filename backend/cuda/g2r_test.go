@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -224,7 +225,7 @@ func g2rHookChanged(t *testing.T, path string, seed []int) bool {
 			if err != nil {
 				t.Fatal(err)
 			}
-			last = append([]float32(nil), l...)
+			last = slices.Clone(l)
 		}
 		return last
 	}

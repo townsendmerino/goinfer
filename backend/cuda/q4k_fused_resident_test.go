@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -51,7 +52,7 @@ func TestQ4K_fusedG32ResidentBitIdentical(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 		}
 		return out
 	}

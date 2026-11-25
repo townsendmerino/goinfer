@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -73,11 +74,11 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cpu int4 pos %d: %v", i, err)
 		}
-		cpu4[i] = append([]float32(nil), l...)
+		cpu4[i] = slices.Clone(l)
 	}
 	idxCpu4, _ := decoder.RouterCaptureForTest()
-	idxCpu4 = append([][]int(nil), idxCpu4...)                             // snapshot before the f32 run appends more
-	marginCpu4 := append([]float32(nil), decoder.RouterMarginForTest()...) // per-decision top-k boundary margin, same order
+	idxCpu4 = slices.Clone(idxCpu4)                           // snapshot before the f32 run appends more
+	marginCpu4 := slices.Clone(decoder.RouterMarginForTest()) // per-decision top-k boundary margin, same order
 
 	// CPU f32 over the prompt (the conditioning reference; idx not needed).
 	cpuF := make([][]float32, len(prompt))
@@ -87,7 +88,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cpu f32 pos %d: %v", i, err)
 		}
-		cpuF[i] = append([]float32(nil), l...)
+		cpuF[i] = slices.Clone(l)
 	}
 
 	// Resident int4 over the prompt (g4capIdx accumulates per decision).
@@ -97,7 +98,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cuda pos %d: %v", i, err)
 		}
-		cuda[i] = append([]float32(nil), l...)
+		cuda[i] = slices.Clone(l)
 	}
 
 	// ---- curves: CUDA-vs-CPU-int4 vs the fixture's own CPU-int4-vs-f32 quantization curve ----

@@ -146,9 +146,9 @@ SCANS = [
     Scan("internal/app/serveapp", "TestBanner_contextIsTheEnforcedWindow", F("internal/app/serveapp/banner.go", "internal/app/serveapp/main.go")),
     Scan("internal/app/serveapp", "TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt", F("internal/app/serveapp/vision_serve.go")),
     Scan("internal/app/serveapp", "TestServe_everyTokenizingRouteGuardsItsInputSize", NT("internal/app/serveapp")),
-    # SB7: a loadedModel's model handle is set only through handleOf.
+    # A loadedModel's blockSpec is set only through drafterOf.
     Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
-    Scan("internal/app/serveapp", "TestModelHandle_assignedThroughHandleOf", NT("internal/app/serveapp")),
+    Scan("internal/app/serveapp", "TestBlockDrafter_assignedThroughDrafterOf", NT("internal/app/serveapp")),
     Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),

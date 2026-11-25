@@ -1,9 +1,10 @@
 package sampling
 
 import (
+	"cmp"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -128,11 +129,8 @@ func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
 	for i, p := range probs {
 		ips[i] = ip{i, p}
 	}
-	sort.SliceStable(ips, func(a, b int) bool {
-		if ips[a].p != ips[b].p {
-			return ips[a].p > ips[b].p
-		}
-		return ips[a].id < ips[b].id // matches topKByLogit's smaller-id-wins tie-break
+	slices.SortStableFunc(ips, func(a, b ip) int {
+		return cmp.Or(cmp.Compare(b.p, a.p), cmp.Compare(a.id, b.id))
 	})
 	if topN > len(ips) {
 		topN = len(ips)
@@ -224,12 +222,12 @@ func TestApplyPenalties_incrementalMatchesRebuild(t *testing.T) {
 
 	step := func(mutate func()) {
 		mutate()
-		fast := append([]float32(nil), base...)
+		fast := slices.Clone(base)
 		s.applyPenalties(fast)
 
 		ref := NewSampler(sp)
-		ref.history = append([]int(nil), s.history...) // same history, built by direct rescan below
-		slow := append([]float32(nil), base...)
+		ref.history = slices.Clone(s.history) // same history, built by direct rescan below
+		slow := slices.Clone(base)
 		ref.applyPenaltiesOver(slow, ref.history) // the pre-P-15 always-correct path
 
 		for i := range fast {

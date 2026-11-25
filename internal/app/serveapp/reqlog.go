@@ -107,7 +107,7 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, rep *genReport, ids
 			t.ckptSaved, t.ckptSave = rep.CheckpointSaved, rep.CheckpointSave
 			t.ckptRestored, t.ckptRestore, t.ckptDeclined = rep.CheckpointRestored, rep.CheckpointRestore, rep.CheckpointDeclined
 			if lm.model != nil {
-				t.kv = lm.mdl().KVDelivered()
+				t.kv = lm.model.KVDelivered()
 			}
 		}
 	}

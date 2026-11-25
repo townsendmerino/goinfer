@@ -88,7 +88,7 @@ func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 	}
 	want := map[string]bool{}
 	if v := os.Getenv("KSH6C_MODELS"); v != "" {
-		for _, s := range strings.Split(v, ",") {
+		for s := range strings.SplitSeq(v, ",") {
 			want[strings.TrimSpace(s)] = true
 		}
 	}

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -58,7 +59,7 @@ func seqLogits(t *testing.T, r *cudaResident, rows [][]float32) [][]float32 {
 		if err != nil {
 			t.Fatalf("sequential Forward(%d): %v", i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 	}
 	return out
 }
