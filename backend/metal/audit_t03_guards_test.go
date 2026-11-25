@@ -45,7 +45,7 @@ func TestAttnFA_declinesGroupsAboveMaxG(t *testing.T) {
 		{12, 2, true},  // G = 6, the 1.5B's
 	} {
 		r := &resident{
-			decodeAttnFA: true, attnFAPartial: d.NewBufferLen(1), nH: c.nH,
+			attnFAState: attnFAState{decodeAttnFA: true, attnFAPartial: d.NewBufferLen(1)}, nH: c.nH,
 			layers:   []residLayer{{geom: &attnGeom{hd: 128, nKV: c.nKV}}},
 			curNKeys: 2 * attnFADepthFloor,
 		}

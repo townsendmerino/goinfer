@@ -64,6 +64,7 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    Scan("decoder", "TestKVRowPad_keysReadersAreDeclinedFamilies", NT("decoder")),
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
     # reads every .go file under each backend module, subdirectories included (fnmatch's * crosses /)
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertionsInBackends", F("backend/cuda/*.go", "backend/metal/*.go", "backend/webgpu/*.go")),
@@ -149,7 +150,7 @@ SCANS = [
     # A loadedModel's blockSpec is set only through drafterOf.
     Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/app/serveapp", "TestBlockDrafter_assignedThroughDrafterOf", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
+    Scan("internal/app/serveapp/sessions", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),
     Scan("internal/app/serveapp", "TestPanicGuard_everyGoFuncLiteralDefersARecover", NT("internal/app/serveapp")),

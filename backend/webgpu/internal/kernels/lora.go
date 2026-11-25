@@ -18,6 +18,16 @@ import (
 // adapter here is a matter of REBUILDING r.steps from a saved pristine r.baseSteps plus this
 // layer's LoRA dispatches spliced in at recorded hook points — see SetAdapter below.
 
+// loraPipes holds the Context's compute-time LoRA down/up pipelines (ensureLora).
+type loraPipes struct {
+	loraDownShader   *wgpu.ShaderModule
+	loraDownPipeline *wgpu.ComputePipeline
+	loraDownLayout   *wgpu.BindGroupLayout
+	loraUpShader     *wgpu.ShaderModule
+	loraUpPipeline   *wgpu.ComputePipeline
+	loraUpLayout     *wgpu.BindGroupLayout
+}
+
 const loraDeltaDownWGSL = `
 struct PDown { k: u32, r: u32, _p0: u32, _p1: u32 };
 @group(0) @binding(0) var<storage, read>       aq: array<vec4<u32>>;   // [kp/16] int8 act (kp >= k)

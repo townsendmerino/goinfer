@@ -190,7 +190,8 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 					nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
 					attendBatchedHeadsP(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
 				default:
-					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
+					keys, vals, rs := cache.layerRows(l, kvDim)
+					attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, rs, 0, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
 				}
 			case opOutGate:
 				gRows := lw.GProj.Rows()
@@ -513,17 +514,17 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 						roundF16InPlace(vb)
 					}
 					c.Append(l, kb, vb)
-					keys, vals := c.Keys(l), c.Vals(l)
+					keys, vals, rs := c.layerRows(l, kvDim)
 					nKeys := c.storedRows(l, kvDim)
-					if c.quant.widened() { // f16 or int8: widened into the cache's own scratch
+					if c.quant.widened() { // f16 or int8: widened into the cache's own scratch, compact
 						lk, lv := c.scr.localBufs(nKeys * kvDim)
 						nKeys = c.dequantGlobalLayer(l, kvDim, lk, lv)
-						keys, vals = lk[:nKeys*kvDim], lv[:nKeys*kvDim]
+						keys, vals, rs = lk[:nKeys*kvDim], lv[:nKeys*kvDim], kvDim
 					}
 					pool := c.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
 					ap := o.Attn
 					ap.Sinks = lw.AttnSinks
-					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), keys, vals, 0, c, l, pos[b], 1, ap, arch, true, pool)
+					attendBatchedHeadsKV(row(q, b, qDim), row(ctx, b, qDim), keys, vals, nil, nil, rs, 0, c, l, pos[b], 1, ap, arch, true, pool)
 				}
 			case opProjO:
 				out := reg(o.Out)

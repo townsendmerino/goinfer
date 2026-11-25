@@ -74,27 +74,27 @@ func TestSessionLRU_checkout(t *testing.T) {
 		}
 	}
 	a := []int{1, 4, 2, 7, 3}
-	s1 := l.acquire(a)
+	s1 := l.Acquire(a)
 	commit(s1, a)
 	// s1 is still checked out: a continuation of the same conversation must NOT get it
-	s2 := l.acquire(append(slices.Clone(s1.Tokens()), 5))
+	s2 := l.Acquire(append(slices.Clone(s1.Tokens()), 5))
 	if s2 == s1 {
 		t.Fatal("acquire handed out a session another generation holds")
 	}
 	// both resident sessions busy and the LRU full: a transient session, never one of them
-	s3 := l.acquire([]int{9, 9, 9})
-	if s3 == s1 || s3 == s2 || slices.Contains(l.order, s3) {
+	s3 := l.Acquire([]int{9, 9, 9})
+	if s3 == s1 || s3 == s2 || slices.Contains(l.Order(), s3) {
 		t.Fatal("with every session busy, acquire must serve a transient session outside the LRU")
 	}
-	l.checkin(s3)
-	if len(l.order) != 2 {
-		t.Fatalf("a transient session joined the LRU: %d sessions", len(l.order))
+	l.Checkin(s3)
+	if len(l.Order()) != 2 {
+		t.Fatalf("a transient session joined the LRU: %d sessions", len(l.Order()))
 	}
 	// save skips a busy session
 	dir := t.TempDir()
 	commit(s2, append(slices.Clone(s1.Tokens()), 5))
-	l.checkin(s2)
-	if err := l.save(dir); err != nil {
+	l.Checkin(s2)
+	if err := l.Save(dir); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "session-*"))
@@ -102,9 +102,9 @@ func TestSessionLRU_checkout(t *testing.T) {
 		t.Errorf("save wrote %d snapshots with one session busy, want 1 (the idle one)", len(files))
 	}
 	// once checked in, the conversation's own session is reused
-	l.checkin(s1)
+	l.Checkin(s1)
 	cont := append(slices.Clone(s1.Tokens()), 6)
-	if got := l.acquire(cont); got != s1 {
+	if got := l.Acquire(cont); got != s1 {
 		t.Error("after checkin, the continuation did not reuse its own session")
 	}
 }

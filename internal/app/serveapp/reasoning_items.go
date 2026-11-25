@@ -53,16 +53,16 @@ func reasoningItemCarried(encrypted string, content, summary json.RawMessage) (s
 		b, err := parseIDsBlob(encrypted)
 		if err != nil {
 			text, _ := reasoningItemText("", content, summary)
-			return text, &idsCarrier{reason: idsParse}, nil
+			return text, &idsCarrier{Reason: idsParse}, nil
 		}
-		return b.text, &idsCarrier{blob: b}, nil
+		return b.Text, &idsCarrier{Blob: b}, nil
 	}
 	if b64, ok := strings.CutPrefix(encrypted, reasoningBlobPrefix); ok {
 		b, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil || !utf8.Valid(b) {
 			return "", nil, fmt.Errorf("a reasoning item's encrypted_content is not one this server wrote (%s… does not decode); send it back unchanged", reasoningBlobPrefix)
 		}
-		return string(b), &idsCarrier{reason: idsV1}, nil
+		return string(b), &idsCarrier{Reason: idsV1}, nil
 	}
 	var parts []struct {
 		Type string `json:"type"`

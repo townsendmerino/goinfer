@@ -54,9 +54,7 @@ func TestResizeBicubicAA_matchesTorchvision(t *testing.T) {
 				bad++
 			}
 		}
-		bicubicFloatForTest = true
-		gotF := ResizeBicubicAA(src, c.H, c.W, c.TH, c.TW)
-		bicubicFloatForTest = false
+		gotF := resizeRGB(src, c.H, c.W, c.TH, c.TW, aaBicubic, true)
 		for i := range gotF {
 			if gotF[i] != want[i] {
 				floatDiffers++

@@ -46,6 +46,9 @@
   ],
   "loaders": [
     "decoder/weights.go",
+    "decoder/weights_subblocks.go",
+    "decoder/weights_schemas.go",
+    "decoder/weights_families.go",
     "decoder/gguf.go",
     "decoder/weights_build.go",
     "decoder/gguf_build.go",
@@ -76,6 +79,8 @@
     "decoder/quant/nvfp4.go"
   ],
   "serialize": [
-    "decoder/serialize.go"
+    "decoder/serialize.go",
+    "decoder/serialize_writer.go",
+    "decoder/serialize_reader.go"
   ]
 }

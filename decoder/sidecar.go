@@ -108,7 +108,7 @@ func TranscodeGIWTimed(ctx context.Context, in, out, quant string, embedInt4 boo
 	if err != nil {
 		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
-	werr := writeSidecarBundle(f, tokBytes, func(w io.Writer) (int64, error) {
+	werr := writeSidecarBundle(ctx, f, tokBytes, func(w io.Writer) (int64, error) {
 		return StreamTranscodeGGUF(ctx, in, w, quant, embedInt4, target, filepath.Base(in))
 	})
 	runtime.GC()
@@ -125,8 +125,8 @@ func TranscodeGIWTimed(ctx context.Context, in, out, quant string, embedInt4 boo
 	// that load recomputes the whole-file CRC is markWritten's rule. On the TEMP file, so a bundle that fails it never
 	// becomes the sidecar even for an instant.
 	markWritten(tmp, in)
-	if afterWriteForTest != nil {
-		afterWriteForTest(tmp)
+	if hooks := sidecarTestHooksOf(ctx); hooks.afterWrite != nil {
+		hooks.afterWrite(tmp)
 	}
 	t1 := time.Now()
 	if err := transcodeSelfCheck(tmp); err != nil {
@@ -199,7 +199,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 			return n, serr
 		}
 	}
-	werr := writeSidecarBundle(f, tokBytes, body)
+	werr := writeSidecarBundle(ctx, f, tokBytes, body)
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
@@ -210,8 +210,8 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	}
 	ph.Stream = time.Since(t0)
 	markWritten(tmp, dir)
-	if afterWriteForTest != nil {
-		afterWriteForTest(tmp)
+	if hooks := sidecarTestHooksOf(ctx); hooks.afterWrite != nil {
+		hooks.afterWrite(tmp)
 	}
 	t1 := time.Now()
 	if err := transcodeSelfCheck(tmp); err != nil {
@@ -689,10 +689,6 @@ func selfCheck(path string) error {
 var transcodeSelfCheck func(path string) error
 
 func init() { transcodeSelfCheck = selfCheck }
-
-// afterWriteForTest, when set, is called with the temp bundle once it is written and markWritten has run, before its
-// self-check.
-var afterWriteForTest func(tmp string)
 
 // removeTempGIW deletes a temp bundle and its verified-marker.
 func removeTempGIW(tmp string) {

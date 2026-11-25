@@ -18,6 +18,24 @@ import (
 // read that file's comments first, this mirrors its structure as closely as Metal's per-layer,
 // no-graph-capture encodeLayer/encodeAttention shape allows.
 //
+// dnetState holds the resident's Gated-DeltaNet mixer parameters, pipelines, per-token scratch, and geometry uniforms.
+// dnet nil means no DeltaNet layers; every other field stays zero-valued.
+type dnetState struct {
+	dnet                                                                           *dnetParams
+	pDnConv, pDnGates, pDnNorm, pDnRule, pDnGNorm                                  Pipeline
+	pDnQSplit, pDnAttnGate                                                         Pipeline // fused double-width q_proj + output gate
+	pDnConvSeq, pDnGatesRows, pDnNormRows, pDnRuleSeq, pDnGNormRows, pDnProjW8Rows Pipeline
+	pDnRuleSeqTG, pDnConvSeqReg                                                    Pipeline // on-chip forms (dnSeqOnChip)
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer   // per-token scratch
+	dnBt, dnAt, dnZOut, dnCore, dnGated                                            Buffer
+	dnGq, dnGSc                                                                    Buffer // int8 activation + scale for out_proj GEMV
+	dnQg, dnAGate                                                                  Buffer // qGate scratch: fused [query|gate] and split gate
+	uDnConvDim, uDnK, uDnNv, uDnNk, uDnHk, uDnHv                                   Buffer // DeltaNet geometry uniforms
+	uDnKeyDim, uDnQScale, uDnRep, uDnVBase                                         Buffer
+	uDnValueDim                                                                    Buffer // dnet.valueDim — out_proj GEMV K
+	uDnBetaScale, uDnONormEps                                                      Buffer // dnet.betaScale and output norm epsilon
+}
+
 // dnetParams carries the model-level geometry (uniform across the linear layers) — the same
 // fields as cuda's dnetParams, computed once from decoder.Model.Qwen35ResidentParams().
 type dnetParams struct {

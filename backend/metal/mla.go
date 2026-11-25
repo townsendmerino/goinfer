@@ -15,6 +15,13 @@ import (
 // rows (r.vc[l] aliases it; MLA stores no separate V). The projections run on the int8 GEMV (W8A8), as WebGPU's do; W_UK and
 // W_UV, sliced from kv_b on the host, stay f32 for the per-head matvecs.
 
+// mlaState holds the resident's MLA parameters, scratch, and decode pipelines. mla nil means no MLA layers.
+type mlaState struct {
+	mla                                        *mlaParams
+	mlaS                                       *mlaScratch
+	pMlaStore, pMlaHeadMV, pMlaQRope, pMlaAttn Pipeline
+}
+
 // mlaParams is the model's MLA geometry.
 type mlaParams struct {
 	nH, qLoRA, rank, qkNope, qkRope, vHead int

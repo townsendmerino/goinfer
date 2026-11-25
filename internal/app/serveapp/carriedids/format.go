@@ -1,4 +1,4 @@
-package serveapp
+package carriedids
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// idsFormat is the closed list of differences between a reply's own bytes and the template's render of its turn that are
+// Format is the closed list of differences between a reply's own bytes and the template's render of its turn that are
 // template-owned formatting, not content. A carried turn whose bytes differ from the render only by these keeps its ids, the
 // model's bytes taking the place of the template's for that span; any other difference falls back.
 //
@@ -16,27 +16,28 @@ import (
 //
 // Each side's run may be empty. Whitespace inside a JSON string, inside the reasoning or answer text, or anywhere else is
 // content. Evidence: ids-carried-2026-10-15.md, "G-ids-3: graded".
-type idsFormat struct {
-	rOpen, rClose string // the reasoning delimiters, "" when the template has none
-	cOpen, cClose string // the tool-call block's markers, "" when the family has no JSON call form
+type Format struct {
+	ROpen, RClose string // the reasoning delimiters, "" when the template has none
+	COpen, CClose string // the tool-call block's markers, "" when the family has no JSON call form
 }
 
-func newIDsFormat(tm *chat.Template) idsFormat {
-	var f idsFormat
+// NewFormat extracts the template's reasoning and tool-call formatting delimiters.
+func NewFormat(tm *chat.Template) Format {
+	var f Format
 	if r := tm.Reasoning(); r != nil {
-		f.rOpen, f.rClose = r.Open(), r.Close()
+		f.ROpen, f.RClose = r.Open(), r.Close()
 	}
 	if pre, suf, _, _, ok := tm.ToolCallWrapper(); ok && strings.TrimSpace(pre) != "" && strings.TrimSpace(suf) != "" {
-		f.cOpen, f.cClose = strings.TrimSpace(pre), strings.TrimSpace(suf)
+		f.COpen, f.CClose = strings.TrimSpace(pre), strings.TrimSpace(suf)
 	}
 	return f
 }
 
-// align walks d (the reply's bytes) against t from t's start. ok reports that d is consumed with every difference on the closed
+// Align walks d (the reply's bytes) against t from t's start. ok reports that d is consumed with every difference on the closed
 // list; end is where d ends in t, at[i] is the byte of t that d[i] stands for (at[len(d)] == end), and differs reports that
 // some difference was skipped. The first bytes must match: a difference before them would take in the template's bytes
 // ahead of the reply (the newline after the assistant header, next to an opening delimiter).
-func (f idsFormat) align(d, t string) (end int, at []int, differs, ok bool) {
+func (f Format) Align(d, t string) (end int, at []int, differs, ok bool) {
 	at = make([]int, len(d)+1)
 	i, j := 0, 0
 	inCall, inStr, esc := false, false, false
@@ -56,10 +57,10 @@ func (f idsFormat) align(d, t string) (end int, at []int, differs, ok bool) {
 				inStr = true
 			}
 			i, j = i+1, j+1
-			if !inStr && f.cOpen != "" {
-				if strings.HasSuffix(d[:i], f.cOpen) {
+			if !inStr && f.COpen != "" {
+				if strings.HasSuffix(d[:i], f.COpen) {
 					inCall = true
-				} else if inCall && strings.HasSuffix(d[:i], f.cClose) {
+				} else if inCall && strings.HasSuffix(d[:i], f.CClose) {
 					inCall = false
 				}
 			}
@@ -75,7 +76,7 @@ func (f idsFormat) align(d, t string) (end int, at []int, differs, ok bool) {
 			if (wd == 0 && wt == 0) || !(jsonStructural(prevNonWS(d, i)) || jsonStructural(nextByte(d, i+wd))) {
 				return 0, nil, false, false
 			}
-		case !inStr && f.rOpen != "":
+		case !inStr && f.ROpen != "":
 			wd, wt = wsRun(d, i, "\n"), wsRun(t, j, "\n")
 			if (wd == 0 && wt == 0) || !f.nearReasoningTag(d, i, wd) || !f.nearReasoningTag(t, j, wt) {
 				return 0, nil, false, false
@@ -93,13 +94,13 @@ func (f idsFormat) align(d, t string) (end int, at []int, differs, ok bool) {
 }
 
 // nearReasoningTag reports whether the newline run s[i:i+w], with the newlines just before it, touches a reasoning delimiter.
-func (f idsFormat) nearReasoningTag(s string, i, w int) bool {
+func (f Format) nearReasoningTag(s string, i, w int) bool {
 	lo := i
 	for lo > 0 && s[lo-1] == '\n' {
 		lo--
 	}
 	before, after := s[:lo], s[i+w:]
-	for _, tag := range []string{f.rOpen, f.rClose} {
+	for _, tag := range []string{f.ROpen, f.RClose} {
 		if strings.HasSuffix(before, tag) || strings.HasPrefix(after, tag) {
 			return true
 		}
@@ -135,7 +136,7 @@ func jsonStructural(c byte) bool { return c != 0 && strings.IndexByte("{}[]:,", 
 
 // alignedAt is aligned for a reply whose bytes stand at at[] in the rendered text: each special piece on exactly one special
 // segment, and no ordinary run over a special segment.
-func (p *segPlan) alignedAt(at []int, ps []idsPiece) bool {
+func (p *segPlan) alignedAt(at []int, ps []piece) bool {
 	x := 0
 	for _, pc := range ps {
 		a, b := at[x], at[x+len(pc.text)]

@@ -43,7 +43,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 		mode = quantInt8I8 // as streamQuantizedEmbed: a logit table has no raw Q4_K form
 	}
 	if mode == quantInt4 && fakeQuantScheme != "" {
-		m, err := streamQuantizedEmbed(t.rows, t.cols, mode, true, true, 1, t.newReader)
+		m, err := streamQuantizedEmbed(t.rows, t.cols, mode, true, true, 1, w.testHooks.embedWorkers, t.newReader)
 		if err != nil {
 			w.setErr(err)
 			return
@@ -160,7 +160,7 @@ func (w *giwWriter) tablePass(t *streamedTable, lo, hi int, newDo func() func(r 
 	if w.err != nil {
 		return false
 	}
-	err := forRowRanges(hi-lo, t.cols, 1, t.newReader, func(a, b int, read rowReader) error {
+	err := forRowRanges(hi-lo, t.cols, 1, w.testHooks.embedWorkers, t.newReader, func(a, b int, read rowReader) error {
 		row, do := make([]float32, t.cols), newDo()
 		for r := lo + a; r < lo+b; r++ {
 			if err := read(r, row); err != nil {

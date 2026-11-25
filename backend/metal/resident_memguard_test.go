@@ -636,7 +636,7 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 	parallel := append(slices.Clone(dense[:4]), dense[6], program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
 	build := func(ops []program.Op, L residLayer, q4k bool) error {
 		parallel := slices.ContainsFunc(ops, func(o program.Op) bool { return o.Kind == program.OpResidual && o.Res.Two })
-		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel, decode: decodeShape{act: uint32(program.ActSiLU)}}
+		r := &resident{layers: []residLayer{L}, q4kState: q4kState{q4kLane: q4k}, parallelBlock: parallel, decode: decodeShape{act: uint32(program.ActSiLU)}}
 		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
 	}
 	nonEmpty := (Buffer{}).At(1)

@@ -1,9 +1,32 @@
 package decoder
 
 import (
+	"context"
 	"runtime"
 	"sync/atomic"
 )
+
+type streamHooksKey struct{}
+
+// streamTestHooks holds optional test seams attached to a streaming transcode context and copied onto giwWriter.
+type streamTestHooks struct {
+	layerWindow    int
+	expertsInOrder bool
+	expertFanouts  *atomic.Int64
+	embedWorkers   int
+}
+
+func withStreamTestHooks(ctx context.Context, h streamTestHooks) context.Context {
+	return context.WithValue(ctx, streamHooksKey{}, h)
+}
+
+func streamTestHooksOf(ctx context.Context) streamTestHooks {
+	if ctx == nil {
+		return streamTestHooks{}
+	}
+	h, _ := ctx.Value(streamHooksKey{}).(streamTestHooks)
+	return h
+}
 
 // streamLayerBudgetFallback is the window's memory budget on a host with no available-memory probe.
 const streamLayerBudgetFallback = 1 << 30
@@ -16,9 +39,6 @@ func streamLayerBudget() int64 {
 	}
 	return streamLayerBudgetFallback
 }
-
-// streamLayerWindowForTest, when positive, is the window streamLayers uses after layer 0, whatever the budget says.
-var streamLayerWindowForTest int
 
 // streamLayers builds a model's layers for a sink: a window of layers in parallel, written in layer order and released,
 // then the next window. A layer's bytes depend on no other layer and the write order does not change, so the bundle is
@@ -36,8 +56,8 @@ func streamLayers(w *Weights, arch *Architecture, sink *giwWriter, load func(i i
 		k := 1
 		if arch.MoE == nil && p > 0 && largest > 0 {
 			k = int(min(int64(runtime.GOMAXPROCS(0)), max(1, sink.layerBudget/largest)))
-			if streamLayerWindowForTest > 0 {
-				k = streamLayerWindowForTest
+			if sink.testHooks.layerWindow > 0 {
+				k = sink.testHooks.layerWindow
 			}
 			k = min(k, n-p)
 		}
@@ -60,12 +80,6 @@ func streamLayers(w *Weights, arch *Architecture, sink *giwWriter, load func(i i
 	return nil
 }
 
-// expertFanoutsForTest counts the forExperts calls that fanned out across cores.
-var expertFanoutsForTest atomic.Int64
-
-// expertsInOrderForTest makes forExperts build in order even for a sink.
-var expertsInOrderForTest bool
-
 // forExperts runs one(e) for each of a MoE layer's n experts. Building for a sink it fans them out across cores:
 // streamLayers builds a MoE one layer at a time, and the experts are most of that layer. With no sink it runs them in
 // order, because a resident build already runs one layer per core and nesting the two would multiply the transients.
@@ -73,8 +87,10 @@ var expertsInOrderForTest bool
 // one must write only its own expert's slot and read its source without shared state, as the resident build already
 // requires across layers. The result is then the one the in-order run gives.
 func forExperts(n int, sink *giwWriter, one func(e int) error) error {
-	if sink != nil && !expertsInOrderForTest {
-		expertFanoutsForTest.Add(1)
+	if sink != nil && !sink.testHooks.expertsInOrder {
+		if sink.testHooks.expertFanouts != nil {
+			sink.testHooks.expertFanouts.Add(1)
+		}
 		return parallelLayers(n, nil, one)
 	}
 	for e := range n {

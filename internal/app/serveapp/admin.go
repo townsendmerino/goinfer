@@ -123,7 +123,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 		resp["kv_snapshots"] = kv
 	}
 	// Carried token ids (carried_ids.go): turns that carried a blob, turns that used its ids, and the fallbacks by reason.
-	resp["carried_ids"] = s.idsStats.report()
+	resp["carried_ids"] = s.idsStats.Report()
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -213,7 +213,7 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 		// not take it, so hold it here to serialize this not-goroutine-safe restore against a handler that reaches the
 		// LRU first.
 		lm.sessMu.Lock()
-		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
+		lm.sessions.Load(sessionSubdir(s.cfg.sessionDir, lm.fp))
 		lm.sessMu.Unlock()
 	}
 	return true

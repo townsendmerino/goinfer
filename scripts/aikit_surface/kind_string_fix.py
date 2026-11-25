@@ -20,6 +20,9 @@ for it in range(60):
         done.add((f,l))
         lines=open(f).read().split('\n'); ln=lines[l-1]
         n=re.sub(r'\.Kind\(\)(?!\.String\(\))', '.Kind().String()', ln)
+        if n==ln and 'string type linalg.Kind' in msg:
+            # A Kind held in a variable, used in a string concatenation: "..." + k + "...".
+            n=re.sub(r'(?<=\+ )([A-Za-z_]\w*)(?= \+|\b(?=[,})\]]))(?![.(\w])', r'\1.String()', ln)
         if n==ln:
             print('UNHANDLED',f,l,ln.strip(),'|',msg); continue
         lines[l-1]=n; open(f,'w').write('\n'.join(lines)); print('fixed',f+':'+str(l))

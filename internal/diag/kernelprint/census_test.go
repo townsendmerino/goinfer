@@ -40,19 +40,14 @@ var uncalled = map[string]struct {
 	via    []string
 	reason string
 }{
-	"linalg.dotPartials16":                 {[]string{"MatmulBTGGUFQ4K", "MatmulBTGGUFQ6K"}, "the k-quant integer dot behind MatmulBTGGUFQ4K/Q6K; goinfer's Q4_K weights run WeightMat(q4k).MatmulBTInto"},
-	"linalg.WrapInt4Row4F16":               {[]string{"WrapInt4Row4F16"}, "goinfer wraps row4 weights with WrapInt4Row4OnlyF16 or repacks with RepackInt4Row4"},
-	"linalg.WrapInt4Row4Only":              {[]string{"WrapInt4Row4Only"}, "the f32-scale form; goinfer's int4 scales are binary16 (WrapInt4Row4OnlyF16)"},
-	"linalg.RepackInt4Row4InPlace":         {[]string{"RepackInt4Row4InPlace"}, "the f32-scale form; goinfer calls RepackInt4Row4InPlaceF16"},
-	"linalg.dotNEON8x4":                    {[]string{"Dot8x4", "MatmulBTQ8Fused", "MatmulBTQ8FusedInto"}, "backs Dot8x4, which off arm64 only the fused Q8 matmul calls (the f32 packed path is arm64-gated); goinfer calls neither"},
-	"linalg.dotI8x8":                       {[]string{"DotI8x8"}, "goinfer's int8 dots go through DotI8 and the W8A8 matmuls"},
-	"linalg/elem.expContractImpl":          {[]string{"ExpContractInto"}, "goinfer's only contract-exp call is SoftmaxRowContractInto"},
-	"linalg.measureFMAPeak":                {[]string{"MeasuredFMAPeakGFLOPS"}, "a hardware probe, not a kernel goinfer runs"},
-	"linalg/bitvec.hammingRows":            {[]string{"HammingRows"}, "binary-embedding search; goinfer runs no Hamming kernel"},
-	"linalg.RepackInt4SplitHalfInPlaceF16": {[]string{"RepackInt4SplitHalfInPlace", "RepackInt4SplitHalfInPlaceF16"}, "goinfer builds split-half only through (*WeightMat).RepackInt4SplitHalf"},
-	"linalg.RepackInt4SplitHalfInPlace":    {[]string{"RepackInt4SplitHalfInPlace", "RepackInt4SplitHalfInPlaceF16"}, "as RepackInt4SplitHalfInPlaceF16"},
-	"linalg.WrapInt4SplitHalfOnlyF16":      {[]string{"WrapInt4SplitHalfOnly", "WrapInt4SplitHalfOnlyF16"}, "as RepackInt4SplitHalfInPlaceF16"},
-	"linalg.WrapInt4SplitHalfOnly":         {[]string{"WrapInt4SplitHalfOnly", "WrapInt4SplitHalfOnlyF16"}, "as RepackInt4SplitHalfInPlaceF16"},
+	"linalg.dotPartials16":              {[]string{"MatmulBTGGUFQ4K", "MatmulBTGGUFQ6K"}, "the k-quant integer dot behind MatmulBTGGUFQ4K/Q6K; goinfer's Q4_K weights run WeightMat(q4k).MatmulBTInto"},
+	"linalg.dotNEON8x4":                 {[]string{"Dot8x4", "MatmulBTQ8Fused", "MatmulBTQ8FusedInto"}, "backs Dot8x4, which off arm64 only the fused Q8 matmul calls (the f32 packed path is arm64-gated); goinfer calls neither"},
+	"linalg.dotI8x8":                    {[]string{"DotI8x8"}, "goinfer's int8 dots go through DotI8 and the W8A8 matmuls"},
+	"linalg/elem.expContractImpl":       {[]string{"ExpContractInto"}, "goinfer's only contract-exp call is SoftmaxRowContractInto"},
+	"linalg.measureFMAPeak":             {[]string{"MeasuredFMAPeakGFLOPS"}, "a hardware probe, not a kernel goinfer runs"},
+	"linalg/bitvec.hammingRows":         {[]string{"HammingRows"}, "binary-embedding search; goinfer runs no Hamming kernel"},
+	"linalg.repackInt4SplitHalfInPlace": {[]string{"LayoutSplitHalf"}, "RepackInt4InPlace's split-half form: goinfer asks WrapInt4 and RepackInt4InPlace for the canonical and row4 layouts only, and builds split-half through (*WeightMat).RepackInt4SplitHalf"},
+	"linalg.wrapInt4SplitHalfOnly":      {[]string{"LayoutSplitHalf"}, "WrapInt4's split-half form, as repackInt4SplitHalfInPlace"},
 }
 
 const (
@@ -72,6 +67,8 @@ var unreachableSide = map[string]string{
 	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX512VNNI || HasAVX512VNNIVL|false here":                                                   repair,
 	"linalg/weightmat_row4_arm64.go|(*WeightMat).RepackInt4Row4|w.q4 == nil || !cpufeat.HasDotProd|undecided here":                                   canonicalOnly,
 	"linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !cpufeat.HasAVX2 || cpufeat.HasAVX512VNNIVL|undecided here": canonicalOnly,
+	"linalg/attn/attn_acc64_amd64.go|qkAcc64Keys16|!cpufeat.HasAVX2 || K == 0 || K%4 != 0|undecided here":                                            "a head dim is never 0 and always a multiple of 4, so with AVX2 on the 16-key kernel always takes the call",
+	"linalg/attn/attn_acc64_amd64.go|avAcc64BlocksF16|!cpufeat.HasAVX2 || !cpufeat.HasF16C || nKeys == 0|undecided here":                             "as avAcc64Blocks: an attention row always has at least one key",
 	"linalg/attn/attn_acc64_amd64.go|avAcc64Blocks|!cpufeat.HasAVX2 || nKeys == 0|undecided here":                                                    "an attention row always has at least one key (a query attends to itself), so nKeys is never 0",
 	"linalg/elem/exp_contract_amd64.go|softmaxContractWithMaxImpl|!cpufeat.HasAVX2 || len(src) == 0|undecided here":                                  "internal/runtime/whisper's softmax rows are attention rows over at least one key, never empty",
 	"linalg/q4k_dot_amd64.go|dotQ4K|cpufeat.HasQ4KAVX2 && K >= qkK|undecided here":                                                                   "a Q4_K row is whole 256-element super-blocks (WrapQ4K refuses other cols), so K >= qkK always",

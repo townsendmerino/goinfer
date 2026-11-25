@@ -55,9 +55,9 @@ func (srv *server) restoreSessions(cfg config) {
 	}
 	for _, lm := range srv.modelList() {
 		sub := sessionSubdir(cfg.sessionDir, lm.fp)
-		lm.sessions.load(sub)
+		lm.sessions.Load(sub)
 		if cfg.kvIdleDemote > 0 {
-			lm.sessions.enableTiering(sub, cfg.kvIdleDemote, cfg.kvDemotedMax)
+			lm.sessions.EnableTiering(sub, cfg.kvIdleDemote, cfg.kvDemotedMax)
 		}
 	}
 }
@@ -78,10 +78,10 @@ func (srv *server) checkpointSessions(cfg config) {
 			fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
 			continue
 		}
-		if err := lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp)); err != nil {
+		if err := lm.sessions.Save(sessionSubdir(cfg.sessionDir, lm.fp)); err != nil {
 			fmt.Fprintf(sessionNoticeOut, "shutdown: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
 		}
-		lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
+		lm.sessions.RemoveColdFiles() // the cold tier is in-process; clear its scratch
 		lm.sessMu.Unlock()
 	}
 }
@@ -666,7 +666,7 @@ func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
 		case <-t.C:
 			for _, lm := range srv.modelList() {
 				lm.sessMu.Lock()
-				if n := lm.sessions.demoteIdle(); n > 0 {
+				if n := lm.sessions.DemoteIdle(); n > 0 {
 					fmt.Fprintf(os.Stderr, "tiered-kv: demoted %d idle session(s) for %q\n", n, lm.name)
 				}
 				lm.sessMu.Unlock()

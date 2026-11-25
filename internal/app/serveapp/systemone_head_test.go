@@ -73,9 +73,9 @@ func TestSystemOne_head(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm.head = h
-	lm.deciderOnce.Do(func() { lm.decider = d })
-	lm.maxTokBytesOnce.Do(func() { lm.maxTokBytes = 64 })
+	lm.decisions.head = h
+	lm.decisions.deciderOnce.Do(func() { lm.decisions.decider = d })
+	lm.caches.maxTokBytesOnce.Do(func() { lm.caches.maxTokBytes = 64 })
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/systemone", srv.handleSystemOne)
 	ts := httptest.NewServer(mux)

@@ -298,7 +298,7 @@ func TestServe_warmKVRestore(t *testing.T) {
 	}
 	lmA := srvA.models["m"]
 	lmA.sessMu.Lock()
-	if err := lmA.sessions.save(sessionSubdir(dir, lmA.fp)); err != nil {
+	if err := lmA.sessions.Save(sessionSubdir(dir, lmA.fp)); err != nil {
 		t.Fatalf("session save: %v", err)
 	}
 	lmA.sessMu.Unlock()
@@ -314,7 +314,7 @@ func TestServe_warmKVRestore(t *testing.T) {
 		t.Fatalf("newServer B: %v", err)
 	}
 	lmB := srvB.models["m"]
-	if restored := lmB.sessions.load(sessionSubdir(dir, lmB.fp)); restored == 0 {
+	if restored := lmB.sessions.Load(sessionSubdir(dir, lmB.fp)); restored == 0 {
 		t.Fatalf("warm restore loaded 0 sessions — nothing to test")
 	}
 	tsB := httptest.NewServer(chaosMux(srvB))
@@ -382,8 +382,8 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	lm := srv.models["m"]
 	base := time.Unix(1_700_000_000, 0)
 	clk := base
-	lm.sessions.now = func() time.Time { return clk }
-	lm.sessions.enableTiering(sessionSubdir(dir, lm.fp), 10*time.Minute, 64)
+	lm.sessions.SetClock(func() time.Time { return clk })
+	lm.sessions.EnableTiering(sessionSubdir(dir, lm.fp), 10*time.Minute, 64)
 	ts := httptest.NewServer(chaosMux(srv))
 	defer ts.Close()
 
@@ -396,16 +396,17 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	// Go idle past the threshold, then run the background sweep: the session is
 	// snapshotted to disk and its RAM slot freed.
 	lm.sessMu.Lock()
-	if got := len(lm.sessions.order); got != 1 {
+	if got := len(lm.sessions.Order()); got != 1 {
 		lm.sessMu.Unlock()
 		t.Fatalf("after turn 1 resident sessions = %d, want 1", got)
 	}
 	clk = base.Add(11 * time.Minute)
-	n := lm.sessions.demoteIdle()
-	resid, cold := len(lm.sessions.order), len(lm.sessions.cold)
+	n := lm.sessions.DemoteIdle()
+	coldList := lm.sessions.Cold()
+	resid, cold := len(lm.sessions.Order()), len(coldList)
 	var blob string
 	if cold == 1 {
-		blob = lm.sessions.cold[0].path
+		blob = coldList[0].Path
 	}
 	lm.sessMu.Unlock()
 	if n != 1 || resid != 0 || cold != 1 {
@@ -422,7 +423,7 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 		t.Fatalf("fault-back follow-up: %v", err)
 	}
 	lm.sessMu.Lock()
-	resid, cold = len(lm.sessions.order), len(lm.sessions.cold)
+	resid, cold = len(lm.sessions.Order()), len(lm.sessions.Cold())
 	lm.sessMu.Unlock()
 	if resid != 1 || cold != 0 {
 		t.Fatalf("after fault-back resident=%d cold=%d, want 1/0", resid, cold)

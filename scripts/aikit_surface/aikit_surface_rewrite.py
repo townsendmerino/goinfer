@@ -103,6 +103,9 @@ def main(argv):
                 continue
             if imp == LINALG:
                 qual = "linalg"  # a rename inside linalg: the file already imports it under that name
+            elif m := re.search(r'^\s*(?:import\s+)?(\w+\s+)?"' + re.escape(imp) + r'"\s*$', src, re.M):
+                # Already imported (an earlier run, or main's own code): use that import's name.
+                qual = m.group(1).strip() if m.group(1) else pkg
             else:
                 qual = pkg if not re.search(r"\b" + pkg + r"\b", code_only(out)) else "aikit" + pkg
             if check:

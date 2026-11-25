@@ -9,6 +9,22 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// mlaPipes holds the Context's MLA absorb-path attention, latent store, per-head matvec, and query RoPE pipelines.
+type mlaPipes struct {
+	mlaAttnShader     *wgpu.ShaderModule
+	mlaAttnPipeline   *wgpu.ComputePipeline
+	mlaAttnLayout     *wgpu.BindGroupLayout
+	mlaStoreShader    *wgpu.ShaderModule
+	mlaStorePipeline  *wgpu.ComputePipeline
+	mlaStoreLayout    *wgpu.BindGroupLayout
+	mlaHeadMVShader   *wgpu.ShaderModule
+	mlaHeadMVPipeline *wgpu.ComputePipeline
+	mlaHeadMVLayout   *wgpu.BindGroupLayout
+	mlaQRopeShader    *wgpu.ShaderModule
+	mlaQRopePipeline  *wgpu.ComputePipeline
+	mlaQRopeLayout    *wgpu.BindGroupLayout
+}
+
 // MLA residency — DeepSeek / Kimi Multi-head Latent Attention on the GPU
 // resident decode path. The compressed-KV latent ([kv_lora_rank | qk_rope_head_dim]
 // per position) is the only cached payload; per-head K/V are never materialized.

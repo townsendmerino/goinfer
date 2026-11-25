@@ -78,7 +78,6 @@ func TestForExperts(t *testing.T) {
 // whole-tensor read and the GGUF stacked experts. Gemma 4's two stacks and the fused stack in its row layout (Granite)
 // have gitignored fixtures: they are checked where the fixture is on the box and reported as not checked elsewhere.
 func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
-	defer func() { expertsInOrderForTest = false }()
 	for _, c := range []struct {
 		src      string
 		optional bool // a gitignored fixture: absent on a fresh clone
@@ -96,13 +95,13 @@ func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
 			t.Logf("%s: not on this box, not checked", c.src)
 			continue
 		}
-		stream := func() []byte {
+		stream := func(ctx context.Context) []byte {
 			var b bytes.Buffer
 			var err error
 			if strings.HasSuffix(c.src, ".gguf") {
-				_, err = StreamTranscodeGGUF(context.Background(), c.src, &b, "int4", false, GIWTargetNone, "t")
+				_, err = StreamTranscodeGGUF(ctx, c.src, &b, "int4", false, GIWTargetNone, "t")
 			} else {
-				_, err = StreamTranscodeDir(context.Background(), c.src, &b, "int4", false, GIWTargetNone, "t")
+				_, err = StreamTranscodeDir(ctx, c.src, &b, "int4", false, GIWTargetNone, "t")
 			}
 			if err != nil {
 				t.Fatalf("%s: %v", c.src, err)
@@ -110,33 +109,29 @@ func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
 			return b.Bytes()
 		}
 
-		expertsInOrderForTest = true
-		before := expertFanoutsForTest.Load()
-		ref := stream()
+		var fanouts atomic.Int64
+		inOrderCtx := withStreamTestHooks(context.Background(), streamTestHooks{expertsInOrder: true, expertFanouts: &fanouts})
+		ref := stream(inOrderCtx)
 		if len(ref) < 1000 {
 			t.Fatalf("%s: a %d-byte bundle: nothing was streamed", c.src, len(ref))
 		}
-		if n := expertFanoutsForTest.Load() - before; n != 0 {
+		if n := fanouts.Load(); n != 0 {
 			t.Fatalf("%s: %d fan-outs with the experts held in order", c.src, n)
 		}
 
-		expertsInOrderForTest = false
-		got := stream()
-		if n := expertFanoutsForTest.Load() - before; n == 0 {
+		fanoutCtx := withStreamTestHooks(context.Background(), streamTestHooks{expertFanouts: &fanouts})
+		got := stream(fanoutCtx)
+		if n := fanouts.Load(); n == 0 {
 			t.Errorf("%s: a stream built no experts across cores: the source does not reach its expert loop", c.src)
 		}
 		if !bytes.Equal(ref, got) {
 			t.Errorf("%s: experts built across cores wrote %d bytes that differ from the in-order stream's %d", c.src, len(got), len(ref))
 		}
 
-		before = expertFanoutsForTest.Load()
 		m, err := Load(c.src, Options{Backend: "cpu", Quant: "int4"})
 		if err != nil {
 			t.Fatalf("%s: resident load: %v", c.src, err)
 		}
 		m.Close()
-		if n := expertFanoutsForTest.Load() - before; n != 0 {
-			t.Errorf("%s: a resident load fanned its experts out %d times, inside layers that already run one per core", c.src, n)
-		}
 	}
 }

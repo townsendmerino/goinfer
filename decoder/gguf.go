@@ -1383,7 +1383,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// else in RAM (repackForDecode). abort=nil: this is the cmd/prequant
 	// transcode path, which observes ctx per layer through ctxWriter; the swap tripwire's load-time consumer is scoped to
 	// decoder.Load's resident build only (see Options.LoadAbort).
-	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget()}
+	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget(), testHooks: streamTestHooksOf(ctx)}
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
 		return wr.n, err
 	}
@@ -1675,7 +1675,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		// into reads the mapping and writes dst alone, so every row range shares it.
 		read := func(r int, dst []float32) error { return into(r*in, dst) }
-		return streamQuantizedEmbed(out, in, q, needCanonical, !repackForDecode(sink), 1, func() rowReader { return read })
+		return streamQuantizedEmbed(out, in, q, needCanonical, !repackForDecode(sink), 1, streamEmbedWorkers(sink), func() rowReader { return read })
 	}
 	// embInto loads an embedding-shaped table into *dst through embMatAt. A streaming build (sink, streamTablesOn) builds nothing:
 	// it registers the table's source with the writer, which writes it from the source rows (streamedTable).

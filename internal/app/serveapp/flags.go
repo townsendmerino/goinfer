@@ -481,3 +481,25 @@ func kvShareOffFor(kvShare, apiKey, addr, allowedHosts string) bool {
 	}
 	return apiKey == "" && (!addrIsLoopback(addr) || strings.TrimSpace(allowedHosts) != "")
 }
+
+// invertedBool is a boolean flag stored negated, so a flag that defaults to true leaves its config field at the zero value:
+// --carry-ids sets config.noCarryIDs to its opposite.
+type invertedBool struct{ p *bool }
+
+func (v invertedBool) String() string {
+	if v.p == nil {
+		return "true"
+	}
+	return strconv.FormatBool(!*v.p)
+}
+
+func (v invertedBool) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	*v.p = !b
+	return nil
+}
+
+func (v invertedBool) IsBoolFlag() bool { return true }

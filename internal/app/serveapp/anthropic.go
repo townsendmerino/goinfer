@@ -131,9 +131,9 @@ func anthropicCarrier(enc, visible string) (string, *idsCarrier) {
 	}
 	b, err := parseIDsBlob(enc)
 	if err != nil {
-		return visible, &idsCarrier{reason: idsParse}
+		return visible, &idsCarrier{Reason: idsParse}
 	}
-	return b.text, &idsCarrier{blob: b}
+	return b.Text, &idsCarrier{Blob: b}
 }
 
 type anthropicMessage struct {
@@ -443,8 +443,8 @@ func anthropicTurnsCarried(req *anthropicReq) (string, []chat.Turn, map[int]*ids
 		if c == nil {
 			continue
 		}
-		if len(ks) > 1 && c.reason == "" {
-			c = &idsCarrier{reason: idsDecode}
+		if len(ks) > 1 && c.Reason == "" {
+			c = &idsCarrier{Reason: idsDecode}
 		}
 		if carriers == nil {
 			carriers = map[int]*idsCarrier{}

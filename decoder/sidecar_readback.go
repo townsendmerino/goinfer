@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -16,8 +17,25 @@ import (
 // sidecarHostRAM is the installed-memory probe markWritten compares a bundle and its source with.
 var sidecarHostRAM = HostRAMBytes
 
-// wrapSinkForTest, when set, wraps the writer the weights are streamed into, beneath the read-back.
-var wrapSinkForTest func(io.Writer) io.Writer
+type sidecarHooksKey struct{}
+
+// sidecarTestHooks holds optional test seams attached to a transcode context.
+type sidecarTestHooks struct {
+	afterWrite func(tmp string)
+	wrapSink   func(io.Writer) io.Writer
+}
+
+func withSidecarTestHooks(ctx context.Context, h sidecarTestHooks) context.Context {
+	return context.WithValue(ctx, sidecarHooksKey{}, h)
+}
+
+func sidecarTestHooksOf(ctx context.Context) sidecarTestHooks {
+	if ctx == nil {
+		return sidecarTestHooks{}
+	}
+	h, _ := ctx.Value(sidecarHooksKey{}).(sidecarTestHooks)
+	return h
+}
 
 // errReadBack is the read-back's verdict that the file does not hold what its CRC says.
 var errReadBack = errors.New("read-back: the weights read from the file do not match their CRC")
@@ -108,14 +126,15 @@ func (rb *readBack) finish() error {
 
 // writeSidecarBundle streams a bundle into f (giw.WriteStream) with the weights read back behind the write. An error from
 // body wins over the read-back's.
-func writeSidecarBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) error {
+func writeSidecarBundle(ctx context.Context, f *os.File, tok []byte, body func(io.Writer) (int64, error)) error {
+	hooks := sidecarTestHooksOf(ctx)
 	return giw.WriteStream(f, tok, func(w io.Writer) (int64, error) {
 		base, err := f.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return 0, err
 		}
-		if wrapSinkForTest != nil {
-			w = wrapSinkForTest(w)
+		if hooks.wrapSink != nil {
+			w = hooks.wrapSink(w)
 		}
 		rb := startReadBack(f, base)
 		n, err := body(rb.writer(w))

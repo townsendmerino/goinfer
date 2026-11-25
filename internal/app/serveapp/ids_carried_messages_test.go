@@ -86,7 +86,7 @@ func TestIDsCarriedMessages_carriers(t *testing.T) {
 			t.Fatalf("stream=%v: first block %v", stream, c[0])
 		}
 		b, err := parseIDsBlob(fmtString(c[0]["signature"]))
-		if err != nil || !b.whole || !slices.Equal(b.ids, callIDs) || b.text != "I will read calc.go." || c[0]["thinking"] != b.text {
+		if err != nil || !b.Whole || !slices.Equal(b.IDs, callIDs) || b.Text != "I will read calc.go." || c[0]["thinking"] != b.Text {
 			t.Errorf("stream=%v: thinking block %v, blob %+v (%v); want the whole turn's ids", stream, c[0], b, err)
 		}
 	}
@@ -102,7 +102,7 @@ func TestIDsCarriedMessages_carriers(t *testing.T) {
 		req["thinking"] = thinkingReq
 		c = messagesContent(t, postScripted(t, ts2.URL+"/v1/messages", req), stream)
 		b, err := parseIDsBlob(fmtString(c[0]["data"]))
-		if c[0]["type"] != "redacted_thinking" || err != nil || !slices.Equal(b.ids, plainIDs) || !b.whole || b.text != "" || c[1]["type"] != "tool_use" {
+		if c[0]["type"] != "redacted_thinking" || err != nil || !slices.Equal(b.IDs, plainIDs) || !b.Whole || b.Text != "" || c[1]["type"] != "tool_use" {
 			t.Errorf("stream=%v: blocks %v (%v); want a redacted_thinking carrier with the turn's ids, then the call", stream, c, err)
 		}
 	}
@@ -120,8 +120,8 @@ func TestIDsCarriedMessages_carriers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stream=%v: %v", stream, err)
 		}
-		if stream && (b.whole || !slices.Equal(b.ids, ids[:cut])) || !stream && (!b.whole || !slices.Equal(b.ids, ids)) {
-			t.Errorf("stream=%v: blob whole=%v ids %v; generated %v", stream, b.whole, b.ids, ids)
+		if stream && (b.Whole || !slices.Equal(b.IDs, ids[:cut])) || !stream && (!b.Whole || !slices.Equal(b.IDs, ids)) {
+			t.Errorf("stream=%v: blob whole=%v ids %v; generated %v", stream, b.Whole, b.IDs, ids)
 		}
 		for _, tc := range []struct {
 			name, want string
@@ -133,8 +133,8 @@ func TestIDsCarriedMessages_carriers(t *testing.T) {
 			msgs := append([]any{req["messages"].([]any)[0], map[string]any{"role": "assistant", "content": []any{c[0], c[1]}}}, tc.tail...)
 			body, _ := json.Marshal(map[string]any{"model": "m", "max_tokens": 64, "thinking": thinkingReq, "messages": msgs})
 			_, o, err := kv0RenderIDs(s, lm, "/v1/messages", body, true)
-			if err != nil || o.fields() != tc.want {
-				t.Errorf("stream=%v, %s: %s (%v), want %s", stream, tc.name, o.fields(), err, tc.want)
+			if err != nil || o.Fields() != tc.want {
+				t.Errorf("stream=%v, %s: %s (%v), want %s", stream, tc.name, o.Fields(), err, tc.want)
 			}
 		}
 	}
@@ -260,7 +260,7 @@ func TestIDsCarriedMessages_tinyFallbackAndKV(t *testing.T) {
 	}
 	valid := fmtString(t1.content[0]["data"])
 	blob, err := parseIDsBlob(valid)
-	if err != nil || !slices.Equal(blob.ids, t1.gen) || !blob.whole || blob.text != "" {
+	if err != nil || !slices.Equal(blob.IDs, t1.gen) || !blob.Whole || blob.Text != "" {
 		t.Fatalf("turn 1's carrier %+v (%v); the generation's ids are %v", blob, err, t1.gen)
 	}
 	canon, _ := lm.tk.EncodeSegments([]chat.Segment{{Text: t1.text}}, false)
@@ -283,8 +283,8 @@ func TestIDsCarriedMessages_tinyFallbackAndKV(t *testing.T) {
 	if slices.Equal(forgedIDs, canon) {
 		forgedIDs = slices.Clone(t1.gen)
 	}
-	forged := (&idsBlob{whole: true, keyID: key.id, model: lm.idsIdentity(), ids: forgedIDs}).String()
-	otherKey := newIDsKey([]byte("another key for the tier-0 test!")).mint(lm.idsIdentity(), "", "", t1.gen, true)
+	forged := (&idsBlob{Whole: true, KeyID: key.ID, Model: lm.idsIdentity(), IDs: forgedIDs}).String()
+	otherKey := newIDsKey([]byte("another key for the tier-0 test!")).Mint(lm.idsIdentity(), "", "", t1.gen, true)
 
 	aw := post("A-warm", next(valid))
 	post("other (cold for A-cold)", other)
@@ -485,8 +485,8 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 	for _, rp := range fx.replies {
 		prev := messagesFromResponses(t, fx.body(rp.Session, rp.NInput))
 		P, po := render(prev, true)
-		if po.carried != 0 {
-			t.Fatalf("%s: the previous request carries %d turns; step 0's archived history is v1 only", rp.ID, po.carried)
+		if po.Carried != 0 {
+			t.Fatalf("%s: the previous request carries %d turns; step 0's archived history is v1 only", rp.ID, po.Carried)
 		}
 		slot := append(slices.Clone(P), rp.Gen...)
 		rsText, args, msgText := "", "", ""
@@ -504,7 +504,7 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 				msgText = it["content"].([]any)[0].(map[string]any)["text"].(string)
 			}
 		}
-		valid := key.mint(model, "", rsText, rp.Gen, true)
+		valid := key.Mint(model, "", rsText, rp.Gen, true)
 		// next is the next request: the reply as an assistant message (thinking with sig, then text and calls), then the
 		// session's follow-up items, translated.
 		next := func(sig, thinking string, keepThinking bool, callArgs, text string) map[string]any {
@@ -544,17 +544,17 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 		want := func(reason string) string {
 			var o idsOutcome
 			if reason != "none" {
-				o.note(reason)
+				o.Note(reason)
 			}
 			if reason == "" && formatted {
-				o.formatted = 1
+				o.Formatted = 1
 			}
-			return o.fields()
+			return o.Fields()
 		}
 		base := next(valid, rsText, true, args, msgText)
 		ids, out := render(base, true)
-		if out.fields() != want("") {
-			t.Errorf("%s carried: %s, want %s", rp.ID, out.fields(), want(""))
+		if out.Fields() != want("") {
+			t.Errorf("%s carried: %s, want %s", rp.ID, out.Fields(), want(""))
 		}
 		if len(ids) < len(slot) || !slices.Equal(ids[:len(slot)], slot) {
 			t.Errorf("%s carried: the next prompt leaves the slot at %d of %d", rp.ID, idsLCP(ids, slot), len(slot))
@@ -565,8 +565,8 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 			fmtd++
 		}
 		cases["carried"]++
-		if ids, out := render(next(valid, "edited "+rsText, true, args, msgText), true); out.fields() != want("") || !slices.Equal(ids[:min(len(ids), len(slot))], slot) {
-			t.Errorf("%s visible edit: %s; the blob's text and ids must win over the visible thinking", rp.ID, out.fields())
+		if ids, out := render(next(valid, "edited "+rsText, true, args, msgText), true); out.Fields() != want("") || !slices.Equal(ids[:min(len(ids), len(slot))], slot) {
+			t.Errorf("%s visible edit: %s; the blob's text and ids must win over the visible thinking", rp.ID, out.Fields())
 		}
 		cases["visible-edit"]++
 		todayBase, _ := render(base, false)
@@ -576,7 +576,7 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 			body         map[string]any
 			textEdit     bool
 		}
-		ds := []defect{{"a", idsDecode, next(key.mint(model, "", flipChar(rsText), rp.Gen, true), rsText, true, args, msgText), true}}
+		ds := []defect{{"a", idsDecode, next(key.Mint(model, "", flipChar(rsText), rp.Gen, true), rsText, true, args, msgText), true}}
 		if args != "" {
 			ds = append(ds, defect{"b", idsDecode, next(valid, rsText, true, flipChar(args), msgText), true})
 			if strings.Contains(args, `\\t`) {
@@ -587,16 +587,16 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 			ds = append(ds, defect{"d", idsDecode, next(valid, rsText, true, args, flipChar(msgText)), true})
 		}
 		forged := nonCanonicalSplit(t, lm, rp.Gen)
-		noMAC := &idsBlob{whole: true, keyID: key.id, model: model, text: rsText, ids: forged}
-		randMAC := &idsBlob{whole: true, keyID: key.id, model: model, text: rsText, ids: forged, mac: bytes.Repeat([]byte{0x5a}, 32)}
+		noMAC := &idsBlob{Whole: true, KeyID: key.ID, Model: model, Text: rsText, IDs: forged}
+		randMAC := &idsBlob{Whole: true, KeyID: key.ID, Model: model, Text: rsText, IDs: forged, MAC: bytes.Repeat([]byte{0x5a}, 32)}
 		hText, hIDs := plantSpecialInReasoning(t, lm, rsText, rp.Gen)
 		ds = append(ds,
 			defect{"e", idsMAC, next(noMAC.String(), rsText, true, args, msgText), false},
 			defect{"f", idsMAC, next(randMAC.String(), rsText, true, args, msgText), false},
-			defect{"g", idsKeyR, next(other.mint(model, "", rsText, rp.Gen, true), rsText, true, args, msgText), false},
-			defect{"h", idsSpecial, next(key.mint(model, "", hText, hIDs, true), rsText, true, args, msgText), false},
-			defect{"i", idsNS, next(key.mint(model, "another-namespace", rsText, rp.Gen, true), rsText, true, args, msgText), false},
-			defect{"j", idsModel, next(key.mint("another-model", "", rsText, rp.Gen, true), rsText, true, args, msgText), false},
+			defect{"g", idsKeyR, next(other.Mint(model, "", rsText, rp.Gen, true), rsText, true, args, msgText), false},
+			defect{"h", idsSpecial, next(key.Mint(model, "", hText, hIDs, true), rsText, true, args, msgText), false},
+			defect{"i", idsNS, next(key.Mint(model, "another-namespace", rsText, rp.Gen, true), rsText, true, args, msgText), false},
+			defect{"j", idsModel, next(key.Mint("another-model", "", rsText, rp.Gen, true), rsText, true, args, msgText), false},
 			defect{"k", "none", next("EqQBCkYIBhgCKkBforeignSignatureNotMintedHere==", rsText, true, args, msgText), false},
 			defect{"l", idsParse, next(valid[:len(reasoningBlobV2Prefix)+(len(valid)-len(reasoningBlobV2Prefix))/2]+"!!", rsText, true, args, msgText), false},
 			defect{"m", "none", next("", rsText, false, args, msgText), false},
@@ -610,8 +610,8 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 			if !slices.Equal(got, today) {
 				t.Errorf("%s (%s): the fallback is not today's tokenization (first difference at %d)", rp.ID, d.name, idsLCP(got, today))
 			}
-			if out.fields() != want(d.reason) {
-				t.Errorf("%s (%s): %s, want %s", rp.ID, d.name, out.fields(), want(d.reason))
+			if out.Fields() != want(d.reason) {
+				t.Errorf("%s (%s): %s, want %s", rp.ID, d.name, out.Fields(), want(d.reason))
 			}
 			cases[d.name]++
 		}

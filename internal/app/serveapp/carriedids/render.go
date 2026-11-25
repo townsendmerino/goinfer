@@ -1,126 +1,110 @@
-package serveapp
+package carriedids
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"maps"
-	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/codec"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// idsCheck is what verifying one request's carriers needs: the server's key, the identity a blob must name, the request's
+// Check is what verifying one request's carriers needs: the server's key, the identity a blob must name, the request's
 // namespace, and the carrier of each assistant turn that has one (by turn index).
-type idsCheck struct {
-	key      *idsKey
-	model    string
-	ns       string
-	carriers map[int]*idsCarrier
+type Check struct {
+	Key      *Key
+	Model    string
+	NS       string
+	Carriers map[int]*Carrier
 }
 
-// idsCheckFor is the check for a request to lm, nil when the server has no key (the feature is off) or no turn carries a blob.
-func (s *server) idsCheckFor(lm *loadedModel, r *http.Request, carriers map[int]*idsCarrier) *idsCheck {
-	if s.idsKey == nil || len(carriers) == 0 {
-		return nil
-	}
-	return &idsCheck{key: s.idsKey, model: lm.idsIdentity(), ns: requestNamespace(r), carriers: carriers}
-}
-
-// requestNamespace is the request's KV sharing namespace (decoder.KVScope). serve has one API key, so every request is in
-// the single local namespace. It is inside the MAC so that a blob minted in one namespace never decides another's
-// tokenization once there are several.
-func requestNamespace(*http.Request) string { return "" }
-
-// idsIdentity names the model and tokenizer a blob is minted for: a hash of the tokenizer's vocabulary (every id's surface
+// Identity names the model and tokenizer a blob is minted for: a hash of the tokenizer's vocabulary (every id's surface
 // and whether it is an added token) and of the weights' identity (the fingerprint less its mtime, so a copy of the same file
 // on another server matches, and the adapter).
-func (lm *loadedModel) idsIdentity() string {
-	lm.idsIdentOnce.Do(func() {
-		h := sha256.New()
-		if lm.tk != nil {
-			for id := range lm.tk.Size() {
-				if lm.tk.IsAdded(id) {
-					h.Write([]byte{1})
-				} else {
-					h.Write([]byte{0})
-				}
-				h.Write(lm.tk.TokenText(id))
-				h.Write([]byte{0xff})
+func Identity(tk *tokenizer.Tokenizer, fp string) string {
+	h := sha256.New()
+	if tk != nil {
+		for id := range tk.Size() {
+			if tk.IsAdded(id) {
+				h.Write([]byte{1})
+			} else {
+				h.Write([]byte{0})
 			}
+			h.Write(tk.TokenText(id))
+			h.Write([]byte{0xff})
 		}
-		fp, adapter, _ := strings.Cut(lm.fp, "+adapter:")
-		if f := strings.Split(fp, "|"); len(f) == 4 { // name|size|mtime|quant
-			fp = f[0] + "|" + f[1] + "|" + f[3]
-		}
-		h.Write([]byte("\x00" + fp + "\x00" + adapter))
-		lm.idsIdent = hex.EncodeToString(h.Sum(nil)[:16])
-	})
-	return lm.idsIdent
+	}
+	baseFP, adapter, _ := strings.Cut(fp, "+adapter:")
+	if f := strings.Split(baseFP, "|"); len(f) == 4 { // name|size|mtime|quant
+		baseFP = f[0] + "|" + f[1] + "|" + f[3]
+	}
+	h.Write([]byte("\x00" + baseFP + "\x00" + adapter))
+	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 
-// encodePrompt renders and tokenizes a prompt as the generation routes do: RenderToolsSegments when tools are given, else
-// RenderSegments, then EncodeSegments (the raw fallback when tm is nil). With a check, each assistant turn that carries a
+// EncodePrompt renders and tokenizes a prompt as the generation routes do: RenderToolsSegments when tools are given, else
+// RenderSegments, then EncodeSegments (calling rawFallback when tm is nil). With a check, each assistant turn that carries a
 // verified blob whose ids decode exactly to the turn's text as rendered is tokenized as those ids; every other turn, and
 // every byte outside the carried regions, is tokenized exactly as without the check.
-func (lm *loadedModel) encodePrompt(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ck *idsCheck) ([]int, idsOutcome, error) {
-	var out idsOutcome
+func EncodePrompt(tk *tokenizer.Tokenizer, tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ck *Check, rawFallback func() ([]int, error)) ([]int, Outcome, error) {
+	var out Outcome
 	if tm == nil {
 		if ck != nil {
-			for _, k := range sortedKeys(ck.carriers) {
-				out.note(ck.reasonBeforeRender(ck.carriers[k], idsSpecial))
+			for _, k := range sortedKeys(ck.Carriers) {
+				out.Note(ck.ReasonBeforeRender(ck.Carriers[k], ReasonSpecial))
 			}
 		}
-		ids, err := lm.promptForT(nil, system, turns)
+		ids, err := rawFallback()
 		return ids, out, err
 	}
 	render := func(turns []chat.Turn) []chat.Segment { return codec.Segments(tm, system, turns, tools) }
 	segs := render(turns)
 	if ck == nil {
-		ids, err := codec.Encode(lm.tk, segs)
+		ids, err := codec.Encode(tk, segs)
 		return ids, out, err
 	}
 	pl := newSegPlan(segs)
-	var regs []idsRegion
-	for _, k := range sortedKeys(ck.carriers) {
-		reason, reg := lm.idsTurn(ck, ck.carriers[k], k, turns, render, pl, newIDsFormat(tm))
+	var regs []region
+	for _, k := range sortedKeys(ck.Carriers) {
+		reason, reg := turnRegion(tk, ck, ck.Carriers[k], k, turns, render, pl, NewFormat(tm))
 		if reason == "" && len(regs) > 0 && reg.a < regs[len(regs)-1].b {
-			reason = idsDecode // two carriers claim the same bytes; cannot happen for turns rendered in order
+			reason = ReasonDecode // two carriers claim the same bytes; cannot happen for turns rendered in order
 		}
-		out.note(reason)
+		out.Note(reason)
 		if reason == "" {
 			regs = append(regs, reg)
 			if reg.formatted {
-				out.formatted++
+				out.Formatted++
 			}
 		}
 	}
-	ids, err := lm.encodeRegions(pl, regs)
+	ids, err := encodeRegions(tk, pl, regs)
 	return ids, out, err
 }
 
-func sortedKeys(m map[int]*idsCarrier) []int {
+func sortedKeys(m map[int]*Carrier) []int {
 	return slices.Sorted(maps.Keys(m))
 }
 
-// reasonBeforeRender is the reason a carrier fails before its ids are compared with the rendered turn ("" when it passes
+// ReasonBeforeRender is the reason a carrier fails before its ids are compared with the rendered turn ("" when it passes
 // these checks); otherwise is returned when it passes them, for a caller that cannot compare.
-func (ck *idsCheck) reasonBeforeRender(c *idsCarrier, otherwise string) string {
-	if c.reason != "" {
-		return c.reason
+func (ck *Check) ReasonBeforeRender(c *Carrier, otherwise string) string {
+	if c.Reason != "" {
+		return c.Reason
 	}
-	b := c.blob
+	b := c.Blob
 	switch {
-	case b.keyID != ck.key.id:
-		return idsKeyR
-	case !ck.key.verifyMAC(b):
-		return idsMAC
-	case b.model != ck.model:
-		return idsModel
-	case b.ns != ck.ns:
-		return idsNS
+	case b.KeyID != ck.Key.ID:
+		return ReasonKey
+	case !ck.Key.VerifyMAC(b):
+		return ReasonMAC
+	case b.Model != ck.Model:
+		return ReasonModel
+	case b.NS != ck.NS:
+		return ReasonNS
 	}
 	return otherwise
 }
@@ -149,15 +133,15 @@ func (p *segPlan) segAt(x int) int {
 	return i
 }
 
-// idsPiece is one special id or one run of ordinary ids, as text.
-type idsPiece struct {
+// piece is one special id or one run of ordinary ids, as text.
+type piece struct {
 	special bool
 	text    string
 }
 
-// idsRegion is a byte range of the rendered text whose tokens are carried ids. formatted marks a range whose rendered bytes
-// differ from the ids' text in template-owned formatting only (idsFormat).
-type idsRegion struct {
+// region is a byte range of the rendered text whose tokens are carried ids. formatted marks a range whose rendered bytes
+// differ from the ids' text in template-owned formatting only (Format).
+type region struct {
 	a, b      int
 	ids       []int
 	formatted bool
@@ -165,26 +149,26 @@ type idsRegion struct {
 
 // pieces splits ids at their added (special) ids and decodes each run between them; ok is false when an id is out of the
 // vocabulary or a run does not decode.
-func (lm *loadedModel) pieces(ids []int) (ps []idsPiece, ok bool) {
-	n := lm.tk.Size()
+func pieces(tk *tokenizer.Tokenizer, ids []int) (ps []piece, ok bool) {
+	n := tk.Size()
 	for i := 0; i < len(ids); {
 		if ids[i] < 0 || ids[i] >= n {
 			return nil, false
 		}
-		if lm.tk.IsAdded(ids[i]) {
-			ps = append(ps, idsPiece{special: true, text: string(lm.tk.TokenText(ids[i]))})
+		if tk.IsAdded(ids[i]) {
+			ps = append(ps, piece{special: true, text: string(tk.TokenText(ids[i]))})
 			i++
 			continue
 		}
 		j := i
-		for j < len(ids) && ids[j] >= 0 && ids[j] < n && !lm.tk.IsAdded(ids[j]) {
+		for j < len(ids) && ids[j] >= 0 && ids[j] < n && !tk.IsAdded(ids[j]) {
 			j++
 		}
-		s, err := lm.tk.DecodeContinuation(ids[i:j])
+		s, err := tk.DecodeContinuation(ids[i:j])
 		if err != nil {
 			return nil, false
 		}
-		ps = append(ps, idsPiece{text: s})
+		ps = append(ps, piece{text: s})
 		i = j
 	}
 	return ps, true
@@ -192,7 +176,7 @@ func (lm *loadedModel) pieces(ids []int) (ps []idsPiece, ok bool) {
 
 // aligned reports whether pieces laid down from byte a of the rendered text put each special id exactly on a special segment
 // and every run inside text that is not special.
-func (p *segPlan) aligned(a int, ps []idsPiece) bool {
+func (p *segPlan) aligned(a int, ps []piece) bool {
 	x := a
 	for _, pc := range ps {
 		end := x + len(pc.text)
@@ -213,19 +197,19 @@ func (p *segPlan) aligned(a int, ps []idsPiece) bool {
 	return true
 }
 
-// idsTurn decides whether turn k uses its carried ids, and where they go. The turn's rendered bytes are located by rendering
+// turnRegion decides whether turn k uses its carried ids, and where they go. The turn's rendered bytes are located by rendering
 // the conversation once more with the turn's content, reasoning and calls emptied: the range where the two texts differ lies
 // inside the turn's generated part. The ids must decode to a run of the rendered text that covers that range (all of it for a
 // whole-turn blob, its start for a reasoning-only one) and line up with the template's special tokens, or differ from such a
 // run only by fm's template-owned formatting, in which case the ids replace the run.
-func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.Turn, render func([]chat.Turn) []chat.Segment, pl *segPlan, fm idsFormat) (string, idsRegion) {
-	if r := ck.reasonBeforeRender(c, ""); r != "" {
-		return r, idsRegion{}
+func turnRegion(tk *tokenizer.Tokenizer, ck *Check, c *Carrier, k int, turns []chat.Turn, render func([]chat.Turn) []chat.Segment, pl *segPlan, fm Format) (string, region) {
+	if r := ck.ReasonBeforeRender(c, ""); r != "" {
+		return r, region{}
 	}
-	b := c.blob
-	ps, ok := lm.pieces(b.ids)
+	b := c.Blob
+	ps, ok := pieces(tk, b.IDs)
 	if !ok || len(ps) == 0 {
-		return idsDecode, idsRegion{}
+		return ReasonDecode, region{}
 	}
 	var d strings.Builder
 	for _, pc := range ps {
@@ -247,7 +231,7 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 	for sfx < len(T) && sfx < len(E) && T[len(T)-1-sfx] == E[len(E)-1-sfx] {
 		sfx++
 	}
-	textHit, found, n := false, idsRegion{}, 0
+	textHit, found, n := false, region{}, 0
 	for from := 0; from <= len(T)-len(D); {
 		i := strings.Index(T[from:], D)
 		if i < 0 {
@@ -256,13 +240,13 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 		a := from + i
 		end := a + len(D)
 		covers := T != E && a <= p && end > p
-		if b.whole {
+		if b.Whole {
 			covers = covers && len(T)-end <= sfx && a+len(T)-end <= len(E)
 		}
 		if covers {
 			textHit = true
 			if pl.aligned(a, ps) {
-				found, n = idsRegion{a: a, b: end, ids: b.ids}, n+1
+				found, n = region{a: a, b: end, ids: b.IDs}, n+1
 			}
 		}
 		from = a + 1
@@ -271,21 +255,21 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 	case n == 1:
 		return "", found
 	case n > 1:
-		return idsDecode, idsRegion{} // the turn's text occurs twice over its own range: no single place to put the ids
+		return ReasonDecode, region{} // the turn's text occurs twice over its own range: no single place to put the ids
 	case textHit:
-		return idsSpecial, idsRegion{}
+		return ReasonSpecial, region{}
 	}
 	if turns[k].Reasoning != "" {
 		noR := slices.Clone(turns)
 		noR[k].Reasoning = ""
 		if newSegPlan(render(noR)).text == T {
-			return idsHistory, idsRegion{}
+			return ReasonHistory, region{}
 		}
 	}
 	formatOnly, fmtHit := false, false
 	n = 0
 	for a := min(p, len(T)); a >= max(0, p-len(D)); a-- {
-		end, at, differs, ok := fm.align(D, T[a:])
+		end, at, differs, ok := fm.Align(D, T[a:])
 		if !ok || !differs {
 			continue
 		}
@@ -295,13 +279,13 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 			at[i] += a
 		}
 		covers := T != E && a <= p && end > p
-		if b.whole {
+		if b.Whole {
 			covers = covers && len(T)-end <= sfx && a+len(T)-end <= len(E)
 		}
 		if covers {
 			fmtHit = true
 			if pl.alignedAt(at, ps) {
-				found, n = idsRegion{a: a, b: end, ids: b.ids, formatted: true}, n+1
+				found, n = region{a: a, b: end, ids: b.IDs, formatted: true}, n+1
 			}
 		}
 	}
@@ -309,17 +293,17 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 	case n == 1:
 		return "", found
 	case n == 0 && fmtHit:
-		return idsSpecial, idsRegion{} // as for an exact match: the turn's run is found, its special ids are not the template's
+		return ReasonSpecial, region{} // as for an exact match: the turn's run is found, its special ids are not the template's
 	case formatOnly:
-		return idsTemplate, idsRegion{} // the difference is template-owned, but no single run of the render takes the ids
+		return ReasonTemplate, region{} // the difference is template-owned, but no single run of the render takes the ids
 	}
-	return idsDecode, idsRegion{}
+	return ReasonDecode, region{}
 }
 
 // encodeRegions tokenizes the rendered prompt with each region's ids in place of its bytes. Text between regions is
 // tokenized as EncodeSegments tokenizes it, a segment cut by a region's edge as text of its own; after a region that ends on
 // a special token, that token leads the next stretch, so a token that swallows the whitespace after it still does.
-func (lm *loadedModel) encodeRegions(pl *segPlan, regs []idsRegion) ([]int, error) {
+func encodeRegions(tk *tokenizer.Tokenizer, pl *segPlan, regs []region) ([]int, error) {
 	var out []int
 	pos := 0
 	var lead *chat.Segment
@@ -337,12 +321,12 @@ func (lm *loadedModel) encodeRegions(pl *segPlan, regs []idsRegion) ([]int, erro
 				}
 			}
 		}
-		ids, err := lm.tk.EncodeSegments(part, false)
+		ids, err := tk.EncodeSegments(part, false)
 		if err != nil {
 			return err
 		}
 		if lead != nil {
-			one, err := lm.tk.EncodeSegments([]chat.Segment{*lead}, false)
+			one, err := tk.EncodeSegments([]chat.Segment{*lead}, false)
 			if err != nil {
 				return err
 			}

@@ -423,7 +423,9 @@
       "internal/app/connect",
       "internal/app/loadflags",
       "internal/app/pullcmd",
+      "internal/app/serveapp/carriedids",
       "internal/app/serveapp/jobs",
+      "internal/app/serveapp/sessions",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -443,8 +445,17 @@
       "pull",
       "tokenizer"
     ],
+    "internal/app/serveapp/carriedids": [
+      "chat",
+      "internal/codec",
+      "tokenizer"
+    ],
     "internal/app/serveapp/jobs": [
       "internal/cost"
+    ],
+    "internal/app/serveapp/sessions": [
+      "decoder",
+      "internal/runtime/scheduler"
     ],
     "internal/audio": [
       "internal/vision"
@@ -760,6 +771,9 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/sessions": [
+      "internal/runtime/scheduler"
     ],
     "internal/audio": [
       "internal/vision"

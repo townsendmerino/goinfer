@@ -79,19 +79,19 @@ func TestIDsCarried_G0(t *testing.T) {
 			t.Fatalf("%s: render: %v", rp.ID, err)
 		}
 		// The archived history carries the night's v1 blobs: each is a carried turn that falls back as v1 (G-ids-1's reading).
-		h := hist.carried
-		if hist.used != 0 || len(hist.fallbacks) != h || strings.Trim(strings.Repeat(idsV1+",", h), ",") != strings.Join(hist.fallbacks, ",") {
-			t.Fatalf("%s: the request's own history counts %s; every archived blob is a v1", rp.ID, hist.fields())
+		h := hist.Carried
+		if hist.Used != 0 || len(hist.Fallbacks) != h || strings.Trim(strings.Repeat(idsV1+",", h), ",") != strings.Join(hist.Fallbacks, ",") {
+			t.Fatalf("%s: the request's own history counts %s; every archived blob is a v1", rp.ID, hist.Fields())
 		}
 		want := func(reason string) string { // the next request's fields: h v1 fallbacks, then the reply's turn
 			var o idsOutcome
 			for range h {
-				o.note(idsV1)
+				o.Note(idsV1)
 			}
 			if reason != "none" {
-				o.note(reason)
+				o.Note(reason)
 			}
-			return o.fields()
+			return o.Fields()
 		}
 		if len(P) != rp.P { // void: the fixture's prompt is not the one the replay's slot started with
 			t.Fatalf("VOID %s: the route renders %d prompt ids, the replay's slot started with %d", rp.ID, len(P), rp.P)
@@ -116,7 +116,7 @@ func TestIDsCarried_G0(t *testing.T) {
 		if rsAt < 0 {
 			t.Fatalf("%s: no reasoning item; the fixture's replies all reasoned", rp.ID)
 		}
-		valid := key.mint(model, "", rsText, rp.Gen, true)
+		valid := key.Mint(model, "", rsText, rp.Gen, true)
 		// next builds the next request from the emitted items (less status), one of them changed by edit, then follow.
 		next := func(edit func(items []map[string]any) []map[string]any) map[string]any {
 			items := make([]map[string]any, 0, len(rp.Items))
@@ -156,8 +156,8 @@ func TestIDsCarried_G0(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: carried: %v", rp.ID, err)
 		}
-		if out.fields() != want("") {
-			t.Errorf("%s carried: %s, want %s (the reply's turn used, v1 only on archived history)", rp.ID, out.fields(), want(""))
+		if out.Fields() != want("") {
+			t.Errorf("%s carried: %s, want %s (the reply's turn used, v1 only on archived history)", rp.ID, out.Fields(), want(""))
 		}
 		if len(ids) < len(slot) || !slices.Equal(ids[:len(slot)], slot) {
 			t.Errorf("%s carried: the next prompt does not start with the slot's id record (first difference at %d of %d)", rp.ID, idsLCP(ids, slot), len(slot))
@@ -174,8 +174,8 @@ func TestIDsCarried_G0(t *testing.T) {
 			items[rsAt]["content"] = []any{map[string]any{"type": "reasoning_text", "text": "edited " + rsText}}
 			return items
 		})
-		if ids, out, err := render(vis, true); err != nil || out.fields() != want("") || len(ids) < len(slot) || !slices.Equal(ids[:len(slot)], slot) {
-			t.Errorf("%s visible edit: %s %v; the blob's text and ids must win over the visible content", rp.ID, out.fields(), err)
+		if ids, out, err := render(vis, true); err != nil || out.Fields() != want("") || len(ids) < len(slot) || !slices.Equal(ids[:len(slot)], slot) {
+			t.Errorf("%s visible edit: %s %v; the blob's text and ids must win over the visible content", rp.ID, out.Fields(), err)
 		}
 		cases["visible-edit"]++
 
@@ -186,7 +186,7 @@ func TestIDsCarried_G0(t *testing.T) {
 			textEdit     bool // the defect edits rendered text, so a render equal to the untouched one means it did not plant
 		}
 		var ds []defect
-		ds = append(ds, defect{"a", idsDecode, next(setBlob(key.mint(model, "", flipChar(rsText), rp.Gen, true))), true})
+		ds = append(ds, defect{"a", idsDecode, next(setBlob(key.Mint(model, "", flipChar(rsText), rp.Gen, true))), true})
 		if callAt >= 0 {
 			args := rp.Items[callAt]["arguments"].(string)
 			ds = append(ds, defect{"b", idsDecode, next(func(items []map[string]any) []map[string]any {
@@ -211,16 +211,16 @@ func TestIDsCarried_G0(t *testing.T) {
 			}), true})
 		}
 		forged := nonCanonicalSplit(t, lm, rp.Gen)
-		noMAC := &idsBlob{whole: true, keyID: key.id, model: model, text: rsText, ids: forged}
+		noMAC := &idsBlob{Whole: true, KeyID: key.ID, Model: model, Text: rsText, IDs: forged}
 		ds = append(ds, defect{"e", idsMAC, next(setBlob(noMAC.String())), false})
-		randMAC := &idsBlob{whole: true, keyID: key.id, model: model, text: rsText, ids: forged, mac: make([]byte, 32)}
-		_, _ = rand.Read(randMAC.mac)
+		randMAC := &idsBlob{Whole: true, KeyID: key.ID, Model: model, Text: rsText, IDs: forged, MAC: make([]byte, 32)}
+		_, _ = rand.Read(randMAC.MAC)
 		ds = append(ds, defect{"f", idsMAC, next(setBlob(randMAC.String())), false})
-		ds = append(ds, defect{"g", idsKeyR, next(setBlob(other.mint(model, "", rsText, rp.Gen, true))), false})
+		ds = append(ds, defect{"g", idsKeyR, next(setBlob(other.Mint(model, "", rsText, rp.Gen, true))), false})
 		hText, hIDs := plantSpecialInReasoning(t, lm, rsText, rp.Gen)
-		ds = append(ds, defect{"h", idsSpecial, next(setBlob(key.mint(model, "", hText, hIDs, true))), false})
-		ds = append(ds, defect{"i", idsNS, next(setBlob(key.mint(model, "another-namespace", rsText, rp.Gen, true))), false})
-		ds = append(ds, defect{"j", idsModel, next(setBlob(key.mint("another-model", "", rsText, rp.Gen, true))), false})
+		ds = append(ds, defect{"h", idsSpecial, next(setBlob(key.Mint(model, "", hText, hIDs, true))), false})
+		ds = append(ds, defect{"i", idsNS, next(setBlob(key.Mint(model, "another-namespace", rsText, rp.Gen, true))), false})
+		ds = append(ds, defect{"j", idsModel, next(setBlob(key.Mint("another-model", "", rsText, rp.Gen, true))), false})
 		ds = append(ds, defect{"k", idsV1, next(setBlob(reasoningBlobPrefix + base64.StdEncoding.EncodeToString([]byte(rsText)))), false})
 		ds = append(ds, defect{"l", idsParse, next(setBlob(valid[:len(reasoningBlobV2Prefix)+(len(valid)-len(reasoningBlobV2Prefix))/2] + "!!")), false})
 		ds = append(ds, defect{"m", "", next(func(items []map[string]any) []map[string]any {
@@ -250,8 +250,8 @@ func TestIDsCarried_G0(t *testing.T) {
 					t.Errorf("%s (m): the dropped reasoning item's text is rendered", rp.ID)
 				}
 			}
-			if out.fields() != wantFields {
-				t.Errorf("%s (%s): %s, want %s", rp.ID, d.name, out.fields(), wantFields)
+			if out.Fields() != wantFields {
+				t.Errorf("%s (%s): %s, want %s", rp.ID, d.name, out.Fields(), wantFields)
 			}
 			cases[d.name]++
 		}

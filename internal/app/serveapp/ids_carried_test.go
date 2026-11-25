@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,79 +22,13 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 )
 
-// The v2 blob's format: every field survives a round trip, and a blob that is cut short or garbled does not parse.
-func TestIDsBlob_roundTrip(t *testing.T) {
+// reasoningItemText reads the reasoning text out of a v2 carried-id blob (protocol round-trip and key-file
+// validation live in internal/app/serveapp/carriedids).
+func TestReasoningItemText_v2Blob(t *testing.T) {
 	k := newIDsKey([]byte("round-trip test key of 32 bytes!"))
-	enc := k.mint("model-x", "ns-y", "reasoning text\nwith a newline", []int{0, 1, 127, 128, 300000, 5}, false)
-	if !strings.HasPrefix(enc, reasoningBlobV2Prefix) {
-		t.Fatalf("minted %q", enc)
-	}
-	b, err := parseIDsBlob(enc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.whole || b.keyID != k.id || b.model != "model-x" || b.ns != "ns-y" || b.text != "reasoning text\nwith a newline" ||
-		!slices.Equal(b.ids, []int{0, 1, 127, 128, 300000, 5}) || len(b.mac) != 32 {
-		t.Errorf("parsed %+v", b)
-	}
-	if !k.verifyMAC(b) {
-		t.Error("the key does not verify its own MAC")
-	}
-	b.ids[2]++
-	if k.verifyMAC(b) {
-		t.Error("the MAC verifies after an id changed")
-	}
+	enc := k.Mint("model-x", "ns-y", "reasoning text\nwith a newline", []int{0, 1, 127, 128, 300000, 5}, false)
 	if text, err := reasoningItemText(enc, nil, nil); err != nil || text != "reasoning text\nwith a newline" {
 		t.Errorf("reasoningItemText on a v2 blob: %q, %v", text, err)
-	}
-	for _, bad := range []string{enc[:len(enc)-6], enc[:len(reasoningBlobV2Prefix)+3], reasoningBlobV2Prefix + "%%%", reasoningBlobV2Prefix} {
-		if _, err := parseIDsBlob(bad); err == nil {
-			t.Errorf("%q parsed", bad)
-		}
-	}
-}
-
-// --ids-key-file: 32 bytes or more, mode 0600 or stricter, else refused; the key id is the first 8 bytes of SHA-256 of the key.
-func TestIDsKeyFile(t *testing.T) {
-	dir := t.TempDir()
-	write := func(name string, b []byte, mode os.FileMode) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, b, mode); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(p, mode); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	key := bytes.Repeat([]byte{7}, 40)
-	k, err := readIDsKeyFile(write("ok", key, 0o600))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(key)
-	if !bytes.Equal(k.id[:], sum[:8]) || !bytes.Equal(k.key, key) {
-		t.Errorf("key id %x, want %x", k.id, sum[:8])
-	}
-	if _, err := readIDsKeyFile(write("short", key[:31], 0o600)); err == nil {
-		t.Error("a 31-byte key was accepted")
-	}
-	if _, err := readIDsKeyFile(write("open", key, 0o644)); err == nil && runtime.GOOS != "windows" { // Windows carries no mode bits
-		t.Error("a key file readable by others was accepted")
-	}
-	if _, err := readIDsKeyFile(filepath.Join(dir, "missing")); err == nil {
-		t.Error("a missing key file was accepted")
-	}
-	if w := idsKeyFileWarning("windows", "k"); !strings.Contains(w, "permissions not checked on Windows") {
-		t.Errorf("windows: warning %q", w)
-	}
-	if idsKeyFileWarning("linux", "k") != "" || idsKeyFileWarning("windows", "") != "" {
-		t.Error("a warning off Windows, or with no key file")
-	}
-	r1, err1 := randomIDsKey()
-	r2, err2 := randomIDsKey()
-	if err1 != nil || err2 != nil || len(r1.key) != 32 || bytes.Equal(r1.key, r2.key) {
-		t.Error("the default key is not 32 random bytes per start")
 	}
 }
 
@@ -285,8 +218,8 @@ func TestIDsCarried_tinyFallbackAndKV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turn 1's carrier: %v", err)
 	}
-	if !slices.Equal(blob.ids, t1.gen) || !blob.whole || blob.text != "" {
-		t.Fatalf("turn 1's carrier holds ids %v (whole %v, text %q); the generation's ids are %v", blob.ids, blob.whole, blob.text, t1.gen)
+	if !slices.Equal(blob.IDs, t1.gen) || !blob.Whole || blob.Text != "" {
+		t.Fatalf("turn 1's carrier holds ids %v (whole %v, text %q); the generation's ids are %v", blob.IDs, blob.Whole, blob.Text, t1.gen)
 	}
 	canon, _ := lm.tk.EncodeSegments([]chat.Segment{{Text: t1.text}}, false)
 	if slices.Equal(canon, t1.gen) || t1.canon != "0" {
@@ -320,8 +253,8 @@ func TestIDsCarried_tinyFallbackAndKV(t *testing.T) {
 	if slices.Equal(forgedIDs, canon) {
 		forgedIDs = slices.Clone(t1.gen) // the per-character split is the canonical one here; any split will do without a MAC
 	}
-	forged := (&idsBlob{whole: true, keyID: key.id, model: lm.idsIdentity(), ids: forgedIDs}).String()
-	otherKey := newIDsKey([]byte("another key for the tier-0 test!")).mint(lm.idsIdentity(), "", "", t1.gen, true)
+	forged := (&idsBlob{Whole: true, KeyID: key.ID, Model: lm.idsIdentity(), IDs: forgedIDs}).String()
+	otherKey := newIDsKey([]byte("another key for the tier-0 test!")).Mint(lm.idsIdentity(), "", "", t1.gen, true)
 
 	aw := post("A-warm", next(valid))
 	post("other (cold for A-cold)", other)
@@ -408,7 +341,7 @@ func TestIDsCarried_carrierItems(t *testing.T) {
 		evs := postScripted(t, ts.URL+"/v1/responses", req)
 		out := lastOutput(t, evs, stream)
 		b, err := parseIDsBlob(out[0].(map[string]any)["encrypted_content"].(string))
-		if err != nil || !slices.Equal(b.ids, genIDs) || !b.whole || b.text != "I will read calc.go." {
+		if err != nil || !slices.Equal(b.IDs, genIDs) || !b.Whole || b.Text != "I will read calc.go." {
 			t.Errorf("stream=%v: reasoning item's blob %+v (%v); want the whole turn's ids", stream, b, err)
 		}
 		if stream { // the item as Codex reads it: from response.output_item.done
@@ -435,7 +368,7 @@ func TestIDsCarried_carrierItems(t *testing.T) {
 		out = lastOutput(t, postScripted(t, ts2.URL+"/v1/responses", req), stream)
 		it := out[0].(map[string]any)
 		b, err := parseIDsBlob(fmtString(it["encrypted_content"]))
-		if it["type"] != "reasoning" || len(it["content"].([]any)) != 0 || err != nil || !slices.Equal(b.ids, ids2) {
+		if it["type"] != "reasoning" || len(it["content"].([]any)) != 0 || err != nil || !slices.Equal(b.IDs, ids2) {
 			t.Errorf("stream=%v: first item %v (%v); want a carrier-only reasoning item with the turn's ids", stream, it, err)
 		}
 	}
@@ -459,8 +392,8 @@ func TestIDsCarried_streamedAnswer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stream=%v: %v", stream, err)
 		}
-		if want := ids[:cut]; stream && (b.whole || !slices.Equal(b.ids, want)) || !stream && (!b.whole || !slices.Equal(b.ids, ids)) {
-			t.Errorf("stream=%v: blob whole=%v ids %v; generated %v", stream, b.whole, b.ids, ids)
+		if want := ids[:cut]; stream && (b.Whole || !slices.Equal(b.IDs, want)) || !stream && (!b.Whole || !slices.Equal(b.IDs, ids)) {
+			t.Errorf("stream=%v: blob whole=%v ids %v; generated %v", stream, b.Whole, b.IDs, ids)
 		}
 		msg := map[string]any{}
 		for k, v := range out[1].(map[string]any) {
@@ -478,8 +411,8 @@ func TestIDsCarried_streamedAnswer(t *testing.T) {
 			input := append([]any{map[string]any{"role": "user", "content": req["input"]}, rs, msg}, tc.tail...)
 			body, _ := json.Marshal(map[string]any{"model": "m", "input": input})
 			_, o, err := kv0RenderIDs(s, lm, "/v1/responses", body, true)
-			if err != nil || o.fields() != tc.want {
-				t.Errorf("stream=%v, %s: %s (%v), want %s", stream, tc.name, o.fields(), err, tc.want)
+			if err != nil || o.Fields() != tc.want {
+				t.Errorf("stream=%v, %s: %s (%v), want %s", stream, tc.name, o.Fields(), err, tc.want)
 			}
 		}
 	}
