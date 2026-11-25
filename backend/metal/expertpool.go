@@ -4,8 +4,8 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -14,6 +14,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // expertSlot is a view of one slot of an expertPool: .At()-offset Buffers onto the pool's contiguous per-field buffers,
@@ -103,6 +105,7 @@ type expertPool struct {
 	prefetchWG      sync.WaitGroup
 	prefetchMu      sync.Mutex
 	prefetchPanic   any
+	prefetchStack   []byte
 	prefetchPending []prefetchSlot
 	prefetchLive    map[int]bool // prefetched experts not yet asked for: a later hit on one counts in prefetchHits
 	prefetched      int          // experts prefetched
@@ -345,13 +348,16 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		var mu sync.Mutex
 		var fetchNanos int64
 		var stagePanic any
+		var stageStack []byte
 		for _, ms := range misses {
 			wg.Go(func() {
 				defer func() {
 					if r := recover(); r != nil {
+						st := debug.Stack()
 						mu.Lock()
 						if stagePanic == nil {
 							stagePanic = r
+							stageStack = st
 						}
 						mu.Unlock()
 					}
@@ -369,6 +375,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			for _, ms := range misses {
 				p.slotExpert[ms.slot] = -1
 			}
+			logs.Warnf("metal expertpool: staging worker panicked: %v\n%s", stagePanic, stageStack)
 			panic(stagePanic)
 		}
 		p.fetchNanos += fetchNanos
@@ -465,9 +472,11 @@ func (p *expertPool) prefetchAsync(ids []int) {
 		p.prefetchWG.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {
+					st := debug.Stack()
 					p.prefetchMu.Lock()
 					if p.prefetchPanic == nil {
 						p.prefetchPanic = r
+						p.prefetchStack = st
 					}
 					p.prefetchMu.Unlock()
 				}
@@ -477,8 +486,9 @@ func (p *expertPool) prefetchAsync(ids []int) {
 	}
 }
 
-// drainPrefetch waits for any in-flight background prefetch reads without marking slots resident or re-panicking.
-// Close and abort recovery call it before releasing pool buffers or closing the pread fd.
+// drainPrefetch waits for any in-flight background prefetch reads without marking slots resident.
+// Close and abort recovery call it before releasing pool buffers or closing the pread fd; a programming bug
+// (runtime.Error) from a prefetch worker is still re-panicked rather than silently discarded.
 func (p *expertPool) drainPrefetch() {
 	if len(p.prefetchPending) == 0 {
 		return
@@ -488,7 +498,12 @@ func (p *expertPool) drainPrefetch() {
 		p.slotExpert[ps.slot] = -1
 	}
 	p.prefetchPending = p.prefetchPending[:0]
-	p.prefetchPanic = nil
+	pan, stack := p.prefetchPanic, p.prefetchStack
+	p.prefetchPanic, p.prefetchStack = nil, nil
+	if pan != nil {
+		logs.Warnf("metal expertpool: prefetch worker panicked: %v\n%s", pan, stack)
+		mem.RepanicBug(pan)
+	}
 }
 
 // finishPrefetch waits for the reads prefetchAsync started and marks those experts resident.
@@ -500,11 +515,13 @@ func (p *expertPool) finishPrefetch() {
 	p.prefetchWG.Wait()
 	p.stageNanos += time.Since(t0).Nanoseconds() // the part of the reads the caller still waited for
 	if pan := p.prefetchPanic; pan != nil {
-		p.prefetchPanic = nil
+		stack := p.prefetchStack
+		p.prefetchPanic, p.prefetchStack = nil, nil
 		for _, ps := range p.prefetchPending {
 			p.slotExpert[ps.slot] = -1
 		}
 		p.prefetchPending = p.prefetchPending[:0]
+		logs.Warnf("metal expertpool: prefetch worker panicked: %v\n%s", pan, stack)
 		panic(pan)
 	}
 	if p.prefetchLive == nil {

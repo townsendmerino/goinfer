@@ -2,7 +2,9 @@ package serveapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -35,8 +37,11 @@ func runBatchWorker(n int, next *atomic.Int64, fn func(i int)) {
 	}
 }
 
-// registerBatchJob publishes jobID into batch.JobIDs[i] after registering cancel in js. Returns false (and
-// cancels immediately) if the batch is already cancelling, closing the cancel-vs-registration race.
+// registerBatchJob publishes jobID into batch.JobIDs[i] under batch.mu after registering cancel in js.
+// requestCancel (batches.go) reads the whole JobIDs slice from another goroutine while lines write their own
+// slots; disjoint indices do not save a plain slice write from racing a concurrent read of the slice's backing
+// array. Checking Status under the same lock returns false (and cancels immediately) if the batch is already
+// cancelling, closing the cancel-vs-registration race.
 func registerBatchJob(batch *batchRecord, i int, jobID string, js *jobs.Store, cancel context.CancelFunc) bool {
 	js.SetCancel(jobID, cancel)
 	batch.mu.Lock()
@@ -135,6 +140,8 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	gr.id = jobID
 	s.jobs.CreatePending(jobID, lm.name, gr.promptIDs)
 
+	// Stored before tryEnter, same ordering as runJob — POST .../cancel must reach a still-queued
+	// line, not only a running one.
 	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	defer bgCancel()
 	if !registerBatchJob(batch, i, jobID, s.jobs, bgCancel) {
@@ -158,6 +165,10 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
+		return
+	}
+	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
+		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
 		return
 	}
 	if res.cancelReason != "" {
@@ -286,6 +297,10 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
+		return
+	}
+	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
+		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
 		return
 	}
 	if res.cancelReason != "" {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -391,18 +392,20 @@ func (r *resident) execLoop() {
 	for job := range r.execReq {
 		var out []float32
 		func() {
+			curCommitted := false
 			defer func() {
 				if p := recover(); p != nil {
+					if curCommitted && cur != nil {
+						cur.WaitDone()
+					}
 					cur = nil
 					pool.Drain()
 					pool = NewARPool()
 					count = 0
-					switch v := p.(type) {
-					case runtime.Error:
-						r.recordExecErr(fmt.Errorf("metal: executor bug: %w", v))
-					case error:
-						r.recordExecErr(fmt.Errorf("metal: executor panicked: %w", v))
-					default:
+					mem.RepanicBug(p)
+					if err, ok := p.(error); ok {
+						r.recordExecErr(fmt.Errorf("metal: executor panicked: %w", err))
+					} else {
 						r.recordExecErr(fmt.Errorf("metal: executor panicked: %v", p))
 					}
 					out = nil
@@ -432,6 +435,7 @@ func (r *resident) execLoop() {
 			r.addLearnedPos(job.pos) // GPT-2: += wpe[pos], same commit-time placement as the copy above
 			r.setPos(job.pos, job.ropePos)
 			cur.Commit()
+			curCommitted = true
 
 			count++
 			drain := count%drainEvery == 0
@@ -442,6 +446,7 @@ func (r *resident) execLoop() {
 				next, nextNoHead, nextPlan = encodeFor(job.noHead, job.pos+2), job.noHead, r.attnPlanFor(job.pos+2)
 			}
 			cur.WaitDone()
+			curCommitted = false
 			r.recordExecErr(cur.Err()) // set BEFORE the execAck send so the adapter's read is ordered
 			r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
 			if !job.noHead {
@@ -639,15 +644,6 @@ func (r *resident) useKVSlot(i int) error {
 	return nil
 }
 
-// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated, so it must be called
-// once the model is unloaded: purego has no ARC and Metal has no context-destroy to reclaim in bulk, and cmd/serve loads
-// and unloads models at runtime, so an unclosed resident leaks its weights, per-layer KV and MoE experts until the
-// process exits. It returns error to satisfy io.Closer and match cuda/gpu's Close() error; teardown cannot fail, so it
-// always returns nil. Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
-//
-// Close must not run while a request still holds the model: that is a use-after-free (on CUDA, a driver SIGSEGV that
-// kills the server). Serve's unload drains in-flight holders first (internal/serveapp/admin.go, handleAdminUnload;
-// ); keep that ordering for any new caller.
 // drainMoEPrefetch joins any background MoE expert prefetch goroutines across all layers so no goroutine
 // writes into pool buffers or reads giwFile after abort or during Close.
 func (r *resident) drainMoEPrefetch() {
@@ -661,6 +657,15 @@ func (r *resident) drainMoEPrefetch() {
 	}
 }
 
+// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated, so it must be called
+// once the model is unloaded: purego has no ARC and Metal has no context-destroy to reclaim in bulk, and cmd/serve loads
+// and unloads models at runtime, so an unclosed resident leaks its weights, per-layer KV and MoE experts until the
+// process exits. It returns error to satisfy io.Closer and match cuda/gpu's Close() error; teardown cannot fail, so it
+// always returns nil. Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
+//
+// Close must not run while a request still holds the model: that is a use-after-free (on CUDA, a driver SIGSEGV that
+// kills the server). Serve's unload drains in-flight holders first (internal/serveapp/admin.go, handleAdminUnload;
+// ); keep that ordering for any new caller.
 func (r *resident) Close() error {
 	r.stopExec()
 	r.drainMoEPrefetch()

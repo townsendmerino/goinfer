@@ -369,54 +369,41 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// Prefill the (divergent suffix of the) prompt; the last token's logits seed cur.
 		var seedLogits []float32
 		var err error
-		var slotMarked bool
-		releaseSlot := func() {
-			if slotMarked {
-				slotMarked = false
-				target.batcher.markSlot(mc3Slot, false)
+		var releaseAdaptive func()
+		defer func() {
+			if releaseAdaptive != nil {
+				releaseAdaptive()
 			}
-		}
-		defer releaseSlot()
+		}()
 		if resident {
-			// Shared with generateInto (residentPrefillSeed), so batched prefill applies here too.
-			// Compute reuseFrom before residentForgetIDs so prefix reuse stays intact across rounds.
-			var reuseFrom int
 			if adaptive {
-				target.batcher.exclusive(func() {
-					acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
-					reuseFrom, mc3Slot = acq.reuse, acq.slot
-					if mc3Slot >= 0 {
-						target.batcher.markSlot(mc3Slot, true)
-						slotMarked = true
-						target.residentForgetIDs()
-					}
-				})
-				if mc3Slot < 0 {
-					resident, adaptive = false, false
-				}
-			}
-			if resident && adaptive {
-				target.batcher.prefillExclusive(func() {
-					if err = target.residentBind(mc3Slot); err != nil {
-						return
-					}
-					seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false)
-				})
+				var ok bool
+				seedLogits, mc3Slot, releaseAdaptive, ok, err = target.prefillNgramAdaptive(ctx, g, prompt)
 				if err != nil {
 					g.err = err
 					return
 				}
-				g.PrefillReused = reuseFrom
-			} else if resident {
-				reuseFrom = target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; binds the resident KV slot
+				if !ok {
+					resident, adaptive = false, false
+				}
+			}
+			if resident && !adaptive {
+				// Shared with generateInto (residentPrefillSeed), so batched prefill applies here too.
+				//
+				// Prefix reuse: residentAcquire and residentAcquireSlot return the reusable prefix reuseFrom, so a --spec or --drafter
+				// agent loop does not cold-prefill the whole prompt every round. The bound sequence is accurate here because commitResident below
+				// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
+				// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
+				// first would only lose reuse. generateInto uses the same order (resident_reuse.go).
+				reuseFrom := target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; binds the resident KV slot
 				target.residentForgetIDs()
 				if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 					g.err = err
 					return
 				}
 				g.PrefillReused = reuseFrom
-			} else {
-				// Reached when adaptive's slot acquisition above found no free slot: tc was never
+			} else if !resident {
+				// Reached when adaptive's slot acquisition above found no free slot or lost to an exclusive claim: tc was never
 				// allocated (resident was true when it was sized), so allocate it now, same fallback
 				// the non-resident branch below would have taken from the start.
 				if tc == nil {
@@ -454,7 +441,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 						target.residentCommitIDs(prompt, generated, nil, nil)
 					}
 				})
-				releaseSlot()
+				if releaseAdaptive != nil {
+					releaseAdaptive()
+				}
 			} else {
 				// The whole-generation exclusive claim means our slot is already the bound one; no residentBind needed.
 				target.residentCommitIDs(prompt, generated, nil, nil)
@@ -470,11 +459,66 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			ctxCap: target.ResidentContextCap, adaptive: adaptive,
 			neverYield: adaptive && target.knobs.get(knobSpecAdaptiveNeverYield) != "",
 			exclusive:  func(f func()) { target.batcher.exclusive(f) },
-			claim:      func() bool { return target.batcher.claimExclusive(&target.resBusy) },
+			claim:      func() bool { return target.batcher.claimAdaptiveRound(&target.resBusy) },
 			release:    func() { atomic.StoreInt32(&target.resBusy, 0) },
 		}
 		ngramSpecLoop(ctx, tg, seedLogits, out, g, stats, drafter, prompt, maxTokens, K, samp, needHist, tr, ad, commit)
 	}
+}
+
+// prefillNgramAdaptive claims an adaptive slot on the resident batcher and runs the prompt prefill.
+// On ok == true the caller must invoke release (idempotent) when done with the slot.
+func (target *Model) prefillNgramAdaptive(ctx context.Context, g *Generation, prompt []int) (seedLogits []float32, slot int, release func(), ok bool, err error) {
+	if !target.batcher.claimAdaptive(&target.resBusy) {
+		return nil, -1, nil, false, nil
+	}
+	var reuseFrom int
+	slot = -1
+	// Prefix reuse: residentAcquire and residentAcquireSlot return the reusable prefix reuseFrom, so a --spec or --drafter
+	// agent loop does not cold-prefill the whole prompt every round. The bound sequence is accurate here because commitResident
+	// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
+	// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
+	// first would only lose reuse. generateInto uses the same order (resident_reuse.go).
+	//
+	// Our own slot, reserved for the whole generation: busySlots keeps this pick from colliding with another generation's.
+	// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
+	// themselves, as generateInto's batched prefill does (model.go); neither is safe bare.
+	target.batcher.exclusive(func() {
+		acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
+		reuseFrom, slot = acq.reuse, acq.slot
+		if slot >= 0 {
+			target.batcher.markSlot(slot, true)
+			target.residentForgetIDs()
+		}
+	})
+	if slot < 0 {
+		// No free slot: not resident for this call; fall back to the staged CPU path, as the claim above does.
+		target.batcher.releaseAdaptive()
+		return nil, -1, nil, false, nil
+	}
+	released := false
+	release = func() {
+		if !released {
+			released = true
+			target.batcher.markSlot(slot, false)
+			target.batcher.releaseAdaptive()
+		}
+	}
+	target.batcher.prefillExclusive(func() {
+		// Re-bind: the slot-acquisition section above has ended, so another generation could have rebound the resident to a
+		// different slot since (mc3Prefill, model.go, rebinds for the same reason). Skipping this made the prefill write
+		// another generation's slot, intermittently (TestSpecAdaptiveSwitch_matchesPlainDecode).
+		if err = target.residentBind(slot); err != nil {
+			return
+		}
+		seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false)
+	})
+	if err != nil {
+		release()
+		return nil, -1, nil, false, err
+	}
+	g.PrefillReused = reuseFrom
+	return seedLogits, slot, release, true, nil
 }
 
 // ngramTarget is what ngramSpecLoop asks of the target: verifying a sequence at a position (full logits, or argmax ids
@@ -495,6 +539,14 @@ type ngramTarget struct {
 	exclusive      func(f func())
 	claim          func() bool
 	release        func()
+}
+
+func (tg ngramTarget) truncateSync(keep int) {
+	if tg.adaptive {
+		tg.exclusive(func() { tg.truncate(keep) })
+		return
+	}
+	tg.truncate(keep)
 }
 
 // ngramSpecLoop is n-gram speculative decoding from the target's seed logits after prompt: each round the drafter
@@ -701,8 +753,8 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 			}
 		}
 		if holdingExclusive {
-			// Held only for this round's verify (tg.adaptive) — everything from here on is host-side
-			// bookkeeping and a channel send, not a resident touch.
+			// Held only for this round's verify (tg.adaptive): the rollback truncate below takes its own
+			// momentary tg.exclusive section, and everything else is host-side bookkeeping and a channel send.
 			tg.release()
 			holdingExclusive = false
 		}
@@ -805,14 +857,14 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 		// 4. Roll the cache back to the confirmed length: cur (at base) plus the
 		// accepted draft tokens. nextTok stays pending for the next round.
 		if yieldThisRound {
+			// A yield round drafted nothing (kEff==0, accepted==0): the resident already holds
+			// exactly base+1 positions (what targetVerifyBatch just wrote), so there is nothing to
+			// roll back. Skip the resident touch — it would need its own synchronization here, and
+			// buys nothing — and just advance the host-side position tracker targetTruncate also sets.
 			tpos = base + 1
 		} else {
 			tpos = base + 1 + accepted
-			if tg.adaptive {
-				tg.exclusive(func() { tg.truncate(tpos) })
-			} else {
-				tg.truncate(tpos)
-			}
+			tg.truncateSync(tpos)
 		}
 
 		// 5. Commit to history: cur, then the accepted draft tokens. nextTok is

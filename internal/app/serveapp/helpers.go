@@ -278,14 +278,13 @@ func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
 // frame to send or fail.
 func sseJSONSender(w http.ResponseWriter, f http.Flusher, cancel context.CancelFunc) func(event string, payload any) {
 	sw := newSSEWriter(w, f)
+	sw.onErr = cancel
 	return func(event string, payload any) {
 		b, err := json.Marshal(payload)
 		if err != nil {
 			return
 		}
-		if sw.frame("event: %s\ndata: %s\n\n", event, b) != nil {
-			cancel()
-		}
+		_ = sw.frame("event: %s\ndata: %s\n\n", event, b)
 	}
 }
 

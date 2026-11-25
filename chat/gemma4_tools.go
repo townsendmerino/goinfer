@@ -32,19 +32,29 @@ var gemmaQuote = []string{gq}
 // gemmaSafe removes the control-token strings from a value the micro-language embeds (a schema's descriptions, names and enum values, a
 // call's argument keys and string values). The renderers mark the quote in the rendered schema and arguments as a token, so a quote a
 // value carried would close its own string; any other marker in a value stays literal text, since only the quote is marked there.
+// A single left-to-right stack pass removes nested or reconstituted markers (e.g. `<|<|"|>"|>`) in O(N) time without repeated rescans.
 func gemmaSafe(s string) string {
-	for {
-		changed := false
-		for _, m := range gemmaToolMarks {
-			if strings.Contains(s, m) {
-				s = strings.ReplaceAll(s, m, "")
-				changed = true
+	if !strings.ContainsAny(s, "<>") {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	for i := range len(s) {
+		out = append(out, s[i])
+		for len(out) > 0 && out[len(out)-1] == '>' {
+			trimmed := false
+			for _, m := range gemmaToolMarks {
+				if len(out) >= len(m) && string(out[len(out)-len(m):]) == m {
+					out = out[:len(out)-len(m)]
+					trimmed = true
+					break
+				}
+			}
+			if !trimmed {
+				break
 			}
 		}
-		if !changed {
-			return s
-		}
 	}
+	return string(out)
 }
 
 // renderGemma4Tools is Gemma 4's JSON-free tool prompt as segments (the generic rendering; renderGemma4NativeTools is the canonical template's).

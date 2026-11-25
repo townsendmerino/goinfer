@@ -120,7 +120,7 @@ func PixtralPreprocess(data []byte, c PixtralPreprocessConfig) ([]float32, int, 
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("pixtral: decode image header: %w", err)
 	}
-	if ic.Width <= 0 || ic.Height <= 0 || ic.Width > 16384 || ic.Height > 16384 || int64(ic.Width)*int64(ic.Height) > qwenMaxInputPixels {
+	if ic.Width <= 0 || ic.Height <= 0 || ic.Width > 16384 || ic.Height > 16384 || int64(ic.Width)*int64(ic.Height) > visionMaxInputPixels {
 		return nil, 0, 0, fmt.Errorf("pixtral: image %dx%d out of range", ic.Width, ic.Height)
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
@@ -129,10 +129,10 @@ func PixtralPreprocess(data []byte, c PixtralPreprocessConfig) ([]float32, int, 
 	}
 	b := img.Bounds()
 	h, w := b.Dy(), b.Dx()
-	if h <= 0 || w <= 0 || int64(w)*int64(h) > qwenMaxInputPixels {
+	if h <= 0 || w <= 0 || int64(w)*int64(h) > visionMaxInputPixels {
 		return nil, 0, 0, fmt.Errorf("pixtral: decoded image %dx%d out of range", w, h)
 	}
-	src := qwenExtractRGBU8(img, h, w)
+	src := extractRGB[uint8](img, h, w)
 	th, tw := PixtralResizeTarget(h, w, c)
 	res := vision.ResizeBicubicAA(src, h, w, th, tw) // torchvision's antialiased bicubic on uint8, as HF's fast processor
 	out := make([]float32, 3*th*tw)

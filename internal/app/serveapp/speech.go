@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -27,10 +28,13 @@ type speechEngine interface {
 	HasLanguage(code string) bool
 }
 
+var errSpeechClosed = errors.New("speech model is closed")
+
 type speechModel struct {
 	name, dir string
 	eng       speechEngine
 	mu        sync.Mutex // one transcription at a time: a window is a whole encoder pass, and two at once only slow each other
+	closed    bool       // set under mu by handlerCloser.Close before closing eng
 }
 
 // speechMaxSeconds is the longest clip a request may carry: a cost bound (each 30 s window is an encoder pass and a decode), not the model's limit; a longer clip is refused, never cut.
@@ -222,9 +226,16 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	res, err := func() (*whisper.LongResult, error) {
 		sm.mu.Lock()
 		defer sm.mu.Unlock()
+		if sm.closed {
+			return nil, errSpeechClosed
+		}
 		return sm.eng.TranscribeWith(samples, opts)
 	}()
 	if err != nil {
+		if errors.Is(err, errSpeechClosed) {
+			writeErr(w, http.StatusServiceUnavailable, "transcription: "+err.Error())
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "transcription: "+err.Error())
 		return
 	}

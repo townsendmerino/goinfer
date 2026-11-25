@@ -68,10 +68,18 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rc := http.NewResponseController(w)
-	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(f.Bytes)
+	// Renew the write deadline per chunk so a slow-but-live client reading a multi-megabyte file is not
+	// truncated by one fixed timeout while a stalled client still releases the handler within sseWriteTimeout.
+	const chunkBytes = 256 << 10
+	for off := 0; off < len(f.Bytes); off += chunkBytes {
+		end := min(off+chunkBytes, len(f.Bytes))
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		if _, err := w.Write(f.Bytes[off:end]); err != nil {
+			return
+		}
+	}
 }
 
 // --- OpenAI: POST /v1/batches, GET /v1/batches/{id}, POST /v1/batches/{id}/cancel ---

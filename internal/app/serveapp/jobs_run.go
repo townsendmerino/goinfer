@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 )
@@ -34,6 +35,8 @@ func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusa
 	switch {
 	case haltReason != "":
 		return refusal{jobs.Cancelled, statusCancelled, "cancelled", haltReason}
+	case errors.Is(context.Cause(ctx), errServerShutdown):
+		return refusal{jobs.Interrupted, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"}
 	case ctx.Err() != nil:
 		return refusal{jobs.Cancelled, statusCancelled, "cancelled", "cancelled before a turn was granted"}
 	default:

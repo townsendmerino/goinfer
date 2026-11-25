@@ -1750,5 +1750,12 @@ class RunnerPidReuse(unittest.TestCase):
         self.addCleanup(lambda: night.PIDFILE.unlink(missing_ok=True))
         self.assertIsNone(night.runner_pid(), "unrelated live python process was mistaken for night.py")
 
+    def test_argv_match_requires_python_running_night_py(self):
+        self.assertTrue(night._argv_is_night_runner(["python3", "/opt/goinfer/scripts/night.py", "run"]))
+        self.assertTrue(night._argv_is_night_runner(["/opt/goinfer/scripts/night.py", "run"]))
+        self.assertFalse(night._argv_is_night_runner(["python3", "-m", "unittest", "scripts/test_night.py"]))
+        self.assertFalse(night._argv_is_night_runner(["vim", "scripts/night.py"]))
+        self.assertFalse(night._argv_is_night_runner(["/usr/bin/startplasma-wayland"]))
+
 if __name__ == "__main__":
     unittest.main()

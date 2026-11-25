@@ -368,6 +368,10 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 		} else if quant == kvI8 {
 			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32Body(), r.f32Body()
+			// Blob-controlled lengths must be compared, as the ring branch above does for its stride, nLive and payload. The forward derives
+			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
+			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
+			// legal and means a KV-shared layer, which stores nothing of its own.
 			if e := checkGlobalPair(l, "keysQ", "valsQ", len(ref.keysQ[l]), len(ref.valsQ[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
@@ -382,12 +386,18 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				ref.stride[l] = kvDim // restore the per-layer KV width
 			}
 		} else {
+			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
+			// empty-but-non-nil slice so Append/Keys stay well-formed.
 			if k := r.f32Body(); k != nil {
 				ref.keys[l] = k
 			}
 			if v := r.f32Body(); v != nil {
 				ref.vals[l] = v
 			}
+			// stride[] is set only by Append, which LoadSession bypasses; without the assignment below a restored global layer has stride 0,
+			// so the first TruncateTo slices it to [:0] (or attendBatchedHeads panics) while pos stays non-zero. A global layer's width is the
+			// cache's uniform kvDim (geometry-guarded above); KV-shared layers keep stride 0, which TruncateTo's min() already guards. The
+			// lengths are checked as in the int8 arm above.
 			if e := checkGlobalPair(l, "keys", "vals", len(ref.keys[l]), len(ref.vals[l]), pos*kvDim); e != nil {
 				return nil, e
 			}

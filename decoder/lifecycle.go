@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // ErrClosed is what Generation.Err reports for a generation that Model.Close ended or that was started after Close. The
@@ -76,6 +78,7 @@ func (m *Model) runGen(ctx context.Context, out chan int, g *Generation, refused
 		defer close(out)
 		defer func() {
 			if p := recover(); p != nil {
+				mem.RepanicBug(p)
 				g.err = fmt.Errorf("decoder: generation panicked: %v", p)
 			}
 		}()

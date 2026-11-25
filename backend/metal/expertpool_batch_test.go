@@ -280,4 +280,20 @@ func TestExpertPool_workerPanicReRaisesOnCallerGoroutine(t *testing.T) {
 	if len(p.prefetchPending) != 0 || p.prefetchPanic != nil {
 		t.Fatalf("drainPrefetch left pending=%d panic=%v", len(p.prefetchPending), p.prefetchPanic)
 	}
+
+	// A programming bug (runtime.Error) in a prefetch worker must not be silently swallowed by drainPrefetch.
+	p.stagePread = func(e int, s expertSlot) {
+		var nilSlice []int
+		_ = nilSlice[0]
+	}
+	p.prefetchAsync([]int{1})
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("drainPrefetch swallowed runtime.Error from prefetch worker")
+			}
+		}()
+		p.drainPrefetch()
+	}()
 }

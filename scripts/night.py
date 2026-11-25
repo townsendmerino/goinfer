@@ -175,6 +175,15 @@ def running():
     return out
 
 
+def _argv_is_night_runner(argv):
+    if not argv:
+        return False
+    exe = os.path.basename(argv[0])
+    if exe == "night.py":
+        return True
+    return exe.startswith("python") and any(os.path.basename(a) == "night.py" for a in argv[1:])
+
+
 def _pid_is_runner(pid):
     """Verify pid is a live night.py process so post-reboot PID reuse (e.g. a desktop service inheriting
     an uncleanly left runner.pid) never wedges goinfer-night.service in a restart loop."""
@@ -185,15 +194,18 @@ def _pid_is_runner(pid):
             raw = Path(f"/proc/{pid}/cmdline").read_bytes()
             if not raw:
                 return False
-            cmd = raw.replace(b"\x00", b" ").decode("utf-8", "replace")
+            argv = [tok.decode("utf-8", "replace") for tok in raw.split(b"\x00") if tok]
         else:
             r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
             if r.returncode != 0 or not r.stdout.strip():
                 return False
-            cmd = r.stdout.strip()
+            try:
+                argv = shlex.split(r.stdout.strip())
+            except ValueError:
+                argv = r.stdout.strip().split()
     except (OSError, subprocess.SubprocessError):
         return False
-    return "night.py" in cmd
+    return _argv_is_night_runner(argv)
 
 
 def runner_pid():

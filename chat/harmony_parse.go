@@ -252,12 +252,6 @@ func (s *harmonySplitter) Flush() (reasoning, content string) {
 		}
 	}
 	text := s.buf
-	if route == hmToCall {
-		s.curCallArgs.WriteString(text)
-		s.calls[len(s.calls)-1].Args = s.curCallArgs.String()
-		s.curCallArgs.Reset()
-		return "", ""
-	}
 	if !s.started {
 		s.started = true
 		if s.emitted[route] {

@@ -72,12 +72,11 @@ func NewHandler(args []string) (http.Handler, io.Closer, error) {
 	mux, _ := srv.routes(cfg, *sf.apiKey, os.Stderr)
 	// Every request's context is a child of life, as the binary's are of its server context, so Close cancels the
 	// generations in flight instead of waiting for them.
-	life, stop := context.WithCancel(context.Background())
-	srv.lifeCtx = life
+	life, stop := srv.initLifeContext()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
-		defer context.AfterFunc(life, cancel)()
+		ctx, cancel := context.WithCancelCause(r.Context())
+		defer cancel(nil)
+		defer context.AfterFunc(life, func() { cancel(context.Cause(life)) })()
 		mux.ServeHTTP(w, r.WithContext(ctx))
 	})
 	return h, &handlerCloser{srv: srv, cfg: cfg, stop: stop}, nil
@@ -86,12 +85,12 @@ func NewHandler(args []string) (http.Handler, io.Closer, error) {
 type handlerCloser struct {
 	srv  *server
 	cfg  config
-	stop context.CancelFunc
+	stop context.CancelCauseFunc
 }
 
 // Close ends the handler's life: see NewHandler. It reports the models still draining when the wait ran out.
 func (c *handlerCloser) Close() error {
-	c.stop()
+	c.stop(errServerShutdown)
 	if c.srv.swapWatch != nil {
 		c.srv.swapWatch.Stop()
 	}
@@ -115,6 +114,7 @@ func (c *handlerCloser) Close() error {
 	c.srv.regMu.Unlock()
 	for _, sm := range speech {
 		sm.mu.Lock()
+		sm.closed = true
 		if cl, ok := sm.eng.(io.Closer); ok {
 			_ = cl.Close()
 		}

@@ -25,7 +25,6 @@ var recoverExempt = map[string]string{
 	"decoder/mc3_batch.go:runSolo":                             "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
 	"decoder/mc3_batch.go:execRun":                             "a panic fails that batched step's waiters with its value so serveLocked always clears busy and wakes waiters",
 	"decoder/cpu_batch.go:runStep":                             "a panic fails that batched step's tokens with its value; nothing falls back",
-	"decoder/lifecycle.go:runGen":                              "the generation goroutine boundary: a panic fails that generation via g.err instead of crashing the serve process",
 	"backend/cuda/resident.go:pipeName":                        "an error path's name lookup must not panic: a failure reads as \"?\"",
 	"backend/metal/workingset.go:deviceWorkingSet":             "a probe: a missing Metal symbol reads as an unknown working set (0)",
 	"backend/metal/expertpool.go:ensureResidentBatch":          "forwards a child staging goroutine's panic unchanged to the caller goroutine, where forwardLogitsPaged's RepanicBug classifies it",

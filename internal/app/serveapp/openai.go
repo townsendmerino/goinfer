@@ -412,6 +412,16 @@ type server struct {
 	lifeCtx context.Context
 }
 
+// errServerShutdown is the context cancellation cause used by server shutdown and handlerCloser.Close
+// so jobs and batch lines interrupted by shutdown record jobs.Interrupted instead of user jobs.Cancelled.
+var errServerShutdown = errors.New("server shutting down")
+
+func (s *server) initLifeContext() (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	s.lifeCtx = ctx
+	return ctx, cancel
+}
+
 func (s *server) lifeContext() context.Context {
 	if s.lifeCtx != nil {
 		return s.lifeCtx
@@ -447,6 +457,14 @@ func (s *server) lookupLocked(name string) *loadedModel {
 // The embed cap is independent of both: /v1/embeddings is served by the encoder, which is not in s.models, so a
 // decoder-derived cap would measure the wrong thing (see maxEmbedBodyBytes). fileCap is independent for the same
 // reason (see maxBatchFileBytes). All four are reported on startup.
+// autoTextBodyCap clamps an auto-derived text body cap between the 4 MiB floor and the 64 MiB ceiling.
+func autoTextBodyCap(derived int64) int64 {
+	if derived <= maxBodyBytes {
+		return maxBodyBytes
+	}
+	return min(derived, maxAutoTextBodyBytes)
+}
+
 func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, fileCap int64) {
 	textCap = maxBodyBytes // 4 MiB floor
 	if override > 0 {
@@ -465,9 +483,7 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, 
 				derived = b
 			}
 		}
-		if derived > textCap {
-			textCap = min(derived, maxAutoTextBodyBytes)
-		}
+		textCap = autoTextBodyCap(derived)
 	}
 	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
 	embedCap = maxEmbedBodyBytes
@@ -1580,6 +1596,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			state := jobs.Done
 			var errMsg string
 			switch {
+			case errors.Is(context.Cause(parent), errServerShutdown):
+				state, errMsg = jobs.Interrupted, errServerShutdown.Error()
 			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:
@@ -1651,6 +1669,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			state := jobs.Done
 			var errMsg string
 			switch {
+			case errors.Is(context.Cause(parent), errServerShutdown):
+				state, errMsg = jobs.Interrupted, errServerShutdown.Error()
 			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:

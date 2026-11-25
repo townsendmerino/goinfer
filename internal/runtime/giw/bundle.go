@@ -137,8 +137,11 @@ func ReadTokFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if fi.Size() < bundleBlobOffsetV3+4 {
+		return nil, fmt.Errorf("giw: file size %d too short for header (truncated or corrupt)", fi.Size())
+	}
 	wLen := binary.LittleEndian.Uint64(hdr[9:17])
-	if fi.Size() < bundleBlobOffsetV3+4 || wLen > uint64(fi.Size()-bundleBlobOffsetV3-4) {
+	if wLen > uint64(fi.Size()-bundleBlobOffsetV3-4) {
 		return nil, fmt.Errorf("giw: weights length %d exceeds file size %d (truncated or corrupt)", wLen, fi.Size())
 	}
 	tokOff := bundleBlobOffsetV3 + int64(wLen)
@@ -146,6 +149,10 @@ func ReadTokFile(path string) ([]byte, error) {
 	if _, err := f.ReadAt(tl[:], tokOff); err != nil {
 		return nil, fmt.Errorf("giw: read tok length: %w", err)
 	}
+	// Bound the allocation by the file: the tokenizer body starts at tokOff+4, so it can hold at
+	// most (fileSize - tokOff - 4) bytes. Without this a crafted u32 tokLen (e.g. 0xFFFFFFFF in a 21-byte
+	// file) makes a 4 GiB allocation before the ReadAt below fails. The ReadAt above succeeded, so
+	// tokOff+4 ≤ fileSize and avail ≥ 0.
 	tokLen := int64(binary.LittleEndian.Uint32(tl[:]))
 	if avail := fi.Size() - (tokOff + 4); tokLen > avail {
 		return nil, fmt.Errorf("giw: tokenizer length %d exceeds the %d bytes remaining in the file (truncated or corrupt)", tokLen, avail)
