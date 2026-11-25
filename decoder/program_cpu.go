@@ -424,6 +424,12 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 		if !cache.manualPos && l == cache.numLayers-1 {
 			cache.pos++ // commitBatch does not step pos; Append's last-layer advance
 		}
+	case cache.quant == kvqF16:
+		// The f16 cache's rows, read in place by the f16 acc64 kernels: no widening of the history into scratch.
+		cache.Append(l, k, v)
+		nKeys, rs := cache.storedRows(l, kvDim), cache.rowStride(kvDim)
+		pool := scr.headWorkerPool(nH, 1, nKeys, hd, false, acc64)
+		attendBatchedHeadsKV(q, ctx, nil, nil, cache.keysH[l][:nKeys*rs], cache.valsH[l][:nKeys*rs], rs, 0, cache, l, pos, 1, p, arch, acc64, pool)
 	case cache.quant.widened():
 		cache.Append(l, k, v)
 		lk, lv := scr.localBufs(cache.storedRows(l, kvDim) * kvDim)
@@ -434,7 +440,8 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 		cache.Append(l, k, v)
 		nKeys := cache.storedRows(l, kvDim)
 		pool := scr.headWorkerPool(nH, 1, nKeys, hd, false, acc64)
-		attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, pos, 1, p, arch, acc64, pool)
+		keys, vals, rs := cache.layerRows(l, kvDim)
+		attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, rs, 0, cache, l, pos, 1, p, arch, acc64, pool)
 	}
 	return nil
 }

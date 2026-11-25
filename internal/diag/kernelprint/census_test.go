@@ -70,6 +70,8 @@ var unreachableSide = map[string]string{
 	"linalg/kernels_amd64.go|disableTopTier|hasAVX512VNNI || hasAVX512VNNIVL|false here":                                             repair,
 	"linalg/weightmat_row4_arm64.go|(*WeightMat).RepackInt4Row4|w.q4 == nil || !hasDotProd|undecided here":                           canonicalOnly,
 	"linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !hasAVX2 || hasAVX512VNNIVL|undecided here": canonicalOnly,
+	"linalg/attn_acc64_amd64.go|qkAcc64Keys16|!hasAVX2 || K == 0 || K%4 != 0|undecided here":                                         "a head dim is never 0 and always a multiple of 4, so with AVX2 on the 16-key kernel always takes the call",
+	"linalg/attn_acc64_amd64.go|avAcc64BlocksF16|!hasAVX2 || !hasF16C || nKeys == 0|undecided here":                                  "as avAcc64Blocks: an attention row always has at least one key",
 	"linalg/attn_acc64_amd64.go|avAcc64Blocks|!hasAVX2 || nKeys == 0|undecided here":                                                 "an attention row always has at least one key (a query attends to itself), so nKeys is never 0",
 	"linalg/exp_contract_amd64.go|softmaxContractWithMaxImpl|!hasAVX2 || len(src) == 0|undecided here":                               "internal/runtime/whisper's softmax rows are attention rows over at least one key, never empty",
 	"linalg/q4k_dot_amd64.go|dotQ4K|hasQ4KAVX2 && K >= qkK|undecided here":                                                           "a Q4_K row is whole 256-element super-blocks (WrapQ4K refuses other cols), so K >= qkK always",

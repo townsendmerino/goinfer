@@ -679,6 +679,20 @@ var suite = []kernel{
 			}
 		}
 	}},
+	{"linalg.MatmulQKAcc64F16", func(s *sink, g *gen) {
+		for _, hd := range headDims() {
+			for _, nKeys := range []int{1, 2, 7, 64, 513} {
+				for _, M := range []int{1, 2, 5, 17} {
+					kvDim := 2*hd + 3
+					a, keys, dst := g.vec(M*hd, 1), make([]uint16, nKeys*kvDim), make([]float32, M*nKeys)
+					linalg.F32ToF16Slice(keys, g.vec(nKeys*kvDim, 1))
+					linalg.MatmulQKAcc64F16(a, keys, dst, M, hd, nKeys, hd, kvDim)
+					s.tag("qk16", hd, nKeys, M)
+					s.f32(dst)
+				}
+			}
+		}
+	}},
 	{"linalg.MatmulQKAcc64Group", func(s *sink, g *gen) {
 		for _, hd := range headDims() {
 			for _, nKeys := range []int{1, 2, 7, 64, 513} {
@@ -701,6 +715,21 @@ var suite = []kernel{
 					dst, acc := make([]float32, M*hd), make([]float64, hd)
 					linalg.MatmulAVAcc64(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
 					s.tag("av", hd, nKeys, M)
+					s.f32(dst)
+				}
+			}
+		}
+	}},
+	{"linalg.MatmulAVAcc64F16", func(s *sink, g *gen) {
+		for _, hd := range headDims() {
+			for _, nKeys := range []int{1, 2, 7, 64, 513} {
+				for _, M := range []int{1, 2, 5, 17} {
+					kvDim := 2*hd + 3
+					scores, vals := g.probs(M, nKeys), make([]uint16, nKeys*kvDim)
+					linalg.F32ToF16Slice(vals, g.vec(nKeys*kvDim, 1))
+					dst, acc := make([]float32, M*hd), make([]float64, hd)
+					linalg.MatmulAVAcc64F16(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
+					s.tag("av16", hd, nKeys, M)
 					s.f32(dst)
 				}
 			}

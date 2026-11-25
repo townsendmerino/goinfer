@@ -64,6 +64,7 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    Scan("decoder", "TestKVRowPad_keysReadersAreDeclinedFamilies", NT("decoder")),
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
     # reads every .go file under each backend module, subdirectories included (fnmatch's * crosses /)
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertionsInBackends", F("backend/cuda/*.go", "backend/metal/*.go", "backend/webgpu/*.go")),

@@ -317,3 +317,29 @@ func TestKVF16_F5LibraryDefaultIsF32(t *testing.T) {
 		t.Errorf("zero options built a %d cache (CPUKVPrecision %q), want f32", c.quant, m.CPUKVPrecision())
 	}
 }
+
+// TestKVF16_decodeReadsInPlace holds single-token decode over an f16 cache, whose global layers' rows the f16 acc64 kernels read in
+// place, bit-identical to the f32 path with each stored row rounded to f16 (the F1 reference), through the real caller (Model.forward),
+// and checks that the in-place read ran on every layer of every token. llama-tiny is dense (every layer global); 40 tokens put the
+// history past the kernels' 16-key groups.
+func TestKVF16_decodeReadsInPlace(t *testing.T) {
+	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
+	f16, ref := f1Arms(m)
+	_, _, _, _, _, _, vocab := m.Dims()
+	ids := f1IDs(40, vocab)
+	c := f16.NewCache(len(ids))
+	var inPlace [][]float32
+	for _, id := range ids {
+		lg, err := f16.forward(id, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inPlace = append(inPlace, append([]float32(nil), lg...))
+	}
+	if want := int64(len(ids) * m.w.arch.NumLayers); c.f16InPlaceReads != want {
+		t.Fatalf("decode over the f16 cache read its rows in place %d times, want %d (every layer of every token)", c.f16InPlaceReads, want)
+	}
+	if d := f1Diff(inPlace, f1Run(true, func() [][]float32 { return f1Decode(t, ref, ids) })); d != 0 {
+		t.Errorf("the in-place f16 read differs from the f16-rounded f32 path in %d logits", d)
+	}
+}

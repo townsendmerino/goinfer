@@ -1,0 +1,7 @@
+F0 re-run start 13:18, expected end ~13:26
+2026-11-24T13:20:00-08:00 P3M d3900 b5 c1 A a1 settle 110s load 0.93 -> 1.493 (34s)
+2026-11-24T13:21:03-08:00 P3M d3900 b5 c2 B a1 settle 30s load 0.89 -> 4.799 (18s)
+2026-11-24T13:22:01-08:00 P3M d3900 b5 c3 B a1 settle 40s load 0.94 -> 4.823 (17s)
+2026-11-24T13:22:38-08:00 P3M d3900 b5 c4 A a1 settle 20s load 0.91 -> 1.504 (33s)
+CPU-KV-SPEED-DONE
+F0 re-run rc=0 13:23:12
