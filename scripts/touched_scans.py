@@ -193,6 +193,8 @@ SCANS = [
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     # SB7: internal/app/serveapp test files importing decoder may only fall.
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
+    # Mutable package-global *ForTest variables in non-test files may only fall.
+    Scan("internal/layout", "TestForTestGlobals_onlyFall", TREE_NT),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
     # Every fuzz target is in the weekly matrix, under the directory it lives in now.
     Scan("internal/layout", "TestFuzzWeekly_listsEveryTarget", TREE_T + F(".github/workflows/fuzz-weekly.yml")),
