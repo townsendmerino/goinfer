@@ -113,7 +113,7 @@ func medianDur(d []time.Duration) time.Duration {
 	if len(d) == 0 {
 		return 0
 	}
-	c := append([]time.Duration(nil), d...)
+	c := slices.Clone(d)
 	slices.Sort(c)
 	return c[len(c)/2]
 }

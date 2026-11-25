@@ -259,15 +259,15 @@ func (s *harmonySplitter) Flush() (reasoning, content string) {
 // parseHarmonyHeader reads what sits between a message's start and its <|message|>: optionally `assistant`, then
 // `<|channel|>NAME`, optionally ` to=RECIPIENT` (it may come before or after the channel) and `<|constrain|>TYPE`.
 func parseHarmonyHeader(h string) (channel, recipient, constrain string) {
-	if i := strings.Index(h, hmConstrain); i >= 0 {
-		constrain = firstField(h[i+len(hmConstrain):])
-		h = h[:i]
+	if before, after, ok := strings.Cut(h, hmConstrain); ok {
+		constrain = firstField(after)
+		h = before
 	}
-	if i := strings.Index(h, hmChannel); i >= 0 {
-		channel = firstField(h[i+len(hmChannel):])
+	if _, after, ok := strings.Cut(h, hmChannel); ok {
+		channel = firstField(after)
 	}
-	if i := strings.Index(h, "to="); i >= 0 {
-		recipient = firstField(h[i+len("to="):])
+	if _, after, ok := strings.Cut(h, "to="); ok {
+		recipient = firstField(after)
 	}
 	return channel, recipient, constrain
 }

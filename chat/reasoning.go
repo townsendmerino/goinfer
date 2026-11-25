@@ -400,9 +400,9 @@ func (s *ThinkSplitter) Push(chunk string) (reasoning, content string) {
 				}
 				s.lead = false
 			}
-			if i := strings.Index(s.buf, s.close); i >= 0 {
-				r.WriteString(strings.TrimRight(s.buf[:i], "\r\n"))
-				s.buf, s.state = s.buf[i+len(s.close):], stAfterClose
+			if before, after, ok := strings.Cut(s.buf, s.close); ok {
+				r.WriteString(strings.TrimRight(before, "\r\n"))
+				s.buf, s.state = after, stAfterClose
 				continue
 			}
 			n := StreamableLen(s.buf, s.close)
@@ -418,9 +418,13 @@ func (s *ThinkSplitter) Push(chunk string) (reasoning, content string) {
 			s.state = stContent
 			continue
 		default: // stContent
-			for i := strings.Index(s.buf, s.close); i >= 0; i = strings.Index(s.buf, s.close) {
-				c.WriteString(s.buf[:i])
-				s.buf = s.buf[i+len(s.close):]
+			for {
+				before, after, ok := strings.Cut(s.buf, s.close)
+				if !ok {
+					break
+				}
+				c.WriteString(before)
+				s.buf = after
 			}
 			n := StreamableLen(s.buf, s.close)
 			c.WriteString(s.buf[:n])

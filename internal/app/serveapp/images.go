@@ -133,14 +133,14 @@ func decodeInputAudio(ia *struct {
 // decodeDataURI parses a base64 data: URI ("data:<media>;base64,<payload>") into
 // an imageRef. Any non-data: URL is rejected — v1 never fetches a server-side URL.
 func decodeDataURI(uri string) (imageRef, error) {
-	if !strings.HasPrefix(uri, "data:") {
+	rest, ok := strings.CutPrefix(uri, "data:")
+	if !ok {
 		return imageRef{}, fmt.Errorf("image url must be a base64 data: URI (server-side URL fetch is not supported)")
 	}
-	comma := strings.IndexByte(uri, ',')
-	if comma < 0 {
+	header, payload, ok := strings.Cut(rest, ",")
+	if !ok {
 		return imageRef{}, fmt.Errorf("malformed data: URI (no comma)")
 	}
-	header, payload := uri[len("data:"):comma], uri[comma+1:]
 	if !strings.Contains(header, "base64") {
 		return imageRef{}, fmt.Errorf("data: URI must be base64-encoded")
 	}

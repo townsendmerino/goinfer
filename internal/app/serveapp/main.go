@@ -102,8 +102,8 @@ func (m *modelFlag) Set(v string) error {
 	fields := strings.Split(v, ",")
 	spec := modelSpec{path: fields[0]}
 	// "name=path": split the first field on the first '=' (a served name has no '=').
-	if i := strings.IndexByte(fields[0], '='); i > 0 {
-		spec.name, spec.path = fields[0][:i], fields[0][i+1:]
+	if name, path, ok := strings.Cut(fields[0], "="); ok && name != "" {
+		spec.name, spec.path = name, path
 	}
 	if spec.path == "" {
 		return fmt.Errorf("empty model path in %q", v)

@@ -80,7 +80,7 @@ func (b *snapshotBuf) bytes() int {
 }
 
 func stats(d []time.Duration) (lo, med, hi time.Duration) {
-	s := append([]time.Duration(nil), d...)
+	s := slices.Clone(d)
 	slices.Sort(s)
 	return s[0], s[len(s)/2], s[len(s)-1]
 }

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -73,7 +74,7 @@ func TestGemma12_forwardParity(t *testing.T) {
 					t.Errorf("%s: argmax %d, want %d", path, got, g.Argmax)
 				}
 				var maxd float64
-				for _, kv := range append(append([][2]float64(nil), g.TopK...), g.Sample...) {
+				for _, kv := range slices.Concat(g.TopK, g.Sample) {
 					maxd = math.Max(maxd, math.Abs(float64(logits[int(kv[0])])-kv[1]))
 				}
 				cos := fullCosine(t, logits, full)

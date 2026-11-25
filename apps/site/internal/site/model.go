@@ -48,8 +48,8 @@ func ParseProof(p string) Proof {
 		pr.Tier = "fixture"
 	case strings.HasPrefix(pr.Core, "shared-path"):
 		pr.Tier = "shared"
-		if i := strings.Index(pr.Core, ":"); i >= 0 {
-			pr.Via = strings.TrimSpace(pr.Core[i+1:])
+		if _, via, ok := strings.Cut(pr.Core, ":"); ok {
+			pr.Via = strings.TrimSpace(via)
 		}
 	}
 	if m := metricRe.FindStringSubmatch(pr.Core); m != nil {

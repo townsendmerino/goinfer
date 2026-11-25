@@ -536,9 +536,7 @@ func clSection(doc, name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if j := strings.Index(after, "\n## ["); j >= 0 {
-		after = after[:j]
-	}
+	after, _, _ = strings.Cut(after, "\n## [")
 	return after, true
 }
 

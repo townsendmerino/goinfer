@@ -222,12 +222,12 @@ func TestApplyPenalties_incrementalMatchesRebuild(t *testing.T) {
 
 	step := func(mutate func()) {
 		mutate()
-		fast := append([]float32(nil), base...)
+		fast := slices.Clone(base)
 		s.applyPenalties(fast)
 
 		ref := NewSampler(sp)
-		ref.history = append([]int(nil), s.history...) // same history, built by direct rescan below
-		slow := append([]float32(nil), base...)
+		ref.history = slices.Clone(s.history) // same history, built by direct rescan below
+		slow := slices.Clone(base)
 		ref.applyPenaltiesOver(slow, ref.history) // the pre-P-15 always-correct path
 
 		for i := range fast {
