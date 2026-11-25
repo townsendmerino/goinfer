@@ -95,6 +95,9 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 				b.Fatalf("batched prefill to depth %d: %v", depth, err)
 			}
 			decodeAtDepthOnce(b, m, cache, tok)
+			// After the timed loop: its ResetTimer drops metrics reported before it.
+			b.ReportMetric(float64(cache.rowPad), "rowpad")
+			b.ReportMetric(float64(cache.f16InPlaceReads), "f16inplace")
 		})
 	}
 }

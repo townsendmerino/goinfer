@@ -10,7 +10,7 @@
   "programs": [
     "testdata/mistral-tiny-window"
   ],
-  "deps_hash": "sha256:73e5cf162db27b04eb9ca12e8d8f8ae6cf9f34cefdff081491b42bed625a1365",
+  "deps_hash": "sha256:6ccb1d0a6f328fd7cae4583be260453591c7f3ae406b828a685057ce20badc19",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

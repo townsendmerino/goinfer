@@ -1,0 +1,40 @@
+=== RUN   TestCPUKVF16GateVsReference
+=== RUN   TestCPUKVF16GateVsReference/P3M-K3900
+[cpu-kv-gate] P3M K=3900: A/A bit-identical over 64 rows; KV bytes at depth 3963: f32 3116630016, f16 1558315008
+[cpu-kv-gate] P3M K=3900 prompt  1/10 f32(agree=95.3% HF=0 KL=0.00227) f16(agree=95.3% HF=0 KL=0.00238) diff(agree=+0.00pt KL=+0.00011) differ=true elapsed=12m31s
+[cpu-kv-gate] P3M K=3900 prompt  2/10 f32(agree=98.4% HF=0 KL=0.01299) f16(agree=96.9% HF=0 KL=0.00472) diff(agree=-1.56pt KL=-0.00828) differ=true elapsed=20m13s
+[cpu-kv-gate] P3M K=3900 prompt  3/10 f32(agree=96.9% HF=0 KL=0.00324) f16(agree=96.9% HF=0 KL=0.00348) diff(agree=+0.00pt KL=+0.00025) differ=true elapsed=27m48s
+[cpu-kv-gate] P3M K=3900 prompt  4/10 f32(agree=98.4% HF=0 KL=0.00203) f16(agree=96.9% HF=0 KL=0.00234) diff(agree=-1.56pt KL=+0.00031) differ=true elapsed=35m24s
+[cpu-kv-gate] P3M K=3900 prompt  5/10 f32(agree=100.0% HF=0 KL=0.00394) f16(agree=100.0% HF=0 KL=0.00379) diff(agree=+0.00pt KL=-0.00016) differ=true elapsed=42m59s
+[cpu-kv-gate] P3M K=3900 prompt  6/10 f32(agree=100.0% HF=0 KL=0.00175) f16(agree=100.0% HF=0 KL=0.00275) diff(agree=+0.00pt KL=+0.00100) differ=true elapsed=50m34s
+[cpu-kv-gate] P3M K=3900 prompt  7/10 f32(agree=95.3% HF=0 KL=0.00175) f16(agree=100.0% HF=0 KL=0.00178) diff(agree=+4.69pt KL=+0.00003) differ=true elapsed=58m10s
+[cpu-kv-gate] P3M K=3900 prompt  8/10 f32(agree=100.0% HF=0 KL=0.00141) f16(agree=100.0% HF=0 KL=0.00077) diff(agree=+0.00pt KL=-0.00063) differ=true elapsed=1h5m47s
+[cpu-kv-gate] P3M K=3900 prompt  9/10 f32(agree=95.3% HF=0 KL=0.00261) f16(agree=96.9% HF=0 KL=0.00325) diff(agree=+1.56pt KL=+0.00064) differ=true elapsed=1h13m23s
+[cpu-kv-gate] P3M K=3900 prompt 10/10 f32(agree=98.4% HF=0 KL=0.00285) f16(agree=98.4% HF=0 KL=0.00392) diff(agree=+0.00pt KL=+0.00106) differ=true elapsed=1h20m58s
+=== CPU KV F16 GATE P3M K=3900 (set b, n=10): f32(meanAgree=97.81% HF=0 meanKL=0.003484) f16(meanAgree=98.12% HF=0 meanKL=0.002917) pairedWins=8/10 critA=true [strict true] critB=true critC=true KLratio=0.8373 — PASSES ===
+--- PASS: TestCPUKVF16GateVsReference (4858.80s)
+    --- PASS: TestCPUKVF16GateVsReference/P3M-K3900 (4858.80s)
+PASS
+	Command being timed: "/home/francis/goinfer-bench/cpu-qk-run/bin/dec-F16-690049496.test -test.run ^TestCPUKVF16GateVsReference$ -test.v -test.timeout 4h"
+	User time (seconds): 39310.14
+	System time (seconds): 479.54
+	Percent of CPU this job got: 818%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:20:58
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11445140
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 3
+	Minor (reclaiming a frame) page faults: 4881779
+	Voluntary context switches: 46418399
+	Involuntary context switches: 3076248
+	Swaps: 0
+	File system inputs: 173352
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

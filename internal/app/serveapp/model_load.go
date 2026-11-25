@@ -56,7 +56,7 @@ func (s *server) loadAdapters(cfg config) error {
 			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
 			caches:       modelCaches{tokenBytesFrom: base},
 		}
-		lm.sessions.adapter = spec.name
+		lm.sessions.SetAdapter(spec.name)
 		if cfg.maxQueue > 0 {
 			lm.queue = scheduler.NewQueue(1, cfg.maxQueue)
 		}

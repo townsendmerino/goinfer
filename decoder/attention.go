@@ -57,20 +57,20 @@ var attendQueryPFanned atomic.Int64
 func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *Architecture) {
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
-	keys, vals := cache.Keys(layer), cache.Vals(layer)
-	nKeys := len(keys) / kvDim
+	keys, vals, rs := cache.layerRows(layer, kvDim)
+	nKeys := len(keys) / rs
 	// Local (sliding-window) layers store only the last W positions in a ring: absolute key s lives at row s%W, nKeys becomes the
 	// logical count, and the window guarantees every read s in [start, nKeys) is resident. wrap=0 means global append-forever,
 	// row = s. scores stays indexed by absolute s (its scratch is already context-sized).
 	wrap := 0
 	if r := cache.rings[layer]; r != nil {
-		keys, vals, nKeys, wrap = r.k, r.v, r.count, r.w
+		keys, vals, nKeys, wrap, rs = r.k, r.v, r.count, r.w, kvDim
 	}
 	rowBase := func(s int) int {
 		if wrap > 0 {
 			return (s % wrap) * kvDim
 		}
-		return s * kvDim
+		return s * rs
 	}
 	start := p.Start(pos)
 	scale := p.Scale  // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)

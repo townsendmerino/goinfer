@@ -32,11 +32,11 @@ type sessionPool struct{ lm *loadedModel }
 func (p sessionPool) Acquire(prompt []int) *decoder.Session {
 	p.lm.sessMu.Lock()
 	defer p.lm.sessMu.Unlock()
-	return p.lm.sessions.acquire(prompt)
+	return p.lm.sessions.Acquire(prompt)
 }
 
 func (p sessionPool) Checkin(s *decoder.Session) {
 	p.lm.sessMu.Lock()
 	defer p.lm.sessMu.Unlock()
-	p.lm.sessions.checkin(s)
+	p.lm.sessions.Checkin(s)
 }

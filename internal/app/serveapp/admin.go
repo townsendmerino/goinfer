@@ -213,7 +213,7 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 		// not take it, so hold it here to serialize this not-goroutine-safe restore against a handler that reaches the
 		// LRU first.
 		lm.sessMu.Lock()
-		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
+		lm.sessions.Load(sessionSubdir(s.cfg.sessionDir, lm.fp))
 		lm.sessMu.Unlock()
 	}
 	return true

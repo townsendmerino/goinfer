@@ -29,6 +29,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin-a", required=True)
     ap.add_argument("--bin-b", required=True)
+    ap.add_argument("--kv-a", default="", help="GOINFER_BENCH_KV for arm A (default auto's f32)")
+    ap.add_argument("--pad-a", action="store_true", help="arm A builds its cache with the row pad on")
+    ap.add_argument("--widen-a", action="store_true", help="arm A reads an f16 cache through the widen path (GOINFER_BENCH_F16WIDEN=1)")
+    ap.add_argument("--pad-b", action="store_true", help="arm B builds its cache with the row-pad prototype (GOINFER_BENCH_KVPAD=1)")
     ap.add_argument("--kv-b", default="", help="GOINFER_BENCH_KV for arm B (A stays at auto's f32); the f16-read A/B passes f16")
     ap.add_argument("--out", required=True)
     ap.add_argument("--models", default="Q05,P3M")
@@ -67,7 +71,9 @@ def main():
                             log = os.path.join(a.out, "logs", f"{model}-d{depth}-b{block}-c{cell}-{arm}-a{attempt}.log")
                             env = dict(os.environ, GOINFER_PREQUANT_GGUF=os.path.expanduser(path), GOINFER_BENCH_QUANT=quant,
                                        GOINFER_BENCH_BACKEND="cpu", GOINFER_BENCH_DEPTH=str(depth), GOINFER_BENCH_FILL="1",
-                                       GOINFER_BENCH_KV=a.kv_b if arm == "B" else "")
+                                       GOINFER_BENCH_KV=a.kv_b if arm == "B" else a.kv_a,
+                                       GOINFER_BENCH_KVPAD="1" if ((arm == "B" and a.pad_b) or (arm == "A" and a.pad_a)) else "",
+                                       GOINFER_BENCH_F16WIDEN="1" if (arm == "A" and a.widen_a) else "")
                             t1 = time.time()
                             with open(log, "w") as lf:
                                 rc = subprocess.run(["/usr/bin/time", "-v", a.bin_b if arm == "B" else a.bin_a, "-test.run", "^$", "-test.bench", "^BenchmarkDecodeAtDepth$/^grouped_on$",
@@ -76,6 +82,13 @@ def main():
                             wall, sw1 = time.time() - t1, swap_mib()
                             text = open(log).read()
                             m = re.search(r"grouped_on\S*\s+\d+\s+\d+ ns/op\s+([0-9.]+) tok/s", text) or re.search(r"([0-9.]+) tok/s", text)
+                            pad = re.search(r"([0-9.]+) rowpad", text)
+                            want_pad = (arm == "B" and a.pad_b and not a.kv_b) or (arm == "A" and a.pad_a and not a.kv_a)
+                            if m and rc == 0 and model == "P3M" and want_pad and (not pad or float(pad.group(1)) == 0):
+                                sys.exit(f"FAILED {model} d{depth} b{block} c{cell}: arm {arm} asked for the pad and the cache reports rowpad {pad.group(1) if pad else 'missing'}")
+                            inpl = re.search(r"([0-9.]+) f16inplace", text)
+                            if m and rc == 0 and a.widen_a and (not inpl or (arm == "A") != (float(inpl.group(1)) == 0)):
+                                sys.exit(f"FAILED {model} d{depth} b{block} c{cell}: arm {arm}'s f16 in-place read count is {inpl.group(1) if inpl else 'missing'} (want 0 on the widen arm, > 0 on the in-place arm)")
                             rss = re.search(r"Maximum resident set size \(kbytes\): (\d+)", text)
                             tok = m.group(1) if (m and rc == 0) else f"FAILED rc={rc}"
                             if "SKIP" in text and not m:

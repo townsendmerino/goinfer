@@ -61,9 +61,12 @@ type Architecture struct {
 	// deliberately longer.
 	AttnTempBeta       float64
 	AttnTempOrigMaxPos float64
-	SlidingWindow      int              // 0 = none
-	layerIsGlobal      func(i int) bool // per-layer global(full) vs local(sliding) attention
-	layerNoPE          func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
+	SlidingWindow      int // 0 = none
+	// kvRowPadAlign is the CPU KV cache's row-pad alignment in bytes (kvRowPad): a row that is a multiple of it is padded by 64 B.
+	// resolveArchitecture sets kvRowPadAlignDefault; 0 never pads (a test's unpadded arm).
+	kvRowPadAlign int
+	layerIsGlobal func(i int) bool // per-layer global(full) vs local(sliding) attention
+	layerNoPE     func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
 
 	// RoPE (dual base for Gemma's local/global layers; equal bases = single-base).
 	RoPELocalBase, RoPEGlobalBase float64
@@ -503,7 +506,9 @@ func kvBytesForRows(a *Architecture, ctx int, quant kvQuant, bufsOf func(l int) 
 			case quant == kvI8:
 				row = int64(b.Elems) + 4*int64(b.Heads)
 			case quant == kvqF16:
-				row = 2 * int64(b.Elems)
+				row = 2*int64(b.Elems) + 2*int64(kvRowPadPriced(a, b.Elems, 2))
+			default:
+				row += 4 * int64(kvRowPadPriced(a, b.Elems, 4))
 			}
 			total += rows * row
 		}
@@ -776,3 +781,29 @@ const (
 	ActReLU2    = program.ActReLU2
 	ActGelu     = program.ActGelu
 )
+
+// kvRowPadPriced is the row pad, in elements, on a row of elems elements of elemBytes bytes where the plan prices it: kvRowPad's
+// answer for this architecture, and only for its uniform KV width.
+func kvRowPadPriced(a *Architecture, elems, elemBytes int) int {
+	if elems != a.NumKVHeads*a.HeadDim {
+		return 0
+	}
+	return a.kvRowPad(elemBytes)
+}
+
+// kvRowPad is the row pad, in elements, a CPU cache of this architecture takes at elemBytes per element: one 64 B line when every layer
+// is a global attention layer of one KV width and the row is a multiple of kvRowPadAlign bytes; else 0.
+// It is the one eligibility rule; KVCache.setRowPad and the plan's price both read it. A ring, an MLA latent or hybrid recurrent
+// state declines it, as does a per-layer KV width.
+func (a *Architecture) kvRowPad(elemBytes int) int {
+	if a.kvRowPadAlign == 0 || a.mla != nil || a.gemma4 != nil || a.qwen35 != nil || a.lfm2 != nil || a.granite != nil || a.nemotron != nil || a.kda != nil {
+		return 0
+	}
+	kvDim := a.NumKVHeads * a.HeadDim
+	for l := range a.NumLayers {
+		if a.ringLayerAt(l) || a.kvDimAt(l) != kvDim {
+			return 0
+		}
+	}
+	return kvRowPadElems(kvDim, elemBytes, a.kvRowPadAlign)
+}

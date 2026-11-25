@@ -30,6 +30,7 @@ func (c *KVCache) copyPrefixFrom(src *KVCache, n int) error {
 		return errCopyLayout
 	}
 	c.TruncateTo(0)
+	c.rowPad = src.rowPad // rows are copied at src's stride
 	for l := range c.numLayers {
 		if src.mlaLatent != nil {
 			c.mlaLatent[l] = append(c.mlaLatent[l][:0], src.mlaLatent[l][:n*src.latentDim]...)
