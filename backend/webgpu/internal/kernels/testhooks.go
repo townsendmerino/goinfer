@@ -8,9 +8,10 @@
 package kernels
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"sort"
+	"slices"
 	"time"
 	"weak"
 
@@ -360,6 +361,6 @@ func (c *Context) LeasedBuffersForTest() []LeasedBufferForTest {
 		out = append(out, LeasedBufferForTest{Bytes: e.n, Usage: uint64(b.GetUsage()), Line: e.line, Seq: e.seq})
 		return true
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
+	slices.SortFunc(out, func(a, b LeasedBufferForTest) int { return cmp.Compare(a.Seq, b.Seq) })
 	return out
 }

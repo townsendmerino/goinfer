@@ -10,7 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,7 +75,7 @@ func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind 
 		if err != nil {
 			t.Fatalf("%s, %d rows: %v", dir, n, err)
 		}
-		out := [][]float32{append([]float32(nil), last...)}
+		out := [][]float32{slices.Clone(last)}
 		chosen := make([]int, 0, prefillInt4Steps)
 		tok := argmax(last)
 		for i := range prefillInt4Steps {
@@ -87,7 +87,7 @@ func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind 
 			if err != nil {
 				t.Fatalf("%s, decode step %d: %v", dir, i, err)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 			tok = argmax(l)
 		}
 		return out, chosen
@@ -278,7 +278,7 @@ func prefillRowCounts(t *testing.T, def ...int) []int {
 		return def
 	}
 	var counts []int
-	for _, f := range strings.Split(v, ",") {
+	for f := range strings.SplitSeq(v, ",") {
 		n, err := strconv.Atoi(f)
 		if err != nil {
 			t.Fatalf("GOINFER_PREFILL_ROWS: %v", err)
@@ -417,8 +417,8 @@ func TestPrefillInt4_speed(t *testing.T) {
 			for r := range rounds {
 				rs = append(rs, secs[a][r]/secs[b][r])
 			}
-			s := append([]float64(nil), rs...)
-			sort.Float64s(s)
+			s := slices.Clone(rs)
+			slices.Sort(s)
 			return rs, s[rounds/2]
 		}
 		for _, pr := range [][2]int{{1, 0}, {0, 2}, {1, 2}, {1, 3}} {

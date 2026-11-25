@@ -3,8 +3,9 @@
 package kernels_test
 
 import (
+	"cmp"
 	"math"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
@@ -35,7 +36,7 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float32) 
 			score[i] /= sum
 		}
 	}
-	sel := append([]float64(nil), score...)
+	sel := slices.Clone(score)
 	if bias != nil {
 		for i := range sel {
 			sel[i] += float64(bias[i])
@@ -45,7 +46,7 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float32) 
 	for i := range order {
 		order[i] = i
 	}
-	sort.SliceStable(order, func(a, b int) bool { return sel[order[a]] > sel[order[b]] })
+	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(sel[b], sel[a]) })
 	idx = order[:k]
 	wts = make([]float32, k)
 	var wsum float64

@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -93,7 +94,7 @@ func synthPrefill(t *testing.T, ctx *Context, own *closers, L int, withBias bool
 				caches = append(caches, v)
 			}
 		}
-		return append([]float32(nil), out...), caches
+		return slices.Clone(out), caches
 	}
 	return run, start, M, kvDim
 }

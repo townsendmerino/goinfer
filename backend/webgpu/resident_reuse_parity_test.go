@@ -5,6 +5,7 @@ package webgpu
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -88,7 +89,7 @@ func TestResidentPrefixReuse_tokenIdentical(t *testing.T) {
 			reused = append(reused, gen.PrefillReused)
 			// Next turn = this turn's prompt + this turn's reply + a new user line: the
 			// strict prefix extension an agent loop produces.
-			next := append(append([]int(nil), prompt...), got...)
+			next := slices.Concat(prompt, got)
 			more, _ := tk.Encode(" Now say it differently.", false)
 			prompt = append(next, more...)
 		}

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func g3RunWebGPU(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, rf 
 		if err != nil {
 			t.Fatalf("webgpu pos %d: %v", pos, err)
 		}
-		return append([]float32(nil), l...)
+		return slices.Clone(l)
 	}
 	dec := func(ids []int) string {
 		s, err := tk.Decode(ids)
@@ -62,7 +63,7 @@ func g3RunWebGPU(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, rf 
 		n := len(ids) + g3NewTokens
 		// CPU free run: prefill token by token, then 32 greedy tokens.
 		cc := mc.NewCache(n)
-		cpuSeq := append([]int(nil), ids...)
+		cpuSeq := slices.Clone(ids)
 		var cpuL []float32
 		for i := 0; i < n-1; i++ {
 			if cpuL, err = mc.ForwardForTest(cpuSeq[i], cc); err != nil {
@@ -73,7 +74,7 @@ func g3RunWebGPU(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, rf 
 			}
 		}
 		// WebGPU free run, same shape.
-		gpuSeq := append([]int(nil), ids...)
+		gpuSeq := slices.Clone(ids)
 		for i := 0; i < n-1; i++ {
 			l := fwd(mg.EmbedResidentForTest(gpuSeq[i]), i)
 			if i >= len(ids)-1 {
@@ -88,7 +89,7 @@ func g3RunWebGPU(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, rf 
 			if err != nil {
 				t.Fatal(err)
 			}
-			cl = append([]float32(nil), cl...)
+			cl = slices.Clone(cl)
 			gl := fwd(mg.EmbedResidentForTest(cpuSeq[i]), i)
 			ca, gap := argmaxTie(cl, argmax(gl))
 			if ca == argmax(gl) {

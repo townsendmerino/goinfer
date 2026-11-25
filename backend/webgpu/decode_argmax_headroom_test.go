@@ -8,7 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -66,8 +66,8 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 	c := rd.c
 
 	median := func(xs []float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	timeIt := func(n int, f func() error) []float64 {

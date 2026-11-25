@@ -36,14 +36,12 @@ func ApplySoftcap(logits []float32, sc float32) {
 	chunk := (n + w - 1) / w
 	var wg sync.WaitGroup
 	for lo := 0; lo < n; lo += chunk {
-		hi := min(lo+chunk, n)
-		wg.Add(1)
-		go func(part []float32) {
-			defer wg.Done()
+		part := logits[lo:min(lo+chunk, n)]
+		wg.Go(func() {
 			for j, v := range part {
 				part[j] = sc * float32(math.Tanh(float64(v/sc)))
 			}
-		}(logits[lo:hi])
+		})
 	}
 	wg.Wait()
 }

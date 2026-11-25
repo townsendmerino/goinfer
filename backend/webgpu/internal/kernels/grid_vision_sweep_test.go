@@ -3,10 +3,11 @@
 package kernels
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -96,9 +97,9 @@ func TestGridTowersWebGPU_patchSweep(t *testing.T) {
 			}
 			ratios, cs, ds = append(ratios, d/c), append(cs, c), append(ds, d)
 		}
-		sort.Float64s(ratios)
-		sort.Float64s(cs)
-		sort.Float64s(ds)
+		slices.Sort(ratios)
+		slices.Sort(cs)
+		slices.Sort(ds)
 		patches := grid[1] * grid[2]
 		rungs = append(rungs, rung{patches, grid, ratios[pairs/2]})
 		logf("rung %d/%d: ceiling %s, grid %v, %d patches: CPU %.3f s, WebGPU %.3f s (medians of %d; warm-up %.3f, %.3f), ratios %.3f, median %.3f",
@@ -108,7 +109,7 @@ func TestGridTowersWebGPU_patchSweep(t *testing.T) {
 	if len(rungs) == 0 {
 		t.Fatal("no rung ran")
 	}
-	sort.Slice(rungs, func(i, j int) bool { return rungs[i].patches < rungs[j].patches })
+	slices.SortFunc(rungs, func(a, b rung) int { return cmp.Compare(a.patches, b.patches) })
 	threshold := -1 // index of the smallest rung from which every rung is at most 0.98
 	for i := len(rungs) - 1; i >= 0 && rungs[i].ratio <= 0.98; i-- {
 		threshold = i

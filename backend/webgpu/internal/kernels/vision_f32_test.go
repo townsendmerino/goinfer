@@ -3,12 +3,13 @@
 package kernels
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -462,7 +463,7 @@ func TestVisionEncoder_profile(t *testing.T) {
 			rows = append(rows, row{k, d})
 			sum += d
 		}
-		sort.Slice(rows, func(i, j int) bool { return rows[i].d > rows[j].d })
+		slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.d, a.d) })
 		fmt.Fprintf(os.Stderr, "[profile] %s tower, profiled pass: %.1f s (steps sum %.1f s)\n", label, total.Seconds(), sum.Seconds())
 		for _, r := range rows {
 			fmt.Fprintf(os.Stderr, "[profile]   %-36s %6.2f s  %5.1f%%\n", r.step, r.d.Seconds(), 100*r.d.Seconds()/sum.Seconds())
@@ -582,8 +583,8 @@ func TestVisionEncoderF32_speedGate(t *testing.T) {
 		ratios = append(ratios, ds/cs)
 		logf("pair %d/%d (%s first): CPU %.2f s, WebGPU float32 %.2f s, ratio %.3f", i+1, pairs, map[bool]string{true: "CPU", false: "WebGPU"}[i%2 == 0], cs, ds, ds/cs)
 	}
-	sorted := append([]float64(nil), ratios...)
-	sort.Float64s(sorted)
+	sorted := slices.Clone(ratios)
+	slices.Sort(sorted)
 	med := sorted[len(sorted)/2]
 	logf("ratios %.3f; median %.3f (ship at most 0.98, park 0.98-1.00, off above 1.00)", ratios, med)
 	switch {

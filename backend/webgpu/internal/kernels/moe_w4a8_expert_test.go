@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -164,7 +165,7 @@ func TestUploadStackedExpertsInt4Packed_matchesUnpacked(t *testing.T) {
 	// The plant: one byte's two nibbles swapped (or, if they are equal, one changed).
 	planted := make([][]byte, nE)
 	for e := range nE {
-		planted[e] = append([]byte(nil), q4[e]...)
+		planted[e] = slices.Clone(q4[e])
 	}
 	if b := planted[2][7]; b>>4 == b&0xF {
 		planted[2][7] ^= 0x01

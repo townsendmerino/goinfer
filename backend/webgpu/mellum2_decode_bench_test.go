@@ -6,7 +6,7 @@ import (
 	"context"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -56,8 +56,8 @@ func TestMellum2_decodeThroughput(t *testing.T) {
 
 	us := func(d time.Duration) float64 { return float64(d.Microseconds()) }
 	med := func(xs []float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 

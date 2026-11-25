@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -97,7 +98,7 @@ func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 					if err != nil {
 						t.Fatalf("sequential decode step %d: %v", i, err)
 					}
-					want[i] = append([]float32(nil), l...)
+					want[i] = slices.Clone(l)
 					tok = argmax(l)
 					seq = append(seq, tok)
 				}
@@ -131,7 +132,7 @@ func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 					if err != nil {
 						t.Fatalf("uploaded decode step %d: %v", i, err)
 					}
-					got[i] = append([]float32(nil), l...)
+					got[i] = slices.Clone(l)
 					cos, maxAbs := cosSim(want[i], l)
 					t.Logf("decode step %d: cosine(sequential, uploaded) = %.8f, max |diff| %.4g", i, cos, maxAbs)
 					if cos < bar {
@@ -147,7 +148,7 @@ func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 						if err != nil {
 							t.Fatalf("CPU decode step %d: %v", i, err)
 						}
-						cpu[i] = append([]float32(nil), l...)
+						cpu[i] = slices.Clone(l)
 					}
 					if referenceRoutedApart(under, cpu, got, want, bar) {
 						t.Skipf("SKIP: decode steps %v: the uploaded arm agrees with the CPU decode it was uploaded from (cosine >= %v) and the "+

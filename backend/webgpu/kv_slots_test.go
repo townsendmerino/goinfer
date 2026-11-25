@@ -948,7 +948,7 @@ func TestLedger_webgpuAgreesWithRegistry(t *testing.T) {
 	u, held := rd.c.Ledger().Usage(), rd.c.BuffersHeld()
 	vram := "unread"
 	if out, err := exec.Command("nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits").Output(); err == nil {
-		for _, ln := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		for ln := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 			if f := strings.Split(ln, ", "); len(f) == 2 && f[0] == strconv.Itoa(os.Getpid()) {
 				vram = f[1] + " MiB"
 			}
@@ -997,7 +997,7 @@ func countedDecode(t *testing.T, m *decoder.Model, rd *residentDecoder, id, pos 
 		lg, e = rd.Forward(m.EmbedResidentForTest(id), pos)
 		return e
 	})
-	return r, append([]float32(nil), lg...)
+	return r, slices.Clone(lg)
 }
 
 // countedWork runs work on rd counted into a fresh counter, as one token of the decode phase.
@@ -1068,7 +1068,7 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	off = append([]float32(nil), off...)
+	off = slices.Clone(off)
 	_, on := countedDecode(t, m, rd, 9, 4)
 	for i := range on {
 		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {

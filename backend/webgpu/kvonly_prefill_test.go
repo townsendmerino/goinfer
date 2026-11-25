@@ -252,8 +252,7 @@ func BenchmarkWebGPU_Prefill_KVOnlyVsFull(b *testing.B) {
 	}
 
 	b.Run("FullLogits_Forward", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			rf.Reset()
 			for p := range promptLen {
 				if _, err := rf.Forward(embs[p], p); err != nil {
@@ -264,8 +263,7 @@ func BenchmarkWebGPU_Prefill_KVOnlyVsFull(b *testing.B) {
 	})
 
 	b.Run("KVOnly_ForwardNoLogits", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			rf.Reset()
 			for p := range promptLen - 1 {
 				if err := kvOnly.ForwardNoLogits(embs[p], p); err != nil {

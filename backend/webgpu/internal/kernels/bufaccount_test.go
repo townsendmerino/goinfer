@@ -122,8 +122,8 @@ func wgpuCalls(t *testing.T, fset *token.FileSet, path string, files []*ast.File
 		if !ok {
 			return false
 		}
-		for i := range it.NumMethods() {
-			if it.Method(i).Name() == "Release" {
+		for method := range it.Methods() {
+			if method.Name() == "Release" {
 				return true
 			}
 		}
@@ -272,7 +272,7 @@ func TestLedger_anUnreleasedBufferIsCounted(t *testing.T) {
 			t.Fatal(err)
 		}
 	}()
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if n, _ := c.Collected(); n > 0 {
 			break
 		}

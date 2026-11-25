@@ -136,9 +136,8 @@ func TestKV2_copyKVExact(t *testing.T) {
 				}
 			}
 			before, rw := kv2Slot(rd, 2)
-			var d *decoder.KVCopyDecline
-			if err := rd.CopyKV(0, 2, 0, rd.ctxCap+64); !errors.As(err, &d) {
-				t.Errorf("a range past the cache: %v, want a KVCopyDecline", err)
+			if _, ok := errors.AsType[*decoder.KVCopyDecline](rd.CopyKV(0, 2, 0, rd.ctxCap+64)); !ok {
+				t.Errorf("a range past the cache did not return a KVCopyDecline")
 			}
 			after, _ := kv2Slot(rd, 2)
 			if b, p := kv2Diff(after, before, rw, 0, rd.ctxCap); b >= 0 {

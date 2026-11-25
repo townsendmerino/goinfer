@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -56,7 +57,7 @@ func TestDecodeToken_parity(t *testing.T) {
 
 	// --- Go reference ---
 	silu := func(g float32) float32 { return g / (1 + float32(math.Exp(float64(-g)))) }
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
@@ -68,8 +69,8 @@ func TestDecodeToken_parity(t *testing.T) {
 		linalg.MatmulBTW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
 		refRoPE(q, nH, hd, pos, invFreq)
 		refRoPE(k, nKV, hd, pos, invFreq)
-		kFull := append(append([]float32(nil), L.priorK...), k...)
-		vFull := append(append([]float32(nil), L.priorV...), v...)
+		kFull := slices.Concat(L.priorK, k)
+		vFull := slices.Concat(L.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		ao := make([]float32, hidden)
 		linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)

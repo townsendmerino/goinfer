@@ -14,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,7 +186,7 @@ func TestBackendAdmissionCensus_webgpu_plant(t *testing.T) {
 
 // planCells is layer D's option cells plus the serving flag --kv=i8, which sets both KV options; layer D's kv-i8 cell sets
 // KVQuant alone, which webgpu does not deliver.
-var planCells = append(append([]sb2census.Cell(nil), sb2census.Cells...), sb2census.Cell{Name: "int4/kv=i8", Quant: "int4", KVPrec: "i8", KVQuant: "i8"})
+var planCells = append(slices.Clone(sb2census.Cells), sb2census.Cell{Name: "int4/kv=i8", Quant: "int4", KVPrec: "i8", KVQuant: "i8"})
 
 // planVsLoadWebGPU compares Plan's webgpu verdict, with the request req builds for each cell, to what the load does on webgpu:
 // the decoder's admission, then staticResidentDecline. Plan reads a CPU load of the cell without its KV options, priced against
@@ -586,7 +586,7 @@ func (p *vkPacker) place(r int64) {
 }
 
 func (p vkPacker) clone() vkPacker {
-	p.free = append([]int64(nil), p.free...)
+	p.free = slices.Clone(p.free)
 	return p
 }
 
@@ -990,10 +990,10 @@ func TestWebGPUDeviceBuffers_inTheBuildsOrder(t *testing.T) {
 				ok[i] = make([]bool, len(plan)+1)
 			}
 			ok[len(led)][len(plan)] = true
-			for i := len(led) - 1; i >= 0; i-- {
+			for i, l := range slices.Backward(led) {
 				for j := len(plan); j >= 0; j-- {
-					ok[i][j] = led[i].Usage == vector && led[i].Line == "dense" && ok[i+1][j] ||
-						j < len(plan) && led[i].Bytes == plan[j] && ok[i+1][j+1]
+					ok[i][j] = l.Usage == vector && l.Line == "dense" && ok[i+1][j] ||
+						j < len(plan) && l.Bytes == plan[j] && ok[i+1][j+1]
 				}
 			}
 			if !ok[0][0] {
@@ -1087,7 +1087,7 @@ func webgpuScratchTermsHold(terms []webgpuScratchTerm, rd *residentDecoder) erro
 		}
 	}
 	if len(diffs) > 0 {
-		sort.Strings(diffs)
+		slices.Sort(diffs)
 		return fmt.Errorf("the plan's decode scratch and the build's list differ: %s", strings.Join(diffs, "; "))
 	}
 	return nil
@@ -1150,7 +1150,7 @@ func TestScratchPlan_plantsGoRed(t *testing.T) {
 	if err := webgpuScratchTermsHold(terms, rd); err != nil {
 		t.Fatalf("unplanted: %v", err)
 	}
-	short := append([]webgpuScratchTerm(nil), terms...)
+	short := slices.Clone(terms)
 	for i := range short {
 		if short[i].Role == "gemvAdd" {
 			short[i].Bytes -= 16
@@ -1872,7 +1872,7 @@ func webgpuScratchHandQwen35Tiny() map[string]int64 {
 	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
 		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "deltaSetup": 16 + 16 + 32 + 32 + 32, "moeZeroBias": 4 * nE}
 	add := func(role string, n int64) { want[role] += n }
-	for l := 0; l < L; l++ {
+	for l := range L {
 		add("rmsQuant", 2*(pk(H)+20))
 		add("gemvAdd", 16)
 		if l < 3 { // linear attention: the mixed, beta, alpha and z projections; the conv, q, k, head-parameter, core and gated rows
@@ -1909,7 +1909,7 @@ func webgpuScratchHandDeepseekTiny() map[string]int64 {
 	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "mlaSetup": 32 + 48 + 32,
 		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
 	add := func(role string, n int64) { want[role] += n }
-	for l := 0; l < L; l++ {
+	for l := range L {
 		add("rmsQuant", 2*(pk(H)+20)+pk(qRank)+20) // the two pre-norms, and the query bottleneck's norm
 		add("gemv", 4*int64(qRank)+16+4*int64(nH*qkHead)+16+4*int64(latDim)+16)
 		add("mlaLayer", 4*int64(nH*latDim+nH*rank+nH*vHead)) // the absorbed query, the rank-space sum, the lifted context
@@ -1987,7 +1987,7 @@ func webgpuScratchHandGptoss(bias string) map[string]int64 {
 	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32 + 32, "qkvFinUniFor": 32,
 		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
 	add := func(role string, n int64) { want[role] += n }
-	for l := 0; l < L; l++ {
+	for range L {
 		add("rmsQuant", 2*(pk(H)+20))
 		add("quant", pk(qW)+20)
 		add("attnLayer", 4*qW+16)

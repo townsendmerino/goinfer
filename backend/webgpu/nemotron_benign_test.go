@@ -6,7 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -174,8 +174,8 @@ func TestNemotronBenignHarmful(t *testing.T) {
 		if len(xs) == 0 {
 			return 0
 		}
-		c := append([]float64(nil), xs...)
-		sort.Float64s(c)
+		c := slices.Clone(xs)
+		slices.Sort(c)
 		return c[len(c)/2]
 	}
 	benign := disagree - harmful

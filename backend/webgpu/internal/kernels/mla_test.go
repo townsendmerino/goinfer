@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -12,7 +13,7 @@ import (
 // mlaRopeRef mirrors decoder.mlaRope: optional de-interleave (V3 GPT-J pairwise) then
 // NeoX rotate_half on a single [ropeDim] vector at position pos.
 func mlaRopeRef(vec []float32, ropeDim, pos int, invFreq []float32, interleave bool) []float32 {
-	out := append([]float32(nil), vec...)
+	out := slices.Clone(vec)
 	half := ropeDim / 2
 	if interleave {
 		tmp := make([]float32, ropeDim)
@@ -22,7 +23,7 @@ func mlaRopeRef(vec []float32, ropeDim, pos int, invFreq []float32, interleave b
 		}
 		copy(out, tmp)
 	}
-	rot := append([]float32(nil), out...)
+	rot := slices.Clone(out)
 	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c, s := float32(math.Cos(theta)), float32(math.Sin(theta))
@@ -178,7 +179,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 	}
 
 	// --- CPU oracle (op-by-op mirror of the resident MLA forward) ---
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
@@ -196,7 +197,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 		copy(curLat[:rank], cn)
 		copy(curLat[rank:], mlaRopeRef(kvDown[rank:], qkRope, pos, invFreq, interleave))
 		// full latent set = priors ‖ current.
-		lat := append(append([]float32(nil), L.priorLat...), curLat...)
+		lat := slices.Concat(L.priorLat, curLat)
 		nKeys := pos + 1
 		// absorb W_UK + qRope → qAbs per head.
 		qNopeAbs := make([]float32, nH*rank)
@@ -405,7 +406,7 @@ func TestMLALatentStore_parity(t *testing.T) {
 			for i := range rank {
 				ref[i] = kvDown[i] * inv * normW[i]
 			}
-			key := append([]float32(nil), kvDown[rank:]...)
+			key := slices.Clone(kvDown[rank:])
 			if interleave {
 				tmp := make([]float32, qkRope)
 				for i := range half {

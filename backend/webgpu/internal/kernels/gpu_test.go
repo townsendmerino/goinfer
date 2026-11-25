@@ -214,8 +214,7 @@ func benchGPU(b *testing.B, M, K, N int) {
 		b.Fatalf("warmup: %v", err)
 	}
 	b.SetBytes(int64(2 * M * K * N))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := c.MatmulBT(a, w, M, K, N); err != nil {
 			b.Fatalf("MatmulBT: %v", err)
 		}

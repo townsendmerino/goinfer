@@ -44,9 +44,7 @@ func mmF64Host(a, b []float32, M, K, N int) []float32 {
 	var wg sync.WaitGroup
 	workers := runtime.GOMAXPROCS(0)
 	for w := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for m := w; m < M; m += workers {
 				ar := a[m*K : m*K+K]
 				for n := range N {
@@ -58,7 +56,7 @@ func mmF64Host(a, b []float32, M, K, N int) []float32 {
 					dst[m*N+n] = float32(acc)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return dst

@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -114,7 +114,7 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 			// residual itself; its contributions are the differences, so "post-attn" on both sides is everything after the
 			// attention add. The contribution and "out" columns show layer l's own error; "chain" (the CPU's own layer output
 			// against the GPU's) shows the error inherited up to and through layer l.
-			hIn := append([]float32(nil), x0[:len(gAttn[0])]...) // the residual; an E-model row carries its PLE inputs past it
+			hIn := slices.Clone(x0[:len(gAttn[0])]) // the residual; an E-model row carries its PLE inputs past it
 			sub := func(a, b []float32) []float32 {
 				d := make([]float32, len(a))
 				for j := range d {
@@ -231,7 +231,7 @@ func actG32ResidentLogits(t *testing.T, path string, ids []int, opts decoder.Opt
 		if err != nil {
 			t.Fatalf("resident forward pos %d: %v", p, err)
 		}
-		out[p] = append([]float32(nil), lg...)
+		out[p] = slices.Clone(lg)
 	}
 	return out
 }
@@ -251,7 +251,7 @@ func actG32CPULogits(t *testing.T, path string, ids []int, opts decoder.Options)
 		if err != nil {
 			t.Fatal(err)
 		}
-		out[p] = append([]float32(nil), lg...)
+		out[p] = slices.Clone(lg)
 	}
 	return out
 }
@@ -262,7 +262,7 @@ func actG32Agreement(a, b [][]float32) []float64 {
 	for p := range a {
 		cs[p] = actG32Cosine(a[p], b[p])
 	}
-	sort.Float64s(cs)
+	slices.Sort(cs)
 	return cs
 }
 

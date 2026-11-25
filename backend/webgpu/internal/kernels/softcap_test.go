@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -33,9 +34,9 @@ func TestApplySoftcap_bitIdentical(t *testing.T) {
 			for i := range src {
 				src[i] = float32(r.NormFloat64() * 40)
 			}
-			want := append([]float32(nil), src...)
+			want := slices.Clone(src)
 			softcapSerial(want, 30)
-			got := append([]float32(nil), src...)
+			got := slices.Clone(src)
 			ApplySoftcap(got, 30)
 			for i := range want {
 				if got[i] != want[i] {
@@ -54,7 +55,7 @@ func TestApplySoftcap_bitIdentical(t *testing.T) {
 func TestApplySoftcap_disabled(t *testing.T) {
 	for _, sc := range []float32{0, -1} {
 		v := []float32{1, -2, 300, -400, 0}
-		want := append([]float32(nil), v...)
+		want := slices.Clone(v)
 		ApplySoftcap(v, sc)
 		for i := range v {
 			if v[i] != want[i] {
@@ -76,10 +77,10 @@ func TestApplySoftcap_mutation(t *testing.T) {
 	for i := range src {
 		src[i] = float32(r.NormFloat64() * 40)
 	}
-	ref := append([]float32(nil), src...)
+	ref := slices.Clone(src)
 	softcapSerial(ref, 30)
 
-	f64div := append([]float32(nil), src...)
+	f64div := slices.Clone(src)
 	for j, v := range f64div {
 		f64div[j] = 30 * float32(math.Tanh(float64(v)/float64(30))) // widened BEFORE the divide
 	}
@@ -94,7 +95,7 @@ func TestApplySoftcap_mutation(t *testing.T) {
 			"the shipped form on this data, so the gate cannot catch that edit")
 	}
 
-	tail := append([]float32(nil), src...)
+	tail := slices.Clone(src)
 	ApplySoftcap(tail[:n-1], 30)
 	if tail[n-1] == ref[n-1] {
 		t.Error("dropping the tail element is indistinguishable from processing it, so the gate " +

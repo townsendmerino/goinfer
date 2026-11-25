@@ -40,14 +40,12 @@ func TestAdapterGetInfo_survivesStackShrink(t *testing.T) {
 	var calls atomic.Int64
 	deadline := time.Now().Add(3 * time.Second)
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for time.Now().Before(deadline) {
 				adapterInfoDeep(40, func() { _ = c.adapter.GetInfo() })
 				calls.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	t.Logf("%d GetInfo calls under continuous GC", calls.Load())

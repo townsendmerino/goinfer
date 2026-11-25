@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -112,8 +112,8 @@ func TestSampledDecodeLadder(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[webgpu ladder] round %d/%d\n", r+1, reps)
 	}
 	med := func(x []float64) float64 {
-		y := append([]float64(nil), x...)
-		sort.Float64s(y)
+		y := slices.Clone(x)
+		slices.Sort(y)
 		if len(y) == 0 {
 			return 0
 		}

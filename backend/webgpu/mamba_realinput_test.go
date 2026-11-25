@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -75,8 +76,8 @@ func TestMambaRealInputParity(t *testing.T) {
 	cnt := 0
 	decoder.SetMambaCapHook(func(proj, gated []float32) {
 		if cnt%nMamba == 0 { // first mamba layer of each token == actual layer 0
-			capProj = append(capProj, append([]float32(nil), proj...))
-			capGated = append(capGated, append([]float32(nil), gated...))
+			capProj = append(capProj, slices.Clone(proj))
+			capGated = append(capGated, slices.Clone(gated))
 		}
 		cnt++
 	})
