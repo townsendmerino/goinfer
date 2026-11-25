@@ -1,11 +1,16 @@
 package serveapp
 
 import (
+	"context"
 	"errors"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -370,5 +375,68 @@ func TestDecoderEmbedder_closedReturnsErrClosed(t *testing.T) {
 	de := &decoderEmbedder{}
 	if _, err := de.Encode("hello", false); !errors.Is(err, decoder.ErrClosed) {
 		t.Fatalf("closed decoderEmbedder.Encode err = %v, want decoder.ErrClosed", err)
+	}
+}
+
+// tinyDecoderEmbedder is a decoder-backed embedder over the committed tiny llama fixture, cheap enough for the day loop.
+func tinyDecoderEmbedder(t *testing.T) *decoderEmbedder {
+	t.Helper()
+	p := tinyChatCheckpoint(t)
+	tk, err := modelload.Tokenizer(p)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	m, err := decoder.Load(p, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	e := newDecoderEmbedder(m, tk, "", "")
+	t.Cleanup(func() { e.Close() })
+	return e
+}
+
+// TestHandleEmbeddings_cancelledRequestRunsNoForward: /v1/embeddings hands the request's context to the decoder-backed
+// embedder, so a request whose client is gone returns without embedding and without writing a reply.
+func TestHandleEmbeddings_cancelledRequestRunsNoForward(t *testing.T) {
+	e := tinyDecoderEmbedder(t)
+	s := &server{embed: e, embedID: "tiny", embedDim: e.HiddenDim()}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"tiny","input":["hello world","again"]}`)).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.handleEmbeddings(rec, req)
+	if strings.Contains(rec.Body.String(), `"embedding"`) {
+		t.Fatalf("a cancelled request was embedded anyway (status %d, %d-byte body): the forward ignored the request context", rec.Code, rec.Body.Len())
+	}
+}
+
+// TestDecoderEmbedder_cancelledWaiterStopsWaiting: a call whose context ends while another call holds the embedder
+// returns the context's error at once instead of queueing behind the holder.
+func TestDecoderEmbedder_cancelledWaiterStopsWaiting(t *testing.T) {
+	e := tinyDecoderEmbedder(t)
+	if err := e.acquire(context.Background()); err != nil { // stands in for a long call in flight
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := e.EncodeBatchCountedContext(ctx, []string{"hello"}, []bool{false}, 0)
+		done <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // let the waiter block on the held slot
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("cancelled waiter returned %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		e.release()
+		<-done
+		t.Fatal("a cancelled waiter stayed queued behind the call holding the embedder")
+	}
+	e.release()
+	if _, _, err := e.EncodeBatchCountedContext(context.Background(), []string{"hello"}, []bool{false}, 0); err != nil {
+		t.Fatalf("the slot was not usable after the cancelled waiter left: %v", err)
 	}
 }

@@ -1,8 +1,11 @@
 package whisper
 
 import (
+	"context"
 	"errors"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // TestTranscriber_closeReleasesAndRefuses: Close releases the encoder's and the decoder's checkpoint mappings, a second Close
@@ -44,5 +47,57 @@ func TestTranscriber_closeReleasesAndRefuses(t *testing.T) {
 	}
 	if _, err := tr.Enc.Forward(make([]float32, tr.Mels*3000)); err == nil {
 		t.Error("the encoder's Forward after Close returned no error")
+	}
+}
+
+// cancelOnForward runs the encoder on a second CPU copy, counts the windows it is asked for, and cancels a context on the first.
+type cancelOnForward struct {
+	enc    *audio.WhisperEncoder
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (d *cancelOnForward) Forward(feats []float32) ([]float32, error) {
+	d.calls++
+	if d.calls == 1 {
+		d.cancel()
+	}
+	return d.enc.Forward(feats)
+}
+
+func (d *cancelOnForward) Close() error { return nil }
+
+// TestTranscribeWithContext_stopsAtCancel: a context cancelled while the first 30 s window runs ends a multi-window clip with the
+// context's error before the next window's encoder pass, and an already-cancelled context runs no window at all.
+func TestTranscribeWithContext_stopsAtCancel(t *testing.T) {
+	tr, g := tinyTS(t)
+	c, ok := g.Cases["long68s"]
+	if !ok {
+		t.Fatal("the golden has no long68s case")
+	}
+	clip := tsClip(c.Samples, c.A, c.B)
+	cpu, err := audio.LoadWhisperEncoder(tsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cpu.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dev := &cancelOnForward{enc: cpu, cancel: cancel}
+	tr.Enc.SetDevice(dev)
+	defer tr.Enc.SetDevice(nil)
+
+	if _, err := tr.TranscribeWithContext(ctx, clip, TranscribeOptions{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelled during the first window: err = %v, want %v", err, context.Canceled)
+	}
+	if dev.calls != 1 {
+		t.Errorf("the encoder ran %d windows after the context was cancelled in the first; want 1", dev.calls)
+	}
+	dev.calls = 0
+	if _, err := tr.TranscribeWithContext(ctx, clip, TranscribeOptions{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("an already-cancelled context: err = %v, want %v", err, context.Canceled)
+	}
+	if dev.calls != 0 {
+		t.Errorf("an already-cancelled context ran %d windows, want 0", dev.calls)
 	}
 }

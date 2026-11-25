@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -28,13 +29,91 @@ type speechEngine interface {
 	HasLanguage(code string) bool
 }
 
+// speechEngineContext is the optional form of speechEngine that stops when the request's context ends.
+type speechEngineContext interface {
+	TranscribeWithContext(ctx context.Context, samples []float32, o whisper.TranscribeOptions) (*whisper.LongResult, error)
+}
+
+var _ speechEngineContext = (*whisper.Transcriber)(nil)
+
 var errSpeechClosed = errors.New("speech model is closed")
 
 type speechModel struct {
 	name, dir string
 	eng       speechEngine
-	mu        sync.Mutex // one transcription at a time: a window is a whole encoder pass, and two at once only slow each other
-	closed    bool       // set under mu by handlerCloser.Close before closing eng
+	slots     speechSlots // bounds the requests running and waiting (transcribe)
+	mu        sync.Mutex  // one transcription at a time: a window is a whole encoder pass, and two at once only slow each other
+	closed    bool        // set under mu by handlerCloser.Close before closing eng
+}
+
+// speechMaxWaiting is how many transcription requests may wait behind the running one; a request past it is refused with 429.
+const speechMaxWaiting = 4
+
+// speechSlots admits a speech model's transcriptions: one runs, speechMaxWaiting wait, and the rest are refused. The zero value is
+// ready to use.
+type speechSlots struct {
+	once  sync.Once
+	admit chan struct{} // one token per request from tryAdmit to leave: running and waiting together
+	run   chan struct{} // the running transcription's token
+}
+
+func (q *speechSlots) init() {
+	q.once.Do(func() {
+		q.admit = make(chan struct{}, 1+speechMaxWaiting)
+		q.run = make(chan struct{}, 1)
+	})
+}
+
+// tryAdmit takes an admission token without waiting; false means the model already has one running and speechMaxWaiting waiting.
+// A true return must be paired with leave.
+func (q *speechSlots) tryAdmit() bool {
+	q.init()
+	select {
+	case q.admit <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (q *speechSlots) leave() { <-q.admit }
+
+// admitted is the number of requests running or waiting.
+func (q *speechSlots) admitted() int { q.init(); return len(q.admit) }
+
+// acquire waits for the run token, returning ctx's error instead if ctx ends first. A nil return must be paired with release.
+func (q *speechSlots) acquire(ctx context.Context) error {
+	q.init()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case q.run <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (q *speechSlots) release() { <-q.run }
+
+// transcribe runs one transcription once the run token is free. It holds sm.mu for the transcription, which handlerCloser.Close
+// also takes, so Close waits for a running transcription and one that starts after Close sees closed and returns errSpeechClosed.
+// An engine with TranscribeWithContext gets ctx, so a request whose client leaves stops at its next window or token.
+func (sm *speechModel) transcribe(ctx context.Context, samples []float32, opts whisper.TranscribeOptions) (*whisper.LongResult, error) {
+	if err := sm.slots.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer sm.slots.release()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.closed {
+		return nil, errSpeechClosed
+	}
+	if ce, ok := sm.eng.(speechEngineContext); ok {
+		return ce.TranscribeWithContext(ctx, samples, opts)
+	}
+	return sm.eng.TranscribeWith(samples, opts)
 }
 
 // speechMaxSeconds is the longest clip a request may carry: a cost bound (each 30 s window is an encoder pass and a decode), not the model's limit; a longer clip is refused, never cut.
@@ -199,6 +278,12 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "file is required")
 		return
 	}
+	if !sm.slots.tryAdmit() {
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("speech model %q is busy: one transcription runs and %d wait; retry later", sm.name, speechMaxWaiting))
+		return
+	}
+	defer sm.slots.leave()
 	fh, err := files[0].Open()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "reading file: "+err.Error())
@@ -223,19 +308,16 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	samples := wav.Decode()
 	opts := transcriptionPolicy(temperature)
 	opts.Language, opts.Task, opts.Seed = language, "transcribe", uint64(time.Now().UnixNano())
-	res, err := func() (*whisper.LongResult, error) {
-		sm.mu.Lock()
-		defer sm.mu.Unlock()
-		if sm.closed {
-			return nil, errSpeechClosed
-		}
-		return sm.eng.TranscribeWith(samples, opts)
-	}()
-	if err != nil {
-		if errors.Is(err, errSpeechClosed) {
-			writeErr(w, http.StatusServiceUnavailable, "transcription: "+err.Error())
-			return
-		}
+	res, err := sm.transcribe(r.Context(), samples, opts)
+	switch {
+	case err == nil:
+	case errors.Is(err, errSpeechClosed):
+		writeErr(w, http.StatusServiceUnavailable, "transcription: "+err.Error())
+		return
+	case r.Context().Err() != nil:
+		writeErr(w, statusCancelled, "transcription cancelled: "+err.Error())
+		return
+	default:
 		writeErr(w, http.StatusInternalServerError, "transcription: "+err.Error())
 		return
 	}

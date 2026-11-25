@@ -3,6 +3,7 @@ package whisper
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -154,8 +155,17 @@ func (t *Transcriber) TranscribeTimestamps(samples []float32, language, task str
 // longer one over its unpadded features. The language is detected once, on the first window, when none is given. A window that needs a fallback is decoded again at the next temperature; the last
 // temperature's result is kept; a window that is silent by both thresholds is skipped; with ConditionOnPrev each window after the first is preceded by the earlier text.
 func (t *Transcriber) TranscribeWith(samples []float32, o TranscribeOptions) (*LongResult, error) {
+	return t.TranscribeWithContext(context.Background(), samples, o)
+}
+
+// TranscribeWithContext is TranscribeWith ending early when ctx is done: it checks ctx before each 30 s window and at each
+// generated token, and returns ctx's error and no partial result.
+func (t *Transcriber) TranscribeWithContext(ctx context.Context, samples []float32, o TranscribeOptions) (*LongResult, error) {
 	if t.closed {
 		return nil, errTranscriberClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	g, d := t.Gen, t.Dec
 	if o.NoSpeechThreshold != nil && o.LogprobThreshold == nil {
@@ -192,6 +202,9 @@ func (t *Transcriber) TranscribeWith(samples []float32, o TranscribeOptions) (*L
 	var init []int
 	doCond := o.ConditionOnPrev
 	for seek := 0; seek < T; {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		num := min(T-seek, WindowFrames)
 		enc, err := t.Enc.Forward(Window(feats, t.Mels, T, seek, num)) // a short clip's padded 3000 frames are stepped through by seek like any other: the loop is the same
 		if err != nil {
@@ -211,7 +224,7 @@ func (t *Transcriber) TranscribeWith(samples []float32, o TranscribeOptions) (*L
 		var needs, skip bool
 		var lastTemp float64
 		for i, temp := range temps {
-			a, err := d.generate(enc, g, prompt, true, temp, rng, sotAt)
+			a, err := d.generate(ctx, enc, g, prompt, true, temp, rng, sotAt)
 			if err != nil {
 				return nil, err
 			}

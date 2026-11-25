@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
@@ -55,6 +56,8 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	if !ok {
 		return
 	}
+	streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+	defer cancelStream()
 	id := "msg_" + reqID()
 	gr.id = id // registers this generation for cancel-by-id
 	// message_start goes out before the prefill decides the reuse, so its input_tokens is the whole prompt and it carries no
@@ -75,13 +78,13 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	s.routeThink(lm, &gr, tm, turns, ts, th.push)
 
 	if toolsActive {
-		s.streamMessagesTools(w, r, ss, lm, gr, tools, th)
+		s.streamMessagesTools(streamCtx, w, ss, lm, gr, tools, th)
 		return
 	}
 
 	if wantThinking {
 		streamMessagesThinking(ss, th, gr, func(onText func(string)) (turnResult, error) {
-			return lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
+			return lm.drive(streamCtx, gr, s.gens, s.jobs, onText)
 		})
 		return
 	}
@@ -95,7 +98,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// on CPU that is after the whole prefill, so a heartbeat keeps a client's idle timeout from firing.
 	stopBeat := sseHeartbeat(ss)
 	defer stopBeat()
-	res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+	res, gerr := lm.drive(streamCtx, gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
@@ -115,9 +118,9 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 // streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
 // writes it (where the family can stream prose safely: the shared tool turn, tool_turn.go), then one tool_use block
 // per parsed call. With no call it is one text block.
-func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool, th *anthropicThink) {
+func (s *server) streamMessagesTools(ctx context.Context, w http.ResponseWriter, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool, th *anthropicThink) {
 	ts := &anthropicTextStream{ss: ss, think: th}
-	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
+	t, gerr := s.runToolTurn(ctx, lm, gr, tools, ss, ts.push)
 	th.close() // a turn that went straight from thinking to a tool call never pushed prose, which is what closes it
 	if !ts.open {
 		th.carrierOnly()

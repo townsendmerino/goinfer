@@ -2,6 +2,7 @@ package whisper
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -153,7 +154,7 @@ func (d *Decoder) Generate(enc []float32, g GenConfig, language, task string) (*
 	if err != nil {
 		return nil, err
 	}
-	a, err := d.generate(enc, g, prompt, false, 0, nil, -1)
+	a, err := d.generate(context.Background(), enc, g, prompt, false, 0, nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +178,9 @@ const topK = 50
 
 // generate runs the loop from prompt, greedy at temperature 0 and sampled above it. The processors run in transformers' order, each on the previous one's output: begin_suppress_tokens (the first
 // generated position only), suppress_tokens, and with timestamps the WhisperTimeStampLogitsProcessor; a sampled token then comes from those scores divided by the temperature, cut to the top-k, softmaxed
-// and drawn with rng. sotAt is the index of <|startoftranscript|> in prompt, where the no-speech probability is read (-1: not asked for).
-func (d *Decoder) generate(enc []float32, g GenConfig, prompt []int, timestamps bool, temperature float64, rng *rand.Rand, sotAt int) (attempt, error) {
+// and drawn with rng. sotAt is the index of <|startoftranscript|> in prompt, where the no-speech probability is read (-1: not asked for). It returns ctx's error
+// at the first generated token after ctx is done.
+func (d *Decoder) generate(ctx context.Context, enc []float32, g GenConfig, prompt []int, timestamps bool, temperature float64, rng *rand.Rand, sotAt int) (attempt, error) {
 	var out attempt
 	st, err := d.NewState(enc)
 	if err != nil {
@@ -204,6 +206,9 @@ func (d *Decoder) generate(enc []float32, g GenConfig, prompt []int, timestamps 
 	}
 	maxLen := d.maxLength(g, len(prompt))
 	for len(prompt)+len(out.ids) < maxLen {
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 		l := logits[0]
 		d.processLogits(l, out.ids, g, timestamps)
 		if d.condDefect == polNoSpeechProcessed && sotAt >= 0 && len(out.ids) == 0 {

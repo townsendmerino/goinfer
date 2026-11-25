@@ -10,6 +10,7 @@ package serveapp
 // is unchanged.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,11 +42,13 @@ const (
 
 // decoderEmbedder adapts a loaded goinfer decoder into the embedder seam.
 type decoderEmbedder struct {
-	// mu serializes everything. The /v1/embeddings handler runs without the server mutex because an aikit encoder is
+	// slot serializes everything. The /v1/embeddings handler runs without the server mutex because an aikit encoder is
 	// goroutine-safe for concurrent Encode, but a decoder is not: it has one shared KV cache and one decode scratch,
 	// so parallel embedding requests would interleave writes into the same cache and return plausible but wrong
-	// vectors.
-	mu sync.Mutex
+	// vectors. It is a one-slot semaphore rather than a mutex so a caller whose context ends stops waiting (acquire)
+	// instead of queueing behind a long call. slotOnce makes the zero value usable.
+	slot     chan struct{}
+	slotOnce sync.Once
 
 	m   *decoder.Model
 	tk  *tokenizer.Tokenizer
@@ -137,9 +140,12 @@ func (e *decoderEmbedder) HiddenDim() int { return e.dim }
 // Encode embeds one text. isQuery selects the instruction prefix (the query/document asymmetry the
 // handler already maps input_type onto). The vector is raw; the handler L2-normalizes it.
 func (e *decoderEmbedder) Encode(text string, isQuery bool) ([]float32, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	v, _, err := e.encodeLocked(text, isQuery)
+	ctx := context.Background()
+	if err := e.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer e.release()
+	v, _, err := e.encodeLocked(ctx, text, isQuery)
 	return v, err
 }
 
@@ -150,11 +156,14 @@ func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurre
 	if len(isQueries) != len(texts) {
 		return nil, fmt.Errorf("decoder embedder: %d texts but %d isQuery flags", len(texts), len(isQueries))
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	ctx := context.Background()
+	if err := e.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer e.release()
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
-		v, _, err := e.encodeLocked(t, isQueries[i])
+		v, _, err := e.encodeLocked(ctx, t, isQueries[i])
 		if err != nil {
 			return nil, fmt.Errorf("embed input %d: %w", i, err)
 		}
@@ -167,15 +176,23 @@ func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurre
 // makes instead of a second pass over the text. embedBatchCounter (embeddings.go) is the optional capability the
 // handler prefers; encoders that do not implement it (the aikit-embed.Tokenizer path) are unaffected.
 func (e *decoderEmbedder) EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) ([][]float32, []int, error) {
+	return e.EncodeBatchCountedContext(context.Background(), texts, isQueries, concurrency)
+}
+
+// EncodeBatchCountedContext is EncodeBatchCounted under ctx (embedBatchCounterContext): a ctx that ends while the call
+// waits for the embedder, or while it embeds, returns ctx's error.
+func (e *decoderEmbedder) EncodeBatchCountedContext(ctx context.Context, texts []string, isQueries []bool, concurrency int) ([][]float32, []int, error) {
 	if len(isQueries) != len(texts) {
 		return nil, nil, fmt.Errorf("decoder embedder: %d texts but %d isQuery flags", len(texts), len(isQueries))
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	if err := e.acquire(ctx); err != nil {
+		return nil, nil, err
+	}
+	defer e.release()
 	vecs := make([][]float32, len(texts))
 	counts := make([]int, len(texts))
 	for i, t := range texts {
-		v, ids, err := e.encodeLocked(t, isQueries[i])
+		v, ids, err := e.encodeLocked(ctx, t, isQueries[i])
 		if err != nil {
 			return nil, nil, fmt.Errorf("embed input %d: %w", i, err)
 		}
@@ -189,8 +206,10 @@ func (e *decoderEmbedder) EncodeBatchCounted(texts []string, isQueries []bool, c
 // (see embedTokenCounter in embeddings.go). For callers that only want a count; EncodeBatchCounted is the byproduct
 // path for the /v1/embeddings handler.
 func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	if e.acquire(context.Background()) != nil {
+		return 0
+	}
+	defer e.release()
 	ids, err := e.tokenize(text, isQuery)
 	if err != nil {
 		return 0
@@ -198,9 +217,27 @@ func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 	return len(ids)
 }
 
-// encodeLocked is Encode's body; callers hold e.mu. It returns the token ids with the vector so EncodeBatchCounted
+// acquire takes the embedder's slot, or returns ctx's error if ctx ends first (an already-ended ctx never takes it).
+// A nil error obliges the caller to release.
+func (e *decoderEmbedder) acquire(ctx context.Context) error {
+	e.slotOnce.Do(func() { e.slot = make(chan struct{}, 1) })
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case e.slot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// release returns the slot acquire took.
+func (e *decoderEmbedder) release() { <-e.slot }
+
+// encodeLocked is Encode's body; callers hold the slot. It returns the token ids with the vector so EncodeBatchCounted
 // can report their count without a second tokenize pass.
-func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []int, error) {
+func (e *decoderEmbedder) encodeLocked(ctx context.Context, text string, isQuery bool) ([]float32, []int, error) {
 	if e.m == nil {
 		return nil, nil, decoder.ErrClosed
 	}
@@ -208,7 +245,7 @@ func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []
 	if err != nil {
 		return nil, nil, err
 	}
-	v, err := e.m.HiddenLast(ids)
+	v, err := e.m.HiddenLastContext(ctx, ids)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -241,8 +278,8 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 
 // Close releases the underlying decoder model.
 func (e *decoderEmbedder) Close() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	_ = e.acquire(context.Background()) // a background ctx never ends, so this always takes the slot
+	defer e.release()
 	if e.m == nil {
 		return nil
 	}

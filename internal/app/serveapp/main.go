@@ -383,13 +383,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// is the remaining bound on sessMu itself.
 	srvCtx, srvCancel := srv.initLifeContext()
 	defer srvCancel(errServerShutdown)
-	var handler http.Handler = mux
-	if addrIsLoopback(*addr) {
-		handler = hostGuard(mux, *addr, splitHosts(cfg.allowedHosts))
-	}
 	httpSrv := &http.Server{
 		Addr:              *addr,
-		Handler:           handler,
+		Handler:           serveHandler(mux, *addr, authKey, cfg.allowedHosts),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,

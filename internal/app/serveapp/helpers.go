@@ -266,6 +266,27 @@ func (s *sseWriter) Err() error {
 	return s.err
 }
 
+// cancelOnFail derives the generation context for this stream: it ends with parent and at the first failed frame (a
+// write error, or the write deadline a stalled reader trips). parent alone ends only when the client closes, so a reader
+// that stops without closing would keep generation running to max_tokens. A writer that has already failed returns an
+// ended context, and every context derived from one writer ends at its failure. onErr runs under s.mu, so it must only
+// cancel, never take s.mu.
+func (s *sseWriter) cancelOnFail(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		cancel()
+		return ctx, cancel
+	}
+	if prev := s.onErr; prev != nil {
+		s.onErr = func() { prev(); cancel() }
+	} else {
+		s.onErr = cancel
+	}
+	return ctx, cancel
+}
+
 // newSSEWriter wraps a streaming response. Shared by both protocols' start helpers.
 func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
 	return &sseWriter{w: w, f: f, rc: http.NewResponseController(w)}

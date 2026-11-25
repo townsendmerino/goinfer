@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -64,6 +65,43 @@ func setResult(batch *batchRecord, i int, r batchLineResult) {
 	batch.mu.Unlock()
 }
 
+// hasChatImages reports whether any message carries an image_url or input_audio content part. It reads part types only, so a
+// batch line with media is refused before any base64 payload is decoded.
+func hasChatImages(msgs []chatMessage) bool {
+	for _, m := range msgs {
+		var parts []struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(m.Content, &parts) != nil {
+			continue // plain-string content carries no media
+		}
+		for _, p := range parts {
+			if p.Type == "image_url" || p.Type == "input_audio" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasAnthropicImages reports whether any message carries an image block, reading block types only (see hasChatImages).
+func hasAnthropicImages(req *anthropicReq) bool {
+	for _, m := range req.Messages {
+		var blocks []struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(m.Content, &blocks) != nil {
+			continue
+		}
+		for _, bl := range blocks {
+			if bl.Type == "image" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func lineError(customID string, status int, errType, msg string) batchLineResult {
 	return batchLineResult{CustomID: customID, StatusCode: status, ErrType: errType, ErrMsg: msg}
 }
@@ -78,6 +116,7 @@ func lineError(customID string, status int, errType, msg string) batchLineResult
 func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()
+	defer batch.lineFinished()
 	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
 	if batch.isCancelling() {
@@ -89,10 +128,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 			"messages is required and must contain at least one message"))
 		return
 	}
-	if imgs, ierr := chatImages(req.Messages); ierr != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", ierr.Error()))
-		return
-	} else if len(imgs) > 0 {
+	if hasChatImages(req.Messages) {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image inputs this pass; use /v1/chat/completions"))
 		return
@@ -200,6 +236,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()
+	defer batch.lineFinished()
 	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
 	if batch.isCancelling() {
@@ -214,10 +251,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", "messages must not be empty"))
 		return
 	}
-	if imgs, ierr := anthropicImages(&req); ierr != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", ierr.Error()))
-		return
-	} else if len(imgs) > 0 {
+	if hasAnthropicImages(&req) {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image inputs this pass; use /v1/messages"))
 		return

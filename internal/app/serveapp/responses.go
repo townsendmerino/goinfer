@@ -61,17 +61,40 @@ func (r *responseReq) thinkRequest() thinkRequest {
 type responseEntry struct {
 	model    string
 	messages []chatMessage // full conversation incl. the assistant output
+	size     int           // estimated payload bytes (responseEntryBytes), set by put
 }
 
+// maxResponseStoreBytes bounds the store's estimated payload alongside its entry count: a conversation is bounded only
+// by the request size, so the count alone lets the store hold that size times its capacity for the process's life.
+const maxResponseStoreBytes = 64 << 20
+
+// responseStore is the previous_response_id store: at most cap entries and maxBytes estimated payload bytes, evicting
+// the oldest first. bytes is the sum of size over m, under mu.
 type responseStore struct {
-	mu    sync.Mutex
-	m     map[string]*responseEntry
-	order []string
-	cap   int
+	mu       sync.Mutex
+	m        map[string]*responseEntry
+	order    []string
+	cap      int
+	maxBytes int
+	bytes    int
 }
 
 func newResponseStore(cap int) *responseStore {
-	return &responseStore{m: map[string]*responseEntry{}, cap: cap}
+	return &responseStore{m: map[string]*responseEntry{}, cap: cap, maxBytes: maxResponseStoreBytes}
+}
+
+// responseEntryBytes estimates what e holds: the variable-length text of every message (content, reasoning, tool call
+// ids, names and arguments). Fixed per-message overhead is left out; the estimate bounds what a request can make the
+// store hold, which the text dominates.
+func responseEntryBytes(e *responseEntry) int {
+	n := len(e.model)
+	for _, m := range e.messages {
+		n += len(m.Role) + len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.ReasoningContent) + len(m.Reasoning)
+		for _, tc := range m.ToolCalls {
+			n += len(tc.ID) + len(tc.Type) + len(tc.Function.Name) + len(tc.Function.Arguments)
+		}
+	}
+	return n
 }
 
 func (s *responseStore) get(id string) *responseEntry {
@@ -80,17 +103,31 @@ func (s *responseStore) get(id string) *responseEntry {
 	return s.m[id]
 }
 
+// put stores e under id as the newest entry, evicting the oldest until both the count and the byte budget hold. An
+// entry over the whole budget is not stored and evicts nothing else; an older entry under the same id is dropped, so a
+// continuation of the refused response finds nothing rather than an earlier conversation.
 func (s *responseStore) put(id string, e *responseEntry) {
+	e.size = responseEntryBytes(e)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.m[id]; !ok {
-		s.order = append(s.order, id)
-		for len(s.order) > s.cap { // FIFO eviction
-			delete(s.m, s.order[0])
-			s.order = s.order[1:]
+	if old, ok := s.m[id]; ok {
+		s.bytes -= old.size
+		delete(s.m, id)
+		if i := slices.Index(s.order, id); i >= 0 {
+			s.order = slices.Delete(s.order, i, i+1)
 		}
 	}
+	if e.size > s.maxBytes {
+		return
+	}
+	s.order = append(s.order, id)
 	s.m[id] = e
+	s.bytes += e.size
+	for len(s.order) > s.cap || s.bytes > s.maxBytes { // FIFO eviction; never reaches id, which fits alone
+		s.bytes -= s.m[s.order[0]].size
+		delete(s.m, s.order[0])
+		s.order = s.order[1:]
+	}
 }
 
 // --- handler ---
@@ -218,6 +255,8 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		rs := newRespStream(ss, id)
 		rs.mint = mint
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
@@ -229,7 +268,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
 		defer stopBeat()
-		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.drive(streamCtx, gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})
@@ -320,6 +359,8 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		rs := newRespStream(ss, id)
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		if gr.think != nil {
@@ -328,7 +369,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
 		defer stopBeat()
-		res, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})

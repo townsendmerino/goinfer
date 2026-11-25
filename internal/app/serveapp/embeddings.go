@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -194,6 +195,20 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		for _, c := range counts {
 			promptTokens += c
 		}
+	} else if bc, ok := s.embed.(embedBatchCounterContext); ok {
+		var counts []int
+		var err error
+		vecs, counts, err = bc.EncodeBatchCountedContext(r.Context(), inputs, isQueries, 0)
+		if err != nil {
+			if r.Context().Err() != nil {
+				return // the client is gone; nothing to write to
+			}
+			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			return
+		}
+		for _, c := range counts {
+			promptTokens += c
+		}
 	} else if bc, ok := s.embed.(embedBatchCounter); ok {
 		var counts []int
 		var err error
@@ -370,6 +385,13 @@ type embedTokenCounter interface {
 // fallback.
 type embedBatchCounter interface {
 	EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) (vecs [][]float32, tokenCounts []int, err error)
+}
+
+// embedBatchCounterContext is embedBatchCounter under the request's context, for an embedder that serializes its calls
+// (the decoder-backed embedder runs one model): a request whose client is gone stops waiting for the embedder and stops
+// its forward instead of holding the embedder for every request behind it. The handler prefers it to embedBatchCounter.
+type embedBatchCounterContext interface {
+	EncodeBatchCountedContext(ctx context.Context, texts []string, isQueries []bool, concurrency int) (vecs [][]float32, tokenCounts []int, err error)
 }
 
 // countEmbedTokens sums the wrapped token counts the encoder actually sees

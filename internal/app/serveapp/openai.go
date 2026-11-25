@@ -978,6 +978,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
 		// Nothing else is sent between here and the first token, and on CPU that gap is the whole prefill: a
@@ -987,7 +989,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.drive(streamCtx, gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -1110,10 +1112,12 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
 		defer stopBeat()
-		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.drive(streamCtx, gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		stopBeat()

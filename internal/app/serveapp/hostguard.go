@@ -3,6 +3,7 @@ package serveapp
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -35,6 +36,70 @@ func hostGuard(next http.Handler, bindAddr string, extra []string) http.Handler 
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// serveHandler wraps mux in the guards of a listener bound to addr: on loopback, hostGuard and, with no key, browserGuard inside
+// it; beyond loopback, mux unchanged (the key protects it).
+func serveHandler(mux http.Handler, addr, authKey, allowedHosts string) http.Handler {
+	if !addrIsLoopback(addr) {
+		return mux
+	}
+	return hostGuard(browserGuard(mux, authKey), addr, splitHosts(allowedHosts))
+}
+
+// browserGuard refuses, with 403, a POST, PUT, PATCH or DELETE under /v1/ that a browser sent cross-origin: its Origin is
+// unparsable, "null", or names another host and port than Host, or its Sec-Fetch-Site is cross-site. With no key requireAuth is a
+// no-op, and any page open in the user's browser can send such a request (the browser blocks reading the reply, not sending it),
+// so on a key-free loopback server it would start generations, uploads and batches. A request with neither header (curl, the
+// SDKs) passes, as does a same-origin one. With authKey set it returns next unchanged.
+func browserGuard(next http.Handler, authKey string) http.Handler {
+	if authKey != "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			if strings.HasPrefix(r.URL.Path, "/v1/") && crossOriginBrowser(r) {
+				writeErr(w, http.StatusForbidden, "cross-origin browser request refused: this loopback server has no -api-key, so it acts only on same-origin requests")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// crossOriginBrowser reports whether r carries browser evidence of coming from another origin (see browserGuard).
+func crossOriginBrowser(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+		return true
+	}
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return false
+	}
+	u, err := url.Parse(o)
+	if err != nil || o == "null" || u.Host == "" {
+		return true
+	}
+	def := "80"
+	if u.Scheme == "https" {
+		def = "443"
+	}
+	return canonicalHostPort(u.Host, def) != canonicalHostPort(r.Host, def)
+}
+
+// canonicalHostPort reduces a host[:port] to lower case with no IPv6 brackets and no trailing dot, dropping the port when it is
+// defaultPort, so an Origin and a Host header naming the same server compare equal.
+func canonicalHostPort(hp, defaultPort string) string {
+	host, port := hp, ""
+	if h, p, err := net.SplitHostPort(hp); err == nil {
+		host, port = h, p
+	}
+	host = strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), "."))
+	if port == "" || port == defaultPort {
+		return host
+	}
+	return net.JoinHostPort(host, port)
 }
 
 // normalizeHost reduces a Host header value or a -allowed-hosts entry to a bare lower-case host: no port, no IPv6 brackets, no trailing dot.
