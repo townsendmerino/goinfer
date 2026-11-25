@@ -84,3 +84,22 @@ func TestResidentAdmission_actGroupDeclinesOffCUDA(t *testing.T) {
 		t.Error("metal without ActQuantGroup was not built: the fixture does not isolate the option")
 	}
 }
+
+// TestWebGPUActGroupShapeDecline_layerNorm: WebGPU's per-32 activations have no LayerNorm quantize twin, so a LayerNorm
+// family (Cohere) is declined at admission, naming the feature, while a dense RMSNorm family of the same shape class is not.
+func TestWebGPUActGroupShapeDecline_layerNorm(t *testing.T) {
+	for _, tc := range []struct {
+		dir     string
+		decline bool
+	}{{"../testdata/cohere-tiny", true}, {"../testdata/llama-tiny", false}} {
+		m, err := Load(tc.dir, Options{Quant: "int8int8"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		why := webgpuActGroupShapeDecline("webgpu", 32, m.w.arch)
+		_ = m.Close()
+		if got := why != ""; got != tc.decline || (tc.decline && !strings.Contains(why, string(FeatLayerNorm))) {
+			t.Errorf("%s: decline %q, want a decline naming %s: %v", tc.dir, why, FeatLayerNorm, tc.decline)
+		}
+	}
+}

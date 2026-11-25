@@ -292,7 +292,7 @@ func webgpuActGroupShapeDecline(backend string, actGroup int, a *Architecture) s
 	}
 	for _, f := range a.residentFeatures() {
 		switch f {
-		case FeatMoE, FeatMLA, FeatSSM, FeatDeltaNet, FeatKDA, FeatGemma4EModel, FeatAttnSink:
+		case FeatMoE, FeatMLA, FeatSSM, FeatDeltaNet, FeatKDA, FeatGemma4EModel, FeatAttnSink, FeatLayerNorm:
 			return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels cover the dense decode path, and this model needs %s", actGroup, f)
 		}
 	}

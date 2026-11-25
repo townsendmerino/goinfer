@@ -570,5 +570,9 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// (TestGlmOcrResidentParityWebGPU).
 		FeatPairwiseRoPE:  true,
 		FeatPairwiseMRoPE: true,
+		// FeatLayerNorm (bias-free; a bias declines at the build) and FeatParallelBlock: LayerNormQuantWGSL in RMSNorm's place,
+		// and the MLP reading the attention's quantized input (TestCohereResidentParityWebGPU).
+		FeatLayerNorm:     true,
+		FeatParallelBlock: true,
 	},
 }

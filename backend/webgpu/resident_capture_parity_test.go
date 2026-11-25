@@ -3,10 +3,12 @@
 package webgpu
 
 import (
+	"cmp"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,6 +28,8 @@ import (
 // It prints and does not assert a bar (the only assertion is that the cosine is not NaN): what a cosine means for a given
 // checkpoint is what TestCPUQuantSensitivity measures for it.
 //
+// GOINFER_PARITY_README=n makes the prompt README.md's first n tokens under the checkpoint's tokenizer, at a resident context
+// of 512: TestPairwiseRoPERealWebGPU's prompt and context.
 // GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident W8A8-at-upload path, NOT a
 // same-quant comparison). GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU stores,
 // the only single-variable form of the int4 comparison. Written against scripts/mk_phi3_synth.py's phi3-mini-shaped
@@ -41,6 +45,9 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 		c.Close()
 	}
 	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88}
+	if n, _ := strconv.Atoi(os.Getenv("GOINFER_PARITY_README")); n > 0 {
+		prompt = readmePrompt(t, dir, n)
+	}
 	quant := os.Getenv("GOINFER_PARITY_QUANT") // "" ⇒ int4 (the doc's case); "native" for f32-vs-W8A8
 	if quant == "" {
 		quant = "int4"
@@ -50,7 +57,11 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 		cpuQuant, gpuQuant = "", ""
 	}
 
-	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: gpuQuant})
+	gpuOpts := decoder.Options{Backend: "webgpu", Quant: gpuQuant}
+	if os.Getenv("GOINFER_PARITY_README") != "" {
+		gpuOpts.ResidentContext = 512 // TestPairwiseRoPERealWebGPU's, so a 7B fits an 8 GB card as it does there
+	}
+	mg, err := decoder.Load(dir, gpuOpts)
 	if err != nil {
 		t.Fatalf("load webgpu: %v", err)
 	}
@@ -185,6 +196,125 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 	t.Logf("phi3-synth (%s): min prompt cosine %.6f", quant, minCos)
 	if math.IsNaN(minCos) {
 		t.Errorf("NaN cosine")
+	}
+}
+
+// readmePrompt is README.md's first n tokens under dir's tokenizer: TestPairwiseRoPERealWebGPU's prompt.
+func readmePrompt(t *testing.T, dir string, n int) []int {
+	t.Helper()
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := tk.Encode(string(readme), false)
+	if err != nil || len(ids) < n {
+		t.Fatalf("encode README: %d ids, %v", len(ids), err)
+	}
+	return ids[:n]
+}
+
+// TestResidentLayerIsolatedWebGPU differences each layer ALONE, resident against CPU: at every position the resident runs
+// first, and the CPU then runs each layer l on the resident's own input to it (KVCache.SetLayerInputsForTest: the embedding
+// for layer 0, the resident's layer l-1 output after), so its K/V rows are computed from the same inputs too. A layer's
+// columns are then its own rounding: attention context, attention contribution, the rest of the layer, and its output. The
+// logits row is the CPU head on the resident's last-layer input. It prints and asserts only that no reading is NaN.
+//
+//	GOINFER_PARITY_CKPT=<dir> GOINFER_PARITY_README=20 [GOINFER_PARITY_QUANT=int4] go test -tags 'gpu goinfer_testhooks' \
+//	  ./backend/webgpu -run TestResidentLayerIsolatedWebGPU -v
+func TestResidentLayerIsolatedWebGPU(t *testing.T) {
+	dir := os.Getenv("GOINFER_PARITY_CKPT")
+	if dir == "" {
+		t.Skip("set GOINFER_PARITY_CKPT to a checkpoint directory")
+	}
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu device: %v", err)
+	} else {
+		c.Close()
+	}
+	quant := cmp.Or(os.Getenv("GOINFER_PARITY_QUANT"), "int4")
+	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88}
+	if n, _ := strconv.Atoi(os.Getenv("GOINFER_PARITY_README")); n > 0 {
+		prompt = readmePrompt(t, dir, n)
+	}
+	t.Setenv("GOINFER_GPU_CAPTURE", "1")
+	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: quant, ResidentContext: 512})
+	if err != nil {
+		t.Fatalf("load webgpu: %v", err)
+	}
+	defer mg.Close()
+	rd, ok := mg.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Fatalf("did not go resident: %s", mg.ResidentDecline())
+	}
+	mc, err := decoder.Load(dir, decoder.Options{Quant: quant})
+	if err != nil {
+		t.Fatalf("load cpu: %v", err)
+	}
+	defer mc.Close()
+	for i := range prompt {
+		prompt[i] %= mc.Shape().Vocab
+	}
+	cache := mc.NewCache(len(prompt) + 1)
+	rel := func(ref, got []float32) float64 { // ||got-ref|| / ||ref||; a length mismatch reads as the worst value
+		if len(ref) != len(got) {
+			return math.Inf(1)
+		}
+		var d, n float64
+		for j := range ref {
+			e := float64(got[j]) - float64(ref[j])
+			d, n = d+e*e, n+float64(ref[j])*float64(ref[j])
+		}
+		return math.Sqrt(d) / (math.Sqrt(n) + 1e-30)
+	}
+	diff := func(a, b []float32) []float32 {
+		d := make([]float32, len(a))
+		for j := range d {
+			d[j] = a[j] - b[j]
+		}
+		return d
+	}
+	nan := false
+	for i, tok := range prompt {
+		x0 := mg.EmbedResidentForTest(tok)
+		gl, err := rd.Forward(x0, i)
+		if err != nil {
+			t.Fatalf("resident pos %d: %v", i, err)
+		}
+		gCtx, gAttn, gOut, err := rd.runner.ReadCapture()
+		if err != nil {
+			t.Fatalf("ReadCapture pos %d: %v", i, err)
+		}
+		hidden := len(gAttn[0])
+		in := make([][]float32, len(gOut))
+		for l := 1; l < len(gOut); l++ {
+			in[l] = gOut[l-1]
+		}
+		cache.SetLayerInputsForTest(in)
+		cl, lc, err := mc.ForwardLayerCaptureLogitsForTest(tok, cache)
+		cache.SetLayerInputsForTest(nil)
+		if err != nil {
+			t.Fatalf("cpu pos %d: %v", i, err)
+		}
+		cos, _ := cosine(cl, gl)
+		nan = nan || math.IsNaN(cos)
+		t.Logf("  pos %2d tok %6d: logits cosine %.6f (CPU head on the resident's last-layer input) argmax cpu=%d gpu=%d", i, tok, cos, argmaxF(cl), argmaxF(gl))
+		for l := range gOut {
+			hIn := x0[:hidden]
+			if l > 0 {
+				hIn = gOut[l-1]
+			}
+			gA, cRest, gRest := diff(gAttn[l], hIn), diff(diff(lc.Out[l], hIn), lc.Attn[l]), diff(gOut[l], gAttn[l])
+			rc, ra, rr, ro := rel(lc.Ctx[l], gCtx[l]), rel(lc.Attn[l], gA), rel(cRest, gRest), rel(diff(lc.Out[l], hIn), diff(gOut[l], hIn))
+			nan = nan || math.IsNaN(rc+ra+rr+ro)
+			t.Logf("      L%02d ctx rel %.3e | attn rel %.3e | rest rel %.3e | layer rel %.3e", l, rc, ra, rr, ro)
+		}
+	}
+	if nan {
+		t.Error("a reading is NaN")
 	}
 }
 

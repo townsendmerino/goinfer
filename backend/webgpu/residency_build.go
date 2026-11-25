@@ -344,7 +344,8 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 			GSize: gNG * gDS, Repeat: gNH / gNG, NormGroups: 1,
 		}
 	}
-	// Every other family's logit scale (dense Granite's, which divides) is the same fold: LogitScale is the factor applied.
+	// Every other family's logit scale (dense Granite's, which divides; Cohere's, which multiplies) is the same fold:
+	// LogitScale is the factor applied.
 	if inv, ok := m.BackendView().LogitScale(); ok && !granOK {
 		lmMult = inv
 	}
@@ -467,6 +468,11 @@ func (bs *webgpuBuild) bindRunner() error {
 	}
 	rd.rm.ActG32 = m.ActQuantGroup() == 32          // per-32 activation scales (staticResidentDecline admitted the shape)
 	rd.rm.Pairwise = m.BackendView().PairwiseRoPE() // FeatPairwiseRoPE — the pairwise rope twins
+	rd.rm.LayerNorm = m.BackendView().LayerNorm()   // FeatLayerNorm — LayerNormQuantWGSL for every norm
+	if rd.rm.LayerNorm && len(m.Weights().FinalNormBias) > 0 {
+		return fmt.Errorf("gpu: a LayerNorm bias is not implemented on webgpu")
+	}
+	rd.rm.Parallel = m.BackendView().ParallelBlock() // FeatParallelBlock — the MLP reads the attention's input
 	scale, addOne := m.AttnScale(), m.BackendView().RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(bs.mlaAttnScale)
@@ -480,7 +486,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
 		pp.MropeAxis = rd.mropeAxis
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/per-32 activations/attention temperature/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/per-32 activations/attention temperature/LayerNorm/parallel block/…)")
 		}
 		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
 		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15
