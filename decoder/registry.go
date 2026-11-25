@@ -180,6 +180,10 @@ func validateConfigBounds(cfg *Config) error {
 		{"hidden_size", cfg.HiddenDim, maxGGUFHidden},
 		{"num_attention_heads", cfg.NumHeads, maxGGUFHeads},
 		{"num_key_value_heads", cfg.NumKVHeads, maxGGUFHeads},
+		{"n_layer", cfg.NLayer, maxGGUFLayers},
+		{"n_embd", cfg.NEmbd, maxGGUFHidden},
+		{"n_head", cfg.NHead, maxGGUFHeads},
+		{"n_inner", cfg.NInner, maxGGUFIntermediate},
 		{"vocab_size", cfg.VocabSize, maxGGUFVocabSize},
 		{"num_experts", cfg.NumExperts, maxGGUFExperts},
 		// num_local_experts and n_routed_experts are the same kind of value as num_experts under other families' spellings. The .giw reader's own

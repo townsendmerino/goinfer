@@ -95,8 +95,13 @@ func LoadHead(dir string) (*Head, error) {
 	if err := json.Unmarshal(raw, &keys); err != nil || len(keys) != 6 {
 		return nil, fmt.Errorf("clef: joint_head_config.json must carry exactly hidden_size, width, routing_layers, layers, heads and feedforward")
 	}
-	if cfg.HiddenSize <= 0 || cfg.Width <= 0 || cfg.RoutingLayers <= 0 || cfg.Layers <= 0 || cfg.Heads <= 0 || cfg.Feedforward <= 0 || cfg.Width%cfg.Heads != 0 {
-		return nil, fmt.Errorf("clef: joint_head_config.json has a non-positive value or a width not divisible by heads: %+v", cfg)
+	const (
+		maxClefLayers = 256
+		maxClefDim    = 1 << 16
+	)
+	if cfg.HiddenSize <= 0 || cfg.Width <= 0 || cfg.RoutingLayers <= 0 || cfg.Layers <= 0 || cfg.Heads <= 0 || cfg.Feedforward <= 0 || cfg.Width%cfg.Heads != 0 ||
+		cfg.RoutingLayers > maxClefLayers || cfg.Layers > maxClefLayers || cfg.HiddenSize > maxClefDim || cfg.Width > maxClefDim || cfg.Feedforward > maxClefDim {
+		return nil, fmt.Errorf("clef: joint_head_config.json has out-of-range dimensions or width not divisible by heads: %+v", cfg)
 	}
 	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "joint_head.safetensors"))
 	if err != nil {
@@ -163,7 +168,7 @@ func buildHead(cfg HeadConfig, st *embed.SafetensorsFile) (*Head, error) {
 	h.optCtxProj = r.get("option_context_projection.weight", w, hs)
 	h.optLexProj = r.get("option_lexical_projection.weight", w, hs)
 	h.typeEmb = r.get("type_embedding.weight", 3, w)
-	for i := 0; i < cfg.RoutingLayers; i++ {
+	for i := 0; i < cfg.RoutingLayers && r.err == nil; i++ {
 		p := fmt.Sprintf("evidence_layers.%d", i)
 		h.routing = append(h.routing, routingLayer{
 			queryNorm: r.ln(p+".query_norm", w), memoryNorm: r.ln(p+".memory_norm", w), ffNorm: r.ln(p+".feedforward_norm", w),
@@ -173,7 +178,7 @@ func buildHead(cfg HeadConfig, st *embed.SafetensorsFile) (*Head, error) {
 		})
 	}
 	h.optSummaryNorm = r.ln("option_summary_norm", w)
-	for i := 0; i < cfg.Layers; i++ {
+	for i := 0; i < cfg.Layers && r.err == nil; i++ {
 		p := fmt.Sprintf("layers.%d", i)
 		h.layers = append(h.layers, decoderLayer{
 			norm1: r.ln(p+".norm1", w), norm2: r.ln(p+".norm2", w), norm3: r.ln(p+".norm3", w),

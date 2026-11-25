@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -73,6 +74,11 @@ func (m *Model) runGen(ctx context.Context, out chan int, g *Generation, refused
 			l.wg.Done()
 		}()
 		defer close(out)
+		defer func() {
+			if p := recover(); p != nil {
+				g.err = fmt.Errorf("decoder: generation panicked: %v", p)
+			}
+		}()
 		body(gctx)
 		if g.err != nil && errors.Is(g.err, context.Canceled) && ctx.Err() == nil {
 			l.mu.Lock()

@@ -55,7 +55,11 @@ const (
 	gvF64
 )
 
-const ggufMetaMaxDepth = 128 // aikit's nesting cap for arrays of arrays
+const (
+	ggufMetaMaxDepth       = 128     // aikit's nesting cap for arrays of arrays
+	ggufMetaMaxArrayLen    = 4 << 20 // 4M entries: >15x the largest real tokenizer vocab/merges
+	ggufMetaMaxStringBytes = 64 << 20
+)
 
 // readGGUFMetaFile reads path's metadata from the head of the file.
 func readGGUFMetaFile(path string) (*ggufMeta, error) {
@@ -131,6 +135,9 @@ func (m *ggufMeta) read(c *gmCur, key string, vt uint32) {
 		if c.err == nil && n > uint64(c.left) {
 			c.err = fmt.Errorf("gguf: array length %d exceeds %d remaining bytes", n, c.left)
 		}
+		if c.err == nil && n > ggufMetaMaxArrayLen {
+			c.err = fmt.Errorf("gguf: array length %d exceeds %d ceiling", n, ggufMetaMaxArrayLen)
+		}
 		if c.err != nil {
 			return
 		}
@@ -154,6 +161,9 @@ func (m *ggufMeta) readArray(c *gmCur, key string, et uint32, n uint64) {
 		for i := uint64(0); i < n && c.err == nil; i++ {
 			out = append(out, int(c.int(et)))
 		}
+		if c.err != nil {
+			return
+		}
 		m.intArrs[key] = out
 		m.f32Arrs[key] = make([]float32, len(out))
 	case gvF32, gvF64:
@@ -165,11 +175,17 @@ func (m *ggufMeta) readArray(c *gmCur, key string, et uint32, n uint64) {
 				out = append(out, float32(math.Float64frombits(c.u64())))
 			}
 		}
+		if c.err != nil {
+			return
+		}
 		m.f32Arrs[key] = out
 		m.intArrs[key] = make([]int, len(out))
 	default:
 		for i := uint64(0); i < n && c.err == nil; i++ {
 			c.skip(et, 1)
+		}
+		if c.err != nil {
+			return
 		}
 		m.intArrs[key] = make([]int, n)
 		m.f32Arrs[key] = make([]float32, n)
@@ -305,6 +321,10 @@ func (c *gmCur) str() string {
 	}
 	if n > uint64(c.left) {
 		c.err = fmt.Errorf("gguf: string length %d exceeds %d remaining bytes", n, c.left)
+		return ""
+	}
+	if n > ggufMetaMaxStringBytes {
+		c.err = fmt.Errorf("gguf: string length %d exceeds %d ceiling", n, ggufMetaMaxStringBytes)
 		return ""
 	}
 	if n <= uint64(c.r.Size()) {

@@ -369,44 +369,40 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// Prefill the (divergent suffix of the) prompt; the last token's logits seed cur.
 		var seedLogits []float32
 		var err error
+		var slotMarked bool
+		releaseSlot := func() {
+			if slotMarked {
+				slotMarked = false
+				target.batcher.markSlot(mc3Slot, false)
+			}
+		}
+		defer releaseSlot()
 		if resident {
 			// Shared with generateInto (residentPrefillSeed), so batched prefill applies here too.
-			//
-			// Prefix reuse: residentAcquire and residentAcquireSlot return the reusable prefix reuseFrom, so a --spec or --drafter
-			// agent loop does not cold-prefill the whole prompt every round. The bound sequence is accurate here because commitResident below
-			// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
-			// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
-			// first would only lose reuse. generateInto uses the same order (resident_reuse.go).
+			// Compute reuseFrom before residentForgetIDs so prefix reuse stays intact across rounds.
 			var reuseFrom int
 			if adaptive {
-				// Our own slot, reserved for the whole generation: busySlots keeps this pick from colliding with another generation's.
-				// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
-				// themselves, as generateInto's batched prefill does (model.go); neither is safe bare.
 				target.batcher.exclusive(func() {
 					acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
 					reuseFrom, mc3Slot = acq.reuse, acq.slot
 					if mc3Slot >= 0 {
 						target.batcher.markSlot(mc3Slot, true)
+						slotMarked = true
 						target.residentForgetIDs()
 					}
 				})
 				if mc3Slot < 0 {
-					// No free slot: not resident for this call; fall back to the staged CPU path, as the claim above does.
 					resident, adaptive = false, false
 				}
 			}
 			if resident && adaptive {
 				target.batcher.prefillExclusive(func() {
-					// Re-bind: the slot-acquisition section above has ended, so another generation could have rebound the resident to a
-					// different slot since (mc3Prefill, model.go, rebinds for the same reason). Skipping this made the prefill write
-					// another generation's slot, intermittently (TestSpecAdaptiveSwitch_matchesPlainDecode).
 					if err = target.residentBind(mc3Slot); err != nil {
 						return
 					}
 					seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false)
 				})
 				if err != nil {
-					target.batcher.markSlot(mc3Slot, false)
 					g.err = err
 					return
 				}
@@ -458,7 +454,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 						target.residentCommitIDs(prompt, generated, nil, nil)
 					}
 				})
-				target.batcher.markSlot(mc3Slot, false)
+				releaseSlot()
 			} else {
 				// The whole-generation exclusive claim means our slot is already the bound one; no residentBind needed.
 				target.residentCommitIDs(prompt, generated, nil, nil)
@@ -809,14 +805,14 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 		// 4. Roll the cache back to the confirmed length: cur (at base) plus the
 		// accepted draft tokens. nextTok stays pending for the next round.
 		if yieldThisRound {
-			// A yield round drafted nothing (kEff==0, accepted==0): the resident already holds
-			// exactly base+1 positions (what targetVerifyBatch just wrote), so there is nothing to
-			// roll back. Skip the resident touch — it would need its own synchronization here, and
-			// buys nothing — and just advance the host-side position tracker targetTruncate also sets.
 			tpos = base + 1
 		} else {
 			tpos = base + 1 + accepted
-			tg.truncate(tpos)
+			if tg.adaptive {
+				tg.exclusive(func() { tg.truncate(tpos) })
+			} else {
+				tg.truncate(tpos)
+			}
 		}
 
 		// 5. Commit to history: cur, then the accepted draft tokens. nextTok is

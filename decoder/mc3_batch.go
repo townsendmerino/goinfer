@@ -235,12 +235,14 @@ func (b *residentBatcher) releaseHold(release func()) {
 	if !held {
 		return
 	}
+	defer func() {
+		b.mu.Lock()
+		b.holding, b.busy = false, false
+		b.freeAt = time.Now()
+		b.cond.Broadcast()
+		b.mu.Unlock()
+	}()
 	release()
-	b.mu.Lock()
-	b.holding, b.busy = false, false
-	b.freeAt = time.Now()
-	b.cond.Broadcast()
-	b.mu.Unlock()
 }
 
 // mc3HoldSendGrace is how long a holder keeping the resident (holdSolo) waits for its consumer to take a token before it
@@ -255,11 +257,11 @@ func (b *residentBatcher) isHolding() bool {
 	return b.holding
 }
 
-// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder has a slot.
+// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder has a slot and no batch/exclusive run is active.
 func (b *residentBatcher) claimExclusive(resBusy *int32) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.holders == 0 && atomic.CompareAndSwapInt32(resBusy, 0, 1)
+	return b.holders == 0 && !b.busy && atomic.CompareAndSwapInt32(resBusy, 0, 1)
 }
 
 // exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
@@ -414,11 +416,7 @@ func (b *tokenCoalescer) serveLocked(done func() bool) {
 				b.busy = true
 				b.mu.Unlock()
 				t0 := time.Now()
-				if c != nil {
-					b.ride(c, run)
-				} else {
-					b.runTokens(run)
-				}
+				b.execRun(c, run)
 				b.mu.Lock()
 				if d := time.Since(t0).Nanoseconds(); c != nil {
 					b.stats.RideNs += d
@@ -460,6 +458,29 @@ func (b *tokenCoalescer) armLocked(deadline time.Time) {
 		b.cond.Broadcast()
 		b.mu.Unlock()
 	})
+}
+
+// execRun runs a batched step or prefill ride while converting any panic into an error for every waiting
+// caller in the run, so serveLocked always releases b.busy and wakes waiters instead of deadlocking.
+func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) {
+	defer func() {
+		if p := recover(); p != nil {
+			err := fmt.Errorf("decoder: batched step panicked: %v", p)
+			if c != nil && c.err == nil {
+				c.err = err
+			}
+			for _, r := range run {
+				if r.out == nil && r.err == nil {
+					r.err = err
+				}
+			}
+		}
+	}()
+	if c != nil {
+		b.ride(c, run)
+	} else {
+		b.runTokens(run)
+	}
 }
 
 // runTokens serves one run: in one batched step (step) when it has at least lo tokens, else every token through its

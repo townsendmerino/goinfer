@@ -710,6 +710,9 @@ func ggufFlintConfig(g *embed.GGUFFile) (*Config, error) {
 		RoPEGlobalBase:               base,
 	}
 	if k, ok := g.Uint("flint.leading_dense_block_count"); ok {
+		if k > uint64(numLayers) {
+			return nil, fmt.Errorf("decoder(gguf-flint): leading_dense_block_count %d exceeds block_count %d", k, numLayers)
+		}
 		cfg.MlpOnlyLayers = make([]int, int(k))
 		for i := range cfg.MlpOnlyLayers {
 			cfg.MlpOnlyLayers[i] = i
