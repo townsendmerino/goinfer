@@ -48,6 +48,20 @@ moved symbol; those are edited by hand.
   (`decoder/backend_w4a8_batch_test.go`, `decoder/parthreshold_test.go`, `backend/webgpu/internal/kernels/batch_test.go`);
   and the comments that named the old calls.
 
+- LS3's follow-up (aikit's CPU flags in `internal/cpufeat`, its kernels in `linalg/attn`, `linalg/elem` and
+  `linalg/bitvec`): `python3 scripts/aikit_surface/ls3_census_fix.py <aikit checkout>` re-keys
+  `docs/hardware-coverage.json`'s cpu predicates and K3's exclusion keys (`internal/diag/kernelprint/census_test.go`)
+  to the files and conditions as they now are, reading each file's location from the aikit checkout; then
+  `python3 scripts/aikit_surface/ls3_census_code.py` makes the code edits that go with it (K3's packages, its `Has*`
+  predicate map and a `cpufeat.HasX` selector in its evaluator, the moved packages' qualifiers; hwcensus reading the
+  go.work aikit and matching `Has<X>`), each an exact passage that fails by name if main changed it. By hand: the
+  JSON's `files` lists (informational). hwcensus reads go.mod's pin when no go.work is in effect, so it is red on the
+  released aikit until the bump, and green against the branch.
+
+Order on main's head at LS8: `aikit_surface_rewrite.py` (the four rules files), `kind_string_fix.py` per module and tag,
+`ls6_fix.py` (both rules files), `ls3_census_fix.py`, `ls3_census_code.py`, the hand edits above, then
+`scripts/refresh_parity_hashes.sh`.
+
 ## Proof, per move
 
 - `testdata/kernel_fingerprints.json` byte-identical and `TestCompute_table` passing without `-update`, on each
