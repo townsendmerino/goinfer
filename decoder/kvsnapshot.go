@@ -59,6 +59,10 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // key) stored for tooling. The blob is self-describing and CRC-guarded; load it
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
+	return s.snapshot(id, false)
+}
+
+func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 	c := s.cache
 	// Refuse the state this format does not carry: every kind whose snapshot cell in the cache-state grid (cachestate.go) is
 	// "refused", i.e. recurrent state (DeltaNet, Mamba-2, LFM2's conv window, KDA), the MLA latent, and the multimodal image blocks
@@ -103,7 +107,7 @@ func (s *Session) Snapshot(id string) []byte {
 		manualPos = 1
 	}
 	quantByte := byte(c.quant)
-	if kvSnapF16ByteF32ForTest && c.quant == kvqF16 {
+	if f16ByteAsF32 && c.quant == kvqF16 {
 		quantByte = byte(kvqF32) // planted defect: the storage byte left at f32's value
 	}
 	wr.raw([]byte{manualPos, quantByte})
@@ -181,9 +185,6 @@ func (s *Session) Snapshot(id string) []byte {
 	wr.u32(crc32.ChecksumIEEE(wr.buf))
 	return wr.buf
 }
-
-// kvSnapF16ByteF32ForTest writes an f16 cache's storage byte as f32's: a planted defect for TestKVF16_F1SnapshotAndCopy.
-var kvSnapF16ByteF32ForTest bool
 
 // LoadSession reconstructs a *Session from a Snapshot blob, validating its KV
 // geometry against this model (cache layout must match) before trusting any

@@ -239,20 +239,17 @@ type rowReader func(r int, dst []float32) error
 // goroutines; a smaller one is not worth the fan-out.
 const streamEmbedParallelMinElems = 1 << 22
 
-// streamEmbedWorkersForTest, when positive, is the number of row ranges forRowRanges uses, whatever the table's size.
-var streamEmbedWorkersForTest int
-
 // forRowRanges runs do over [0, rows) split into contiguous ranges, one goroutine per range, each with a reader of its own
-// from newReader, so a reader may keep state. Every range but the last is a multiple of align rows long (a reader that
+// from newReader, so a reader may keep state. When workers <= 0, the worker count defaults to GOMAXPROCS for tables at or
+// above streamEmbedParallelMinElems and 1 below. Every range but the last is a multiple of align rows long (a reader that
 // caches blocks of align rows then never shares a block with another range). do must write only its own rows. The first
 // range's error wins, so a failure reads the same however the ranges were scheduled.
-func forRowRanges(rows, cols, align int, newReader func() rowReader, do func(lo, hi int, read rowReader) error) error {
-	workers := 1
-	if rows*cols >= streamEmbedParallelMinElems {
-		workers = runtime.GOMAXPROCS(0)
-	}
-	if streamEmbedWorkersForTest > 0 {
-		workers = streamEmbedWorkersForTest
+func forRowRanges(rows, cols, align, workers int, newReader func() rowReader, do func(lo, hi int, read rowReader) error) error {
+	if workers <= 0 {
+		workers = 1
+		if rows*cols >= streamEmbedParallelMinElems {
+			workers = runtime.GOMAXPROCS(0)
+		}
 	}
 	align = max(align, 1)
 	per := (rows + workers - 1) / max(workers, 1)
@@ -287,7 +284,14 @@ func forRowRanges(rows, cols, align int, newReader func() rowReader, do func(lo,
 // skipRow4 is false for every load that will decode: Embed/LMHead are read via .Row() on the host on every backend, so the
 // row4-skip trade (a slower CPU fallback for less resident memory) is not this class's call, and quantizeEmbedWM makes
 // the same choice. Only a build for a sink passes true (!repackForDecode(sink)): nothing reads the table there.
-func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, align int, newReader func() rowReader) (linalg.WeightMat, error) {
+func streamEmbedWorkers(sink *giwWriter) int {
+	if sink == nil {
+		return 0
+	}
+	return sink.testHooks.embedWorkers
+}
+
+func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, align, workers int, newReader func() rowReader) (linalg.WeightMat, error) {
 	if mode == quantQ4K {
 		mode = quantInt8I8 // a logit table has no raw Q4_K form here, as in streamQuantizedRow4
 	}
@@ -298,7 +302,7 @@ func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow
 	case quantInt8, quantInt8I8:
 		q8 := make([]int8, rows*cols)
 		scales := make([]float32, rows)
-		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+		err := forRowRanges(rows, cols, align, workers, newReader, func(lo, hi int, read rowReader) error {
 			scratch := make([]float32, cols)
 			for r := lo; r < hi; r++ {
 				if err := read(r, scratch); err != nil {
@@ -318,7 +322,7 @@ func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow
 		bpr := (cols + 1) / 2
 		q4 := make([]byte, rows*bpr)
 		q4s := make([]uint16, rows*nGroups)
-		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+		err := forRowRanges(rows, cols, align, workers, newReader, func(lo, hi int, read rowReader) error {
 			scratch := make([]float32, cols)
 			rowScales := make([]float32, nGroups)
 			for r := lo; r < hi; r++ {
@@ -336,7 +340,7 @@ func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow
 		return repackedOnlyOrCanonical(linalg.WrapInt4F16(q4, q4s, rows, cols, group), needCanonical, skipRow4), nil
 	default: // quantNone: keep the full f32
 		f32 := make([]float32, rows*cols)
-		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+		err := forRowRanges(rows, cols, align, workers, newReader, func(lo, hi int, read rowReader) error {
 			for r := lo; r < hi; r++ {
 				if err := read(r, f32[r*cols:(r+1)*cols]); err != nil {
 					return err

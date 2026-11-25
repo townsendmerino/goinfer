@@ -949,6 +949,9 @@ type giwWriter struct {
 	// layerBudget is the memory streamLayers may hold in built, unwritten layers (stream mode). Zero builds one layer at
 	// a time.
 	layerBudget int64
+
+	// testHooks carries per-stream test overrides populated from context by StreamTranscodeGGUF/StreamTranscodeDir.
+	testHooks streamTestHooks
 }
 
 func (w *giwWriter) raw(b []byte) {

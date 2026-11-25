@@ -95,25 +95,24 @@ func TestStreamLayers_window(t *testing.T) {
 // TestStreamLayers_everyWindowWritesTheSameBytes: a dense model streamed with windows of 2, 3 and more layers than it has
 // writes the bytes a one-layer-at-a-time stream writes, from a safetensors directory and from a GGUF.
 func TestStreamLayers_everyWindowWritesTheSameBytes(t *testing.T) {
-	defer func() { streamLayerWindowForTest = 0 }()
 	for _, c := range []struct {
 		src    string
-		stream func(w io.Writer) error
+		stream func(ctx context.Context, w io.Writer) error
 	}{
-		{"../testdata/olmo3-tiny", func(w io.Writer) error {
-			_, err := StreamTranscodeDir(context.Background(), "../testdata/olmo3-tiny", w, "int4", true, GIWTargetNone, "t")
+		{"../testdata/olmo3-tiny", func(ctx context.Context, w io.Writer) error {
+			_, err := StreamTranscodeDir(ctx, "../testdata/olmo3-tiny", w, "int4", true, GIWTargetNone, "t")
 			return err
 		}},
-		{"../testdata/gemma2-hd-tiny.gguf", func(w io.Writer) error {
-			_, err := StreamTranscodeGGUF(context.Background(), "../testdata/gemma2-hd-tiny.gguf", w, "int4", false, GIWTargetNone, "t")
+		{"../testdata/gemma2-hd-tiny.gguf", func(ctx context.Context, w io.Writer) error {
+			_, err := StreamTranscodeGGUF(ctx, "../testdata/gemma2-hd-tiny.gguf", w, "int4", false, GIWTargetNone, "t")
 			return err
 		}},
 	} {
 		var ref []byte
 		for _, k := range []int{1, 2, 3, 64} {
-			streamLayerWindowForTest = k
+			ctx := withStreamTestHooks(context.Background(), streamTestHooks{layerWindow: k})
 			var b bytes.Buffer
-			if err := c.stream(&b); err != nil {
+			if err := c.stream(ctx, &b); err != nil {
 				t.Fatalf("%s, window %d: %v", c.src, k, err)
 			}
 			if k == 1 {

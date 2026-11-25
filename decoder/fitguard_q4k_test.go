@@ -51,9 +51,7 @@ func TestFitEstimate_q4kAgreesWithResidentWeightBytes(t *testing.T) {
 				t.Skipf("no model at %s", path)
 			}
 			est := estimateGGUFWeightBytes(path, quantQ4K)
-			q4kPriceAsInt4ForTest = true
-			old := estimateGGUFWeightBytes(path, quantQ4K)
-			q4kPriceAsInt4ForTest = false
+			old, _ := estimateGGUFWeightBreakdownWith(path, quantQ4K, true)
 			m, err := Load(path, Options{Quant: "q4k", ResidentContext: 64})
 			if _, ok := errors.AsType[*FitDeclineError](err); ok {
 				t.Fatalf("the fit guard refused the measuring load, so this row is unmeasured: %v", err)
