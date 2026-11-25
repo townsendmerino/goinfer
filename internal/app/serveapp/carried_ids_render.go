@@ -38,7 +38,7 @@ func requestNamespace(*http.Request) string { return "" }
 // and whether it is an added token) and of the weights' identity (the fingerprint less its mtime, so a copy of the same file
 // on another server matches, and the adapter).
 func (lm *loadedModel) idsIdentity() string {
-	lm.idsIdentOnce.Do(func() {
+	lm.caches.idsIdentOnce.Do(func() {
 		h := sha256.New()
 		if lm.tk != nil {
 			for id := range lm.tk.Size() {
@@ -56,9 +56,9 @@ func (lm *loadedModel) idsIdentity() string {
 			fp = f[0] + "|" + f[1] + "|" + f[3]
 		}
 		h.Write([]byte("\x00" + fp + "\x00" + adapter))
-		lm.idsIdent = hex.EncodeToString(h.Sum(nil)[:16])
+		lm.caches.idsIdent = hex.EncodeToString(h.Sum(nil)[:16])
 	})
-	return lm.idsIdent
+	return lm.caches.idsIdent
 }
 
 // encodePrompt renders and tokenizes a prompt as the generation routes do: RenderToolsSegments when tools are given, else

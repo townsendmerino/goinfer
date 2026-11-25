@@ -49,7 +49,7 @@ func clefServer(t *testing.T) (*httptest.Server, *server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm := &loadedModel{name: "clef", model: bb, clef: cm}
+	lm := &loadedModel{name: "clef", model: bb, decisions: decisionState{clef: cm}}
 	srv := &server{models: map[string]*loadedModel{"clef": lm}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/systemone", srv.handleSystemOne)

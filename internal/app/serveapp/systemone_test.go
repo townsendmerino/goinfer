@@ -44,10 +44,10 @@ func systemOneServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm.deciderOnce.Do(func() { lm.decider = d })
+	lm.decisions.deciderOnce.Do(func() { lm.decisions.decider = d })
 	// The tiny fixture's context is 128 tokens and it has no tokenizer, so the pre-tokenize byte guard would assume one
 	// byte per token and refuse a jevx-sized request; give it a real vocabulary's longest-token bound.
-	lm.maxTokBytesOnce.Do(func() { lm.maxTokBytes = 64 })
+	lm.caches.maxTokBytesOnce.Do(func() { lm.caches.maxTokBytes = 64 })
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/systemone", srv.handleSystemOne)
 	ts := httptest.NewServer(mux)

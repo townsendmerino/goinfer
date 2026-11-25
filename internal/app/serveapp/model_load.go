@@ -51,10 +51,10 @@ func (s *server) loadAdapters(cfg config) error {
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, closer: base.closer, tmpl: base.tmpl, stopIDs: base.stopIDs,
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
-			spec:           cfg.spec == "ngram",
-			specAdaptive:   cfg.specAdaptive,
-			sessions:       newSessionLRU(base.model, cfg.kvSessions, 0, fp),
-			tokenBytesFrom: base,
+			spec:         cfg.spec == "ngram",
+			specAdaptive: cfg.specAdaptive,
+			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			caches:       modelCaches{tokenBytesFrom: base},
 		}
 		lm.sessions.adapter = spec.name
 		if cfg.maxQueue > 0 {
@@ -164,7 +164,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
+		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, decisions: decisionState{head: head}, source: spec.path,
 		sampling:     mcfg.Sampling,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
@@ -196,7 +196,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		if tk == nil {
 			return nil, fmt.Errorf("--model %q is a Clef model but has no tokenizer.json: its record encoder tokenizes the schema fragment by fragment", spec.path)
 		}
-		if lm.clef, err = clef.NewModel(model, clefHead, clef.TokenizerFunc(tk), 0); err != nil {
+		if lm.decisions.clef, err = clef.NewModel(model, clefHead, clef.TokenizerFunc(tk), 0); err != nil {
 			return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 		}
 	}
@@ -226,10 +226,10 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	for _, line := range modelBanner(lm, bannerCfg) {
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
 	}
-	if lm.clef != nil {
+	if lm.decisions.clef != nil {
 		fmt.Fprintf(os.Stderr, "  decisions: route C (clef), joint head %d-wide (CPU, f32), backbone through PromptHiddenAll: on the device when the model is resident on a backend that implements it (CUDA), the CPU otherwise, POST /v1/systemone\n", clefHead.Cfg.Width)
 	}
-	if h := lm.head; h != nil {
+	if h := lm.decisions.head; h != nil {
 		how := "weights merged"
 		if h.AdapterDir() != "" {
 			how = "adapter merged at load; this entry's text generation is the decision model's, not the base's"

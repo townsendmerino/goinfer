@@ -253,9 +253,9 @@ func typesafeConfidence(pmax float64, n int) float64 {
 // getDecider builds this model's decider once: its label tokens resolved, the -decisions-template, and the
 // -decisions-calibration temperatures if any.
 func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
-	lm.deciderOnce.Do(func() {
+	lm.decisions.deciderOnce.Do(func() {
 		if lm.model == nil || lm.tk == nil {
-			lm.deciderErr = errors.New("not a generative model")
+			lm.decisions.deciderErr = errors.New("not a generative model")
 			return
 		}
 		tmpl := cfg.decisionsTemplate
@@ -264,21 +264,21 @@ func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
 		}
 		var cal *decide.Calibration
 		if cfg.decisionsCal != "" {
-			if cal, lm.deciderErr = decide.LoadCalibration(cfg.decisionsCal); lm.deciderErr != nil {
+			if cal, lm.decisions.deciderErr = decide.LoadCalibration(cfg.decisionsCal); lm.decisions.deciderErr != nil {
 				return
 			}
 		}
-		if lm.head != nil {
+		if lm.decisions.head != nil {
 			// A head carries its own template and calibration.json: -decisions-template and -decisions-calibration
 			// describe label scoring and do not apply to it.
-			lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
-				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model), HiddenMany: decide.ModelHiddenMany(lm.model)})
+			lm.decisions.decider, lm.decisions.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
+				decide.Options{Template: lm.decisions.head.Template, Head: lm.decisions.head, Hidden: decide.ModelHidden(lm.model), HiddenMany: decide.ModelHiddenMany(lm.model)})
 			return
 		}
-		lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(lm.model),
+		lm.decisions.decider, lm.decisions.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(lm.model),
 			decide.Options{Template: tmpl, Calibration: cal, PrefillMany: decide.ModelPrefillMany(lm.model)})
 	})
-	return lm.decider, lm.deciderErr
+	return lm.decisions.decider, lm.decisions.deciderErr
 }
 
 // jsonText is a TypeSafe text field as the prompt shows it: a JSON string's text, anything else (an object, an

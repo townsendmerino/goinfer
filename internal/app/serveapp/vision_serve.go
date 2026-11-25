@@ -97,8 +97,8 @@ func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family strin
 // visionFeatureCache is this model's per-image tower-output cache, made on first use and sized then by
 // featureCacheSize.
 func (lm *loadedModel) visionFeatureCache() *featureCache {
-	lm.featCacheOnce.Do(func() { lm.featCache = newFeatureCache(lm.featureCacheSize()) })
-	return lm.featCache
+	lm.caches.featOnce.Do(func() { lm.caches.feat = newFeatureCache(lm.featureCacheSize()) })
+	return lm.caches.feat
 }
 
 // featureCacheSize is featureCacheBudgetFor over this model's fit plan, read against the memory available when it is
