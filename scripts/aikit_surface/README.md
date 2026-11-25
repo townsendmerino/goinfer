@@ -44,8 +44,9 @@ moved symbol; those are edited by hand.
   both batch calls into `MatmulBTBatchInto`. 21 files. By hand: `wmW4A8Op` (`decoder/weightmat.go`) builds
   `BatchOp{W: w, Dst: dst}`; backend/webgpu's `MatmulW8A8Batch` and `MatmulW4A8Batch` read the bytes through `op.W.Int8()`
   and `op.W.Int4F16()` (residency still keyed by the same backing pointer); kernelprint's two batch kernels wrap their
-  quantized bytes in a `WeightMat` (labels and draw order unchanged); three tests that built ops from raw slices
-  (`decoder/backend_w4a8_batch_test.go`, `decoder/parthreshold_test.go`, `backend/webgpu/internal/kernels/batch_test.go`);
+  quantized bytes in a `WeightMat` (labels and draw order unchanged); four tests that built ops from raw slices
+  (`decoder/backend_w4a8_batch_test.go`, `decoder/parthreshold_test.go`, `backend/webgpu/internal/kernels/batch_test.go`,
+  and `backend/webgpu/backend_w4a8_batch_test.go`, which builds only under `gpu goinfer_testhooks`);
   and the comments that named the old calls.
 
 - LS3's follow-up (aikit's CPU flags in `internal/cpufeat`, its kernels in `linalg/attn`, `linalg/elem` and
