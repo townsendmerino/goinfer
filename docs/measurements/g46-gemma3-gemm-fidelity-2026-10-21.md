@@ -11,6 +11,8 @@
 > from there. Its prompts are encoded from the tree's own sources (`kv0TextTokens`), so a re-run on a later tree
 > reads different text.
 
+> **Re-read 2026-11-24** on main `7d4b58916`, the port run as registered: AMBIGUOUS (11 cells PASS, seed 9001 at 12,160 parked at 0.990694; the controls held). Today's cells beside these: `docs/measurements/g46-gemma3-gemm-fidelity-2026-11-24.md`.
+
 **Registered before the run** (decided 2026-10-21: run it by day on the CUDA box, `docs/queue-correctness.md` G46). The rule and the bar are
 `docs/tasks/task-kv-architecture-2026-10.md` (KV3) and `docs/measurements/kv3-tiled-exact-2026-10-13.md` amendment 1: the batched prefill's
 last-row logits against the per-token path, **cosine 0.99 or better and equal argmax**. That record read the default arm at 1,200 tokens (0.9963),
