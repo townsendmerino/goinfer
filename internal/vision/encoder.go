@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/attn"
 	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
@@ -463,7 +464,7 @@ type encScratch struct {
 type encHeadScratch struct {
 	qh, kh, vBlk, ch []float32
 	hi               []int
-	fused            *linalg.FusedAttnScratch
+	fused            *attn.FusedAttnScratch
 	mmWS             *linalg.Workspace
 }
 
@@ -474,7 +475,7 @@ func newEncHeadScratch(kt, hd int) encHeadScratch {
 		qh: make([]float32, kt*hd), kh: make([]float32, kt*hd), vBlk: make([]float32, kt*hd),
 		ch:    make([]float32, kt*hd),
 		hi:    make([]int, kt),
-		fused: linalg.NewFusedAttnScratch(kt, hd),
+		fused: attn.NewFusedAttnScratch(kt, hd),
 		mmWS:  ws,
 	}
 }
@@ -520,11 +521,11 @@ func (e *Encoder) attentionInto(att, q, k, v []float32, np int, scale float64, s
 
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head int) error {
 		off := head * hd
-		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
+		attn.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
 		for i := range np { // Q gather: not covered by GatherVBlockMajor (K/V only)
 			copy(ws.qh[i*hd:(i+1)*hd], q[i*hidden+off:i*hidden+off+hd])
 		}
-		if !linalg.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
+		if !attn.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
 			return fmt.Errorf("vision: AttendTileFused declined for np=%d hd=%d — scratch sizing invariant violated", np, hd)
 		}
 		for i := range np {

@@ -15,6 +15,7 @@ moved symbol; those are edited by hand.
 
 - `elem.rules` (the elementwise kernels): the two comments the script lists, in `backend/cuda/audio_encoder_test.go`
   and `backend/cuda/kernels/gelu_quant_test.go`.
+- `attn.rules` (the attention kernels): nothing.
 
 ## Proof, per move
 

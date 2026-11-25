@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/attn"
 	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
@@ -673,7 +674,7 @@ var suite = []kernel{
 				for _, M := range []int{1, 2, 5, 17} {
 					kvDim := 2*hd + 3
 					a, keys, dst := g.vec(M*hd, 1), g.vec(nKeys*kvDim, 1), make([]float32, M*nKeys)
-					linalg.MatmulQKAcc64(a, keys, dst, M, hd, nKeys, hd, kvDim)
+					attn.MatmulQKAcc64(a, keys, dst, M, hd, nKeys, hd, kvDim)
 					s.tag("qk", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -686,7 +687,7 @@ var suite = []kernel{
 				for _, G := range []int{1, 2, 4, 6, 8} {
 					kvDim := 2*hd + 3
 					a, keys, dst := g.vec(G*hd, 1), g.vec(nKeys*kvDim, 1), make([]float32, G*nKeys)
-					linalg.MatmulQKAcc64Group(a, keys, dst, G, hd, nKeys, hd, kvDim)
+					attn.MatmulQKAcc64Group(a, keys, dst, G, hd, nKeys, hd, kvDim)
 					s.tag("qk", hd, nKeys, G)
 					s.f32(dst)
 				}
@@ -700,7 +701,7 @@ var suite = []kernel{
 					kvDim := 2*hd + 3
 					scores, vals := g.probs(M, nKeys), g.vec(nKeys*kvDim, 1)
 					dst, acc := make([]float32, M*hd), make([]float64, hd)
-					linalg.MatmulAVAcc64(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
+					attn.MatmulAVAcc64(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
 					s.tag("av", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -714,7 +715,7 @@ var suite = []kernel{
 					kvDim := 2*hd + 3
 					scores, vals := g.probs(G, nKeys), g.vec(nKeys*kvDim, 1)
 					dst, acc := make([]float32, G*hd), make([]float64, G*hd)
-					linalg.MatmulAVAcc64Group(scores, vals, dst, acc, G, nKeys, hd, hd, kvDim)
+					attn.MatmulAVAcc64Group(scores, vals, dst, acc, G, nKeys, hd, hd, kvDim)
 					s.tag("av", hd, nKeys, G)
 					s.f32(dst)
 				}
@@ -763,7 +764,7 @@ var suite = []kernel{
 				kvDim := 2 * hd
 				keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 				kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-				linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 1, hd, kvDim, nKeys)
+				attn.GatherVBlockMajor(kh, vBlk, keys, vals, 1, hd, kvDim, nKeys)
 				s.tag("g", hd, nKeys)
 				s.f32(kh)
 				s.f32(vBlk)
@@ -781,7 +782,7 @@ var suite = []kernel{
 						kvDim := hd
 						keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 						kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-						linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
+						attn.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
 						qh, ch := g.vec(kt*hd, 1), make([]float32, kt*hd)
 						lo, hi := make([]int, kt), make([]int, kt)
 						for i := range kt {
@@ -790,7 +791,7 @@ var suite = []kernel{
 								lo[i] = max(0, hi[i]-window)
 							}
 						}
-						ok := linalg.AttendTileFused(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
+						ok := attn.AttendTileFused(linalg.MatmulBT, qh, kh, vBlk, ch, attn.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
 						s.tag("fa", hd, nKeys, kt, window)
 						s.ok(ok)
 						s.f32(ch)
@@ -810,7 +811,7 @@ var suite = []kernel{
 						kvDim := hd
 						keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 						kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-						linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
+						attn.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
 						qh, ch := g.vec(kt*hd, 1), make([]float32, kt*hd)
 						lo, hi := make([]int, kt), make([]int, kt)
 						for i := range kt {
@@ -819,7 +820,7 @@ var suite = []kernel{
 								lo[i] = max(0, hi[i]-window)
 							}
 						}
-						ok := linalg.AttendTileFusedContractExp(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
+						ok := attn.AttendTileFusedContractExp(linalg.MatmulBT, qh, kh, vBlk, ch, attn.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
 						s.tag("fac", hd, nKeys, kt, window)
 						s.ok(ok)
 						s.f32(ch)

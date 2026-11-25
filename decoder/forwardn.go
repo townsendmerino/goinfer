@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/aikit/linalg/attn"
 )
 
 // cpuFastAttention reports whether the live environment enables f32 prefill attention (GOINFER_CPU_FAST_ATTENTION; on unless
@@ -384,7 +386,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
 			// (TestAttendStrided_matchesGatherReference checks it at this stride).
 			if useAcc64 {
-				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
+				attn.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
 			} else {
 				mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
 			}
@@ -492,9 +494,9 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			direct := useAcc64 && kt == 1
 			if direct {
 				b := t0*qDim + qhead*hd
-				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+				attn.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
 			} else if useAcc64 {
-				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
+				attn.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
 			} else {
 				mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 			}
@@ -519,7 +521,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 		qh0 := kvh * group
 		a := q[qh0*hd : qh0*hd+group*hd]
 		gScores := ws.groupScores[:group*nKeys]
-		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
+		attn.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
 		loP := ap.Start(pos) - base
 		hiP := cache.attendHi(pos) - base
@@ -563,7 +565,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 		// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
 		// straight into ctx with no scratch copy.
 		gAvAcc := ws.groupAvAcc[:group*hd]
-		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
+		attn.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
 		atomic.AddInt64(&attnGroupedRuns, 1)
 	}
 	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
@@ -611,7 +613,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			for kvh := range nKV {
 				qh0 := kvh * group
 				a := q[qh0*hd : qh0*hd+group*hd]
-				linalg.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*kvDim, kvDim)
+				attn.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*kvDim, kvDim)
 				dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
 				for g := range group {
 					copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
@@ -673,7 +675,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			sliceAcc := ws.groupAvAcc[:group*sliceHd]
 			for kvh := range nKV {
 				rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-				linalg.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, kvDim)
+				attn.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, kvDim)
 				dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
 				for g := range group {
 					copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])

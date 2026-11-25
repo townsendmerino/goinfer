@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/attn"
 )
 
 // Fused (FlashAttention-style) prefill attention. The materialized schedule writes a kt x nKeys score block, reads and
@@ -20,7 +20,7 @@ import (
 
 // fusedKeyBlock is the key-block width. 512 keeps the per-tile score block at kt*512 floats (512 KiB at kt=256), small
 // enough to stay resident, which is the entire mechanism; 256 measured within noise of it and 1024 is worse.
-const fusedKeyBlock = linalg.FusedAttnKeyBlock
+const fusedKeyBlock = attn.FusedAttnKeyBlock
 
 // attendTileFused computes one query tile's attention into ch, keeping the score block resident. It returns false when
 // it declines, and the caller must then run the materialized path. It declines for tree attention: treeMask is a
@@ -39,8 +39,8 @@ func attendTileFused(
 	kt, hd, nKeys int, scale float64,
 	lo, hi []int,
 ) bool {
-	return linalg.AttendTileFused(mm, qh, kh, vBlk, ch,
-		&linalg.FusedAttnScratch{SBlk: sBlk, Tmp: tmp, Acc: acc, MRun: mRun, LRun: lRun},
+	return attn.AttendTileFused(mm, qh, kh, vBlk, ch,
+		&attn.FusedAttnScratch{SBlk: sBlk, Tmp: tmp, Acc: acc, MRun: mRun, LRun: lRun},
 		kt, hd, nKeys, scale, lo, hi)
 }
 
@@ -49,7 +49,7 @@ func attendTileFused(
 // [hd, nKeys] layout cannot be key-range sliced contiguously, so the layout is chosen at gather time rather than
 // re-transposed per block.
 func gatherKVFused(kh, vBlk, keys, vals []float32, kvh, hd, kvDim, nKeys int) {
-	linalg.GatherVBlockMajor(kh, vBlk, keys, vals, kvh, hd, kvDim, nKeys)
+	attn.GatherVBlockMajor(kh, vBlk, keys, vals, kvh, hd, kvDim, nKeys)
 }
 
 // fusedScratch holds the per-worker buffers the fused schedule needs, allocated only when fusion is enabled. sBlk is

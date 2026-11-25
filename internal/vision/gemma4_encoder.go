@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/aikit/linalg/attn"
 )
 
 // Gemma 4's vision tower (the "gemma4" plain family — E2B/E4B/26B-A4B/31B, NOT the
@@ -499,11 +501,11 @@ func (e *Gemma4Encoder) attendInto(att, q, k, v []float32, np, hd, nH int, scale
 	hidden := e.Cfg.HiddenSize
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head int) error {
 		off := head * hd
-		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
+		attn.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
 		for i := range np {
 			copy(ws.qh[i*hd:(i+1)*hd], q[i*hidden+off:i*hidden+off+hd])
 		}
-		if !linalg.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
+		if !attn.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
 			return fmt.Errorf("vision: AttendTileFused declined for np=%d hd=%d — scratch sizing invariant violated", np, hd)
 		}
 		for i := range np {
