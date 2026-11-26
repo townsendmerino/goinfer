@@ -29,10 +29,10 @@ func (t tensorIdentity) String() string {
 }
 
 // loaderSkip is the *Weights fields the identity leaves out: the config and architecture (the program fingerprint,
-// programFingerprint, covers what they build), the source handles and profile, and bakedQuant, the label a .giw load carries and a direct load does
+// programFingerprint, covers what they build), the source handles, and bakedQuant, the label a .giw load carries and a direct load does
 // not. kquant is not walked as a field: each entry is hashed into the identity of the WeightMat whose int8 copy it keys.
 var loaderSkip = map[string]bool{
-	"prof": true, "Cfg": true, "arch": true, "st": true, "backing": true, "schema": true,
+	"Cfg": true, "arch": true, "st": true, "backing": true, "schema": true,
 	"kquant": true, "ggufPath": true, "kquantFile": true, "bakedQuant": true,
 }
 
