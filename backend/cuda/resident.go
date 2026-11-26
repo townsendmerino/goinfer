@@ -12,7 +12,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -258,10 +257,7 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
-	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
-	xhostBuf []float32
-	// pass is the batched prefill pass in progress (prefillPass), reset by each pass and cleared at its end. Executor goroutine only.
-	pass prefillPass
+	prefillRun
 	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
 	costState
@@ -302,17 +298,14 @@ type cudaResident struct {
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
 	// must recompute it per row (position varies within one batched launch, unlike decode's single scalar per call).
 	attnTempBeta, attnTempOrigMaxPos float64
-	// qTempRowsB is rope_kv_batched's per-row query-scale table (attnTempRows), sized to the largest batched pass seen; qTempRowsKey is the (startPos, M) it currently holds.
-	qTempRowsB   Buffer
-	qTempRowsCap int
-	qTempRowsKey [2]int
-	vNormUnit    Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm (Gemma 4: every layer with vNorm). nil unless any layer has vNorm.
-	qkNorm       bool   // arch needs per-head Q/K RMSNorm before RoPE
-	qkNormWhole  bool   // QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	rmsAddOne    bool   // (1+w) offset — false for Qwen3/Llama
-	act          int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich     bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
-	postOnly     bool   // NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	prefillKernels
+	vNormUnit   Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm (Gemma 4: every layer with vNorm). nil unless any layer has vNorm.
+	qkNorm      bool   // arch needs per-head Q/K RMSNorm before RoPE
+	qkNormWhole bool   // QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	rmsAddOne   bool   // (1+w) offset — false for Qwen3/Llama
+	act         int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich    bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	postOnly    bool   // NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	// Per-32 activation groups, LayerNorm, parallel-block and logit-scale fields (Cohere/Command-R, Cohere2).
 	actG32        bool    // decoder.Options.ActQuantGroup == 32: actgroup.cu's per-32 kernels are bound into fRms/fQ/fSw/gemvW4/gemvW8, and every activation scale buffer holds 2·K/32 floats (actScaleLen: scales, then per-group sums for gemv_q4k_g32)
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
@@ -357,127 +350,25 @@ type cudaResident struct {
 	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
 	fQKVg32, fGUg32 Pipeline
 	fuseG32         bool
-	// Batched (M=len) prefill pipelines (prefill_batched.ptx), the weight-stationary path. bGemv is the batched W4A8
-	// GEMV; the rest are the M=1 glue kernels with an M dimension, each bit-identical per row. Loaded once at build
-	// (small module).
-	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
-	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
-	// The per-32 rows GEMVs (prefill_g32.cu), bound with the per-32 quantizers into bRms/bQuant/bSw under actG32;
-	// prefillG32Ready says all of them loaded, and without it a per-32 load's prefill declines.
-	bQ4KRows, bQ5KRows, bQ6KRows, bW8G32Rows Pipeline
-	prefillG32Ready                          bool
-	bQKN                                     Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
-	bNormF32                                 Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
-	bLN                                      Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
-	zeroBias                                 Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
 	splitKVState
-	psScores, psSoftmax, psVsum Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
-	psLaunches                  int      // launch groups of it, for tests
-	kv8Store                    Pipeline // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
+	kvState
 
-	// L2: the fused prefill attention, one instantiation per supported head
-	// dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module loaded; every selection site
-	// treats the zero Pipeline as "use attn_batched".
-	bAttnFused64, bAttnFused128 Pipeline
-	// Tile-shape arms of attn_fused (attn_fused_bm.cu): 32x64 and 32x32 (query rows x keys), per head dim.
-	// attnTile: 0 = default (128x64 for hd128 layers without a window, else 64x64), -1 = 64x64 everywhere (GOINFER_CUDA_ATTN_FUSED_TILE=64x64), 1/2/3 = force 32x64 / 32x32 / 128x64 (experiment arms).
-	bAttnBM32x64hd64, bAttnBM32x64hd128, bAttnBM32x32hd64, bAttnBM32x32hd128 Pipeline
-	bAttnBM128hd64, bAttnBM128hd128                                          Pipeline
-	attnTile                                                                 int
-	// L3: the tensor-core int4 GEMM. Zero-valued unless selected AND loaded; bGemvB
-	// treats the zero Pipeline as "use gemv_w4a8_rn", which is the exact path.
-	bGemmMMA Pipeline
-	// Per-lever selection: fastAttn drives L2, fastGemm drives L3.
-	fastAttn, fastGemm bool
-
-	// planning is set while BuildResident prices the margin on the planned geometry, before any module loads: the span routing then
-	// assumes the row-batched kernels and, under fastAttn, the fused attention for head dims 64 and 128 (fusedLoadedFor).
-	planning bool
-	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
-	openedForPlan bool
+	planState
 	dnetState
 	mambaState
 
 	gptOssState
-	prefillReady    bool     // batched kernels loaded; PrefillLast usable
-	bAttnImg        Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
-	imgPrefillReady bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	visionPrefill
 	floatActState
-	bAttnSpan            Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
-	spanPrefillReady     bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
-	spanPass             bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
-	bRopeKVMRoPE         Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
-	pairwiseRoPE         bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
-	mropePrefillReady    bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	mropeTakesMode       bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
-	mropeMode            int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
-	mropeSec0, mropeSec1 int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
-	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a row-count knob to
-	// shrink: prefillChunked (retries the SAME pass smaller and stores whatever width worked) and PrefillImageLast
-	// (cannot retry a bidirectional image block smaller, since an image OOM is a function of that block's own M, but
-	// halves and stores the budget on OOM so the NEXT image call is caught by its cheap pre-check). 0 until a pass
-	// OOMs, then the width that worked (for the image path, the width to try next). A card that cannot hold the
-	// default chunk is thereby discovered ONCE, not on every prompt, which matters beyond waste: a context taken to
-	// refusal and kept in use can afterwards launch kernels that "return SUCCESS and execute NOTHING"
-	// (docs/code-notes/cuda.md#cudaResident.prefillChunkCap). Atomic because both callers run on their own
-	// CALLER's goroutine (only the per-pass job is serialized through the executor).
-	prefillChunkCap atomic.Int64
-	// prefillWidth is the default pass width the build chose (prefillWidthFor; 0 before the choice, which reads as
-	// prefillDefaultChunk). GOINFER_PREFILL_CHUNK overrides it and prefillChunkCap lowers it (prefillBaseRows).
-	prefillWidth int
-	prof         *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
-	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once at the top of
-	// prefillCore. The fast-prefill floor is a property of the PROMPT, not of the chunk: prefillChunked splits a long
-	// prompt into passes of <=512 rows, so gating on M alone would judge a 3900-token prompt by its 512-row chunk.
-	// Per-pass mutable state on the resident, the same shape as prof above.
-	//
-	// It is NOT cleared after prefillCore returns: residentDrafter.DraftBlock (cuda/drafter.go) reads it too, via
-	// aboveFastPrefillFloor/bGemvB, and inherits whatever the TARGET's last prefill set. DraftBlock's doc says why
-	// that costs acceptance rate at worst, never correctness.
-	passPromptLen int
-	// forceExactKernels disables useAttnFused/useGemmMMA (the L2/L3 fast levers) for the DURATION of one prefillCore
-	// pass: per-pass mutable state like passPromptLen, set and cleared at prefillCore's own r.do(...) boundary. Those
-	// levers are chosen purely on shape, never on WHO is asking, and they are cosine-close to
-	// gemv_w4a8_rn/attn_batched, not bit-identical: HiddenLast's bit-identity contract and speculative verify's
-	// tailAllLogits/tailAllArgmax tails need decode-identical numerics. So it is true for every prefillCore tail
-	// except tailLastLogits (ordinary single-row-output prefill, where the cosine-gated tolerance applies). The
-	// drafter's own forward (cuda/drafter.go) never touches it: a proposal need not be bit-identical to anything,
-	// only the target's verify of it.
-	forceExactKernels bool
-	// stepChunk is a ragged step's prefill chunk for the duration of its pass (StepRagged); zero otherwise. Executor thread.
-	stepChunk raggedChunk
-	// chunkOrdinary is set by prefillChunked for the duration of a multi-chunk prefill whose FINAL tail is the ordinary tailLastLogits: its non-final passes (tailKVOnly) are part of that
-	// same prompt prefill and must get the same kernels as the final pass. Without it forceExactKernels (tail != tailLastLogits) demoted EVERY non-final chunk to the slow exact path
-	// (docs/measurements/prefill-chunk-demotion-2026-09-21.md). A HiddenLast prefill (tailHiddenLast) leaves it false, so every one of its chunks stays exact.
-	chunkOrdinary bool
-	// chunkPromptLen is the WHOLE prompt's length (startPos + all rows), set by prefillChunked for the duration of a multi-chunk prefill so the fast-prefill floor is judged on the prompt and not on
-	// the prompt-so-far: passPromptLen is startPos+M of THIS pass, so a first chunk narrower than the floor (the OOM-halving path, or GOINFER_PREFILL_CHUNK) would run the exact kernels and
-	// its later chunks the fast ones, mixing numerics inside one prompt (TestPrefillChunked_bitIdentical, chunk=300). Zero outside a chunked prefill.
-	chunkPromptLen int
-	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
-	fastAttnLaunches, fastGemmLaunches int
-	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch; headRows counts the
-	// rows batchedHeadFull heads, so it can prove a prefill chunk's unread rows took none.
-	raggedAttnLaunches, headRows int
-	// raggedFALaunches and raggedSKLaunches count fa_partial_ragged and splitkv_scores_ragged launches, so a test can prove a step's
-	// flash-lane and split-KV rows took one launch.
-	raggedFALaunches, raggedSKLaunches int
-	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
-	// loaded, when a step's rows take decode's own gap.
-	bRopeKVRagged, bAttnRagged Pipeline
-	exactAttnLaunches          int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
-	tile128Launches            int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
+	pairwiseRoPE bool // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
 	mlaState
 
-	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
-	launchErr   error // sticky first launch error within a launchToken call (reset per token)
-	layers      []cudaLayer
-	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
-	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
+	launchErr error // sticky first launch error within a launchToken call (reset per token)
+	layers    []cudaLayer
 	ckptState
-	extraBytes int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
-	lmW        cudaWQ
-	finalNorm  Buffer
+	lmW       cudaWQ
+	finalNorm Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
@@ -487,61 +378,9 @@ type cudaResident struct {
 	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
 	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
 	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
-	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
-	ksc, vsc                                            []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
+	gbKey, gbIdx, gbOut                                 Buffer // gumbel_stage1 per-block winners, and the drawn id
 
-	// The resident KV slots over the paged pools (kvpool.go). kvSlotsReq is the model's
-	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
-	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
-	// one, or a batched decode step row's while its attention runs.
-	kvSlotsReq      int
-	kvF16           bool             // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
-	kvI8            bool             // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
-	ctxPlanned      int              // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
-	deepPlan        *cudaDeepPlan    // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
-	allocSlackBytes int64            // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
-	wArena          *weightArena     // the dense weights' arena while uploadLayers sub-allocates from it; nil otherwise
-	wArenaStats     weightArenaStats // what the arena held when uploadLayers closed it
-	ctxMarginBytes  int64            // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
-	ctxMarginCtx    int              // the context the margin is priced at: the one the plan returned
-	kvSlotsN        int              // what checkKVFits granted (>= 1)
-	kvSlot          int
-	kvTabSlot       int
-	kvPools         [kvGroups]kvPool
-	kvTabs          []kvSlotTabs
-	kvTabDev        Buffer
-	kvTabStage      *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables
-	kvTabEv         []gpu.Event            // each staging entry's last copy
-	kvTabNext       int
-	// The pool's capacity rule (kvpool.go, KV4a-3): every slot is guaranteed kvShareBlocks blocks of the full group, the context the
-	// plan chose for one slot (kvShareCtx); kvRaise lets one conversation's cap (ctxCap) grow to the pool, up to modelCtx. kvSlotBusy marks
-	// the slots a running generation holds (decoder.ResidentKVSubsystem), kvSlotUse each slot's last write, kvEvicted the slots whose
-	// blocks were released to make room.
-	kvShareCtx, kvShareBlocks int
-	kvRaise                   bool
-	modelCtx                  int
-	kvSlotBusy, kvEvicted     []bool
-	// kvDemoted holds, per slot, the rows kvEvictIdle kept in host memory for a released slot (kvdemote.go), charged to kvHost, nil when
-	// demotion is off. kvValid is, per slot, the end of its sequence's written rows: its table can name blocks past that, from a longer
-	// sequence before.
-	kvDemoted   []*cudaKVSnapshot
-	kvHost      decoder.KVHostBudget
-	kvValid     []int
-	kvFloor     []int         // per slot, the shortest prefix it answers for: a wrapped upload holds no sliding-layer rows below its base, so a shorter prefix's window has none (0: any)
-	kvCopySrc   int           // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
-	kvUpload    *kvUploadPass // the upload in progress, nil when none
-	kvStopped   []bool        // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
-	kvStepAbort bool          // a reclaim happened while a batched step mapped its rows: the step must not launch
-	kvSlotUse   []uint64
-	kvUseTick   uint64
-
-	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
-	// windowed layers hold.
-	kvWin    bool
-	kvWindow int
-	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
-	kvBases  []int
+	kvWindowState
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
 	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an

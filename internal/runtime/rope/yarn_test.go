@@ -1,4 +1,4 @@
-package decoder
+package rope
 
 import (
 	"encoding/json"
@@ -7,16 +7,18 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
-// TestYarn_matchesHF: computeInvFreq with a YaRN scaling must reproduce HF's
+// TestYarn_matchesHF: ComputeInvFreq with a YaRN scaling must reproduce HF's
 // _compute_yarn_parameters inv_freq id-for-id (and the plain table for the
 // sliding layers), validated against the committed golden pinned from the HF
 // source for Mellum2's rope params. Independent of the 12B checkpoint.
 //
 // Regenerate: .venv/bin/python scripts/pin_mellum_rope.py
 func TestYarn_matchesHF(t *testing.T) {
-	const path = "../testdata/mellum_rope_golden.json"
+	path := testpath.Testdata(t, "mellum_rope_golden.json")
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no golden at %s — regenerate with scripts/pin_mellum_rope.py", path)
@@ -40,18 +42,18 @@ func TestYarn_matchesHF(t *testing.T) {
 	base := gg.Params["base"]
 	dim := int(gg.Params["dim"])
 
-	yarn, err := newYarnScaling(gg.Params["factor"], gg.Params["original_max_position_embeddings"], nil, nil, &gg.Full.AttentionFactor, nil)
+	yarn, err := NewYarnScaling(gg.Params["factor"], gg.Params["original_max_position_embeddings"], nil, nil, &gg.Full.AttentionFactor, nil)
 	if err != nil {
 		t.Fatalf("newYarnScaling: %v", err)
 	}
-	if yarn.mscale != gg.Full.AttentionFactor {
-		t.Errorf("mscale = %v, want %v", yarn.mscale, gg.Full.AttentionFactor)
+	if yarn.Mscale != gg.Full.AttentionFactor {
+		t.Errorf("mscale = %v, want %v", yarn.Mscale, gg.Full.AttentionFactor)
 	}
 
-	gotYarn := computeInvFreq(base, dim, yarn)
+	gotYarn := ComputeInvFreq(base, dim, yarn)
 	closeVec(t, "yarn inv_freq", gotYarn, gg.Full.InvFreq)
 
-	gotPlain := computeInvFreq(base, dim, nil)
+	gotPlain := ComputeInvFreq(base, dim, nil)
 	closeVec(t, "plain inv_freq", gotPlain, gg.Sliding.InvFreq)
 }
 

@@ -174,14 +174,14 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 			if arch.ropeScaling == nil {
 				t.Fatal("ropeScaling = nil, want YaRN on the full-attention layers")
 			}
-			if arch.ropeScaling.factor != tc.yarnFactor {
-				t.Errorf("YaRN factor = %v, want %v", arch.ropeScaling.factor, tc.yarnFactor)
+			if arch.ropeScaling.Factor != tc.yarnFactor {
+				t.Errorf("YaRN factor = %v, want %v", arch.ropeScaling.Factor, tc.yarnFactor)
 			}
 			if tc.sliding > 0 && arch.ropeScalingLocal != nil {
 				t.Error("ropeScalingLocal != nil, want nil (sliding layers use plain RoPE, rope_type default)")
 			}
 			// The two inv-freq tables must have the per-layer-type WIDTHS, since
-			// applyRoPE reads the rotated half-width as len(invFreq). Getting this wrong
+			// rope.Apply reads the rotated half-width as len(invFreq). Getting this wrong
 			// silently rotates the wrong number of dims rather than failing.
 			wantGlobalHalf := headDim / 2
 			if tc.rotaryDim > 0 {

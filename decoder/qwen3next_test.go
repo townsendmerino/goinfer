@@ -98,7 +98,7 @@ func TestQwen3Next_descriptor(t *testing.T) {
 
 // TestQwen3Next_flatRopeNoRopeParameters confirms the real failure mode this
 // family would have hit if qwen3NextArchitecture just delegated to
-// qwen35Architecture unmodified: parseRopeSpec hard-errors on an empty
+// qwen35Architecture unmodified: rope.ParseSpec hard-errors on an empty
 // rope_parameters, and the real Qwen3-Next config never carries one at all.
 func TestQwen3Next_flatRopeNoRopeParameters(t *testing.T) {
 	cfg := &Config{

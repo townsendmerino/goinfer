@@ -7,7 +7,7 @@ import (
 // ValidateGptOss pins the gpt-oss assumptions: a valid sparse MoE on every layer
 // (num_local_experts / num_experts_per_tok / expert width) and a sliding window for
 // the alternating local layers. The attention (GQA + biases + per-head sinks) and
-// YaRN RoPE are validated by the generic head-dim checks + parseRopeScaling at
+// YaRN RoPE are validated by the generic head-dim checks + rope.ParseScaling at
 // resolve time.
 func (c *Config) ValidateGptOss() error {
 	nExperts := c.NumLocalExperts

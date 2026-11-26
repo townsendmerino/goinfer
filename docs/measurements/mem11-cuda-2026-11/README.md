@@ -1,4 +1,5 @@
 # MEM11-bf16 on CUDA: the bf16 drafter's upload (nobara-sb01)
+<!-- citations-at: bc313005c -->
 
 `docs/measurements/mem11-2026-10/README.md` left one thing open: "the CUDA drafter upload with a bf16 drafter (the packer change) ... runs only on nobara". Every CUDA drafter test
 loads the f32 conversion (`GOINFER_DFLASH_F32`); none attaches the bf16 checkpoint to the device.

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // bailingHybridArchitecture expresses Bailing Hybrid (inclusionAI, model_type "bailing_hybrid"; Ling 3.0): DeepSeek-style Multi-head
@@ -37,7 +39,7 @@ func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error
 		return nil, nil, fmt.Errorf("decoder(bailing_hybrid): kda_safe_gate=false (the plain unbounded decay gate) is not implemented — only Ling-3.0-tiny's own kda_safe_gate=true variant is")
 	}
 	base := cfg.RoPEGlobalBase
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(bailing_hybrid): %w", err)
 	}

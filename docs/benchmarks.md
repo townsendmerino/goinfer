@@ -1004,7 +1004,7 @@ per-row key counts, which an image block breaks — never engages below the 512-
 **Qwen2.5-VL's own version of the gap closed above.** Its image tokens already attend causally in
 prefill (no bidirectional mask, so `attn_batched` serves it unmodified), but the batched-prefill
 rope kernel only knew a single row-sequential rotation angle — m-RoPE needs a per-row, 3-component
-one (`decoder/rope.go`'s `applyMRoPE`), and — a real subtlety, not just a formatting change — even
+one (`internal/runtime/rope/rope.go`'s `ApplyMRoPE`), and — a real subtlety, not just a formatting change — even
 ORDINARY text rows after an image block need it too, since `mropePositions` compresses their
 position by the merged image grid rather than counting sequentially. Closed via a new resident
 kernel (`backend/cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.ResidentMRoPEPrefill`,

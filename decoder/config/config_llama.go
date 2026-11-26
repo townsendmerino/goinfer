@@ -6,7 +6,7 @@ import (
 
 // ValidateLlama pins the assumptions the llama forward path makes (dense, SwiGLU, GQA, single-base RoPE, no QK-norm). It
 // differs from ValidateQwen3 by allowing head_dim to be derived (EffectiveHeadDim()). RoPE scaling is handled by the adapter via
-// parseRopeScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
+// rope.ParseScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
 func (c *Config) ValidateLlama() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -61,7 +62,7 @@ func TestQwen25VL_e2eChain(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	mropePos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	mropePos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestMRoPEPositions(t *testing.T) {
 	}
 	const merge = 2 // testdata/qwen25vl-tiny spatial_merge_size
 
-	got, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	got, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}
@@ -125,8 +126,8 @@ func TestMRoPEPositions(t *testing.T) {
 }
 
 // TestApplyMRoPE_scalarEquivalence is the text-path-stays-inert gate at the kernel
-// level: for a TEXT token (all three position components equal), applyMRoPE must
-// produce EXACTLY what applyRoPE does for that scalar position — so text decode is
+// level: for a TEXT token (all three position components equal), rope.ApplyMRoPE must
+// produce EXACTLY what rope.Apply does for that scalar position — so text decode is
 // bit-identical whether or not the m-RoPE path is taken.
 func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 	const heads, headDim = 2, 16
@@ -143,8 +144,8 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 	for _, pos := range []int{0, 1, 5, 42, 1000} {
 		a := slices.Clone(base)
 		b := slices.Clone(base)
-		applyRoPE(a, heads, headDim, pos, invFreq, 1.0)
-		applyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0, false)
+		rope.Apply(a, heads, headDim, pos, invFreq, 1.0)
+		rope.ApplyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0, false)
 		for i := range a {
 			if a[i] != b[i] {
 				t.Fatalf("pos %d: applyMRoPE[%d]=%v != applyRoPE %v", pos, i, b[i], a[i])
@@ -154,8 +155,8 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 	// A divergent (image) position must NOT equal the scalar result (non-vacuous).
 	a := slices.Clone(base)
 	b := slices.Clone(base)
-	applyRoPE(a, heads, headDim, 4, invFreq, 1.0)
-	applyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0, false)
+	rope.Apply(a, heads, headDim, 4, invFreq, 1.0)
+	rope.ApplyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0, false)
 	same := true
 	for i := range a {
 		if a[i] != b[i] {
@@ -209,7 +210,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	}
 	defer m.Close()
 
-	mropePos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	mropePos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}
@@ -229,7 +230,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	}
 
 	// Decode past the image prompt — gates decode-time m-RoPE (positions resume at
-	// seqPos+mropeDelta). The cache carries mropePos+mropeDelta from the prefill.
+	// seqPos+rope.MRoPEDelta). The cache carries mropePos+rope.MRoPEDelta from the prefill.
 	got := make([]int, 0, len(g.Continuation))
 	for range g.Continuation {
 		id := sampling.Argmax(logits)

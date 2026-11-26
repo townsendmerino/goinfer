@@ -10,6 +10,8 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // v1Prompt is a 60-token prompt with two image spans: one longer than a 7-row chunk and crossing the 16-row cut, and one a cut
@@ -85,7 +87,7 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 		logits = v1Decode(t, m, cache, lg)
 	case "mrope", "deepstack":
 		c := m.NewCache(len(ids) + 8)
-		c.mropePos, c.mropeDelta = mrope, mropeDelta(mrope, len(ids))
+		c.mropePos, c.mropeDelta = mrope, rope.MRoPEDelta(mrope, len(ids))
 		if route == "deepstack" {
 			c.deepstack = &deepstackRows{spans: spans, rows: deep}
 		}

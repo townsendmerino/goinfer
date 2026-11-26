@@ -328,3 +328,13 @@ func (r *cudaResident) uploadKVWindowed(layer, base int, keys, vals []float32) (
 	r.kvBases[r.kvSlot] = start
 	return keys, vals
 }
+
+// kvWindowState is cudaResident's windowed KV (kvwindow.go).
+type kvWindowState struct {
+	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
+	// windowed layers hold.
+	kvWin    bool
+	kvWindow int
+	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
+	kvBases  []int
+}

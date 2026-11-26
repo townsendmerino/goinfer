@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 func testResidentBatcher(lo, hi int) *residentBatcher {
@@ -333,7 +334,7 @@ func TestMLARope_interleavedMatchesReferenceAndZeroAllocs(t *testing.T) {
 			}
 			copy(src, tmp)
 		}
-		applyRoPE(want, heads, ropeDim, 7, invFreq, 1.0)
+		rope.Apply(want, heads, ropeDim, 7, invFreq, 1.0)
 		for i := range want {
 			if got[i] != want[i] {
 				t.Fatalf("ropeDim=%d idx %d: got %g, want %g", ropeDim, i, got[i], want[i])

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // vlDecodeLoop is the shared sampler/stream/stop decode loop behind GenerateVL and GenerateQwenVL, so the control-flow
@@ -266,7 +268,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 // see GenerateVL.
 //
 // Resident GPU decode additionally needs MRoPEDecodeAvailable, not only the base ResidentForward GenerateVL uses: decode past
-// an image block needs the rope-angle position (pos+mropeDelta) and the KV/attention position (pos) to differ, which
+// an image block needs the rope-angle position (pos+rope.MRoPEDelta) and the KV/attention position (pos) to differ, which
 // only ForwardMRoPE can express. A resident backend without it falls back to the CPU decode loop as if no resident were
 // configured, including for image reuse: that fast path is gated on MRoPEDecodeAvailable too, for the same reason.
 func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
@@ -297,14 +299,14 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 			return
 		}
 		lastEnd := spans[len(spans)-1].Pos + spans[len(spans)-1].Len
-		mropePos, err := mropePositions(ids, imageToken, gridTHW, merge)
+		mropePos, err := rope.MRoPEPositions(ids, imageToken, gridTHW, merge)
 		if err != nil {
 			g.err = err
 			return
 		}
-		// mropeDelta only depends on the placeholder run and the image grid's own dimensions —
+		// rope.MRoPEDelta only depends on the placeholder run and the image grid's own dimensions —
 		// never the tower's output — so it's available up front, before any reuse decision.
-		mropeDelta := mropeDelta(mropePos, len(ids))
+		mropeDelta := rope.MRoPEDelta(mropePos, len(ids))
 
 		// A recurrent family (the Gated DeltaNet hybrids) takes no resident reuse branch and no CPU-prefill-then-UploadKV bridge
 		// here, and must be refused them, not merely not engaged: every resident executor implements MRoPEDecodeAvailable, so the type
@@ -465,7 +467,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 				gpuPos++
 				return sr.Logits, err
 			}
-			return m.forward(next, cache) // decode m-RoPE via cache.mropeDelta
+			return m.forward(next, cache) // decode m-RoPE via cache.rope.MRoPEDelta
 		})
 		if useGPU && g.err == nil {
 			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)

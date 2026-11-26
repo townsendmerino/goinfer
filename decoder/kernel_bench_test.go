@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -81,7 +82,7 @@ func BenchmarkRoPE_Heads14_Dim64(b *testing.B) {
 	}
 	b.SetBytes(heads * headDim * 4)
 	for b.Loop() {
-		applyRoPE(vec, heads, headDim, 42, invFreq, 1.0)
+		rope.Apply(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
 
@@ -96,7 +97,7 @@ func BenchmarkRoPE_Heads32_Dim128(b *testing.B) {
 	}
 	b.SetBytes(heads * headDim * 4)
 	for b.Loop() {
-		applyRoPE(vec, heads, headDim, 42, invFreq, 1.0)
+		rope.Apply(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
 
@@ -288,7 +289,7 @@ func BenchmarkRoPE_Interleaved_Heads32_Dim128(b *testing.B) {
 	}
 	b.SetBytes(heads * headDim * 4)
 	for b.Loop() {
-		applyRoPEInterleaved(vec, heads, headDim, 42, invFreq, 1.0)
+		rope.ApplyInterleaved(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
 

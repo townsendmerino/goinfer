@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 53732 -- raised by 11 for SZ9: decoder/model.go's resident prefill seeding moved to its own file (package clause and imports)
+lines 52952 -- lowered by SZ10 (the rotary embeddings left decoder for internal/runtime/rope)
 model_methods 479 -- held at its count when the ceiling was set
-model_knot_lines 13503 -- held at its count when the ceiling was set
+model_knot_lines 13483 -- lowered by SZ9: readKVSnapHeader is no Model method (LoadSession 216 -> 192); loadGIW's signature and call raised it by 4

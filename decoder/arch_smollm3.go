@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // smollm3Architecture expresses SmolLM3-3B (model_type smollm3): a plain llama-shaped dense GQA model (llamaTensorSchema reused verbatim)
@@ -21,7 +23,7 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(smollm3): %w", err)
 	}

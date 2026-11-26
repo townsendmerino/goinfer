@@ -73,6 +73,33 @@
       "why": "internal/runtime/ggufconfig reads a GGUF's metadata into a Config, one reader per architecture, so the readers and their fuzz target test without compiling decoder. It sits below decoder, which calls Read: it imports decoder/config and no other goinfer package, decoder included."
     },
     {
+      "name": "rope-leaf",
+      "from": [
+        "internal/runtime/rope"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/rope": [
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/runtime/rope holds the rotary embedding kernels (NeoX, interleaved, m-RoPE) and the rope_scaling/rope_parameters parsers with their inverse-frequency tables, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package (its tests, internal/testpath)."
+    },
+    {
+      "name": "testassets-leaf",
+      "from": [
+        "internal/testassets"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/testassets resolves heavy test assets through testdata/assets.json, the one predicate for whether an asset is present. It imports no goinfer package and not testing, so a backend's tests can reach it without importing decoder."
+    },
+    {
       "name": "normact-leaf",
       "from": [
         "internal/runtime/normact"
@@ -355,7 +382,9 @@
       "internal/runtime/mem/probe",
       "internal/runtime/normact",
       "internal/runtime/program",
+      "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/testassets",
       "tokenizer"
     ],
     "decoder/fit": [
@@ -724,7 +753,9 @@
       "internal/runtime/mem/probe",
       "internal/runtime/normact",
       "internal/runtime/program",
+      "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/testassets",
       "internal/testgate",
       "internal/vision",
       "multimodal",
@@ -859,6 +890,9 @@
       "internal/runtime/prequant",
       "internal/testpath",
       "tokenizer"
+    ],
+    "internal/runtime/rope": [
+      "internal/testpath"
     ],
     "internal/runtime/whisper": [
       "internal/audio",
