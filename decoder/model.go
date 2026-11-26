@@ -706,7 +706,7 @@ func Load(dir string, opts Options) (*Model, error) {
 // unresolved value, so overwriting it is safe.
 //
 // generation_config.json is read through os.DirFS of a real directory. For a .gguf load dir is the file path, so
-// os.DirFS(dir) can never open anything inside it (ggufEOS's comment describes a fallback that does not cover this case); a
+// os.DirFS(dir) can never open anything inside it (internal/runtime/ggufconfig's ggufEOS comment describes a fallback that does not cover this case); a
 // GGUF conversion keeps generation_config.json beside the file, in its parent directory.
 func resolveLoadEOS(dir string, w *Weights) []int {
 	eosDir := dir

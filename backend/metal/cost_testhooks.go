@@ -76,8 +76,9 @@ func (r *resident) costToken(c *cost.Counter, p cost.Phase, token func() error) 
 }
 
 // pipelineNames maps each pipeline the resident holds in a field, or in an array field, to that field's name (the first such
-// field, in declaration order). It reads the fields by reflection, so it runs once per resident, and only when a counter is
-// attached.
+// field, in declaration order). An embedded struct's fields are read in its place under their promoted names, so a field
+// grouped into a subsystem struct keeps its name. It reads the fields by reflection, so it runs once per resident, and only
+// when a counter is attached.
 func (r *resident) pipelineNames() map[Pipeline]string {
 	if names, ok := costNames.Load(r); ok {
 		return names.(map[Pipeline]string)
@@ -92,18 +93,23 @@ func (r *resident) pipelineNames() map[Pipeline]string {
 			names[pl] = name
 		}
 	}
-	v := reflect.ValueOf(r).Elem()
-	for i := range v.NumField() {
-		f, name := v.Field(i), v.Type().Field(i).Name
-		switch {
-		case f.Type() == pt:
-			add(read(f), name)
-		case f.Kind() == reflect.Array && f.Type().Elem() == pt:
-			for j := range f.Len() {
-				add(read(f.Index(j)), fmt.Sprintf("%s[%d]", name, j))
+	var walk func(v reflect.Value)
+	walk = func(v reflect.Value) {
+		for i := range v.NumField() {
+			f, name := v.Field(i), v.Type().Field(i).Name
+			switch {
+			case f.Type() == pt:
+				add(read(f), name)
+			case f.Kind() == reflect.Array && f.Type().Elem() == pt:
+				for j := range f.Len() {
+					add(read(f.Index(j)), fmt.Sprintf("%s[%d]", name, j))
+				}
+			case f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous:
+				walk(f)
 			}
 		}
 	}
+	walk(reflect.ValueOf(r).Elem())
 	costNames.Store(r, names)
 	return names
 }
