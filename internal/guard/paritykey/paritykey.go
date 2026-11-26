@@ -298,7 +298,10 @@ func BuilderFile(path string) bool {
 		ProgramTypesFile:
 		return true
 	}
-	return strings.HasPrefix(path, "decoder/arch_") && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		return false
+	}
+	return strings.HasPrefix(path, "decoder/arch_") || strings.HasPrefix(path, "decoder/config/config_") // config_<family>.go: config.go's per-family methods
 }
 
 // ReadProgramTable reads src's program fingerprint table, or nil in a tree from before it.
