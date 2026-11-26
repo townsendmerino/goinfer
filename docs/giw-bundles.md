@@ -74,12 +74,12 @@ Other systems load as before; none is measured. The measurements and gates are i
 ## One version
 
 A `.giw` is a cache of its source, so the format has **one version at a time**. This build writes weights format
-**v17** in bundle frame **v3**, and reads only those. There is no compatibility window in either direction.
+**v18** in bundle frame **v3**, and reads only those. There is no compatibility window in either direction.
 
 - **A sidecar rebuilds itself.** A sidecar from another version fails its freshness check on the first load (the
   reader refuses it on its header, before reading the rest of the file) and is transcoded again from the source
   beside it, once. A format bump therefore costs each cached model one transcode.
-- **The sidecar's name carries the version**: `<model>.<quant>[.e4h].<target>.v17.giw`. Two builds at different
+- **The sidecar's name carries the version**: `<model>.<quant>[.e4h].<target>.v18.giw`. Two builds at different
   formats on one box (a release binary and a dev build) each keep their own file, where one shared name made each
   switch rewrite the other's. A sidecar an earlier build left under the unversioned name is used when it already loads
   as this build's format: it is hard-linked to the versioned name (no copy, no transcode) and the old name stays. One in
@@ -87,8 +87,11 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
   sidecar**, because another build may be using it; each is as large as the model, so remove the ones for versions you no
   longer run (`ls <model>.*.giw`).
 - **A hand-built or embedded bundle is refused.** A `.giw` named with `--model`, or built into a binary, has no
-  source for the loader to rebuild from. It fails with `format vN, this build reads v17 — delete the sidecar (it
+  source for the loader to rebuild from. It fails with `format vN, this build reads v18 — delete the sidecar (it
   rebuilds) or rebuild with go run ./cmd/prequant …`, and has to be rebuilt with `cmd/prequant`.
+- **v18 changes no layout.** It was bumped on 2026-11-26 so every sidecar rebuilds once: a Mellum GGUF's sidecar
+  written before then holds its q/k projections un-permuted as if the file were llama-style, which they are not (llama.cpp
+  converts Mellum as a NEOX-rope arch), and loads as fresh. The rules under "From v17" below still hold at v18.
 - **Why not read old versions:** the reader had accepted thirteen layouts, each with its own gates, tests and
   test-only writer switches, and a file in an old layout loaded at a real cost (scales copied to the heap) with
   nothing to say so. The `.giw-kv` session snapshots already work this way.

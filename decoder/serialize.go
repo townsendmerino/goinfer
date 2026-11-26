@@ -80,7 +80,7 @@ const (
 	giwMagic = "GINFW"
 	// giwVersion is the one format version this build writes and reads. A file at any other version is refused, and a
 	// sidecar is then rebuilt from its source (docs/giw-bundles.md, "One version").
-	giwVersion = 17
+	giwVersion = 18
 	// giwEncF32 is a standalone f32 array's encoding byte, in the weight-matrix kinds' namespace (kind 1 is f32). Every
 	// tensor record starts with its encoding, and a reader refuses only an encoding it does not know (unknownEncoding).
 	giwEncF32 = 1

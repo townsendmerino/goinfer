@@ -144,7 +144,7 @@ func TestKSC2_decodeIdentity(t *testing.T) {
 		cases = append(cases, struct {
 			path string
 			opts decoder.Options
-		}{os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw"), decoder.Options{Backend: "metal", ResidentContext: 256}})
+		}{os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw"), decoder.Options{Backend: "metal", ResidentContext: 256}})
 	}
 	for _, c := range cases {
 		mo, ao := ksc2Load(t, c.path, c.opts, true)
@@ -173,7 +173,7 @@ func TestKSC2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSC2_TIMING") == "" {
 		t.Skip("set GOINFER_KSC2_TIMING=1 (a timed run under the timing lock)")
 	}
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw")
 	opts := decoder.Options{Backend: "metal", ResidentContext: 256}
 	mo, ao := ksc2Load(t, path, opts, true)
 	mn, an := ksc2Load(t, path, opts, false)
