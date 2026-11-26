@@ -36,15 +36,15 @@ func TestGraniteReal_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "granitemoehybrid" || a.granite == nil {
-		t.Fatalf("arch = %q (granite=%v), want granitemoehybrid", a.Name, a.granite != nil)
+	a := m.w.Arch
+	if a.Name != "granitemoehybrid" || a.Granite == nil {
+		t.Fatalf("arch = %q (granite=%v), want granitemoehybrid", a.Name, a.Granite != nil)
 	}
 	// Hybrid layer split + the four Granite scalars from metadata.
 	mamba, attn := 0, 0
 	for l := range m.w.Layers {
-		if a.isMambaLayer(l) {
-			if m.w.Layers[l].mamba == nil {
+		if a.IsMambaLayer(l) {
+			if m.w.Layers[l].Mamba == nil {
 				t.Errorf("layer %d is mamba but has no mixer weights", l)
 			}
 			mamba++
@@ -59,8 +59,8 @@ func TestGraniteReal_gate(t *testing.T) {
 	if mamba == 0 || attn == 0 {
 		t.Fatalf("expected a mix of mamba+attention layers, got %d/%d", mamba, attn)
 	}
-	if a.granite.EmbMul == 1 || a.LogitScale == 1 || a.granite.ResidMul == 1 {
-		t.Errorf("Granite multipliers look unset: emb=%v resid=%v logit=%v", a.granite.EmbMul, a.granite.ResidMul, a.LogitScale)
+	if a.Granite.EmbMul == 1 || a.LogitScale == 1 || a.Granite.ResidMul == 1 {
+		t.Errorf("Granite multipliers look unset: emb=%v resid=%v logit=%v", a.Granite.EmbMul, a.Granite.ResidMul, a.LogitScale)
 	}
 
 	// Coherence: greedy continuation of a canned prompt.
@@ -103,7 +103,7 @@ func TestGraniteReal_gate(t *testing.T) {
 	// ggufGraniteConfig is right, since llama.cpp writes rope.dimension_count/freq_base on this model regardless (roped,
 	// the continuation diverges; NoPE matches exactly). Not a parity row: the T3 row is the safetensors oracle below, on
 	// weights HF actually ran.
-	if !a.isNoPELayer(0) {
+	if !a.IsNoPELayer(0) {
 		t.Errorf("granitehybrid GGUF resolved to roped attention; the released granite-4.0-h models are NoPE")
 	}
 	graniteGGUFvsOracle(t, m)

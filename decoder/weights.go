@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,243 +16,17 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/quant"
 )
-
-// LayerWeights bundles one decoder block's tensors. Matrices follow
-// PyTorch's [out, in] row-major layout so MatmulBT is A·Bᵀ with no
-// transpose copy, matching encoder.LayerWeights.
-//
-// Gemma 3 specifics reflected here: separate gate/up projections (GeGLU),
-// pre- AND post-norms on both the attention and MLP sub-blocks, and
-// optional QK-norm weights.
-type LayerWeights struct {
-	// Attention projections (matmul'd → linalg.WeightMat, quantizable).
-	QProj linalg.WeightMat // [NumHeads*HeadDim, HiddenDim]
-	KProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
-	VProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
-	OProj linalg.WeightMat // [HiddenDim, NumHeads*HeadDim]
-	// GProj is Laguna's attention output gate (g_proj), applied to the attention
-	// context BEFORE OProj as ctx *= softplus(GProj·h). Rows are NumHeads for the
-	// "per-head" granularity or NumHeads*HeadDim for "per-element". Zero-valued
-	// (Rows()==0) for every other family. See applyGateRow.
-	GProj linalg.WeightMat // [NumHeads | NumHeads*HeadDim, HiddenDim]
-	// Projection biases ([out]; Qwen2 q/k/v only). Nil when the family/checkpoint
-	// has no bias.
-	QBias []float32 // [NumHeads*HeadDim]
-	KBias []float32 // [NumKVHeads*HeadDim]
-	VBias []float32 // [NumKVHeads*HeadDim]
-	OBias []float32 // [HiddenDim] attention output-projection bias (GPT-2)
-	// Norms (elementwise → stay f32). The *Bias slices are set only for
-	// LayerNorm families (GPT-2); RMSNorm leaves them nil.
-	QNorm           []float32 // [HeadDim] QK-norm on queries (Gemma 3)
-	KNorm           []float32 // [HeadDim] QK-norm on keys (Gemma 3)
-	PreAttnNorm     []float32 // [HiddenDim] input norm
-	PreAttnNormBias []float32 // [HiddenDim] LayerNorm bias (GPT-2 ln_1)
-	PostAttnNorm    []float32 // [HiddenDim] norm after attention, before residual add
-
-	// MLP: projections quantizable, norms f32. UpBias/DownBias are set only for
-	// the non-gated MLP (GPT-2 c_fc/c_proj); gated families leave them nil.
-	GateProj       linalg.WeightMat // [IntermediateDim, HiddenDim] (unused for non-gated MLP)
-	UpProj         linalg.WeightMat // [IntermediateDim, HiddenDim]
-	UpBias         []float32        // [IntermediateDim] (GPT-2 c_fc bias)
-	DownProj       linalg.WeightMat // [HiddenDim, IntermediateDim]
-	DownBias       []float32        // [HiddenDim] (GPT-2 c_proj bias)
-	PreMLPNorm     []float32        // [HiddenDim]
-	PreMLPNormBias []float32        // [HiddenDim] LayerNorm bias (GPT-2 ln_2)
-	PostMLPNorm    []float32        // [HiddenDim]
-
-	// Mixture-of-experts FFN (Mixtral; set only when arch.MoE != nil). Router
-	// scores experts; each expert is a gated (SwiGLU) MLP. The dense GateProj/
-	// UpProj/DownProj above are unused in that case.
-	Router     linalg.WeightMat // [NumExperts, HiddenDim] router/gate logits
-	RouterBias []float32        // [NumExperts] DeepSeek/GLM e_score_correction_bias added to scores for top-k SELECTION (nil = none). gpt-oss reuses this as a plain router-LOGIT bias (added before top-k, its own forward).
-	Experts    []expertWeights  // [NumExperts] gated MLPs
-
-	// AttnSinks is gpt-oss's per-head learned attention-sink logit ([NumHeads]):
-	// an extra term in each head's softmax denominator (exp(sink_h)) with no value,
-	// bleeding attention mass. nil for every other family. Consumed by attendSinksToken.
-	AttnSinks []float32
-
-	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim
-	// > 0). An always-on gated MLP scaled by sigmoid(SharedGate·h).
-	SharedExpert expertWeights    // gated SwiGLU MLP at SharedIntermediateDim
-	SharedGate   linalg.WeightMat // [1, HiddenDim] → sigmoid scalar gate
-
-	// Gemma 4 per-layer extras (zero for every other family). The PLE branch runs
-	// after the MLP residual: gate→gelu→×per-layer-embedding→proj→norm→+residual.
-	PLEGate     linalg.WeightMat // [HiddenSizePerLayerInput, HiddenDim] (GGUF inp_gate)
-	PLEProj     linalg.WeightMat // [HiddenDim, HiddenSizePerLayerInput] (GGUF proj)
-	PostPLENorm []float32        // [HiddenDim] post_per_layer_input_norm (GGUF post_norm)
-	LayerScalar float32          // per-layer output scalar (GGUF layer_output_scale); 1 if absent
-	KVShared    bool             // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
-	VFromK      bool             // attention_k_eq_v: no v_proj — V is v_norm(k_proj output) (Gemma 4 12B global layers)
-
-	// qwen3_5_moe per-layer attention. Exactly one is set on the hybrid's layers:
-	// delta on the Gated DeltaNet (linear) layers, qattn on the softmax layers.
-	// Both nil for every other family. Stored f32 (the qwen3_5_moe forward is
-	// parity-first, like Gemma 4's); the MoE FFN above is shared by both kinds.
-	delta *deltaNetWeights
-	qattn *qwenAttnWeights
-
-	// LFM2 gated short-convolution mixer weights, set ONLY on the conv layers (the
-	// attention layers use QProj/KProj/VProj/OProj above and leave this nil). nil for
-	// every other family.
-	shortConv *shortConvWeights
-
-	// Granite-4.0-H Mamba-2 mixer weights, set only on the mamba layers (the
-	// attention layers use QProj/KProj/VProj/OProj above). nil for every other
-	// family. Stored f32 (parity-first, like the qwen35 hybrid).
-	mamba *mamba2Weights
-
-	// DeepSeek MLA attention weights (deepseek_v2 / deepseek_v3, and Bailing Hybrid's own
-	// full-attention layers). nil for every other family. Stored f32 (parity-first). The FFN
-	// side (dense prefix / MoE / shared expert) reuses the generic Router/Experts/SharedExpert
-	// fields above.
-	mla *mlaWeights
-
-	// Bailing Hybrid (Ling 3.0) KDA attention weights, set on the linear layers (the
-	// non-linear layers use mla above). nil for every other family.
-	kda *kdaWeights
-
-	// Gemma 4 26B-A4B parallel dense+MoE FFN sub-block (enable_moe_block). Set only
-	// on gemma4 layers when arch.MoE != nil; nil for the dense E2B/E4B/12B variants
-	// and every other family. The router/experts do NOT fit the generic Router/
-	// Experts fields (weightless-norm + learned-scale router, per-expert scale,
-	// gelu-tanh fused-gate_up experts, three parallel-branch norms), so gemma4
-	// carries its own struct consumed by gemma4MoEFFN. Stored f32 (parity-first).
-	gemma4moe *gemma4MoEWeights
-}
-
-// qwenAttnWeights holds a qwen3_5_moe softmax layer's gated attention, f32.
-// q_proj is DOUBLE-WIDTH — per head it emits [query ‖ gate]; the forward splits
-// it and gates the attention output by sigmoid(gate). See docs/qwen3_5_moe.md.
-type qwenAttnWeights struct {
-	// Quantizable: these stay f32 when no quant is requested.
-	qProj linalg.WeightMat // [numHeads*headDim*2, hidden]  (query ‖ gate per head)
-	kProj linalg.WeightMat // [numKVHeads*headDim, hidden]
-	vProj linalg.WeightMat // [numKVHeads*headDim, hidden]
-	oProj linalg.WeightMat // [hidden, numHeads*headDim]
-	qNorm []float32        // [headDim]
-	kNorm []float32        // [headDim]
-}
-
-// mlaWeights holds one DeepSeek MLA layer's projections, stored f32 (parity-first,
-// like qwenAttnWeights). Queries route through the q_a/q_b LoRA bottleneck when
-// qAProj != nil, else the direct qProj (V2-Lite). K/V down-project to the latent
-// (kvAProj: the kv_lora_rank latent ‖ the qk_rope_head_dim rope key) and up-project
-// per head from the normalized latent (kvBProj → k_nope ‖ v per head).
-type mlaWeights struct {
-	qAProj       []float32 // [q_lora_rank, hidden]                 (nil ⇒ direct qProj)
-	qALayernorm  []float32 // [q_lora_rank]
-	qBProj       []float32 // [numHeads*qk_head_dim, q_lora_rank]
-	qProj        []float32 // [numHeads*qk_head_dim, hidden]        (V2-Lite direct path)
-	kvAProj      []float32 // [kv_lora_rank+qk_rope_head_dim, hidden]
-	kvALayernorm []float32 // [kv_lora_rank]
-	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
-	oProj        []float32 // [hidden, numHeads*v_head_dim]
-	gProj        []float32 // [numHeads] (head_wise) or [numHeads*v_head_dim] (element_wise); nil ⇒ no gate (every DeepSeek family)
-	// qAQ, qBQ, qQ, kvAQ and oQ are those projections as per-row int8 on a load armed for it (mlaProjInt8, quantizeProjections)
-	// or read from a .giw that carries them, their f32 slices then nil.
-	qAQ, qBQ, qQ, kvAQ, oQ linalg.WeightMat
-}
-
-// expertWeights is one MoE expert: a gated (SwiGLU) MLP. Mixtral names these
-// w1=gate, w3=up, w2=down and has no biases; gpt-oss adds a per-expert bias on
-// each projection (the *Bias slices, nil for every other family).
-type expertWeights struct {
-	Gate linalg.WeightMat // [IntermediateDim, HiddenDim] (w1)
-	Up   linalg.WeightMat // [IntermediateDim, HiddenDim] (w3)
-	Down linalg.WeightMat // [HiddenDim, IntermediateDim] (w2)
-
-	// gpt-oss per-expert biases (nil elsewhere).
-	GateBias []float32 // [IntermediateDim]
-	UpBias   []float32 // [IntermediateDim]
-	DownBias []float32 // [HiddenDim]
-}
-
-// Weights is the immutable per-checkpoint bundle. Embeddings are TIED:
-// Embed doubles as the LM head (logits = h · Embedᵀ), so there is no
-// separate output projection tensor.
-type Weights struct {
-	// prof records how long each phase of this load took, when the loader instrumented it (the GGUF path does); nil otherwise.
-	// It rides on Weights because that is the value the loader already returns.
-	prof *LoadProfile
-
-	Cfg  Config
-	arch *Architecture // resolved descriptor the forward pass reads
-
-	// bakedQuant is the resolved quant label recorded in the .giw header: "int4" | "int4mix" | "int8int8" | "int8" |
-	// "native". Model.Quant() prefers it over re-inferring from tensor kinds. Empty for a direct GGUF/safetensors load
-	// and for a streamed bundle (which records ""); those fall back to quantLabel() inference.
-	bakedQuant    string
-	Embed         linalg.WeightMat // [VocabSize, HiddenDim] — input embedding (AND tied LM head when LMHead unset)
-	LMHead        linalg.WeightMat // [VocabSize, HiddenDim] — separate output head (untied families); zero value when tied
-	PosEmbed      linalg.WeightMat // [MaxPositions, HiddenDim] — learned position embedding (GPT-2); zero value otherwise
-	FinalNorm     []float32        // [HiddenDim] final norm before the LM head
-	FinalNormBias []float32        // [HiddenDim] final LayerNorm bias (GPT-2 ln_f)
-	Layers        []LayerWeights
-
-	// Gemma 4 PLE inputs (zero for every other family). The per-layer input is
-	// (token_identity + context_aware)/√2: token_identity from PerLayerTokenEmbed,
-	// context_aware from PerLayerModelProj normed by PerLayerProjNorm.
-	PerLayerTokenEmbed linalg.WeightMat // [VocabSize, NumLayers*HiddenSizePerLayerInput] (per_layer_token_embd)
-	PerLayerModelProj  linalg.WeightMat // [NumLayers*HiddenSizePerLayerInput, HiddenDim] (per_layer_model_proj)
-	PerLayerProjNorm   []float32        // [HiddenSizePerLayerInput] (per_layer_proj_norm)
-
-	st      *embed.SafetensorsFile // retained so alias-backed slices stay valid
-	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
-
-	schema *tensorSchema // resolved tensor-name schema (safetensors loads); used by compute-time LoRA to map projections → adapter deltas. nil for GGUF/serialized loads.
-
-	// kquant is where each int8 matmul of a q4k GGUF load came from when the file stores it as Q5_K or Q6_K, keyed by its int8
-	// rows' first element; ggufPath is that file, and kquantFile the load's own mapping of it, held until the model's resident
-	// build has run (Model.releaseKQuantFile). All are empty for any other load. KQuantReader serves them.
-	kquant     map[*int8]kquantSrc
-	ggufPath   string
-	kquantFile *embed.GGUFFile
-}
-
-// matmulWeights returns every quantizable matrix in the bundle (the projections,
-// the embedding, and the untied head if present); norms stay f32.
-func (w *Weights) matmulWeights() []*linalg.WeightMat {
-	ms := []*linalg.WeightMat{&w.Embed}
-	if w.LMHead.Rows() > 0 {
-		ms = append(ms, &w.LMHead)
-	}
-	for i := range w.Layers {
-		l := &w.Layers[i]
-		ms = append(ms, &l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj)
-		if l.Router.Rows() > 0 {
-			ms = append(ms, &l.Router)
-		}
-		// GProj is deliberately excluded from quantization: it is tiny (one row per head, well under 1% of a layer's attention
-		// weights), so quantizing buys nothing, and it feeds a softplus whose output multiplies the whole attention context, so
-		// quantization error there scales every channel of every head rather than perturbing one projection additively.
-		for e := range l.Experts {
-			ex := &l.Experts[e]
-			ms = append(ms, &ex.Gate, &ex.Up, &ex.Down)
-		}
-		if l.SharedExpert.Gate.Rows() > 0 {
-			ms = append(ms, &l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate)
-		}
-		if l.PLEGate.Rows() > 0 { // Gemma 4 PLE branch
-			ms = append(ms, &l.PLEGate, &l.PLEProj)
-		}
-	}
-	if w.PerLayerTokenEmbed.Rows() > 0 { // Gemma 4 model-level PLE inputs
-		ms = append(ms, &w.PerLayerTokenEmbed, &w.PerLayerModelProj)
-	}
-	return ms
-}
 
 // repackedOnlyInt4Count reports how many of w's matmulWeights() tensors are int4-resident with no canonical bytes
 // (IsInt4() true, Int4()'s ok false): a kind-5 .giw tensor, or an in-RAM repacked-only build that reached a .giw
 // round-trip (no writer produces one today). decoder.Load's .giw branch uses it to refuse such a file under a backend
 // that needs canonical bytes.
-func repackedOnlyInt4Count(w *Weights) int {
+func repackedOnlyInt4Count(w *darch.Weights) int {
 	n := 0
-	for _, m := range w.matmulWeights() {
+	for _, m := range w.MatmulWeights() {
 		if !m.IsInt4() {
 			continue
 		}
@@ -261,30 +37,6 @@ func repackedOnlyInt4Count(w *Weights) int {
 	return n
 }
 
-// isLogitTable reports whether m is an embedding-class tensor: the token embedding, the LM head, or Gemma 4's model-level
-// PLE embeddings. In int4 mode these are pinned to int8 by default (logit-critical; the EmbedInt4 knob relaxes them), so
-// their precision is orthogonal to the int4-vs-int4mix distinction and must be excluded from the quant classification.
-// This is the single definition of that exclusion.
-func (w *Weights) isLogitTable(m *linalg.WeightMat) bool {
-	return m == &w.Embed || m == &w.LMHead || m == &w.PerLayerTokenEmbed || m == &w.PerLayerModelProj
-}
-
-// bodyMatmulWeights is matmulWeights minus the logit tables: the attention/FFN projections, experts and routers, exactly
-// the matmuls whose precision the chosen quant (int4|int4mix|int8|int8int8) determines. It is the one list quantLabel
-// classifies over (and, through quantLabel, the value the .giw header records at bake time), so "which tensors define the
-// quant" lives in one place. cuda's nonBatchableKind also excludes the logit tables but inspects resident per-layer
-// projections, a different type in another module, so it cannot share this host-side function.
-func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
-	all := w.matmulWeights()
-	body := make([]*linalg.WeightMat, 0, len(all))
-	for _, m := range all {
-		if !w.isLogitTable(m) {
-			body = append(body, m)
-		}
-	}
-	return body
-}
-
 // LoadWeights reads config.json and the model.safetensors blob (or sharded set) from an on-disk directory in the HF
 // snapshot layout. The blob is mmapped, not heap-copied, so a large checkpoint stays in the OS page cache. bf16 and f16
 // weights are widened to f32 on load, which roughly doubles resident RAM against keeping them bf16; per-tile widening
@@ -292,7 +44,7 @@ func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
 //
 // Use LoadWeightsFromFS for fs.FS-backed paths (MapFS, embed.FS); those stay heap-backed because fs.FS exposes no file
 // descriptor.
-func LoadWeights(dir string) (*Weights, error) {
+func LoadWeights(dir string) (*darch.Weights, error) {
 	return loadWeights(dir, weightLoadOpts{needCanonical: true})
 }
 
@@ -382,7 +134,7 @@ func parallelLayers(n int, abort <-chan struct{}, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, o weightLoadOpts) (*Weights, error) {
+func loadWeights(dir string, o weightLoadOpts) (*darch.Weights, error) {
 	quant, embedInt4, needCanonical, skipRow4, lora, abort := o.quant, o.embedInt4, o.needCanonical, o.skipRow4, o.lora, o.abort
 	// One atomic add per model load, so the fit guard's test can observe that a refused load allocated nothing rather than
 	// infer it from an error string (a guard that fires after the allocation still looks correct that way).
@@ -426,7 +178,7 @@ func loadWeights(dir string, o weightLoadOpts) (*Weights, error) {
 	// source lets dead pages compete with hot weights for page cache (higher RSS and slower decode).
 	if why := mmapAliasRisk(st); why == "" && !islandsMayAliasSource(w) && os.Getenv("GOINFER_P13_OFF") == "" {
 		_ = st.Close()
-		w.st = nil
+		w.ST = nil
 	}
 	return w, nil
 }
@@ -461,10 +213,10 @@ func mmapAliasRisk(st *embed.SafetensorsFile) string {
 // islandsMayAliasSource reports whether a bf16 island may be the checkpoint's own bits: stIsland keeps a BF16 tensor as a
 // zero-copy view of the mapping, which mmapAliasRisk's dtype rule does not see, so a load holding any bf16 island keeps the
 // source mapped. Conservative: an island islandMat made bf16 on the heap keeps it too.
-func islandsMayAliasSource(w *Weights) bool {
+func islandsMayAliasSource(w *darch.Weights) bool {
 	for i := range w.Layers {
-		if sc := w.Layers[i].shortConv; sc != nil {
-			for _, m := range []*linalg.WeightMat{&sc.inProj, &sc.outProj} {
+		if sc := w.Layers[i].ShortConv; sc != nil {
+			for _, m := range []*linalg.WeightMat{&sc.InProj, &sc.OutProj} {
 				if _, bf16, ok := m.Half16(); ok && bf16 {
 					return true
 				}
@@ -508,13 +260,13 @@ func openCheckpointMmap(dir string) (*embed.SafetensorsFile, error) {
 // LoadWeightsFromFS reads config.json and model.safetensors from fsys/dir, validates every tensor's shape against Cfg,
 // and returns the populated bundle. It is heap-backed (fs.ReadFile); use LoadWeights for the mmap path on a real
 // directory.
-func LoadWeightsFromFS(fsys fs.FS, dir string) (*Weights, error) {
+func LoadWeightsFromFS(fsys fs.FS, dir string) (*darch.Weights, error) {
 	return loadWeightsFromFS(fsys, dir, quantNone)
 }
 
 // loadWeightsFromFS is the quant-aware internal counterpart of loadWeights for
 // fs.FS-backed paths (see loadWeights for the streaming-quant rationale).
-func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error) {
+func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*darch.Weights, error) {
 	cfg, err := loadConfig(fsys, path.Join(dir, "config.json"))
 	if err != nil {
 		return nil, err
@@ -556,7 +308,7 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // buildWeightsFromSafetensors fills a *Weights from an already-opened SafetensorsFile, shape-validating every tensor
 // against Cfg through the family's tensor schema. The heap (fs.FS) and mmap paths share it so the tensor-name and shape
 // contract is one edit, not two.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, o weightLoadOpts) (*Weights, error) {
+func buildWeightsFromSafetensors(cfg *Config, arch *darch.Architecture, s *archparts.TensorSchema, st *embed.SafetensorsFile, o weightLoadOpts) (*darch.Weights, error) {
 	return buildWeightsFromSafetensorsTo(cfg, arch, s, st, o.quant, o.embedInt4, o.needCanonical, o.skipRow4, o.lora, nil, "", o.abort)
 }
 
@@ -643,7 +395,7 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 // finishLayers runs a builder's per-layer loads. Resident (sink nil): in parallel. Streaming: the bundle head (every
 // global exists by now), then the layers through streamLayers, a window at a time, so the model is never resident at
 // once; the head records no quant label, as StreamTranscodeGGUF's does.
-func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func finishLayers(w *darch.Weights, arch *darch.Architecture, loadLayer func(i int) error, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	n := len(w.Layers)
 	if sink == nil {
 		if err := parallelLayers(n, abort, loadLayer); err != nil {
@@ -668,11 +420,11 @@ func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, s
 // writes and frees one layer at a time, and loads the embedding (and an untied head) a row at a time, so peak memory is
 // about the globals plus one layer rather than the whole model. The dedicated builders stream their layers the same way
 // (their embedding still loads whole); a family whose builder does not stream returns errDirNoStream.
-func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildWeightsFromSafetensorsTo(cfg *Config, arch *darch.Architecture, s *archparts.TensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	skipRow4 = skipRow4 || !repackForDecode(sink) // every builder below takes it from here
 	if sink != nil {
 		switch {
-		case arch.Name == "gpt2", arch.Name == "internlm2", arch.gptoss != nil:
+		case arch.Name == "gpt2", arch.Name == "internlm2", arch.GPTOSS != nil:
 			return nil, errDirNoStream{arch.Name}
 		}
 	}
@@ -682,13 +434,13 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		}
 		return buildGPT2Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // Conv1D layout + fused QKV need a dedicated path
 	}
-	if arch.granite != nil {
+	if arch.Granite != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the granitemoehybrid (Mamba-2 + fused-MoE) layout")
 		}
 		return buildGraniteWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id, abort) // per-layer mamba/attention + fused experts
 	}
-	if arch.nemotron != nil {
+	if arch.Nemotron != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the nemotron_h (single-op-block) layout")
 		}
@@ -715,13 +467,13 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		}
 		return buildSpark25Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id, abort) // split fused q_k_v_proj → generic forward
 	}
-	if arch.llama4 != nil {
+	if arch.Llama4 != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
 		}
 		return buildLlama4Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id, abort) // per-layer dense/MoE + transposed fused experts
 	}
-	if arch.gptoss != nil {
+	if arch.GPTOSS != nil {
 		// gpt-oss safetensors: MXFP4 experts as paired U8 *_blocks/*_scales tensors with
 		// an INTERLEAVED gate_up, per-expert biases, and per-head attention sinks. The
 		// GGUF path reads the same family through a different layout entirely (llama.cpp's
@@ -736,7 +488,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	qDim := cfg.NumHeads * headDim    // query projection rows
 	kvDim := cfg.NumKVHeads * headDim // key/value projection rows (narrower under GQA)
 
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, schema: s, Layers: make([]LayerWeights, cfg.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Schema: s, Layers: make([]darch.LayerWeights, cfg.NumLayers)}
 
 	// The released qwen3_5_moe ships as a VL model: its TEXT DECODER lives under
 	// model.language_model.* with the MoE experts stored as fused+stacked tensors
@@ -802,10 +554,10 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	// Olmo's plain full attention), so a list here would be a second copy that could drift. It skips this name check and is
 	// covered by checkAllMerged in loadWeights, which compares the adapter with what the load merged.
 	if lora != nil {
-		if arch.mla != nil {
+		if arch.MLA != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for %s (attention projections load outside the generic merge path)", arch.Name)
 		}
-		if arch.qwen35 == nil {
+		if arch.Qwen35 == nil {
 			if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {
 				return nil, err
 			}

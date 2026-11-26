@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 import "testing"
 
 // TestTruncateTo_wrappedRingRewindIsInexact gates C1: TruncateTo must report whether a rewind is
@@ -73,7 +77,7 @@ func TestSpecRollbackSafe_stagedSlidingWindow(t *testing.T) {
 			t.Errorf("%s: resolveArchitecture: %v", name, err)
 			continue
 		}
-		m := &Model{w: &Weights{arch: arch}} // resident nil ⇒ staged path
+		m := &Model{w: &darch.Weights{Arch: arch}} // resident nil ⇒ staged path
 		if got := m.specRollbackSafe(); got != wantSafe {
 			t.Errorf("%s: specRollbackSafe (staged) = %v, want %v", name, got, wantSafe)
 		}

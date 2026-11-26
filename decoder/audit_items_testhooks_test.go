@@ -10,7 +10,7 @@ func TestResidentKV_webgpuSharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
 	const ctx = 8
 	var built int64
-	for l := range m.w.arch.NumLayers {
+	for l := range m.w.Arch.NumLayers {
 		bufs, kv := m.webgpuLayerCaches(l, ctx, false, false)
 		if !kv {
 			continue // recurrent state: not context

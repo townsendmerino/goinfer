@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
@@ -44,7 +45,7 @@ func loadGIW(dir string, opts Options, be Backend, beErr error, ctxFromCaller bo
 	gfi, statErr := os.Stat(dir)
 	crcDone := statErr == nil && giwVerified(dir, gfi)
 	afterWalk := func() {}
-	w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *Architecture) {
+	w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *darch.Architecture) {
 		afterWalk = prepareColdLoad(dir, data, a, opts, be)
 	}, opts.LoadAbort)
 	afterWalk()
@@ -95,7 +96,7 @@ func loadGIW(dir string, opts Options, be Backend, beErr error, ctxFromCaller bo
 	if beErr != nil {
 		logs.Warnf("%v", beErr)
 	}
-	if opts.ActQuantGroup == 0 && w.quantLabel() == "q4k" {
+	if opts.ActQuantGroup == 0 && w.QuantLabel() == "q4k" {
 		opts.ActQuantGroup = 32 // a q4k bundle runs per-32 activations, as a direct q4k load does (modelFromOptions)
 	}
 	m := modelFromOptions(w, be, opts)
@@ -108,7 +109,7 @@ func loadGIW(dir string, opts Options, be Backend, beErr error, ctxFromCaller bo
 		// a real figure instead of aikit's Linux-only /proc probe plus a fixed darwin fallback.
 		opts.WeightCacheBytes = resolveWeightCacheBudget(opts.WeightCacheBytes)
 		// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
-		if w.arch.MoE != nil {
+		if w.Arch.MoE != nil {
 			if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir, resolveMoEPagerPool(opts.MoEPager, loadKnob(opts, knobMoEPreadCPU))); m.pager != nil {
 				logs.Infof("%s", "decoder: "+pagerSummary(m.pager))
 				// Predict the working-set rate and require an explicit acknowledgement below the registered floor, rather than let a long
@@ -137,7 +138,7 @@ func loadGIW(dir string, opts Options, be Backend, beErr error, ctxFromCaller bo
 	// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
 	// the page cache, so it takes the paged load's working-set refusal at the
 	// budget a pager would take here.
-	if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
+	if !opts.StreamWeights && w.Arch.MoE != nil && !m.ResidentActive() {
 		if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {
 			logs.Infof("decoder: predicted mapped-MoE decode rate ~%.2f tok/s "+
 				"(a prior, not a measurement — see moeHitRatePrior's own doc comment)", predicted)

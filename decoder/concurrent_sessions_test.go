@@ -29,7 +29,7 @@ func TestConcurrentSessions_matchAlone(t *testing.T) {
 	if m.resident != nil {
 		t.Skip("MC3c covers the CPU path; this model went GPU-resident")
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	const nConv, turns, maxTok = 4, 3, 10
 	// run plays conversation c for `turns` turns on its own session and returns every turn's ids.
 	run := func(c int) [][]int {

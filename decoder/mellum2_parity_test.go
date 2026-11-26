@@ -39,8 +39,8 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "mellum" {
-		t.Fatalf("arch = %q, want mellum", m.w.arch.Name)
+	if m.w.Arch.Name != "mellum" {
+		t.Fatalf("arch = %q, want mellum", m.w.Arch.Name)
 	}
 
 	cache := m.NewCache(len(g.IDs))

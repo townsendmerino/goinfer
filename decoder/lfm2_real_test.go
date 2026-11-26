@@ -40,7 +40,7 @@ func TestLFM2Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "lfm2" {
 		t.Fatalf("arch = %q, want lfm2", a.Name)
 	}
@@ -49,7 +49,7 @@ func TestLFM2Real_gate(t *testing.T) {
 	// would fail here rather than pass on a short prompt that never exercises the other kind.
 	var conv, attn int
 	for l := 0; l < a.NumLayers; l++ {
-		if a.isConvLayer(l) {
+		if a.IsConvLayer(l) {
 			conv++
 		} else {
 			attn++

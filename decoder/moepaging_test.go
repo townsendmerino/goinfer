@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // The pager's generic span-residency cache (eviction over budget, WILLNEED/DONTNEED,
@@ -147,8 +149,8 @@ func newRealMmapPager(t *testing.T, keys []unsafe.Pointer, spanBytes int64) *exp
 // hits+misses.
 func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 	const hidden, inter = 2, 2
-	newExperts := func() []expertWeights {
-		return []expertWeights{
+	newExperts := func() []archparts.ExpertWeights {
+		return []archparts.ExpertWeights{
 			{
 				Gate: linalg.WrapF32([]float32{1, 0, 0, 1}, inter, hidden),
 				Up:   linalg.WrapF32([]float32{1, 0, 0, 1}, inter, hidden),
@@ -161,7 +163,7 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 			},
 		}
 	}
-	keysOf := func(exps []expertWeights) []unsafe.Pointer {
+	keysOf := func(exps []archparts.ExpertWeights) []unsafe.Pointer {
 		ks := make([]unsafe.Pointer, len(exps))
 		for i := range exps {
 			ks[i] = unsafe.Pointer(&exps[i])
@@ -171,17 +173,17 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 
 	t.Run("gpt-oss", func(t *testing.T) {
 		experts := newExperts()
-		arch := &Architecture{
+		arch := &darch.Architecture{
 			HiddenDim: hidden,
 			MoE:       &MoEConfig{NumExperts: 2, TopK: 2, IntermediateDim: inter},
-			gptoss:    &gptOssParams{SwigluAlpha: 1.702, SwigluLimit: 7.0},
+			GPTOSS:    &archparts.GPTOSSParams{SwigluAlpha: 1.702, SwigluLimit: 7.0},
 		}
-		lw := &LayerWeights{
+		lw := &darch.LayerWeights{
 			Router:  linalg.WrapF32([]float32{2, 0, 0, 1}, 2, hidden),
 			Experts: experts,
 		}
 		pager := newRealMmapPager(t, keysOf(experts), 16384)
-		m := &Model{be: &cpuBackend{}, w: &Weights{arch: arch}, pager: pager}
+		m := &Model{be: &cpuBackend{}, w: &darch.Weights{Arch: arch}, pager: pager}
 		if _, err := m.gptOssMoE([]float32{1, 1}, lw, arch); err != nil {
 			t.Fatalf("gptOssMoE: %v", err)
 		}
@@ -194,14 +196,14 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 
 	t.Run("llama4", func(t *testing.T) {
 		experts := newExperts()
-		arch := &Architecture{
+		arch := &darch.Architecture{
 			HiddenDim: hidden,
 			MoE:       &MoEConfig{NumExperts: 2, TopK: 1, IntermediateDim: inter, SharedIntermediateDim: inter},
 		}
-		lw := &LayerWeights{
+		lw := &darch.LayerWeights{
 			Router:  linalg.WrapF32([]float32{2, 0, 0, 1}, 2, hidden),
 			Experts: experts,
-			SharedExpert: expertWeights{
+			SharedExpert: archparts.ExpertWeights{
 				Gate: linalg.WrapF32([]float32{1, 1, 1, 1}, inter, hidden),
 				Up:   linalg.WrapF32([]float32{1, 1, 1, 1}, inter, hidden),
 				Down: linalg.WrapF32([]float32{1, 0, 0, 1}, hidden, inter),
@@ -220,7 +222,7 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 
 	t.Run("nemotron3nano", func(t *testing.T) {
 		experts := newExperts()
-		arch := &Architecture{
+		arch := &darch.Architecture{
 			HiddenDim: hidden,
 			MoE: &MoEConfig{
 				NumExperts: 2, TopK: 2, NormTopKProb: true, IntermediateDim: inter,
@@ -229,7 +231,7 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 		}
 		// nemotronExpertFFN reads only Up/Down (no Gate) — matches nemotronMoE's real shape.
 		experts[0].Gate, experts[1].Gate = linalg.WeightMat{}, linalg.WeightMat{}
-		lw := &LayerWeights{
+		lw := &darch.LayerWeights{
 			Router:     linalg.WrapF32([]float32{2, 0, 0, 1}, 2, hidden),
 			RouterBias: []float32{0, 0},
 			Experts:    experts,

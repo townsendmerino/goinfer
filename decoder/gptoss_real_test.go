@@ -39,9 +39,9 @@ func TestGptOssReal_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "gpt-oss" || a.gptoss == nil {
-		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.gptoss != nil)
+	a := m.w.Arch
+	if a.Name != "gpt-oss" || a.GPTOSS == nil {
+		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.GPTOSS != nil)
 	}
 	// MXFP4 experts + sinks + router bias must have loaded on every layer.
 	for l := 0; l < a.NumLayers; l++ {

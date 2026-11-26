@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"math/rand"
 	"os"
@@ -51,9 +52,9 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 					for _, withScr := range []bool{true, false} {
 						name := fmt.Sprintf("procs %d, %+v, %d keys, window %d, scratch %v", procs, sh, nKeys, window, withScr)
 						r := rand.New(rand.NewSource(int64(nKeys*131 + sh.hd*7 + window + procs)))
-						arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
+						arch := &darch.Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 						kvDim := sh.nKV * sh.hd
-						lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
+						lw := &darch.LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
 						p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd))}
 						a, b := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil), NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)
 						if withScr {
@@ -101,7 +102,7 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 						for _, withScr := range []bool{true, false} {
 							name := fmt.Sprintf("procs %d, %+v, %d keys, %s, softcap %v, scratch %v", procs, sh, nKeys, mode, softcap, withScr)
 							r := rand.New(rand.NewSource(int64(nKeys*977 + sh.nH*13 + len(mode) + procs)))
-							arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
+							arch := &darch.Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 							kvDim := sh.nKV * sh.hd
 							p := attentionParams{Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: softcap}
 							const W = 48
@@ -163,7 +164,7 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 // attendSinksTokenRef and attendQueryPRef are the two functions as they were before KS-F2, verbatim: the references G0 compares against.
 // attendQueryP keeps exactly that code, so its reference also pins it against an unreviewed change.
 
-func attendSinksTokenRef(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *Architecture, lw *LayerWeights, l, pos int) {
+func attendSinksTokenRef(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *darch.Architecture, lw *darch.LayerWeights, l, pos int) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	cache.Append(l, k, v)
@@ -217,8 +218,8 @@ func attendSinksTokenRef(p attentionParams, q, k, v, ctx []float32, cache *KVCac
 	}
 }
 
-func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *Architecture) {
-	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
+func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *darch.Architecture) {
+	nH, nKV, hd := arch.HeadsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
@@ -284,9 +285,9 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 	t.Parallel()
 	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
 		r := rand.New(rand.NewSource(int64(sh.nH)))
-		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
+		arch := &darch.Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 		kvDim := sh.nKV * sh.hd
-		lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
+		lw := &darch.LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
 		scr := newDecodeScratch(arch, nil)
 		fanned, steps := 0, 0
 		run := func(name string, window, n int) {

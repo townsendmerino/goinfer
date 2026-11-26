@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
@@ -44,7 +45,7 @@ func synthInt8(rows, cols int, seed float32) linalg.WeightMat {
 
 // alignFixtureWeights is the tiny f32 fixture with one int4 (kind 3), one int8 (kind 2) and — where
 // the arch can emit it — one row4-eligible int4 matrix swapped into layer 0.
-func alignFixtureWeights(t *testing.T) *Weights {
+func alignFixtureWeights(t *testing.T) *darch.Weights {
 	t.Helper()
 	w := wideTinyLlama(t)
 	l := &w.Layers[0]

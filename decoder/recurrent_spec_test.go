@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "testing"
 
 // SP2's decoder-side tier-0 gates: admission, the
@@ -21,23 +26,23 @@ func (recurrentSpecStub) FoldVerified(int) error                            { pa
 func (recurrentSpecStub) FlushFold() error                                  { panic("not reached") }
 func (recurrentSpecStub) DropFold()                                         { panic("not reached") }
 
-func deltaNetArch(layers int) *Architecture {
-	return &Architecture{NumLayers: layers, HiddenDim: 64,
-		qwen35:        &qwen35Params{ConvKernel: 4, KeyHeadDim: 128, ValueHeadDim: 128, NumKeyHeads: 16, NumValueHeads: 32},
-		layerIsLinear: func(i int) bool { return i%4 != 3 }}
+func deltaNetArch(layers int) *darch.Architecture {
+	return &darch.Architecture{NumLayers: layers, HiddenDim: 64,
+		Qwen35:        &archparts.Qwen35Params{ConvKernel: 4, KeyHeadDim: 128, ValueHeadDim: 128, NumKeyHeads: 16, NumValueHeads: 32},
+		LayerIsLinear: func(i int) bool { return i%4 != 3 }}
 }
 
 // TestSpecRollbackSafeVia_admitsOnlyTheFoldPath: a recurrent model is admitted only by a loop on the fold path, within the rows
 // the resident reports, and only when every recurrent layer is Gated DeltaNet; the truncate-path predicate still refuses it.
 func TestSpecRollbackSafeVia_admitsOnlyTheFoldPath(t *testing.T) {
-	mk := func(a *Architecture) *Model { return &Model{w: &Weights{arch: a}} }
+	mk := func(a *darch.Architecture) *Model { return &Model{w: &darch.Weights{Arch: a}} }
 	dn := deltaNetArch(8)
-	mamba := &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}
+	mamba := &darch.Architecture{NumLayers: 1, Granite: &archparts.GraniteParams{}, LayerIsMamba: func(int) bool { return true }}
 	windowedDN := deltaNetArch(8)
 	windowedDN.SlidingWindow = 512
 	for _, c := range []struct {
 		name  string
-		arch  *Architecture
+		arch  *darch.Architecture
 		fold  ResidentRuntimeSubsystem
 		width int
 		want  bool
@@ -49,7 +54,7 @@ func TestSpecRollbackSafeVia_admitsOnlyTheFoldPath(t *testing.T) {
 		{"DeltaNet, a resident that kept no rows", dn, recurrentSpecStub{rows: 0}, 4, false},
 		{"Mamba-2, a resident claiming rows", mamba, recurrentSpecStub{rows: 16}, 4, false},
 		{"DeltaNet with a sliding window", windowedDN, recurrentSpecStub{rows: 16}, 4, false},
-		{"dense, fold path given", &Architecture{}, recurrentSpecStub{rows: 16}, 4, true},
+		{"dense, fold path given", &darch.Architecture{}, recurrentSpecStub{rows: 16}, 4, true},
 	} {
 		if got := mk(c.arch).specRollbackSafeVia(c.fold, c.width); got != c.want {
 			t.Errorf("%s: specRollbackSafeVia = %v, want %v", c.name, got, c.want)
@@ -77,14 +82,14 @@ func TestRecurrentSpecArenaBytes_formula(t *testing.T) {
 	if got := recurrentSpecReserve(a, true); got != want {
 		t.Errorf("drafter: reserve %d, want %d", got, want)
 	}
-	if got := RecurrentSpecArenaBytes(&Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}, 16); got != 0 {
+	if got := RecurrentSpecArenaBytes(&darch.Architecture{NumLayers: 1, Granite: &archparts.GraniteParams{}, LayerIsMamba: func(int) bool { return true }}, 16); got != 0 {
 		t.Errorf("Mamba-2: %d, want 0", got)
 	}
-	if got := RecurrentSpecArenaBytes(&Architecture{NumLayers: 4}, 16); got != 0 {
+	if got := RecurrentSpecArenaBytes(&darch.Architecture{NumLayers: 4}, 16); got != 0 {
 		t.Errorf("dense: %d, want 0", got)
 	}
 	wide := deltaNetArch(32)
-	wide.qwen35.KeyHeadDim = 256
+	wide.Qwen35.KeyHeadDim = 256
 	if got := RecurrentSpecArenaBytes(wide, 16); got != 0 {
 		t.Errorf("key heads of 256, past the scan twins: %d, want 0", got)
 	}
@@ -123,17 +128,17 @@ func (h prepHost) PrepareRecurrentSpec(rows int) error {
 // to prepare, no rows kept, and an architecture the path does not serve (Mamba-2, a sliding window, heads past 128), which is
 // refused before the resident is asked to allocate anything.
 func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
-	mk := func(a *Architecture) *Model { return &Model{w: &Weights{arch: a}} }
+	mk := func(a *darch.Architecture) *Model { return &Model{w: &darch.Weights{Arch: a}} }
 	dw := blockspecStubWeights{blockSize: 16}
 	dn := deltaNetArch(8)
-	mamba := &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}
+	mamba := &darch.Architecture{NumLayers: 1, Granite: &archparts.GraniteParams{}, LayerIsMamba: func(int) bool { return true }}
 	windowed := deltaNetArch(8)
 	windowed.SlidingWindow = 4096
 	wide := deltaNetArch(8)
-	wide.qwen35.ValueHeadDim = 256
+	wide.Qwen35.ValueHeadDim = 256
 	for _, c := range []struct {
 		name      string
-		arch      *Architecture
+		arch      *darch.Architecture
 		rows      int
 		prepErr   error
 		noFold    bool
@@ -147,7 +152,7 @@ func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 		{"DeltaNet with a sliding window", windowed, 16, nil, false, false, 0},
 		{"DeltaNet with value heads of 256", wide, 16, nil, false, false, 0},
 		{"DeltaNet with a prepared path", dn, 16, nil, false, true, 1},
-		{"dense: nothing to prepare", &Architecture{}, 16, nil, false, true, 0},
+		{"dense: nothing to prepare", &darch.Architecture{}, 16, nil, false, true, 0},
 		{"a prepared path narrower than the drafter's block", dn, 8, nil, false, false, 1},
 	} {
 		preps := 0
@@ -243,10 +248,10 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 		t.Skip("fixture is not resident-eligible")
 	}
 	// Make the fixture's first layer a Gated-DeltaNet one so the loop takes the fold path; nothing below runs a forward.
-	a := *m.w.arch
-	a.qwen35 = &qwen35Params{ConvKernel: 4, KeyHeadDim: 16, ValueHeadDim: 16, NumKeyHeads: 2, NumValueHeads: 4}
-	a.layerIsLinear = func(i int) bool { return i == 0 }
-	m.w.arch = &a
+	a := *m.w.Arch
+	a.Qwen35 = &archparts.Qwen35Params{ConvKernel: 4, KeyHeadDim: 16, ValueHeadDim: 16, NumKeyHeads: 2, NumValueHeads: 4}
+	a.LayerIsLinear = func(i int) bool { return i == 0 }
+	m.w.Arch = &a
 	if !m.hasRecurrentState() {
 		t.Fatal("setup: the model does not report recurrent state")
 	}
@@ -355,7 +360,7 @@ func TestBlockSpecGenerate_fusesALongSeedInPieces(t *testing.T) {
 	for i := range prompt {
 		prompt[i] = 1 + i%50
 	}
-	host := &captureHost{hidden: m.w.arch.HiddenDim}
+	host := &captureHost{hidden: m.w.Arch.HiddenDim}
 	d := &fuseRecorder{}
 	s := &BlockSpec{m: m, host: host, rd: d, dw: blockspecCommitStubWeights{blockspecStubWeights{blockSize: 8}}}
 	if _, _, err := s.generate(prompt, BlockSpecOptions{VerifyWidth: 4, MaxTokens: 1}, nil); err != nil {
@@ -381,10 +386,10 @@ func TestBlockSpecGenerate_earlyExitDropsTheMarkedRows(t *testing.T) {
 	if !m.ResidentActive() {
 		t.Skip("fixture is not resident-eligible")
 	}
-	a := *m.w.arch
-	a.qwen35 = &qwen35Params{ConvKernel: 4, KeyHeadDim: 16, ValueHeadDim: 16, NumKeyHeads: 2, NumValueHeads: 4}
-	a.layerIsLinear = func(i int) bool { return i == 0 }
-	m.w.arch = &a
+	a := *m.w.Arch
+	a.Qwen35 = &archparts.Qwen35Params{ConvKernel: 4, KeyHeadDim: 16, ValueHeadDim: 16, NumKeyHeads: 2, NumValueHeads: 4}
+	a.LayerIsLinear = func(i int) bool { return i == 0 }
+	m.w.Arch = &a
 	host := &foldHost{script: []int{5, 6, 9, 8}}
 	s := &BlockSpec{m: m, host: host, rd: scriptDrafter{ids: []int{5, 6, 4}}, dw: blockspecCommitStubWeights{blockspecStubWeights{blockSize: 8}}}
 	n := 0

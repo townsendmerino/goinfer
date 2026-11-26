@@ -484,7 +484,7 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
 - Extend the `qwen3_5` loader so `in_proj_qkv`, `in_proj_z` and the linear-attention `out_proj`
   pass through the same f32 merge as `loadProj` before quantization. Extend `validateTargets` with
   the GDN suffixes *from the schema*, not a hand list (lora.go's own V-12 comment records why). Mind
-  `FusedDeltaNetProj` (`decoder/arch.go:qwen35Params`): the merge has to hit the on-disk tensor before any
+  `FusedDeltaNetProj` (`internal/runtime/archparts/arch.go:Qwen35Params`): the merge has to hit the on-disk tensor before any
   repack.
 - **Consequence, stated:** a merged model is a decision model; its text generation is no longer the
   base Qwen's. One set of weights serving both is out of scope (§6).
@@ -988,7 +988,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 `constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model_forward.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/program_cpu.go:Model.walkToken` (the capture
 contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
-`decoder/arch.go:qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.validateTargets` (`validateTargets`) ·
+`internal/runtime/archparts/arch.go:Qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.validateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:buildWeightsFromSafetensorsTo`, `:744`
 (merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/kvsnapshot.go:Session.Snapshot` (snapshot
 skips recurrent state) · `internal/app/serveapp/openai_generate.go:maxTopLogprobs`, `internal/app/serveapp/openai_types.go:sampling` (`top_logprobs` cap,

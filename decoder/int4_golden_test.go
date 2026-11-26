@@ -145,7 +145,7 @@ func int4RunOne(t *testing.T, dir string) (*int4Golden, bool) {
 		return nil, false // encoders and unsupported model_types: a recorded absence, not a failure
 	}
 	defer m.Close()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	if vocab <= 1 {
 		return nil, false
 	}
@@ -162,7 +162,7 @@ func int4RunOne(t *testing.T, dir string) (*int4Golden, bool) {
 	}
 	sum, sumSq, mn, mx := int4Moments(logits)
 	return &int4Golden{
-		ModelType: m.w.arch.Name,
+		ModelType: m.w.Arch.Name,
 		IDs:       ids,
 		Vocab:     len(logits),
 		Argmax:    sampling.Argmax(logits),

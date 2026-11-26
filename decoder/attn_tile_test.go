@@ -30,7 +30,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	ring.enableRings(W, arch.isGlobalLayer)
+	ring.enableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(41))
 
 	// Turn 1: fill the ring past its window, so the assembled window is shorter than maxKeys.
@@ -89,7 +89,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false })
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	ring.enableRings(W, arch.isGlobalLayer)
+	ring.enableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(42))
 	hist := randVec(rng, startPos*kvDim)
 	ring.commitBatch(0, 0, startPos, hist, hist)

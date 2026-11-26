@@ -5,6 +5,8 @@ import (
 	"math/rand/v2"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -312,7 +314,7 @@ func BenchmarkAttendQuery_Heads32_K512_Dim128(b *testing.B) {
 	const nKV = 8
 	const hd = 128
 	const nKeys = 512
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		NumHeads:   nH,
 		NumKVHeads: nKV,
 		HeadDim:    hd,
@@ -355,11 +357,11 @@ func BenchmarkDeltaNet_Recurrence_Heads16_Dim128(b *testing.B) {
 	conv := benchFloatSlice(convDim, 1)
 	at := benchFloatSlice(nv, 2)
 	bt := benchFloatSlice(nv, 3)
-	w := &deltaNetWeights{
-		dtBias:  benchFloatSlice(nv, 4),
-		negExpA: benchFloatSlice(nv, 5),
+	w := &archparts.DeltaNetWeights{
+		DtBias:  benchFloatSlice(nv, 4),
+		NegExpA: benchFloatSlice(nv, 5),
 	}
-	p := qwen35Params{
+	p := archparts.Qwen35Params{
 		NumKeyHeads:   nk,
 		NumValueHeads: nv,
 		KeyHeadDim:    hk,
@@ -388,11 +390,11 @@ func BenchmarkKDA_Recurrence_Heads16_Dim128(b *testing.B) {
 	v := benchFloatSlice(projSize, 3)
 	gDecayRaw := benchFloatSlice(projSize, 4)
 	betaLogits := benchFloatSlice(H, 5)
-	w := &kdaWeights{
-		dtBias: benchFloatSlice(projSize, 6),
-		aLog:   benchFloatSlice(H, 7),
+	w := &archparts.KDAWeights{
+		DtBias: benchFloatSlice(projSize, 6),
+		ALog:   benchFloatSlice(H, 7),
 	}
-	p := kdaParams{
+	p := archparts.KDAParams{
 		NumHeads:   H,
 		HeadDim:    D,
 		LowerBound: -5.0,

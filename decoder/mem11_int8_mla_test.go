@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -35,7 +36,7 @@ func mlaLoad(t *testing.T, path, quant string, keepF32 bool) *Model {
 }
 
 // mlaPairs is each int8-able projection's f32 (from the f32 arm) and int8 (from the int8 arm), with its shape.
-func mlaPairs(ref, got *mlaWeights) []struct {
+func mlaPairs(ref, got *archparts.MLAWeights) []struct {
 	name string
 	f    []float32
 	q    *linalg.WeightMat
@@ -44,7 +45,7 @@ func mlaPairs(ref, got *mlaWeights) []struct {
 		name string
 		f    []float32
 		q    *linalg.WeightMat
-	}{{"q_a", ref.qAProj, &got.qAQ}, {"q_b", ref.qBProj, &got.qBQ}, {"q", ref.qProj, &got.qQ}, {"kv_a", ref.kvAProj, &got.kvAQ}, {"o", ref.oProj, &got.oQ}}
+	}{{"q_a", ref.QAProj, &got.QAQ}, {"q_b", ref.QBProj, &got.QBQ}, {"q", ref.QProj, &got.QQ}, {"kv_a", ref.KVAProj, &got.KVAQ}, {"o", ref.OProj, &got.OQ}}
 }
 
 // TestMEM11_mlaInt8Holding is I8M-G1 and I8M-G2's host half: on
@@ -83,12 +84,12 @@ func TestMEM11_mlaInt8Holding(t *testing.T) {
 		var saved int64
 		layers := 0
 		for l := range got.w.Layers {
-			rm, gm, bm := ref.w.Layers[l].mla, got.w.Layers[l].mla, back.Layers[l].mla
+			rm, gm, bm := ref.w.Layers[l].MLA, got.w.Layers[l].MLA, back.Layers[l].MLA
 			if gm == nil {
 				continue
 			}
 			layers++
-			if gm.kvBProj == nil || !slices.Equal(gm.kvBProj, rm.kvBProj) {
+			if gm.KVBProj == nil || !slices.Equal(gm.KVBProj, rm.KVBProj) {
 				t.Errorf("%s layer %d: kv-B is not the f32 kv-B", quant, l)
 			}
 			for _, p := range mlaPairs(rm, gm) {
@@ -145,7 +146,7 @@ func TestMEM11_mlaInt8FidelitySlice(t *testing.T) {
 		t.Skipf("no slice at %s", path)
 	}
 	ref, got := mlaLoad(t, path, "int4", true), mlaLoad(t, path, "int4", false)
-	if got.w.Layers[0].mla.qQ.Rows() == 0 {
+	if got.w.Layers[0].MLA.QQ.Rows() == 0 {
 		t.Fatal("the int8 arm's layer 0 holds no int8 q projection")
 	}
 	minCos, agree := b27Lockstep(t, ref, got, []int{1, 17, 113, 29, 71, 5}, 32)

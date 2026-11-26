@@ -3,6 +3,8 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"slices"
 )
 
@@ -10,7 +12,7 @@ import (
 // carry biases; no QK-norm. Attention/embeddings/router quantize per policy; the (F32) sinks and biases load raw. The
 // expert weights are MXFP4 (ggml type 39) in the real checkpoint; stackedExperts routes them through aikit's
 // RowDequantizer.
-func (b *ggufBuild) loadGptOss() (*Weights, error) {
+func (b *ggufBuild) loadGptOss() (*darch.Weights, error) {
 	arch, g, w, sink, abort, hidden, hd, streamMat, mat, vec, vnorm, stackedExperts := b.arch, b.g, b.w, b.sink, b.abort, b.hidden, b.hd, b.streamMat, b.mat, b.vec, b.vnorm, b.stackedExperts
 	nH, nKV := arch.NumHeads, arch.NumKVHeads
 	qDim, kvDim := nH*hd, nKV*hd
@@ -92,9 +94,9 @@ func (b *ggufBuild) loadGptOss() (*Weights, error) {
 		if gbe != nil || ube != nil || dbe != nil {
 			return fmt.Errorf("decoder(gguf-gptoss): expert biases layer %d: %w", i, errors.Join(gbe, ube, dbe))
 		}
-		l.Experts = make([]expertWeights, nExp)
+		l.Experts = make([]archparts.ExpertWeights, nExp)
 		for ei := range nExp {
-			l.Experts[ei] = expertWeights{
+			l.Experts[ei] = archparts.ExpertWeights{
 				Gate: gate[ei], Up: up[ei], Down: down[ei],
 				GateBias: gb[ei], UpBias: ub[ei], DownBias: db[ei],
 			}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -14,7 +16,7 @@ import (
 // intermediate_size. Separate q/k/v/o (no fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
 // (early-fusion multimodal) and any MTP heads are dropped: text decoder only. Dedicated loader (buildLlama4Weights) + forward
 // (Architecture.llama4LayerOps).
-func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func llama4Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)
 	}
@@ -82,7 +84,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if attnScale == 0 {
 		attnScale = 0.1
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "llama4_text",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -91,11 +93,11 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: denseInter, // dense layers (intermediate_size_mlp); experts use MoE.IntermediateDim
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false, // Llama 4's QK-norm is parameter-free L2, applied by its program's qkL2 norm (not the weighted path)
 		MoE: &MoEConfig{
@@ -111,15 +113,15 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:      math.Pow(float64(hd), -0.5),
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
-		ropeScaling:    ropeSc,
+		RoPEScaling:    ropeSc,
 		RotaryDim:      0, // full head_dim
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
-		llama4: &llama4Params{
+		Llama4: &archparts.Llama4Params{
 			// attention_chunk_size bounds the RoPE layers' attention to chunks; dropping it attends full-causal past it.
-			chunkSize: cfg.AttentionChunkSize,
-			useRope:   useRope, isMoE: isMoE, useQKNorm: cfg.UseQKNorm,
-			attnTemp: cfg.AttnTemperatureTuning, floorScale: floor, attnScale: attnScale,
+			ChunkSize: cfg.AttentionChunkSize,
+			UseRope:   useRope, IsMoE: isMoE, UseQKNorm: cfg.UseQKNorm,
+			AttnTemp: cfg.AttnTemperatureTuning, FloorScale: floor, AttnScale: attnScale,
 		},
 	}, &llama4TensorSchema, nil
 }

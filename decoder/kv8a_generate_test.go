@@ -307,7 +307,7 @@ func TestKV8_severalSlotsRestoreTheirCheckpoints(t *testing.T) {
 	if got := m.ResidentKVSlots(); got != 2 {
 		t.Fatalf("%d slots, want 2", got)
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	PA, _ := kv8aTurns(m, nil)
 	PB := make([]int, len(PA))
 	for i := range PB {
@@ -406,7 +406,7 @@ func TestKV8_aTakenCheckpointIsNotScored(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	PA, _ := kv8aTurns(m, nil)
 	PB := make([]int, len(PA))
 	for i := range PB {
@@ -458,7 +458,7 @@ func TestKV8_aResetFreesTheCheckpoint(t *testing.T) {
 	if m.checkpointHeld(slot) {
 		t.Error("a reset left the slot holding its checkpoint")
 	}
-	branch := append(slices.Clone(PA), (ra[0]+1)%m.w.arch.VocabSize, 5, 9, 2, 7, 3, 8, 1, 6, 4, 10, 12, 14)
+	branch := append(slices.Clone(PA), (ra[0]+1)%m.w.Arch.VocabSize, 5, 9, 2, 7, 3, 8, 1, 6, 4, 10, 12, 14)
 	if _, g := kv8aRun(t, m, branch); be.rf.restores != 0 || g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
 		t.Errorf("after the reset: %d restores, restored at %d, declined %q; want none tried", be.rf.restores, g.CheckpointRestored, g.CheckpointDeclined)
 	}

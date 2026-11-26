@@ -25,30 +25,6 @@ var mlaInt8ForTest bool
 // per-projection search (docs/measurements/mem11-int8-2026-10/mla.md).
 var mlaProjF32ForTest map[string]bool
 
-// quantizeProjections replaces the q (or q-LoRA pair), kv-A and o projections with their int8 form: linalg.QuantizeInt8 of the
-// f32, weight-only, the codes and scales every GPU backend makes from the f32 (the form the Mamba projections take).
-func (w *mlaWeights) quantizeProjections(p *mlaParams, H, hidden int, skipF32 map[string]bool) {
-	qkHead := p.QKNopeHeadDim + p.QKRopeHeadDim
-	if skipF32["q"] {
-		// q stays f32.
-	} else if p.QLoRARank > 0 {
-		w.qAQ = linalg.QuantizeInt8(w.qAProj, p.QLoRARank, hidden, false)
-		w.qBQ = linalg.QuantizeInt8(w.qBProj, H*qkHead, p.QLoRARank, false)
-		w.qAProj, w.qBProj = nil, nil
-	} else {
-		w.qQ = linalg.QuantizeInt8(w.qProj, H*qkHead, hidden, false)
-		w.qProj = nil
-	}
-	if !skipF32["kva"] {
-		w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
-		w.kvAProj = nil
-	}
-	if !skipF32["o"] {
-		w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
-		w.oProj = nil
-	}
-}
-
 // mlaMatvec is one MLA projection of x: its int8 form q when the load holds one, else the f32 f [rows, cols].
 func mlaMatvec(f []float32, q *linalg.WeightMat, rows, cols int, x []float32) []float32 {
 	if q.Rows() > 0 {
@@ -60,6 +36,6 @@ func mlaMatvec(f []float32, q *linalg.WeightMat, rows, cols int, x []float32) []
 // MLALayerInt8 returns layer l's int8 MLA projections, each zero-valued where the load holds that projection f32: the q-LoRA
 // pair or the direct q, kv-A and o. A backend uploads these codes as they are; they are what it would make from the f32.
 func (m *Model) MLALayerInt8(l int) (qA, qB, q, kvA, o *linalg.WeightMat) {
-	w := m.w.Layers[l].mla
-	return &w.qAQ, &w.qBQ, &w.qQ, &w.kvAQ, &w.oQ
+	w := m.w.Layers[l].MLA
+	return &w.QAQ, &w.QBQ, &w.QQ, &w.KVAQ, &w.OQ
 }

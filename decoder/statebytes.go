@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -14,7 +15,7 @@ type StateSpec struct {
 
 // stateSpecs is layer l's state, its operations' per-slot buffers (layerBuffers): the one list a resident build allocates from and the
 // plan prices from.
-func stateSpecs(a *Architecture, l int) []StateSpec {
+func stateSpecs(a *darch.Architecture, l int) []StateSpec {
 	var out []StateSpec
 	for _, b := range layerBuffers(a, l) {
 		if b.Unit == program.PerSlot {
@@ -34,11 +35,11 @@ func stateFloats(b program.Buf) int {
 }
 
 // StateSpecs is layer l's recurrent or conv state on this model, nil for a layer with none.
-func (m *Model) StateSpecs(l int) []StateSpec { return stateSpecs(m.w.arch, l) }
+func (m *Model) StateSpecs(l int) []StateSpec { return stateSpecs(m.w.Arch, l) }
 
 // stateBuffers is one KV slot's recurrent and conv state for a, in bytes per buffer. It holds to what KVCache grows to
 // (TestPlan_pricesRecurrentState).
-func stateBuffers(a *Architecture) []int64 {
+func stateBuffers(a *darch.Architecture) []int64 {
 	var out []int64
 	for l := range a.NumLayers {
 		for _, s := range stateSpecs(a, l) {
@@ -52,7 +53,7 @@ func stateBuffers(a *Architecture) []int64 {
 
 // recurrentCheckpointBuffers is the state a resident build's rewind checkpoint copies, in bytes per buffer: what the operations mark
 // checkpointed (Gated-DeltaNet's and Mamba-2's; KDA and short conv keep none).
-func recurrentCheckpointBuffers(a *Architecture) []int64 {
+func recurrentCheckpointBuffers(a *darch.Architecture) []int64 {
 	var out []int64
 	for l := range a.NumLayers {
 		for _, b := range layerBuffers(a, l) {

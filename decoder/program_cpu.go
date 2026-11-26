@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -33,12 +34,7 @@ func (m *Model) program() *layerProgram {
 	if m.prog != nil {
 		return m.prog
 	}
-	return buildProgram(m.w.arch, m.w.hasExperts)
-}
-
-// hasExperts reports whether layer l carries MoE experts (Gemma 4's 26B carries them in its own block).
-func (w *Weights) hasExperts(l int) bool {
-	return l < len(w.Layers) && (w.Layers[l].Experts != nil || w.Layers[l].gemma4moe != nil)
+	return buildProgram(m.w.Arch, m.w.HasExperts)
 }
 
 // walkToken runs prog's layers for one position over h ([hidden], the residual stream, updated in place) and returns h. Each
@@ -47,7 +43,7 @@ func (w *Weights) hasExperts(l int) bool {
 //
 // pleID is the token id behind h for the embedding stage's PLE inputs (Gemma 4); an image row passes the pad id.
 func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	scr := cache.scr
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
@@ -55,7 +51,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 	pos := cache.Pos() // this position, stable across layers in one forward
 	var t attnTimer
 	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
-	if arch.gemma4 != nil {
+	if arch.Gemma4 != nil {
 		g4 = m.newGemma4Token(prog, h, pleID, pos, &scr.g4)
 		if g4traceHidden != nil {
 			g4traceHidden(-1, h)
@@ -76,7 +72,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 		if cache.lora != nil {
 			ld = &cache.lora.layers[l]
 		}
-		nH, hd := arch.headsAt(l), arch.HeadDim
+		nH, hd := arch.HeadsAt(l), arch.HeadDim
 		q, k, v := scr.q[:nH*hd], scr.k, scr.v
 		ctx := scr.ctx[:nH*hd]
 		lastFFN := false // which sublayer the next single residual add belongs to, for the sublayer capture
@@ -96,7 +92,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				if seamPlantForTest == plantSubPrePostNorm && cache.subCapture && o.Norm.Slot == slotPostAttn {
 					planted = append(planted[:0], src...)
 				}
-				w, b := lw.normWeights(o.Norm)
+				w, b := lw.NormWeights(o.Norm)
 				applyNorm(o.Norm, dst, src, w, b, arch.HiddenDim)
 			case opProjQKV:
 				t.start()
@@ -156,7 +152,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				}
 				out := m.reg(o.Out, h, scr)
 				if o.FFN.Form == ffnGemma4Dense {
-					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), g4); err != nil {
+					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.FFNAt(l), g4); err != nil {
 						return nil, err
 					}
 				} else if err := m.ffnToken(&o.FFN, m.reg(o.In, h, scr), out, lw, scr, ld); err != nil {
@@ -175,7 +171,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				m.gemma4AttnToken(&o.G4, m.reg(o.In, h, scr), m.reg(o.Out, h, scr), lw, cache, l, pos, g4)
 				lastFFN = false
 			case opGemma4MoE:
-				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager, &g4.moe))
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.Gemma4MoE, m.pager, &g4.moe))
 			case opPLE:
 				m.gemma4PLEBranch(h, l, g4, lw, &o.Norms, scr.sub)
 				if cache.subPLE != nil && !(seamPlantForTest == plantSkipPLECapture && l == 1) { // the contribution just added
@@ -191,9 +187,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				copy(m.reg(o.Out, h, scr), m.mlaAttentionWith(&o.MLA, m.reg(o.In, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
 			case opDeltaNet:
-				dp := *arch.qwen35
+				dp := *arch.Qwen35
 				dp.ONormEps, dp.NegEigval = o.Delta.ONormEps, o.Delta.NegEigval
-				copy(m.reg(o.Out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.In, h, scr), lw.delta, dp, arch.HiddenDim, o.Delta.Eps, cache.delta[l]))
+				copy(m.reg(o.Out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.In, h, scr), lw.Delta, dp, arch.HiddenDim, o.Delta.Eps, cache.delta[l]))
 				lastFFN = false
 			case opGatedAttn:
 				if o.Gated.Attn.Order != attnQuery {
@@ -202,16 +198,16 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				copy(m.reg(o.Out, h, scr), m.qwen35AttentionWith(&o.Gated, m.reg(o.In, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
 			case opMamba2:
-				mp := arch.mamba2Shapes(o.Mamba.NormGroups)
-				copy(m.reg(o.Out, h, scr), mamba2Step(m.reg(o.In, h, scr), lw.mamba, mp, o.Mamba.Eps, cache.mamba[l]))
+				mp := arch.Mamba2Shapes(o.Mamba.NormGroups)
+				copy(m.reg(o.Out, h, scr), mamba2Step(m.reg(o.In, h, scr), lw.Mamba, mp, o.Mamba.Eps, cache.mamba[l]))
 				lastFFN = false
 			case opShortConv:
-				copy(m.reg(o.Out, h, scr), shortConvStep(m.reg(o.In, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
+				copy(m.reg(o.Out, h, scr), shortConvStep(m.reg(o.In, h, scr), lw.ShortConv, *arch.LFM2, arch.HiddenDim, cache.conv[l]))
 				lastFFN = false
 			case opKDA:
-				kp := *arch.kda
+				kp := *arch.KDA
 				kp.LowerBound = o.KDA.LowerBound
-				copy(m.reg(o.Out, h, scr), kdaMixerStep(m.be, m.reg(o.In, h, scr), lw.kda, kp, arch.HiddenDim, o.KDA.Eps, cache.kda[l]))
+				copy(m.reg(o.Out, h, scr), kdaMixerStep(m.be, m.reg(o.In, h, scr), lw.KDA, kp, arch.HiddenDim, o.KDA.Eps, cache.kda[l]))
 				lastFFN = false
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.Kind)
@@ -220,7 +216,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				m.countOp(cache, o, lw, l, t0)
 			}
 		}
-		if g4traceHidden != nil && arch.gemma4 != nil {
+		if g4traceHidden != nil && arch.Gemma4 != nil {
 			g4traceHidden(l, h)
 		}
 		if seamPlantForTest != plantCaptureEarly {
@@ -255,7 +251,7 @@ func (m *Model) finalNorm(x []float32) {
 	if !hp.Norm.Bias {
 		b = nil
 	}
-	applyNorm(hp.Norm, x, x, m.w.FinalNorm, b, m.w.arch.HiddenDim)
+	applyNorm(hp.Norm, x, x, m.w.FinalNorm, b, m.w.Arch.HiddenDim)
 }
 
 // reg resolves an operand to the stream's buffer.
@@ -271,24 +267,6 @@ func (m *Model) reg(r opReg, h []float32, scr *decodeScratch) []float32 {
 	return h
 }
 
-// normWeights returns the weight and bias an opNorm applies: the bias only when the operation says so.
-func (lw *LayerWeights) normWeights(p normParams) (w, b []float32) {
-	switch p.Slot {
-	case slotPreAttn:
-		w, b = lw.PreAttnNorm, lw.PreAttnNormBias
-	case slotPreMLP:
-		w, b = lw.PreMLPNorm, lw.PreMLPNormBias
-	case slotPostAttn:
-		w = lw.PostAttnNorm
-	case slotPostMLP:
-		w = lw.PostMLPNorm
-	}
-	if !p.Bias {
-		b = nil
-	}
-	return w, b
-}
-
 // applyNorm computes one row's normalisation from src into dst (they may be the same buffer).
 func applyNorm(p normParams, dst, src, w, b []float32, dim int) {
 	switch p.Form {
@@ -302,7 +280,7 @@ func applyNorm(p normParams, dst, src, w, b []float32, dim int) {
 }
 
 // projQKVToken projects x to q, k and v for one position, with LoRA's deltas and the bias.
-func projQKVToken(be Backend, scr *decodeScratch, lw *LayerWeights, x, q, k, v []float32, ld *loraLayerDelta, p projParams) {
+func projQKVToken(be Backend, scr *decodeScratch, lw *darch.LayerWeights, x, q, k, v []float32, ld *loraLayerDelta, p projParams) {
 	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 		// One batched dispatch: the activation is quantized once and the weights are read in place.
 		scr.qkvOps[0] = linalg.BatchOp{W: &lw.QProj, Dst: q}
@@ -365,11 +343,11 @@ func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys
 // into ctx. The cache's layout picks the read (an f32 ring read in place, another ring through scratch, a widened global layer, an
 // f32 global layer); p picks which keys are attended and how they are scored.
-func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr *decodeScratch, arch *Architecture, l, pos int) error {
+func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr *decodeScratch, arch *darch.Architecture, l, pos int) error {
 	if p.Order != attnBatchedAcc64 {
 		return fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's per-token walker", l, p.Order)
 	}
-	nH, hd := arch.headsAt(l), arch.HeadDim
+	nH, hd := arch.HeadsAt(l), arch.HeadDim
 	kvDim := arch.NumKVHeads * hd
 	if kvRoundF16ForTest { // the f16 exactness gate's reference: the f32 path with each stored row rounded to f16 by hand
 		roundF16InPlace(k)
@@ -422,8 +400,8 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 }
 
 // ffnToken writes the feed-forward output of x into out for one position.
-func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
-	arch := m.w.arch
+func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *darch.LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
+	arch := m.w.Arch
 	switch p.Form {
 	case ffnGemma4Dense:
 		return errNotImplemented // the walker runs Gemma 4's dense FFN itself (it shares the token's quantized input)

@@ -53,7 +53,7 @@ func TestRequantBar_DoubleQuantCost(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load int4: %v", err)
 			}
-			w8, w4 := m8.w.matmulWeights(), m4.w.matmulWeights()
+			w8, w4 := m8.w.MatmulWeights(), m4.w.MatmulWeights()
 
 			var sumDirect, sumMetal, sumRange float64
 			var n int

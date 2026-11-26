@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -35,7 +37,7 @@ import (
 // Attention sinks are NOT enabled in any released checkpoint
 // (swa_attention_sink_enabled absent), so that branch of the vendor code has no
 // counterpart here.
-func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func lagunaArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateLaguna(); err != nil {
 		return nil, nil, err
 	}
@@ -91,11 +93,11 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	var lp *lagunaParams
+	var lp *archparts.LagunaParams
 	if gateOn || len(cfg.NumAttentionHeadsPerLayer) > 0 {
-		lp = &lagunaParams{HeadsPerLayer: cfg.NumAttentionHeadsPerLayer, GatePerHead: gatePerHead}
+		lp = &archparts.LagunaParams{HeadsPerLayer: cfg.NumAttentionHeadsPerLayer, GatePerHead: gatePerHead}
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "laguna",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -104,11 +106,11 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim, // dense width, used by the mlp_only_layers prefix
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false, // "no QKV bias" is in the vendor's own list of departures from Qwen2MoE
 		// QK-norm is UNCONDITIONAL in all three released modules — q_norm/k_norm are
 		// constructed with no config flag guarding them, and the real XS.2 checkpoint
@@ -129,15 +131,15 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
-		layerIsGlobal:    cfg.IsGlobalLayer, // from layer_types; absent ⇒ all-global (M.1)
+		LayerIsGlobal:    cfg.IsGlobalLayer, // from layer_types; absent ⇒ all-global (M.1)
 		RoPEGlobalBase:   full.Base,
 		RoPELocalBase:    localBase,
-		ropeScaling:      full.Scaling,
-		ropeScalingLocal: localScaling,
+		RoPEScaling:      full.Scaling,
+		RoPEScalingLocal: localScaling,
 		RotaryDim:        rotaryOf(partialOf(full)),
 		RotaryDimLocal:   rotaryDimLocal,
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
-		laguna:           lp,
+		Laguna:           lp,
 	}, &lagunaTensorSchema, nil
 }

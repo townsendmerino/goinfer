@@ -3,30 +3,10 @@ package decoder
 import (
 	"math"
 
-	"github.com/townsendmerino/aikit/linalg"
-
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
-
-// kdaWeights holds one Bailing Hybrid (Ling 3.0) Kimi Delta Attention layer's parameters,
-// row-major, as HF stores them. Unlike Gated DeltaNet, q/k/v are three FULLY SEPARATE
-// projections AND three separate depthwise causal convs (verified against the real
-// modeling_bailing_moe_v3.py's BailingMoeV3KimiDeltaAttention — independent self.q_proj/k_proj/
-// v_proj and self.q_conv1d/k_conv1d/v_conv1d, not Gated DeltaNet's single concatenated in_proj_qkv
-// + combined conv). num_k_heads == num_heads and head_k_dim == head_v_dim == head_dim always for
-// this family (no GVA-style key/value head expansion), so there is only one width to track.
-type kdaWeights struct {
-	qProj, kProj, vProj    linalg.WeightMat // [numHeads*headDim, hidden] each
-	qConvW, kConvW, vConvW []float32        // [numHeads*headDim, K] each, depthwise, bias-free (fla's ShortConvolution default)
-	fProj                  linalg.WeightMat // [numHeads*headDim, hidden] — decay-gate raw input (no_kda_lora path: config.no_kda_lora=true selects this single-linear form over a LoRA'd a/b split, which this family does not implement — see kdaArchitecture)
-	dtBias                 []float32        // [numHeads*headDim] — PER-CHANNEL (Gated DeltaNet's is per-head)
-	aLog                   []float32        // [numHeads] — raw A_log (kdaLowerBoundGate exponentiates internally, unlike Gated DeltaNet's precomputed −exp(A_log))
-	bProj                  []float32        // [numHeads, hidden] — beta write-gate, per-head scalar (small; not quantized, mirrors qwen35's inProjB)
-	gProj                  linalg.WeightMat // [numHeads*headDim, hidden] — output gate raw input (no_kda_lora path)
-	oNormW                 []float32        // [headDim] gated-RMSNorm weight (sigmoid-activated — Gated DeltaNet's is SiLU)
-	oProj                  linalg.WeightMat // [hidden, numHeads*headDim]
-}
 
 // kdaState is one KDA layer's streaming state in the KV cache: three independent rolling conv
 // windows (one per q/k/v stream — Gated DeltaNet needs only one, since its conv is combined) and
@@ -38,7 +18,7 @@ type kdaState struct {
 	hq                           w4a8Act // h quantized once for q, k, v, f and g; rewritten every step
 }
 
-func newKDAState(p kdaParams) *kdaState {
+func newKDAState(p archparts.KDAParams) *kdaState {
 	return &kdaState{s: make([]float32, p.NumHeads*p.HeadDim*p.HeadDim)}
 }
 
@@ -78,25 +58,25 @@ func kdaSlideWindow(win [][]float32, x []float32, K int) [][]float32 {
 // gated-RMSNorm-then-out_proj tail — mirrors gatedDeltaNetStep's own shape, parameterized for
 // KDA's real departures (three separate convs, per-channel dt_bias, sigmoid gated-norm instead of
 // SiLU).
-func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden int, eps float64, st *kdaState) []float32 {
+func kdaMixerStep(be Backend, h []float32, w *archparts.KDAWeights, p archparts.KDAParams, hidden int, eps float64, st *kdaState) []float32 {
 	H, D, K := p.NumHeads, p.HeadDim, p.ConvKernel
 	projSize := H * D
 
 	// 1. Project, then per-stream depthwise causal conv + SiLU.
-	st.hq.prepare(be, &w.qProj, h, 1)
-	qm := matvecWMPre(be, &w.qProj, &st.hq, h)
-	km := matvecWMPre(be, &w.kProj, &st.hq, h)
-	vm := matvecWMPre(be, &w.vProj, &st.hq, h)
-	q := kdaConvStream(qm, w.qConvW, st.convWinQ, K)
-	k := kdaConvStream(km, w.kConvW, st.convWinK, K)
-	v := kdaConvStream(vm, w.vConvW, st.convWinV, K)
+	st.hq.prepare(be, &w.QProj, h, 1)
+	qm := matvecWMPre(be, &w.QProj, &st.hq, h)
+	km := matvecWMPre(be, &w.KProj, &st.hq, h)
+	vm := matvecWMPre(be, &w.VProj, &st.hq, h)
+	q := kdaConvStream(qm, w.QConvW, st.convWinQ, K)
+	k := kdaConvStream(km, w.KConvW, st.convWinK, K)
+	v := kdaConvStream(vm, w.VConvW, st.convWinV, K)
 	st.convWinQ = kdaSlideWindow(st.convWinQ, qm, K)
 	st.convWinK = kdaSlideWindow(st.convWinK, km, K)
 	st.convWinV = kdaSlideWindow(st.convWinV, vm, K)
 
 	// 2. Gates: per-channel decay-gate input, per-head beta.
-	gDecayRaw := matvecWMPre(be, &w.fProj, &st.hq, h) // [projSize]
-	betaLogits := hybridattn.Matvec(w.bProj, H, hidden, h)
+	gDecayRaw := matvecWMPre(be, &w.FProj, &st.hq, h) // [projSize]
+	betaLogits := hybridattn.Matvec(w.BProj, H, hidden, h)
 
 	// 3. Per-head KDA recurrence — the one genuinely new primitive (per-channel decay), reusing
 	// kda_rehearsal.go's already-reference-verified functions unchanged.
@@ -105,7 +85,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 
 	// 4. Gated RMSNorm (over headDim, × sigmoid(g), NOT SiLU — FusedRMSNormGated's own
 	// activation='sigmoid'), then out_proj.
-	gOutRaw := matvecWMPre(be, &w.gProj, &st.hq, h)
+	gOutRaw := matvecWMPre(be, &w.GProj, &st.hq, h)
 	for hh := range H {
 		seg := core[hh*D : (hh+1)*D]
 		zt := gOutRaw[hh*D : (hh+1)*D]
@@ -115,13 +95,13 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 		}
 		inv := float32(1 / math.Sqrt(ss/float64(D)+eps))
 		for d := range D {
-			seg[d] = seg[d] * inv * w.oNormW[d] * hybridattn.Sigmoidf(zt[d])
+			seg[d] = seg[d] * inv * w.ONormW[d] * hybridattn.Sigmoidf(zt[d])
 		}
 	}
-	return matvecWM(be, &w.oProj, core)
+	return matvecWM(be, &w.OProj, core)
 }
 
-func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights, p kdaParams, st *kdaState) {
+func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *archparts.KDAWeights, p archparts.KDAParams, st *kdaState) {
 	H, D := p.NumHeads, p.HeadDim
 	qScale := float32(1 / math.Sqrt(float64(D)))
 
@@ -144,8 +124,8 @@ func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights
 		hybridattn.L2NormScaledInto(kh, k[hh*D:(hh+1)*D], 1)
 		vh := v[hh*D : (hh+1)*D]
 		rawGate := gDecayRaw[hh*D : (hh+1)*D]
-		dtb := w.dtBias[hh*D : (hh+1)*D]
-		kdaLowerBoundGateInto(gateLog, rawGate, dtb, w.aLog[hh], float32(p.LowerBound))
+		dtb := w.DtBias[hh*D : (hh+1)*D]
+		kdaLowerBoundGateInto(gateLog, rawGate, dtb, w.ALog[hh], float32(p.LowerBound))
 		_ = decay[D-1]
 		_ = gateLog[D-1]
 		di := 0

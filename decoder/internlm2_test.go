@@ -61,11 +61,11 @@ func TestInternLM2_textParity(t *testing.T) {
 	}
 	defer m.Close()
 
-	if got := m.w.arch.Name; got != "internlm2" {
+	if got := m.w.Arch.Name; got != "internlm2" {
 		t.Fatalf("arch = %q, want internlm2", got)
 	}
 	// The split must produce the ordinary per-projection shapes the generic forward expects.
-	a := m.w.arch
+	a := m.w.Arch
 	if got := m.w.Layers[0].QProj.Rows(); got != a.NumHeads*a.HeadDim {
 		t.Errorf("q rows = %d, want %d", got, a.NumHeads*a.HeadDim)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // loadSharedKVFixture is a tiny Gemma 4 with its last layer marked KV-shared, as an E-model's are: the E-model fixture is not tracked, and
@@ -20,10 +21,10 @@ func loadSharedKVFixture(t *testing.T) *Model {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { m.Close() })
-	a := m.w.arch
-	a.gemma4.SharedKVLayers, a.layerIsGlobal = 1, func(int) bool { return true }
-	if a.NumLayers != 2 || a.gemma4KVSrcAt(1) != 0 || a.gemma4KVSrcAt(0) != 0 {
-		t.Fatalf("VOID: %d layers, sources %d and %d: want layer 1 sharing layer 0's KV", a.NumLayers, a.gemma4KVSrcAt(0), a.gemma4KVSrcAt(1))
+	a := m.w.Arch
+	a.Gemma4.SharedKVLayers, a.LayerIsGlobal = 1, func(int) bool { return true }
+	if a.NumLayers != 2 || a.Gemma4KVSrcAt(1) != 0 || a.Gemma4KVSrcAt(0) != 0 {
+		t.Fatalf("VOID: %d layers, sources %d and %d: want layer 1 sharing layer 0's KV", a.NumLayers, a.Gemma4KVSrcAt(0), a.Gemma4KVSrcAt(1))
 	}
 	return m
 }
@@ -34,7 +35,7 @@ func TestResidentKV_sharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
 	const ctx = 8
 	var held int64
-	for _, g := range m.w.arch.KVGeometry().Groups {
+	for _, g := range m.w.Arch.KVGeometry().Groups {
 		held += 2 * int64(g.RowWidth) * 4 * ctx * int64(len(g.Layers)) // K and V, f32
 	}
 	if got := m.ResidentKVBytes("cpu", ctx, false, false); got != held {
@@ -47,7 +48,7 @@ func TestResidentKV_sharedLayersOwnNone(t *testing.T) {
 func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
 	const ctx = 3 // under the fixture's window, so a sliding layer holds ctx rows and no mirror
-	if got, want := kvBytesForCtx(m.w.arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
+	if got, want := kvBytesForCtx(m.w.Arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
 		t.Errorf("the host fit prices %d bytes of KV at %d positions, the plan %d", got, ctx, want)
 	}
 	raw, err := os.ReadFile("../testdata/gemma4-moe-kv-tiny/config.json")
@@ -95,17 +96,17 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	const wide = 1 // the fixture's full-attention layer, wider than the model's kvDim
 	kvDim := a.NumKVHeads * a.HeadDim
-	if a.ringLayerAt(wide) || a.kvDimAt(wide) == kvDim {
+	if a.RingLayerAt(wide) || a.KVDimAt(wide) == kvDim {
 		t.Fatalf("VOID: layer %d is a ring, or no wider than the model's kvDim", wide)
 	}
-	if tokens*a.kvDimAt(wide) <= ctx*kvDim {
+	if tokens*a.KVDimAt(wide) <= ctx*kvDim {
 		t.Fatalf("VOID: %d tokens fit the %d floats a kvDim reservation holds", tokens, ctx*kvDim)
 	}
 	c := m.NewCache(ctx)
-	want := ctx * a.kvDimAt(wide)
+	want := ctx * a.KVDimAt(wide)
 	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
 		t.Errorf("f32: layer %d reserves %d and %d floats, want %d", wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
 	}
@@ -114,14 +115,14 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(c.keys[wide]) != tokens*a.kvDimAt(wide) {
+	if len(c.keys[wide]) != tokens*a.KVDimAt(wide) {
 		t.Fatalf("VOID: layer %d holds %d floats after %d tokens", wide, len(c.keys[wide]), tokens)
 	}
 	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
 		t.Errorf("f32: %d forwards left layer %d at %d and %d floats, not its %d", tokens, wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
 	}
 
-	if a.attnOrder() == attnBatchedAcc64 {
+	if a.AttnOrder() == attnBatchedAcc64 {
 		t.Error("Gemma 4's attention is the batched kernel, so it can quantize its cache without MoE: setQuant must then reserve each layer at its own width")
 	}
 	shared := loadSharedKVFixture(t) // a separate load: it marks layer 1 shared, and the checks above read it owning
@@ -133,15 +134,15 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 // TestResidentDense_countsEveryDeltaNetTensor: every f32 tensor of a DeltaNet layer is in the dense figure, since every one is uploaded on
 // mem.LineDense. Emptying one takes exactly its bytes off, and a new []float32 field fails the count below until it is listed.
 func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {
-	fields := map[string]func(*deltaNetWeights) *[]float32{
-		"inProjB": func(d *deltaNetWeights) *[]float32 { return &d.inProjB },
-		"inProjA": func(d *deltaNetWeights) *[]float32 { return &d.inProjA },
-		"convW":   func(d *deltaNetWeights) *[]float32 { return &d.convW },
-		"dtBias":  func(d *deltaNetWeights) *[]float32 { return &d.dtBias },
-		"negExpA": func(d *deltaNetWeights) *[]float32 { return &d.negExpA },
-		"normW":   func(d *deltaNetWeights) *[]float32 { return &d.normW },
+	fields := map[string]func(*archparts.DeltaNetWeights) *[]float32{
+		"inProjB": func(d *archparts.DeltaNetWeights) *[]float32 { return &d.InProjB },
+		"inProjA": func(d *archparts.DeltaNetWeights) *[]float32 { return &d.InProjA },
+		"convW":   func(d *archparts.DeltaNetWeights) *[]float32 { return &d.ConvW },
+		"dtBias":  func(d *archparts.DeltaNetWeights) *[]float32 { return &d.DtBias },
+		"negExpA": func(d *archparts.DeltaNetWeights) *[]float32 { return &d.NegExpA },
+		"normW":   func(d *archparts.DeltaNetWeights) *[]float32 { return &d.NormW },
 	}
-	rt := reflect.TypeFor[deltaNetWeights]()
+	rt := reflect.TypeFor[archparts.DeltaNetWeights]()
 	slices := 0
 	for field := range rt.Fields() {
 		if field.Type == reflect.TypeFor[[]float32]() {
@@ -159,7 +160,7 @@ func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {
 		before := m.ResidentDenseWeightBytes()
 		var want int64
 		for l := range m.w.Layers {
-			if d := m.w.Layers[l].delta; d != nil {
+			if d := m.w.Layers[l].Delta; d != nil {
 				s := f(d)
 				want += int64(len(*s)) * 4
 				*s = nil
@@ -187,13 +188,13 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	hidden := m.w.Cfg.HiddenDim
 	var want int64
 	for l := range m.w.Layers {
-		if mb := m.w.Layers[l].mamba; mb != nil {
-			if mb.inQ.Rows() != 0 {
+		if mb := m.w.Layers[l].Mamba; mb != nil {
+			if mb.InQ.Rows() != 0 {
 				t.Fatal("VOID: an f32 load holds int8 projections")
 			}
-			in := linalg.QuantizeInt8(mb.inProj, len(mb.inProj)/hidden, hidden, false)
-			out := linalg.QuantizeInt8(mb.outProj, hidden, len(mb.outProj)/hidden, false)
-			want += int64(len(mb.inProj)+len(mb.outProj))*4 - wmBytes(&in) - wmBytes(&out)
+			in := linalg.QuantizeInt8(mb.InProj, len(mb.InProj)/hidden, hidden, false)
+			out := linalg.QuantizeInt8(mb.OutProj, hidden, len(mb.OutProj)/hidden, false)
+			want += int64(len(mb.InProj)+len(mb.OutProj))*4 - wmBytes(&in) - wmBytes(&out)
 		}
 	}
 	if want <= 0 {

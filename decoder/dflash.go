@@ -804,7 +804,7 @@ func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]flo
 // Declared here rather than in model.go on purpose: model.go is in the parity manifest's core set, and adding a
 // drafter-only accessor there would re-stale every family's deps_hash for a function no existing forward calls.
 func (m *Model) DrafterHeadLogits(h []float32) []float32 {
-	arch := m.w.arch
+	arch := m.w.Arch
 	logits := make([]float32, arch.VocabSize)
 	if arch.TiedLMHead {
 		matmul(m.be, &m.w.Embed, h, logits, 1)
@@ -829,7 +829,7 @@ func (m *Model) DrafterHeadLogits(h []float32) []float32 {
 func (m *Model) DrafterEmbedBlock(ids []int) [][]float32 {
 	rows := make([][]float32, len(ids))
 	for i, id := range ids {
-		rows[i] = make([]float32, m.w.arch.HiddenDim)
+		rows[i] = make([]float32, m.w.Arch.HiddenDim)
 		m.embedToken(id, rows[i])
 	}
 	return rows

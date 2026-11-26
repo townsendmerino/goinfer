@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"testing"
 )
 
@@ -23,8 +24,8 @@ func TestResolveArchitecture_gpt2(t *testing.T) {
 		want any
 	}{
 		{"Name", a.Name, "gpt2"},
-		{"Norm", a.Norm, NormLayer},
-		{"NormPlacement", a.NormPlacement, NormPre2},
+		{"Norm", a.Norm, darch.NormLayer},
+		{"NormPlacement", a.NormPlacement, darch.NormPre2},
 		{"NonGatedMLP", a.NonGatedMLP, true},
 		{"QKVBias", a.QKVBias, true},
 		{"OutBias", a.OutBias, true},

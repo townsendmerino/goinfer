@@ -47,7 +47,7 @@ func TestInternLM2_1_8bReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "internlm2" {
 		t.Fatalf("arch = %q, want internlm2", a.Name)
 	}

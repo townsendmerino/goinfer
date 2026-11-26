@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -84,8 +85,8 @@ func TestLFM2_multiTokenPrefillMatchesSequential(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.lfm2 == nil {
-		t.Fatalf("fixture resolved to arch %q, not lfm2", m.w.arch.Name)
+	if m.w.Arch.LFM2 == nil {
+		t.Fatalf("fixture resolved to arch %q, not lfm2", m.w.Arch.Name)
 	}
 	if m.canBatchN(4) {
 		t.Error("canBatchN(4) = true for LFM2 — the batched stack has no conv mixer")
@@ -156,10 +157,10 @@ func TestProgram_pagerStaysOffNonGenericFamilies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", mt, err)
 		}
-		if arch.genericKindsOnly() || arch.MoE != nil {
+		if arch.GenericKindsOnly() || arch.MoE != nil {
 			continue
 		}
-		if p := newLayerPager(&Weights{arch: arch}, []byte{0}, 1<<20); p != nil {
+		if p := newLayerPager(&darch.Weights{Arch: arch}, []byte{0}, 1<<20); p != nil {
 			t.Errorf("%s: newLayerPager built a pager for a family with a layer outside the generic operations", mt)
 		}
 		declined++
@@ -184,8 +185,8 @@ func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
 			m, c := realCacheForType(t, mt)
 			names, _ := recurrentKinds(c)
 			allocated := len(names) > 0
-			if m.w.arch.recurrent() != allocated {
-				t.Errorf("Architecture.recurrent()=%v, but NewCache allocates recurrent kinds %v", m.w.arch.recurrent(), names)
+			if m.w.Arch.Recurrent() != allocated {
+				t.Errorf("Architecture.recurrent()=%v, but NewCache allocates recurrent kinds %v", m.w.Arch.Recurrent(), names)
 			}
 			if got := c.hasRecurrentState(); got != allocated {
 				t.Errorf("KVCache.hasRecurrentState()=%v, but the cache holds recurrent kinds %v — every "+

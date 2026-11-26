@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -38,8 +39,8 @@ func (gp *gemma4Pass) moeScratch() *gemma4MoEScratch {
 // scratch for the widest range a row can attend (startPos+K keys). A row's PLE input is (token_identity + context_aware) / √2;
 // context_aware depends only on the row's own embedding, so it is one M=K matmul. An image row takes the pad id's token identity.
 func (m *Model) newGemma4Pass(prog *layerProgram, h []float32, rows *batchRows, startPos, K int) *gemma4Pass {
-	arch := m.w.arch
-	g4 := arch.gemma4
+	arch := m.w.Arch
+	g4 := arch.Gemma4
 	hidden, nH := arch.HiddenDim, arch.NumHeads
 	maxHd := max(g4.GlobalHeadDim, arch.HeadDim)
 	nkMax := startPos + K
@@ -110,9 +111,9 @@ func gemma4BatchRange(pos, window int, spans []ImageSpan) (lo, hi int) {
 // gemma4AttnBatch is opGemma4Attn over K rows of x into out: q at M=K, normed and rotated per row; on a layer that owns its KV, k
 // and v likewise, every row appended before any row attends, so a row inside a span sees the block's later rows; then each row
 // attends p.KVSrc's keys over its gemma4BatchRange, and o_proj at M=K.
-func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *LayerWeights, cache *KVCache, l, startPos, K int, gp *gemma4Pass, hq *w4a8Act) {
-	arch, be := m.w.arch, m.be
-	nH, hd, nKV := arch.NumHeads, arch.headDimAt(l), arch.kvHeadsAt(l)
+func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *darch.LayerWeights, cache *KVCache, l, startPos, K int, gp *gemma4Pass, hq *w4a8Act) {
+	arch, be := m.w.Arch, m.be
+	nH, hd, nKV := arch.NumHeads, arch.HeadDimAt(l), arch.KVHeadsAt(l)
 	q := make([]float32, K*nH*hd)
 	hq.prepare(be, &lw.QProj, x, K)
 	matmulPre(be, &lw.QProj, hq, x, q, K)
@@ -148,8 +149,8 @@ func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *Layer
 
 // gemma4DenseFFNBatch is a dense Gemma 4 layer's GeGLU over K rows at the layer's own width, x → out, gate and up sharing the
 // rows' quantized activation.
-func (m *Model) gemma4DenseFFNBatch(act ActKind, x, out []float32, lw *LayerWeights, width, K int, hq *w4a8Act) error {
-	if act != ActGeluTanh {
+func (m *Model) gemma4DenseFFNBatch(act ActKind, x, out []float32, lw *darch.LayerWeights, width, K int, hq *w4a8Act) error {
+	if act != darch.ActGeluTanh {
 		return fmt.Errorf("decoder: Gemma 4's dense FFN is GELU-tanh, not activation %d", act)
 	}
 	be := m.be
@@ -169,8 +170,8 @@ func (m *Model) gemma4DenseFFNBatch(act ActKind, x, out []float32, lw *LayerWeig
 
 // gemma4PLEBatch is opPLE over the K rows of h, in place: gate → GELU-tanh × the row's layer-l PLE input → proj → norm → + the
 // residual.
-func (m *Model) gemma4PLEBatch(h []float32, l, K int, lw *LayerWeights, ne *normEpsParams, gp *gemma4Pass) {
-	be, hidden, pleDim := m.be, m.w.arch.HiddenDim, gp.pleDim
+func (m *Model) gemma4PLEBatch(h []float32, l, K int, lw *darch.LayerWeights, ne *normEpsParams, gp *gemma4Pass) {
+	be, hidden, pleDim := m.be, m.w.Arch.HiddenDim, gp.pleDim
 	px := make([]float32, K*pleDim)
 	matmul(be, &lw.PLEGate, h, px, K)
 	for row := range K {

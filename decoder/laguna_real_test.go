@@ -39,9 +39,9 @@ func TestLagunaReal_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "laguna" || a.laguna == nil {
-		t.Fatalf("arch = %q (laguna=%v), want laguna", a.Name, a.laguna != nil)
+	a := m.w.Arch
+	if a.Name != "laguna" || a.Laguna == nil {
+		t.Fatalf("arch = %q (laguna=%v), want laguna", a.Name, a.Laguna != nil)
 	}
 	if a.NumLayers != 40 || a.HiddenDim != 2048 || a.HeadDim != 128 || a.NumKVHeads != 8 {
 		t.Errorf("geometry = %dL/%dh/hd%d/kv%d, want 40/2048/128/8",
@@ -53,17 +53,17 @@ func TestLagunaReal_gate(t *testing.T) {
 	// A uniform-head reader loads both at 48 and silently mis-shapes 30 of 40 layers.
 	full, sliding := 0, 0
 	for i := range a.NumLayers {
-		if a.isGlobalLayer(i) {
+		if a.IsGlobalLayer(i) {
 			full++
 		} else {
 			sliding++
 		}
 		wantHeads := 64
-		if a.isGlobalLayer(i) {
+		if a.IsGlobalLayer(i) {
 			wantHeads = 48
 		}
-		if got := a.headsAt(i); got != wantHeads {
-			t.Fatalf("headsAt(%d) = %d, want %d (global=%v)", i, got, wantHeads, a.isGlobalLayer(i))
+		if got := a.HeadsAt(i); got != wantHeads {
+			t.Fatalf("headsAt(%d) = %d, want %d (global=%v)", i, got, wantHeads, a.IsGlobalLayer(i))
 		}
 		if got := m.w.Layers[i].QProj.Rows(); got != wantHeads*a.HeadDim {
 			t.Fatalf("layer %d q_proj rows = %d, want %d", i, got, wantHeads*a.HeadDim)

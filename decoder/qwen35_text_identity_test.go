@@ -38,7 +38,7 @@ func TestQwen35_textIdentityHashes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load(%s): %v", mc.dir, err)
 		}
-		vocab := m.w.arch.VocabSize
+		vocab := m.w.Arch.VocabSize
 		for pi, prompt := range [][]int{{3, 9, 27, 81, 5, 11}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}} {
 			cache := m.NewCache(len(prompt) + 12)
 			var hs []string

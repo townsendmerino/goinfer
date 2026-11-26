@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // A3 fan-out: is the f32 prefill attention path single-threaded? attendBatchedHeads's f32 branch is serial
@@ -39,7 +40,7 @@ func TestA3FanoutUtilization(t *testing.T) {
 		K     = 2048 // query rows per call; tile is 256, so 8 tiles/head
 		reps  = 3
 	)
-	arch := &Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 1 / 11.3137}
+	arch := &darch.Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 1 / 11.3137}
 
 	q := randF32(K*qDim, 1)
 	keys := randF32(nKeys*kvDim, 2)
@@ -148,7 +149,7 @@ func TestAttendF32Fanout_bitIdentical(t *testing.T) {
 		nKeys = 96
 		K     = 48
 	)
-	arch := &Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 0.25}
+	arch := &darch.Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 0.25}
 	q := randF32(K*qDim, 11)
 	keys := randF32(nKeys*kvDim, 12)
 	vals := randF32(nKeys*kvDim, 13)

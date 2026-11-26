@@ -3,6 +3,8 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // Laguna (poolside). llama.cpp names its tensors the way every other MoE family here is named, so the only genuinely new
@@ -15,7 +17,7 @@ import (
 //
 // Experts are fused and stacked per projection (ffn_*_exps), the shared expert is *_shexp, and the router bias is
 // exp_probs_b: all shapes goinfer already reads for GLM/DeepSeek/Granite. Layers below FirstKDense are plain dense FFNs.
-func (b *ggufBuild) loadLaguna() (*Weights, error) {
+func (b *ggufBuild) loadLaguna() (*darch.Weights, error) {
 	arch, g, w, sink, abort, hidden, streamMat, mat, vnorm, stackedExperts := b.arch, b.g, b.w, b.sink, b.abort, b.hidden, b.streamMat, b.mat, b.vnorm, b.stackedExperts
 	kvDim := arch.NumKVHeads * arch.HeadDim
 	// exp_probs_b is 1-D; the shared `mat` helper wants 2-D, so read it as a flat
@@ -33,7 +35,7 @@ func (b *ggufBuild) loadLaguna() (*Weights, error) {
 	loadLaguna := func(i int) error {
 		l := &w.Layers[i]
 		p := fmt.Sprintf("blk.%d.", i)
-		lqDim := arch.headsAt(i) * arch.HeadDim
+		lqDim := arch.HeadsAt(i) * arch.HeadDim
 		var e error
 		if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
 			return e
@@ -62,10 +64,10 @@ func (b *ggufBuild) loadLaguna() (*Weights, error) {
 		// The gate: per-head (headsAt rows) or per-element (headsAt*headDim). Try the
 		// per-head shape first and fall back, so both are accepted and anything else
 		// is a hard error rather than a silently mis-shaped gate.
-		if l.GProj, e = mat(p+"attn_gate.weight", arch.headsAt(i), hidden); e != nil {
+		if l.GProj, e = mat(p+"attn_gate.weight", arch.HeadsAt(i), hidden); e != nil {
 			if l.GProj, e = mat(p+"attn_gate.weight", lqDim, hidden); e != nil {
 				return fmt.Errorf("decoder(gguf-laguna): layer %d attn_gate is neither per-head [%d,%d] nor per-element [%d,%d]: %w",
-					i, arch.headsAt(i), hidden, lqDim, hidden, e)
+					i, arch.HeadsAt(i), hidden, lqDim, hidden, e)
 			}
 		}
 		if i < arch.FirstKDense {
@@ -98,9 +100,9 @@ func (b *ggufBuild) loadLaguna() (*Weights, error) {
 		if ge != nil || ue != nil || de != nil {
 			return fmt.Errorf("decoder(gguf-laguna): experts layer %d: %w", i, errors.Join(ge, ue, de))
 		}
-		l.Experts = make([]expertWeights, moe.NumExperts)
+		l.Experts = make([]archparts.ExpertWeights, moe.NumExperts)
 		for ei := range moe.NumExperts {
-			l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			l.Experts[ei] = archparts.ExpertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
 		}
 		if sInter := moe.SharedIntermediateDim; sInter > 0 {
 			if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {

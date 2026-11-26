@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // Fuzz target for LoadSerializedWeights, which deserializes goinfer's own .giw weights blob. A CRC32 over the whole body
@@ -32,7 +33,7 @@ func tinyLlamaBlob() []byte {
 	}
 	mat := func(rows, cols int) linalg.WeightMat { return linalg.WrapF32(ones(rows*cols), rows, cols) }
 	const vocab, hidden, qDim, kvDim, inter = 16, 8, 8, 8, 16
-	w := &Weights{Cfg: cfg, Layers: []LayerWeights{{
+	w := &darch.Weights{Cfg: cfg, Layers: []darch.LayerWeights{{
 		QProj: mat(qDim, hidden), KProj: mat(kvDim, hidden), VProj: mat(kvDim, hidden), OProj: mat(hidden, qDim),
 		GateProj: mat(inter, hidden), UpProj: mat(inter, hidden), DownProj: mat(hidden, inter),
 		PreAttnNorm: ones(hidden), PreMLPNorm: ones(hidden),

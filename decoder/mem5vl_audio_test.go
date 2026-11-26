@@ -17,7 +17,7 @@ func v4Case(m *Model, n, a int) (ids []int, feats []float32) {
 		ids[i] = (i*37 + 11) % vocab
 	}
 	r := rand.New(rand.NewSource(7))
-	feats = make([]float32, a*m.w.arch.HiddenDim)
+	feats = make([]float32, a*m.w.Arch.HiddenDim)
 	for i := range feats {
 		feats[i] = float32(r.NormFloat64()) * 0.5
 	}

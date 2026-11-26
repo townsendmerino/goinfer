@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -99,34 +101,34 @@ func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string,
 
 // stateSpecsByFamily is the family-keyed state list the operations' declarations replace: the oracle TestStateSpecs_fromTheOperations
 // holds them to.
-func stateSpecsByFamily(a *Architecture, l int) []StateSpec {
-	mamba := func(p mamba2Params) []StateSpec {
-		return []StateSpec{{"window", (p.DConv - 1) * p.mixer().ConvDim()}, {"state", p.NHeads * p.HeadDim * p.DState}}
+func stateSpecsByFamily(a *darch.Architecture, l int) []StateSpec {
+	mamba := func(p archparts.Mamba2Params) []StateSpec {
+		return []StateSpec{{"window", (p.DConv - 1) * p.Mixer().ConvDim()}, {"state", p.NHeads * p.HeadDim * p.DState}}
 	}
 	switch {
-	case a.qwen35 != nil && a.isLinearLayer(l):
-		p := a.qwen35
+	case a.Qwen35 != nil && a.IsLinearLayer(l):
+		p := a.Qwen35
 		keyDim, valueDim := p.NumKeyHeads*p.KeyHeadDim, p.NumValueHeads*p.ValueHeadDim
 		return []StateSpec{{"window", (p.ConvKernel - 1) * (2*keyDim + valueDim)}, {"state", p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim}}
-	case a.lfm2 != nil && a.isConvLayer(l):
-		return []StateSpec{{"window", (a.lfm2.ConvLCache - 1) * a.lfm2.ConvDim}}
-	case a.kda != nil && a.isLinearLayer(l):
-		p := a.kda
+	case a.LFM2 != nil && a.IsConvLayer(l):
+		return []StateSpec{{"window", (a.LFM2.ConvLCache - 1) * a.LFM2.ConvDim}}
+	case a.KDA != nil && a.IsLinearLayer(l):
+		p := a.KDA
 		win := (p.ConvKernel - 1) * p.NumHeads * p.HeadDim
 		return []StateSpec{{"window-q", win}, {"window-k", win}, {"window-v", win}, {"state", p.NumHeads * p.HeadDim * p.HeadDim}}
-	case a.granite != nil && a.isMambaLayer(l):
-		g := a.granite
-		return mamba(mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
-	case a.nemotron != nil && a.nemotron.blockKind[l] == nemoMamba:
-		n := a.nemotron
-		return mamba(mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})
+	case a.Granite != nil && a.IsMambaLayer(l):
+		g := a.Granite
+		return mamba(archparts.Mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
+	case a.Nemotron != nil && a.Nemotron.BlockKind[l] == archparts.NemoMamba:
+		n := a.Nemotron
+		return mamba(archparts.Mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})
 	}
 	return nil
 }
 
 // checkpointByFamily is the family-keyed checkpoint list: every state buffer, except on a KDA or short-conv model, which keeps none.
-func checkpointByFamily(a *Architecture) []int64 {
-	if a.kda != nil || a.lfm2 != nil {
+func checkpointByFamily(a *darch.Architecture) []int64 {
+	if a.KDA != nil || a.LFM2 != nil {
 		return nil
 	}
 	var out []int64
@@ -146,7 +148,7 @@ func checkpointByFamily(a *Architecture) []int64 {
 // resolves (the others are named). Each of the five families with state is compared, by name.
 func TestStateSpecs_fromTheOperations(t *testing.T) {
 	families := map[string]bool{}
-	check := func(name string, a *Architecture) {
+	check := func(name string, a *darch.Architecture) {
 		t.Helper()
 		layers := 0
 		for l := range a.NumLayers {
@@ -164,8 +166,8 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 		if layers == 0 {
 			return
 		}
-		for fam, on := range map[string]bool{"DeltaNet": a.qwen35 != nil, "short conv": a.lfm2 != nil, "KDA": a.kda != nil, "Granite Mamba-2": a.granite != nil,
-			"Nemotron-H Mamba-2": a.nemotron != nil} {
+		for fam, on := range map[string]bool{"DeltaNet": a.Qwen35 != nil, "short conv": a.LFM2 != nil, "KDA": a.KDA != nil, "Granite Mamba-2": a.Granite != nil,
+			"Nemotron-H Mamba-2": a.Nemotron != nil} {
 			if on {
 				families[fam] = true
 			}
@@ -199,7 +201,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 	for _, p := range dirs {
 		dir := filepath.Dir(p)
 		cfg, err := loadConfig(os.DirFS(dir), "config.json")
-		var a *Architecture
+		var a *darch.Architecture
 		if err == nil {
 			a, _, err = resolveArchitecture(cfg)
 		}
@@ -244,8 +246,8 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 				rows++
 			}
 		}
-		if owns := a4.gemma4KVSrcAt(l) == l; owns != (l < 2) || (owns && rows != 2) || (!owns && rows != 0) {
-			t.Errorf("Gemma 4 layer %d (reads layer %d's KV): declares %d rows; want K and V on layers 0 and 1, none on 2 and 3", l, a4.gemma4KVSrcAt(l), rows)
+		if owns := a4.Gemma4KVSrcAt(l) == l; owns != (l < 2) || (owns && rows != 2) || (!owns && rows != 0) {
+			t.Errorf("Gemma 4 layer %d (reads layer %d's KV): declares %d rows; want K and V on layers 0 and 1, none on 2 and 3", l, a4.Gemma4KVSrcAt(l), rows)
 		}
 	}
 	const n = 6 // past every fixture's conv window (at most 3 rows) and gemma2-tiny's 4-position sliding window
@@ -263,7 +265,7 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", dir, err)
 		}
-		a := m.w.arch
+		a := m.w.Arch
 		ids := make([]int, n)
 		for i := range ids {
 			ids[i] = (i*7 + 1) % m.Config().VocabSize
@@ -289,9 +291,9 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 					if l < len(cache.rings) && cache.rings[l] != nil {
 						win = cache.rings[l].w
 					}
-					if b.Prec != program.PrecKV || b.Heads != a.kvHeadsAt(l) || b.Window != win {
+					if b.Prec != program.PrecKV || b.Heads != a.KVHeadsAt(l) || b.Window != win {
 						t.Errorf("%s layer %d: %q is at precision %d with %d heads and window %d; want the KV precision, %d heads and the ring's %d", dir, l,
-							b.Name, b.Prec, b.Heads, b.Window, a.kvHeadsAt(l), win)
+							b.Name, b.Prec, b.Heads, b.Window, a.KVHeadsAt(l), win)
 					}
 				case b.Unit == program.PerPosition && b.Name == "latent":
 					if b.Prec != program.PrecF32 {
@@ -465,7 +467,7 @@ func TestMM5_handTable(t *testing.T) {
 			}
 			return n
 		}
-		if state, ckpt := sum(stateBuffers(m.w.arch)), sum(recurrentCheckpointBuffers(m.w.arch)); state != c.state || ckpt != c.checkpoint {
+		if state, ckpt := sum(stateBuffers(m.w.Arch)), sum(recurrentCheckpointBuffers(m.w.Arch)); state != c.state || ckpt != c.checkpoint {
 			t.Errorf("%s: the plan prices %d B of state and %d B of checkpoint a slot; the hand table %d and %d", c.dir, state, ckpt, c.state, c.checkpoint)
 		}
 		m.Close()

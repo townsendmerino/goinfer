@@ -153,7 +153,7 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	arch := m.w.arch
+	arch := m.w.Arch
 	hidden := arch.HiddenDim
 	if len(soft) != in.AudioLen*hidden {
 		t.Fatalf("%d soft-token values, want %d x %d", len(soft), in.AudioLen, hidden)
@@ -181,7 +181,7 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 		}
 		return last, argmaxes
 	}
-	pad := arch.gemma4.PadTokenID
+	pad := arch.Gemma4.PadTokenID
 	last, am := prefill(in.IDs, in.AudioPos, soft, pad)
 
 	prod, err := m.prefillLogitsGemma4VL(context.Background(), in.IDs, soft, in.AudioPos, in.AudioLen, m.NewCache(len(in.IDs)+1))

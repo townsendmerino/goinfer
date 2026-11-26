@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"errors"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"reflect"
 	"slices"
 	"testing"
@@ -429,7 +430,7 @@ func plainModel(t *testing.T) *Model {
 	if err != nil {
 		t.Fatalf("resolveArchitecture(llama): %v", err)
 	}
-	m := &Model{w: &Weights{arch: arch}}
+	m := &Model{w: &darch.Weights{Arch: arch}}
 	for _, s := range cacheStates {
 		if s != statePositional && m.NewCache(4).holdsState(s) {
 			t.Fatalf("the plain llama cache holds %q; the tests using it assume only positional KV", s)

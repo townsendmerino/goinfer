@@ -25,6 +25,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -38,22 +39,22 @@ func TestNemotron3NanoMoEReal_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "nemotron_h" || a.nemotron == nil {
-		t.Fatalf("arch = %q (nemotron=%v), want nemotron_h", a.Name, a.nemotron != nil)
+	a := m.w.Arch
+	if a.Name != "nemotron_h" || a.Nemotron == nil {
+		t.Fatalf("arch = %q (nemotron=%v), want nemotron_h", a.Name, a.Nemotron != nil)
 	}
 	// The GGUF arch string is nemotron_h_moe and the loader normalizes it; if that ever
 	// regresses the model_type would not resolve at all, so reaching here already covers it.
 	mamba, attn, moe, mlp := 0, 0, 0, 0
-	for _, k := range a.nemotron.blockKind {
+	for _, k := range a.Nemotron.BlockKind {
 		switch k {
-		case nemoMamba:
+		case archparts.NemoMamba:
 			mamba++
-		case nemoAttn:
+		case archparts.NemoAttn:
 			attn++
-		case nemoMoE:
+		case archparts.NemoMoE:
 			moe++
-		case nemoMLP:
+		case archparts.NemoMLP:
 			mlp++
 		}
 	}

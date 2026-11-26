@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -114,7 +116,7 @@ func (m *Model) boundSeqForTest() *kvmgr.Seq {
 // arithmetic never touches them.
 func recurrentTestModel(resIDs []int) *Model {
 	// One linear layer: a family of attention layers only carries no in-place state.
-	m := &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}}
+	m := &Model{w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, Qwen35: &archparts.Qwen35Params{}, LayerIsLinear: func(int) bool { return true }}}}
 	m.setBoundSeqForTest(resIDs, nil, nil)
 	return m
 }
@@ -402,11 +404,11 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	m.resident = &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = &fakeResident{vocab: m.w.Arch.VocabSize}
 	seq := func(n int) []int {
 		ids := make([]int, n)
 		for i := range ids {
-			ids[i] = (i*31 + 7) % m.w.arch.VocabSize
+			ids[i] = (i*31 + 7) % m.w.Arch.VocabSize
 		}
 		return ids
 	}
@@ -430,11 +432,11 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 		t.Helper()
 		next := 0
 		if prefix < len(ids) {
-			next = (ids[prefix] + 1) % m.w.arch.VocabSize // differs from the sequence right after the prefix
+			next = (ids[prefix] + 1) % m.w.Arch.VocabSize // differs from the sequence right after the prefix
 		}
-		return m.residentReuseLen(append(slices.Clone(ids[:prefix]), next, m.w.arch.VocabSize-2), nil, nil)
+		return m.residentReuseLen(append(slices.Clone(ids[:prefix]), next, m.w.Arch.VocabSize-2), nil, nil)
 	}
-	w := m.w.arch.SlidingWindow
+	w := m.w.Arch.SlidingWindow
 	n := 4 * w
 	ids := upload(n)
 	floor := (n - w) + w - 1
@@ -464,7 +466,7 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 	if got := reuse(ids, w); got != 0 {
 		t.Errorf("after a continuation, a prefix of %d below the floor reuses %d: those rows are still missing", w, got)
 	}
-	coldPrompt := append(slices.Clone(ids[:w]), m.w.arch.VocabSize-3, m.w.arch.VocabSize-4)
+	coldPrompt := append(slices.Clone(ids[:w]), m.w.Arch.VocabSize-3, m.w.Arch.VocabSize-4)
 	if got := gen(coldPrompt); got != 0 {
 		t.Errorf("a prompt below the floor reused %d", got)
 	}
@@ -500,8 +502,8 @@ func TestResidentUploadPrefill_failedPass(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = m.Close() })
 	fail := false
-	m.resident = uploadPassFails{&fakeResident{vocab: m.w.arch.VocabSize}, &fail}
-	vocab, w := m.w.arch.VocabSize, m.w.arch.SlidingWindow
+	m.resident = uploadPassFails{&fakeResident{vocab: m.w.Arch.VocabSize}, &fail}
+	vocab, w := m.w.Arch.VocabSize, m.w.Arch.SlidingWindow
 	seq := func(n int) []int {
 		ids := make([]int, n)
 		for i := range ids {

@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 // splitQwen3NextQKVZ and splitQwen3NextBA undo qwen3_next's checkpoint-level
 // fusion of the Gated DeltaNet input projections. qwen3_5_moe's checkpoint
 // stores four separate tensors (in_proj_qkv, in_proj_z, in_proj_b, in_proj_a);
@@ -22,7 +26,7 @@ package decoder
 // (the same order untileVHeads produces from GGUF's differently-tiled layout).
 // So each destination range is one contiguous row-slice copy — no per-element
 // interleaving needed.
-func splitQwen3NextQKVZ(qkvz []float32, g *qwen35Params, hidden int) (qkv, z []float32) {
+func splitQwen3NextQKVZ(qkvz []float32, g *archparts.Qwen35Params, hidden int) (qkv, z []float32) {
 	numK, numV := g.NumKeyHeads, g.NumValueHeads
 	rep := numV / numK
 	hk, hv := g.KeyHeadDim, g.ValueHeadDim
@@ -48,7 +52,7 @@ func splitQwen3NextQKVZ(qkvz []float32, g *qwen35Params, hidden int) (qkv, z []f
 	return qkv, z
 }
 
-func splitQwen3NextBA(ba []float32, g *qwen35Params, hidden int) (b, a []float32) {
+func splitQwen3NextBA(ba []float32, g *archparts.Qwen35Params, hidden int) (b, a []float32) {
 	numK, numV := g.NumKeyHeads, g.NumValueHeads
 	rep := numV / numK
 	groupRows := 2 * rep // b_g + a_g

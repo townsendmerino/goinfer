@@ -20,6 +20,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -53,11 +54,11 @@ func TestSpark25Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "spark2_5" {
 		t.Fatalf("arch = %q, want spark2_5", a.Name)
 	}
-	if a.AttnGate != GateSigmoid {
+	if a.AttnGate != darch.GateSigmoid {
 		t.Fatalf("AttnGate = %v, want GateSigmoid", a.AttnGate)
 	}
 	// The real checkpoint's own layer_types is a 1:3 full:sliding interleave (28 layers) —
@@ -65,7 +66,7 @@ func TestSpark25Real_gate(t *testing.T) {
 	// kind would fail here rather than pass on a short prompt that never exercises the other.
 	var full, sliding int
 	for l := 0; l < a.NumLayers; l++ {
-		if a.isGlobalLayer(l) {
+		if a.IsGlobalLayer(l) {
 			full++
 		} else {
 			sliding++

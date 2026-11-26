@@ -178,7 +178,7 @@ func policyCensus(t *testing.T) map[string]policyCase {
 	}
 
 	// Grammar: constrained greedy as the reference, then grammar speculation with the grammar drafter.
-	vocab := byteVocab(m.w.arch.VocabSize)
+	vocab := byteVocab(m.w.Arch.VocabSize)
 	newMask := func() *constrain.Masker {
 		gr, err := constrain.JSONSchema([]byte(censusSchema))
 		if err != nil {

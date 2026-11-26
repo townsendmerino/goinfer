@@ -13,6 +13,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // tensorIdentity is one tensor of a loaded *Weights as the model receives it: one entry of the loader identity.
@@ -32,8 +34,8 @@ func (t tensorIdentity) String() string {
 // programFingerprint, covers what they build), the source handles and profile, and bakedQuant, the label a .giw load carries and a direct load does
 // not. kquant is not walked as a field: each entry is hashed into the identity of the WeightMat whose int8 copy it keys.
 var loaderSkip = map[string]bool{
-	"prof": true, "Cfg": true, "arch": true, "st": true, "backing": true, "schema": true,
-	"kquant": true, "ggufPath": true, "kquantFile": true, "bakedQuant": true,
+	"Prof": true, "Cfg": true, "Arch": true, "ST": true, "Backing": true, "Schema": true,
+	"KQuant": true, "GGUFPath": true, "KQuantFile": true, "BakedQuant": true,
 }
 
 var weightMatType = reflect.TypeFor[linalg.WeightMat]()
@@ -42,7 +44,7 @@ var weightMatType = reflect.TypeFor[linalg.WeightMat]()
 // int8 copy's data pointer; matched counts the entries a WeightMat claimed.
 type identWalker struct {
 	out     []tensorIdentity
-	kquant  map[*int8]kquantSrc
+	kquant  map[*int8]archparts.KQuantSrc
 	matched int
 }
 
@@ -51,10 +53,10 @@ type identWalker struct {
 // elements are walked one by one also lists its length. The walk reads unexported fields, aikit's WeightMat's among them,
 // by reflection. Before it reads a value it checks the static type of every field it will walk, so a map, func,
 // interface or other kind it was not told about panics even where the fixtures leave it nil.
-func loaderIdentity(w *Weights) []tensorIdentity {
+func loaderIdentity(w *darch.Weights) []tensorIdentity {
 	v := reflect.ValueOf(w).Elem()
 	t := v.Type()
-	iw := &identWalker{kquant: w.kquant}
+	iw := &identWalker{kquant: w.KQuant}
 	for i := range v.NumField() {
 		if loaderSkip[t.Field(i).Name] {
 			continue
@@ -62,7 +64,7 @@ func loaderIdentity(w *Weights) []tensorIdentity {
 		checkIdentType(t.Field(i).Name, t.Field(i).Type, map[reflect.Type]bool{})
 		iw.walk(t.Field(i).Name, v.Field(i))
 	}
-	if n := len(w.kquant) - iw.matched; n != 0 {
+	if n := len(w.KQuant) - iw.matched; n != 0 {
 		iw.out = append(iw.out, tensorIdentity{"kquant", "unmatched", fmt.Sprint(n), ""})
 	}
 	slices.SortFunc(iw.out, func(a, b tensorIdentity) int { return cmp.Compare(a.Path, b.Path) })

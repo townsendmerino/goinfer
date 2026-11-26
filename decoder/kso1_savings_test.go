@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // TestKSO1_savingsCountOnlyTheLane: kquantSavings prices only what a backend's q4k lane uploads natively. On metal a recorded
@@ -21,16 +23,16 @@ func TestKSO1_savingsCountOnlyTheLane(t *testing.T) {
 		}
 		return wm
 	}
-	build := func(kEqV bool) *Weights {
-		w := &Weights{Embed: mk(), LMHead: mk(), Layers: []LayerWeights{{QProj: mk(), VProj: mk(), DownProj: mk(), GateProj: q4()}}, arch: &Architecture{NumLayers: 1}}
+	build := func(kEqV bool) *darch.Weights {
+		w := &darch.Weights{Embed: mk(), LMHead: mk(), Layers: []darch.LayerWeights{{QProj: mk(), VProj: mk(), DownProj: mk(), GateProj: q4()}}, Arch: &darch.Architecture{NumLayers: 1}}
 		if kEqV {
-			w.arch.gemma4 = &gemma4Params{}
+			w.Arch.Gemma4 = &archparts.Gemma4Params{}
 			w.Layers[0].VFromK = true
 		}
-		w.kquant = map[*int8]kquantSrc{}
+		w.KQuant = map[*int8]archparts.KQuantSrc{}
 		note := func(wm *linalg.WeightMat, int8B, nativeB int64) {
 			q8, _, _, _ := wm.Int8()
-			w.kquant[unsafe.SliceData(q8)] = kquantSrc{kind: "q6k", int8Bytes: int8B, nativeBytes: nativeB}
+			w.KQuant[unsafe.SliceData(q8)] = archparts.KQuantSrc{Kind: "q6k", Int8Bytes: int8B, NativeBytes: nativeB}
 		}
 		note(&w.Layers[0].QProj, 1040, 840)
 		note(&w.Layers[0].VProj, 1100, 1000)
@@ -73,14 +75,14 @@ func TestKSO1_kquantRows(t *testing.T) {
 		name string
 		src  []int
 	}{{"plain", []int{0, 1, 2, 3}}, {"fused split", []int{6, 7, 8, 9}}, {"permuted", []int{0, 2, 1, 3}}} {
-		start, perm := kquantRows(len(c.src), in, func(r int) int { return c.src[r] * in })
+		start, perm := archparts.KQuantRows(len(c.src), in, func(r int) int { return c.src[r] * in })
 		if (perm != nil) != (c.name == "permuted") {
 			t.Errorf("%s: perm %v", c.name, perm)
 		}
-		s := kquantSrc{start: start, perm: perm}
+		s := archparts.KQuantSrc{Start: start, Perm: perm}
 		var got []int
 		for r := range c.src {
-			got = append(got, s.src(r))
+			got = append(got, s.Src(r))
 		}
 		if !slices.Equal(got, c.src) {
 			t.Errorf("%s: rows %v, want %v", c.name, got, c.src)
@@ -93,13 +95,13 @@ func TestKSO1_kquantRows(t *testing.T) {
 // kind, dims that are not two, a column mismatch, no columns, columns not a multiple of 256, no rows, a negative start, too
 // few rows (plain or offset), a permuted row past the end or negative, and a permutation whose length is not the row count.
 func TestKSO1_kquantServesRejects(t *testing.T) {
-	plain, off, perm, permOut := kquantSrc{start: 0}, kquantSrc{start: 6}, kquantSrc{perm: []int32{3, 0, 2, 1}}, kquantSrc{perm: []int32{3, 0, 4, 1}}
+	plain, off, perm, permOut := archparts.KQuantSrc{Start: 0}, archparts.KQuantSrc{Start: 6}, archparts.KQuantSrc{Perm: []int32{3, 0, 2, 1}}, archparts.KQuantSrc{Perm: []int32{3, 0, 4, 1}}
 	for _, c := range []struct {
 		name string
 		dims []int
 		ok   bool
 		in   int
-		src  kquantSrc
+		src  archparts.KQuantSrc
 		rows int
 		want bool
 	}{
@@ -114,13 +116,13 @@ func TestKSO1_kquantServesRejects(t *testing.T) {
 		{"too few rows", []int{512, 3}, true, 512, plain, 4, false},
 		{"offset past the end", []int{512, 9}, true, 512, off, 4, false},
 		{"permuted row past the end", []int{512, 4}, true, 512, permOut, 4, false},
-		{"a negative permuted row", []int{512, 4}, true, 512, kquantSrc{perm: []int32{0, -1, 2, 3}}, 4, false},
-		{"a permutation shorter than the rows", []int{512, 4}, true, 512, kquantSrc{perm: []int32{0, 1, 2}}, 4, false},
-		{"a permutation longer than the rows", []int{512, 4}, true, 512, kquantSrc{perm: []int32{0, 1, 2, 3}}, 3, false},
-		{"a negative start", []int{512, 4}, true, 512, kquantSrc{start: -1}, 4, false},
+		{"a negative permuted row", []int{512, 4}, true, 512, archparts.KQuantSrc{Perm: []int32{0, -1, 2, 3}}, 4, false},
+		{"a permutation shorter than the rows", []int{512, 4}, true, 512, archparts.KQuantSrc{Perm: []int32{0, 1, 2}}, 4, false},
+		{"a permutation longer than the rows", []int{512, 4}, true, 512, archparts.KQuantSrc{Perm: []int32{0, 1, 2, 3}}, 3, false},
+		{"a negative start", []int{512, 4}, true, 512, archparts.KQuantSrc{Start: -1}, 4, false},
 		{"no rows", []int{512, 4}, true, 512, plain, 0, false},
 	} {
-		if got := kquantServes(c.dims, c.ok, c.in, c.src, c.rows); got != c.want {
+		if got := archparts.KQuantServes(c.dims, c.ok, c.in, c.src, c.rows); got != c.want {
 			t.Errorf("%s: kquantServes %v, want %v", c.name, got, c.want)
 		}
 	}

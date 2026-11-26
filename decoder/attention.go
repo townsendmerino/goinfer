@@ -6,6 +6,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
@@ -36,7 +37,7 @@ func addBias(x, b []float32) {
 
 // attnParamsFor is the attention parameters the loops that do not walk a program read from the Architecture: the cache's window
 // on a local layer (the window the cache was built with), every key on a global one.
-func attnParamsFor(a *Architecture, cache *KVCache, global bool) attentionParams {
+func attnParamsFor(a *darch.Architecture, cache *KVCache, global bool) attentionParams {
 	p := attentionParams{Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnBatchedAcc64}
 	if !global && cache.window > 0 {
 		p.Window = cache.window
@@ -45,11 +46,11 @@ func attnParamsFor(a *Architecture, cache *KVCache, global bool) attentionParams
 }
 
 // attnParamsQueryFor is attnParamsFor for attendQuery's callers, with Llama 4's chunk on its RoPE layers.
-func attnParamsQueryFor(a *Architecture, cache *KVCache, layer int, global bool) attentionParams {
+func attnParamsQueryFor(a *darch.Architecture, cache *KVCache, layer int, global bool) attentionParams {
 	p := attnParamsFor(a, cache, global)
 	p.Order = attnQuery
-	if l4 := a.llama4; l4 != nil && l4.chunkSize > 0 && layer < len(l4.useRope) && l4.useRope[layer] {
-		p.Chunk = l4.chunkSize
+	if l4 := a.Llama4; l4 != nil && l4.ChunkSize > 0 && layer < len(l4.UseRope) && l4.UseRope[layer] {
+		p.Chunk = l4.ChunkSize
 	}
 	return p
 }
@@ -60,7 +61,7 @@ func attnParamsQueryFor(a *Architecture, cache *KVCache, layer int, global bool)
 // per (GQA) head, scaled dot-product scores → softmax → weighted sum of values.
 // scores is a reusable buffer with len ≥ the number of stored keys. It has no
 // production caller; tests call it as a scalar attention reference.
-func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
+func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *darch.Architecture) {
 	if cache.quant == kvI8 {
 		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
 		return
@@ -74,8 +75,8 @@ var attendQueryPFanned atomic.Int64
 // attendQueryP is attendQuery over an f32 cache with the window, chunk, scale and softcap given: the program walker's form. Heads fan out
 // over the attention workers (scalarHeadWorkers), each with its own score buffer from the cache's scratch; scores is the buffer the
 // single-worker path uses. Every head's arithmetic is the one-key-at-a-time loop's, so the result does not depend on the fan-out.
-func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *Architecture) {
-	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
+func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *darch.Architecture) {
+	nH, nKV, hd := arch.HeadsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals, rs := cache.layerRows(layer, kvDim)
 	nKeys := len(keys) / rs
@@ -167,8 +168,8 @@ func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, l
 // qScale·kScale[s,head] (the f64-accum scalar loop becomes an SDOT — decode
 // attention gets faster, not just smaller), and the V-weighted sum dequantizes
 // inline. Handles both ring (local, s%W) and append-forever (global) int8 layers.
-func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
-	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
+func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *darch.Architecture) {
+	nH, nKV, hd := arch.HeadsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 
 	// Storage selection: a ring (local) layer reads its int8 fields with row s%W;
@@ -189,7 +190,7 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 	}
 	// Chunked layers here too, for symmetry with attendQuery: a start rule that lives in only one of two twins is how they drift.
 	// (llama4 is f32-only, so this path is not reachable for it today.)
-	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
+	start := max(cache.WindowStart(pos, global), arch.AttnChunkStart(layer, pos))
 	scale := arch.AttnScale
 	group := nH / nKV
 	var qqBuf [256]int8

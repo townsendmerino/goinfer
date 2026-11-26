@@ -63,15 +63,15 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 		}, true
 	}
 	for i := range m.w.Layers {
-		gm := m.w.Layers[i].gemma4moe
+		gm := m.w.Layers[i].Gemma4MoE
 		if gm == nil || len(gateUp) >= 24 {
 			continue
 		}
-		for e := 0; e < len(gm.expertsGateUp) && len(gateUp) < 24; e += 200 {
-			if s, ok := build(&gm.expertsGateUp[e]); ok {
+		for e := 0; e < len(gm.ExpertsGateUp) && len(gateUp) < 24; e += 200 {
+			if s, ok := build(&gm.ExpertsGateUp[e]); ok {
 				gateUp = append(gateUp, s)
 			}
-			if s, ok := build(&gm.expertsDown[e]); ok {
+			if s, ok := build(&gm.ExpertsDown[e]); ok {
 				down = append(down, s)
 			}
 		}

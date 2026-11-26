@@ -76,8 +76,8 @@ func TestMellum2PrefillProfile(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "mellum2-profile: loaded in %.1fs\n", time.Since(loadStart).Seconds())
-	if m.w.arch.Name != "mellum" {
-		t.Fatalf("arch = %q, want mellum", m.w.arch.Name)
+	if m.w.Arch.Name != "mellum" {
+		t.Fatalf("arch = %q, want mellum", m.w.Arch.Name)
 	}
 	// The point is the BATCHED path: a silent fall-through to the sequential one would profile a different
 	// program and still print a number.
@@ -99,7 +99,7 @@ func TestMellum2PrefillProfile(t *testing.T) {
 	if pattern == "" {
 		pattern = "varied"
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids := make([]int, K)
 	switch pattern {
 	case "varied":

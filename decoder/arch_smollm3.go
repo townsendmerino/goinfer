@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -16,7 +18,7 @@ import (
 // as `(layer_idx+1) % no_rope_layer_interval != 0` when a checkpoint omits it. Getting the polarity backwards silently inverts which layers
 // use RoPE: correct shapes, plausible logits, wrong model, no crash. `layer_types` is not authoritative here (every entry reads
 // "full_attention" whichever layers are NoPE); `no_rope_layers` is, unlike Gemma/cohere2 where `layer_types` carries the split.
-func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func smollm3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "smollm3"); err != nil {
 		return nil, nil, err
 	}
@@ -42,7 +44,7 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 	}
 	layerNoPE := func(i int) bool { return i >= 0 && i < len(noRope) && noRope[i] == 0 }
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "smollm3",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -51,20 +53,20 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKNorm:          false,
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   0, // full attention on the RoPE'd layers; confirmed null on the real release
-		layerIsGlobal:   nil,
-		layerNoPE:       layerNoPE,
+		LayerIsGlobal:   nil,
+		LayerNoPE:       layerNoPE,
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		RotaryDim:       cfg.RotaryDim(),
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil

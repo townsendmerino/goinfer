@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // v13's fused groups (kind 6) put the nibbles of q,k,v and of gate,up back to back so a Metal fused GEMV
@@ -17,7 +18,7 @@ import (
 // wideTinyLlama is the tiny llama fixture at hidden 64 (query/key heads 2/1 of head_dim 4, FFN width 16), with every tensor
 // rebuilt at that width. Each projection that reads the hidden state is then 64 wide, a multiple of the int4 group, so a
 // synthetic int4 or int8 matrix can replace it at a shape the loader's arch check accepts.
-func wideTinyLlama(t *testing.T) *Weights {
+func wideTinyLlama(t *testing.T) *darch.Weights {
 	t.Helper()
 	raw, _, _, _ := tinyNormRopeGGUF("llama")
 	w := loadTinyGGUFWeights(t, raw, "llama")
@@ -27,7 +28,7 @@ func wideTinyLlama(t *testing.T) *Weights {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	w.arch = arch
+	w.Arch = arch
 	qDim, kvDim, inter, vocab := arch.NumHeads*hd, arch.NumKVHeads*hd, arch.IntermediateDim, arch.VocabSize
 	f32 := func(rows, cols, seed int) linalg.WeightMat {
 		return linalg.WrapF32(distinct(rows*cols, seed), rows, cols)
@@ -41,7 +42,7 @@ func wideTinyLlama(t *testing.T) *Weights {
 	}
 	w.Embed, w.LMHead, w.FinalNorm = f32(vocab, hidden, 4), f32(vocab, hidden, 5), ones(hidden)
 	for i := range w.Layers {
-		w.Layers[i] = LayerWeights{
+		w.Layers[i] = darch.LayerWeights{
 			QProj: f32(qDim, hidden, 1), KProj: f32(kvDim, hidden, 2), VProj: f32(kvDim, hidden, 3), OProj: f32(hidden, qDim, 6),
 			GateProj: f32(inter, hidden, 7), UpProj: f32(inter, hidden, 8), DownProj: f32(hidden, inter, 9),
 			PreAttnNorm: ones(hidden), PreMLPNorm: ones(hidden),
@@ -50,7 +51,7 @@ func wideTinyLlama(t *testing.T) *Weights {
 	return w
 }
 
-func fusedFixture(t *testing.T) *Weights {
+func fusedFixture(t *testing.T) *darch.Weights {
 	t.Helper()
 	w := wideTinyLlama(t)
 	l := &w.Layers[0]

@@ -43,7 +43,7 @@ func TestQuantInt8_accuracy(t *testing.T) {
 
 	// Retained weight footprint: int8 codes + f32 scales vs the f32 originals.
 	var q8Bytes, f32Bytes int
-	for _, wm := range m.w.matmulWeights() {
+	for _, wm := range m.w.MatmulWeights() {
 		n := wm.Rows() * wm.Cols()
 		q8Bytes += n + 4*wm.Rows() // int8 codes + per-row f32 scale
 		f32Bytes += 4 * n
@@ -123,7 +123,7 @@ func TestQuantInt4_accuracy(t *testing.T) {
 	// dwarfs the int4 projections; on a normal model the projections dominate
 	// and the ratio approaches int4's ~6.4×.
 	var qBytes, f32Bytes int
-	for _, wm := range m.w.matmulWeights() {
+	for _, wm := range m.w.MatmulWeights() {
 		f32Bytes += 4 * wm.Rows() * wm.Cols()
 		switch {
 		case wm.Kind() == "int4":

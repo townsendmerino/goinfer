@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"testing"
 )
@@ -53,10 +54,10 @@ func TestGemma4Architecture(t *testing.T) {
 		{"NumHeads", arch.NumHeads, 16},
 		{"NumKVHeads", arch.NumKVHeads, 8},
 		{"HeadDim (local)", arch.HeadDim, 256},
-		{"Norm", arch.Norm, NormRMS},
+		{"Norm", arch.Norm, darch.NormRMS},
 		{"RMSAddOne", arch.RMSAddOne, false}, // Gemma4RMSNorm is plain x*weight (init 1), not x*(1+w)
-		{"NormPlacement", arch.NormPlacement, NormSandwich4},
-		{"Act", arch.Act, ActGeluTanh},
+		{"NormPlacement", arch.NormPlacement, darch.NormSandwich4},
+		{"Act", arch.Act, darch.ActGeluTanh},
 		{"QKNorm", arch.QKNorm, true},
 		{"SlidingWindow", arch.SlidingWindow, 1024},
 		{"RoPELocalBase", arch.RoPELocalBase, float64(10000)},
@@ -81,7 +82,7 @@ func TestGemma4Architecture(t *testing.T) {
 	}
 
 	// The Gemma 4 per-layer deltas.
-	g := arch.gemma4
+	g := arch.Gemma4
 	if g == nil {
 		t.Fatal("arch.gemma4 is nil — descriptor didn't carry the per-layer deltas")
 	}
@@ -99,16 +100,16 @@ func TestGemma4Architecture(t *testing.T) {
 	}
 
 	// 5:1 interleave from the pattern: layers 5,11,… global; 0,1,… local.
-	if arch.layerIsGlobal == nil {
+	if arch.LayerIsGlobal == nil {
 		t.Fatal("layerIsGlobal not set")
 	}
-	if !arch.layerIsGlobal(5) {
+	if !arch.LayerIsGlobal(5) {
 		t.Error("layer 5 should be global (full attention)")
 	}
-	if arch.layerIsGlobal(0) {
+	if arch.LayerIsGlobal(0) {
 		t.Error("layer 0 should be local (sliding)")
 	}
-	if !arch.layerIsGlobal(47) { // last layer global (pattern: (i+1)%6==0)
+	if !arch.LayerIsGlobal(47) { // last layer global (pattern: (i+1)%6==0)
 		t.Error("layer 47 should be global")
 	}
 }
@@ -152,7 +153,7 @@ func TestGemma4MoEDescriptor(t *testing.T) {
 		{"RouterPreNorm", arch.MoE.RouterPreNorm, true},
 		{"PerExpertScale", arch.MoE.PerExpertScale, true},
 		{"IntermediateDim (dense mlp still 2112)", arch.IntermediateDim, 2112},
-		{"gemma4 params still set", arch.gemma4 != nil, true},
+		{"gemma4 params still set", arch.Gemma4 != nil, true},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)

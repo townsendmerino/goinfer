@@ -59,8 +59,8 @@ func TestGlm4Moe_biasParity(t *testing.T) {
 		golden: "../testdata/glm_tiny_bias_text_golden.json", ckpt: "../testdata/glm-tiny-bias", pin: "scripts/pin_glm_tiny_bias.py",
 		label: "glm4_moe bias parity",
 		check: func(t *testing.T, m *Model) {
-			if !m.w.arch.QKVBias || m.w.arch.QKNorm {
-				t.Fatalf("arch flags QKVBias=%v QKNorm=%v, want true/false", m.w.arch.QKVBias, m.w.arch.QKNorm)
+			if !m.w.Arch.QKVBias || m.w.Arch.QKNorm {
+				t.Fatalf("arch flags QKVBias=%v QKNorm=%v, want true/false", m.w.Arch.QKVBias, m.w.Arch.QKNorm)
 			}
 		},
 		// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for

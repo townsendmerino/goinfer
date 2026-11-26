@@ -194,7 +194,7 @@ func TestLfm2VLFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	var feats []float32
 	for _, f := range tileFeats {
 		feats = append(feats, f...)

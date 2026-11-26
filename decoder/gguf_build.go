@@ -6,15 +6,17 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // ggufBuild is the state buildWeightsFromGGUF hands a family builder: the load's inputs, the weight bundle it fills, and the
 // tensor readers every family shares. A builder reads them under the names the shared body uses and returns the finished
 // bundle; it drives the streaming sink itself when one is set.
 type ggufBuild struct {
-	arch                    *Architecture
+	arch                    *darch.Architecture
 	g                       *embed.GGUFFile
-	w                       *Weights
+	w                       *darch.Weights
 	quant                   quantMode
 	needCanonical, skipRow4 bool
 	sink                    *giwWriter
@@ -34,7 +36,7 @@ type ggufBuild struct {
 
 // loadLayers is the loader every family without its own branch takes: the shared per-layer tensor set (attention, MLA or the
 // standard q/k/v/o; the dense or MoE feed-forward), loaded in parallel and streamed to the sink when one is set.
-func (b *ggufBuild) loadLayers() (*Weights, error) {
+func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 	arch, g, w, quant, sink, abort, hidden, hd, streamMat, mat, vec, vnorm, stackedExperts, permMat, fusedSplit := b.arch, b.g, b.w, b.quant, b.sink, b.abort, b.hidden, b.hd, b.streamMat, b.mat, b.vec, b.vnorm, b.stackedExperts, b.permMat, b.fusedSplit
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	// llama.cpp permutes the q/k weights (and their per-row biases / head-dim
@@ -57,7 +59,7 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 		if l.PreAttnNorm, err = vnorm(p+"attn_norm.weight", hidden); err != nil {
 			return err
 		}
-		if arch.mla != nil {
+		if arch.MLA != nil {
 			// DeepSeek MLA: the latent-attention tensor set (q-LoRA / kv down+up + the
 			// two latent norms), loaded f32 — not the standard q/k/v/o. The FFN block
 			// below is shared with the other DeepSeek-style MoE families.
@@ -65,7 +67,7 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 				return err
 			}
 			if mlaProjInt8(quant) {
-				l.mla.quantizeProjections(arch.mla, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
+				l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
 			}
 		} else if arch.Name == "phi3" {
 			// Phi-3/Phi-4: fused attn_qkv [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output
@@ -128,7 +130,7 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 				}
 				l.QNorm, l.KNorm = qn, kn
 			}
-			if arch.hasAttnSinks() {
+			if arch.HasAttnSinks() {
 				if l.AttnSinks, err = vec(p+"attn_sinks.weight", arch.NumHeads); err != nil {
 					return err
 				}
@@ -147,7 +149,7 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 		// Sandwich norms (Gemma 3): a post-attention and a post-FFN RMSNorm in
 		// addition to the pre-norms. GGUF names them post_attention_norm /
 		// post_ffw_norm.
-		if arch.NormPlacement == NormSandwich4 {
+		if arch.NormPlacement == darch.NormSandwich4 {
 			if l.PostAttnNorm, err = vnorm(p+"post_attention_norm.weight", hidden); err != nil {
 				return err
 			}
@@ -177,9 +179,9 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 			if gerr != nil || uerr != nil || derr != nil {
 				return fmt.Errorf("decoder(gguf): experts layer %d: %w", i, errors.Join(gerr, uerr, derr))
 			}
-			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+			l.Experts = make([]archparts.ExpertWeights, arch.MoE.NumExperts)
 			for e := range arch.MoE.NumExperts {
-				l.Experts[e] = expertWeights{Gate: gate[e], Up: up[e], Down: down[e]}
+				l.Experts[e] = archparts.ExpertWeights{Gate: gate[e], Up: up[e], Down: down[e]}
 			}
 			// Shared always-on expert (GLM: ffn_*_shexp). Ungated for GLM/DeepSeek;
 			// Qwen2-MoE-style families would also carry a sigmoid gate (not in GGUF here).

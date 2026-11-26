@@ -47,10 +47,10 @@ func TestQwen3_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen3" {
-		t.Fatalf("resolved arch %q, want qwen3", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen3" {
+		t.Fatalf("resolved arch %q, want qwen3", m.w.Arch.Name)
 	}
-	if m.w.arch.TiedLMHead {
+	if m.w.Arch.TiedLMHead {
 		t.Errorf("expected untied LM head for Qwen3-1.7B (lm_head.weight present)")
 	}
 

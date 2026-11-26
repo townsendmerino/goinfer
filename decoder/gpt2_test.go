@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -64,17 +65,17 @@ func TestGPT2_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "gpt2" {
-		t.Fatalf("resolved arch %q, want gpt2", m.w.arch.Name)
+	if m.w.Arch.Name != "gpt2" {
+		t.Fatalf("resolved arch %q, want gpt2", m.w.Arch.Name)
 	}
-	if m.w.arch.Norm != NormLayer {
+	if m.w.Arch.Norm != darch.NormLayer {
 		t.Errorf("expected LayerNorm")
 	}
-	if !m.w.arch.LearnedPosEmbed || !m.w.arch.NonGatedMLP || !m.w.arch.QKVBias || !m.w.arch.OutBias {
+	if !m.w.Arch.LearnedPosEmbed || !m.w.Arch.NonGatedMLP || !m.w.Arch.QKVBias || !m.w.Arch.OutBias {
 		t.Errorf("GPT-2 knobs wrong: learnedPos=%v nonGated=%v qkvBias=%v outBias=%v",
-			m.w.arch.LearnedPosEmbed, m.w.arch.NonGatedMLP, m.w.arch.QKVBias, m.w.arch.OutBias)
+			m.w.Arch.LearnedPosEmbed, m.w.Arch.NonGatedMLP, m.w.Arch.QKVBias, m.w.Arch.OutBias)
 	}
-	if !m.w.arch.TiedLMHead {
+	if !m.w.Arch.TiedLMHead {
 		t.Errorf("expected tied LM head (wte) for GPT-2")
 	}
 

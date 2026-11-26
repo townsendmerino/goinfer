@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // TestNemotron3NanoMoE_ggufConfig verifies ggufNemotronConfig against REAL metadata —
@@ -101,7 +102,7 @@ func TestNemotron3NanoMoE_ggufConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if arch.nemotron == nil {
+	if arch.Nemotron == nil {
 		t.Fatal("arch.nemotron is nil")
 	}
 	if arch.MoE == nil {
@@ -110,15 +111,15 @@ func TestNemotron3NanoMoE_ggufConfig(t *testing.T) {
 	wantAttn := map[int]bool{5: true, 12: true, 19: true, 26: true, 33: true, 42: true}
 	mismatches := 0
 	for i := range 52 {
-		got := arch.nemotron.blockKind[i]
+		got := arch.Nemotron.BlockKind[i]
 		switch {
-		case wantAttn[i] && got != nemoAttn:
+		case wantAttn[i] && got != archparts.NemoAttn:
 			t.Errorf("layer %d: got kind %d, want nemoAttn (head_count_kv=2)", i, got)
 			mismatches++
-		case !wantAttn[i] && feedForward[i].(uint32) > 0 && got != nemoMoE:
+		case !wantAttn[i] && feedForward[i].(uint32) > 0 && got != archparts.NemoMoE:
 			t.Errorf("layer %d: got kind %d, want nemoMoE (feed_forward_length=1856)", i, got)
 			mismatches++
-		case !wantAttn[i] && feedForward[i].(uint32) == 0 && got != nemoMamba:
+		case !wantAttn[i] && feedForward[i].(uint32) == 0 && got != archparts.NemoMamba:
 			t.Errorf("layer %d: got kind %d, want nemoMamba", i, got)
 			mismatches++
 		}

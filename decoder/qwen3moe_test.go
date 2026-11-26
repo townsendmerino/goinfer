@@ -51,20 +51,20 @@ func TestQwen3Moe_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen3_moe" {
-		t.Fatalf("resolved arch %q, want qwen3_moe", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen3_moe" {
+		t.Fatalf("resolved arch %q, want qwen3_moe", m.w.Arch.Name)
 	}
-	if !m.w.arch.QKNorm {
+	if !m.w.Arch.QKNorm {
 		t.Fatalf("expected QK-norm")
 	}
-	if m.w.arch.MoE == nil {
+	if m.w.Arch.MoE == nil {
 		t.Fatalf("expected a MoE config")
 	}
-	if m.w.arch.MoE.NumExperts != 8 || m.w.arch.MoE.TopK != 2 {
-		t.Errorf("MoE = %dx top-%d, want 8x top-2", m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK)
+	if m.w.Arch.MoE.NumExperts != 8 || m.w.Arch.MoE.TopK != 2 {
+		t.Errorf("MoE = %dx top-%d, want 8x top-2", m.w.Arch.MoE.NumExperts, m.w.Arch.MoE.TopK)
 	}
-	if m.w.arch.MoE.SharedIntermediateDim != 0 {
-		t.Errorf("SharedIntermediateDim = %d, want 0 (qwen3_moe has no shared expert)", m.w.arch.MoE.SharedIntermediateDim)
+	if m.w.Arch.MoE.SharedIntermediateDim != 0 {
+		t.Errorf("SharedIntermediateDim = %d, want 0 (qwen3_moe has no shared expert)", m.w.Arch.MoE.SharedIntermediateDim)
 	}
 	if got := len(m.w.Layers[0].Experts); got != 8 {
 		t.Fatalf("layer 0 loaded %d experts, want 8", got)
@@ -113,7 +113,7 @@ func TestQwen3Moe_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, qwen3MoeForwardFullPath)
 	t.Logf("qwen3_moe: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
+		m.w.Arch.MoE.NumExperts, m.w.Arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	// tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED qwen3moe-tiny, an exact numeric oracle for the loader +
 	// QK-norm + no-shared-expert MoE routing. The real-checkpoint T3 is TestQwen3MoeReal_oracle.
 	emitParityRow(t, "qwen3_moe", "tiny-golden", "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)", 100.0, cos, cos)

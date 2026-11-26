@@ -58,7 +58,7 @@ func qwen35VLRealG2(t *testing.T, ckpt, dir string) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	if a := m.w.arch; a.Name != "qwen3_5" || len(a.MRopeSection) != 3 {
+	if a := m.w.Arch; a.Name != "qwen3_5" || len(a.MRopeSection) != 3 {
 		t.Fatalf("arch %q mrope %v", a.Name, a.MRopeSection)
 	}
 
@@ -108,7 +108,7 @@ func qwen35VLRealG2(t *testing.T, ckpt, dir string) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			hidden := m.w.arch.HiddenDim
+			hidden := m.w.Arch.HiddenDim
 			if len(feats) != g.NImageTokens*hidden {
 				t.Fatalf("tower emitted %d floats, want %d", len(feats), g.NImageTokens*hidden)
 			}

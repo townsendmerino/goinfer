@@ -3,9 +3,11 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
-func (b *ggufBuild) loadLlama4(lp *llama4Params) (*Weights, error) {
+func (b *ggufBuild) loadLlama4(lp *archparts.Llama4Params) (*darch.Weights, error) {
 	arch, w, sink, abort, hidden, hd, streamMat, mat, vnorm, stackedExperts := b.arch, b.w, b.sink, b.abort, b.hidden, b.hd, b.streamMat, b.mat, b.vnorm, b.stackedExperts
 	var err error
 	// Llama 4: separate q/k/v/o (no q/k-norm tensors — the L2 QK-norm is
@@ -37,7 +39,7 @@ func (b *ggufBuild) loadLlama4(lp *llama4Params) (*Weights, error) {
 		if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
 			return e
 		}
-		if !lp.isMoE[i] {
+		if !lp.IsMoE[i] {
 			if l.GateProj, e = mat(p+"ffn_gate.weight", denseInter, hidden); e != nil {
 				return e
 			}
@@ -59,9 +61,9 @@ func (b *ggufBuild) loadLlama4(lp *llama4Params) (*Weights, error) {
 		if ge != nil || ue != nil || de != nil {
 			return fmt.Errorf("decoder(gguf-llama4): experts layer %d: %w", i, errors.Join(ge, ue, de))
 		}
-		l.Experts = make([]expertWeights, nE)
+		l.Experts = make([]archparts.ExpertWeights, nE)
 		for x := range l.Experts {
-			l.Experts[x] = expertWeights{Gate: gate[x], Up: up[x], Down: down[x]}
+			l.Experts[x] = archparts.ExpertWeights{Gate: gate[x], Up: up[x], Down: down[x]}
 		}
 		if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", expInter, hidden); e != nil {
 			return e

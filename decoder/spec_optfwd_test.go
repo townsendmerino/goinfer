@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 	"math/rand"
 	"testing"
@@ -79,7 +81,7 @@ func TestOptFwdGate_marginalRateHoldsSteady(t *testing.T) {
 // predicate: resident required, Temperature>0 required, LogitProcessor excludes it, and the
 // recurrent/sliding-window specRollbackSafe guard is reused (not reimplemented).
 func TestOptFwdEligible(t *testing.T) {
-	plain := &Model{w: &Weights{arch: &Architecture{}}, resident: stubResident{}}
+	plain := &Model{w: &darch.Weights{Arch: &darch.Architecture{}}, resident: stubResident{}}
 	if !plain.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("resident + 0 < T <= cap + no processor + rollback-safe arch must be eligible")
 	}
@@ -112,15 +114,15 @@ func TestOptFwdEligible(t *testing.T) {
 	if plain.optFwdEligible(SamplingParams{Temperature: 0.2, LogitProcessor: func([]int, []float32) {}}) {
 		t.Error("a LogitProcessor must exclude eligibility -- the argmax guess would be computed on unprocessed logits")
 	}
-	noResident := &Model{w: &Weights{arch: &Architecture{}}}
+	noResident := &Model{w: &darch.Weights{Arch: &darch.Architecture{}}}
 	if noResident.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("no resident backend must NOT be eligible")
 	}
-	recurrent := &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}, resident: stubResident{}}
+	recurrent := &Model{w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, Qwen35: &archparts.Qwen35Params{}, LayerIsLinear: func(int) bool { return true }}}, resident: stubResident{}}
 	if recurrent.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("a recurrent (DeltaNet) arch must NOT be eligible -- specRollbackSafe must refuse it")
 	}
-	windowed := &Model{w: &Weights{arch: &Architecture{SlidingWindow: 128}}, resident: stubResident{}}
+	windowed := &Model{w: &darch.Weights{Arch: &darch.Architecture{SlidingWindow: 128}}, resident: stubResident{}}
 	if windowed.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("a sliding-window arch must NOT be eligible -- specRollbackSafe must refuse it")
 	}

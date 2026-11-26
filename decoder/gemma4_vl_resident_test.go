@@ -100,7 +100,7 @@ func (u *uploadFailResident) UploadKV(layer, base int, keys, vals []float32) err
 // GenerateGemma4VL/prefillLogitsGemma4VLBidirectional instead.
 func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil) // stale — must not be mistaken for a reusable prefix
 
@@ -128,7 +128,7 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 		t.Errorf("resImgBlocks[0] = %+v, want {start:%d end:%d hash:%d}",
 			got, g.ImageTokenStart, g.ImageTokenStart+g.NImageTokens, uint64(testImgHash))
 	}
-	if nLayers := m.w.arch.NumLayers; len(rf.uploadKVs) != nLayers {
+	if nLayers := m.w.Arch.NumLayers; len(rf.uploadKVs) != nLayers {
 		t.Errorf("UploadKV called %d times, want %d (once per layer)", len(rf.uploadKVs), nLayers)
 	}
 	for l, c := range rf.uploadKVs {
@@ -173,7 +173,7 @@ func TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped(t *testing.T)
 // released.
 func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
-	rf := &uploadFailResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+	rf := &uploadFailResident{fakeResident: &fakeResident{vocab: m.w.Arch.VocabSize}}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 
@@ -208,7 +208,7 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 // TestGenerateGemma4VL_eModelDecodesResident.
 func TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers(t *testing.T) {
 	m, g := loadGemma4VLTinySequential(t)
-	if m.w.arch.gemma4.SharedKVLayers == 0 && m.w.arch.gemma4.HiddenSizePerLayerInput == 0 {
+	if m.w.Arch.Gemma4.SharedKVLayers == 0 && m.w.Arch.Gemma4.HiddenSizePerLayerInput == 0 {
 		t.Fatal("gemma4-vl-tiny is no longer E-model-shaped; this test's premise needs re-reading")
 	}
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
@@ -244,10 +244,10 @@ func TestGenerateGemma4VL_causalNonEModelStaysOnCPU(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	if g4 := m.w.arch.gemma4; g4.SharedKVLayers != 0 || g4.HiddenSizePerLayerInput != 0 || m.w.Cfg.UseBidirectionalAttention != "" {
+	if g4 := m.w.Arch.Gemma4; g4.SharedKVLayers != 0 || g4.HiddenSizePerLayerInput != 0 || m.w.Cfg.UseBidirectionalAttention != "" {
 		t.Fatal("the two-geometry fixture is no longer a causal non-E Gemma 4")
 	}
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	ids, pos, n, features := syntheticGemma4Image(m)
 	stream, gen := m.GenerateGemma4VL(context.Background(), ids, pos, n, 0, features, 4, SamplingParams{Temperature: 0})
@@ -269,7 +269,7 @@ func TestGenerateGemma4VL_causalNonEModelStaysOnCPU(t *testing.T) {
 // syntheticGemma4Image is a small prompt with a 4-token image block of deterministic features, for the resident-bridge
 // contract tests (which check where K/V goes and where decode runs, not what the image says).
 func syntheticGemma4Image(m *Model) (ids []int, pos, n int, features func() ([]float32, error)) {
-	H := m.w.arch.HiddenDim
+	H := m.w.Arch.HiddenDim
 	ids = []int{2, 10, 11, 0, 0, 0, 0, 12, 13}
 	pos, n = 3, 4
 	feats := make([]float32, n*H)
@@ -281,7 +281,7 @@ func syntheticGemma4Image(m *Model) (ids []int, pos, n int, features func() ([]f
 
 func assertEModelResidentDecode(t *testing.T, m *Model, ids []int, imgPos, imgLen int, features func() ([]float32, error)) {
 	t.Helper()
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	stream, gen := m.GenerateGemma4VL(context.Background(), ids, imgPos, imgLen, 0, features, 4, SamplingParams{Temperature: 0})
 	var got []int
@@ -298,8 +298,8 @@ func assertEModelResidentDecode(t *testing.T, m *Model, ids []int, imgPos, imgLe
 		t.Errorf("an E-model image turn did not decode resident: DecodeResident=%v, %d resident forwards", gen.DecodeResident, rf.forwards)
 	}
 	var owning, uploaded []int
-	for l := range m.w.arch.NumLayers {
-		if m.w.arch.gemma4KVSrcAt(l) == l {
+	for l := range m.w.Arch.NumLayers {
+		if m.w.Arch.Gemma4KVSrcAt(l) == l {
 			owning = append(owning, l)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -29,8 +30,8 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 	}
 
 	// The novel op is declared as a required feature.
-	req := arch.residentFeatures()
-	if !slices.Contains(req, FeatAttnSink) {
+	req := arch.ResidentFeatures()
+	if !slices.Contains(req, darch.FeatAttnSink) {
 		t.Errorf("gpt-oss required features %v missing FeatAttnSink", req)
 	}
 
@@ -41,7 +42,7 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 			if _, ok := tb.FFN[program.FfnGptOss]; !ok {
 				t.Errorf("backend %q's table no longer lists gpt-oss's MoE block, so its gpt-oss parity gate now fails on the decline; update this test if the kernels were intentionally reverted", be)
 			}
-		} else if !residentBackendFeatures[be][FeatAttnSink] {
+		} else if !residentBackendFeatures[be][darch.FeatAttnSink] {
 			t.Errorf("backend %q no longer declares FeatAttnSink — its gpt-oss parity gate should have started skipping; update this test if the kernels were intentionally reverted", be)
 		}
 		if !ResidentEligible(arch, be) {

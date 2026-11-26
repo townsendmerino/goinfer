@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -31,27 +32,27 @@ func TestNemotronReal_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "nemotron_h" || a.nemotron == nil {
-		t.Fatalf("arch = %q (nemotron=%v), want nemotron_h", a.Name, a.nemotron != nil)
+	a := m.w.Arch
+	if a.Name != "nemotron_h" || a.Nemotron == nil {
+		t.Fatalf("arch = %q (nemotron=%v), want nemotron_h", a.Name, a.Nemotron != nil)
 	}
 	mamba, attn, mlp := 0, 0, 0
-	for _, k := range a.nemotron.blockKind {
+	for _, k := range a.Nemotron.BlockKind {
 		switch k {
-		case nemoMamba:
+		case archparts.NemoMamba:
 			mamba++
-		case nemoAttn:
+		case archparts.NemoAttn:
 			attn++
-		case nemoMLP:
+		case archparts.NemoMLP:
 			mlp++
 		}
 	}
-	t.Logf("nemotron-nano-9b: %d layers (%d mamba, %d attn, %d mlp), n_groups=%d", len(a.nemotron.blockKind), mamba, attn, mlp, a.nemotron.NGroups)
+	t.Logf("nemotron-nano-9b: %d layers (%d mamba, %d attn, %d mlp), n_groups=%d", len(a.Nemotron.BlockKind), mamba, attn, mlp, a.Nemotron.NGroups)
 	if mamba == 0 || attn == 0 || mlp == 0 {
 		t.Fatalf("expected all three block kinds, got mamba=%d attn=%d mlp=%d", mamba, attn, mlp)
 	}
-	if a.nemotron.NGroups < 2 {
-		t.Errorf("expected grouped mamba (n_groups≥2), got %d", a.nemotron.NGroups)
+	if a.Nemotron.NGroups < 2 {
+		t.Errorf("expected grouped mamba (n_groups≥2), got %d", a.Nemotron.NGroups)
 	}
 
 	tk, err := tokenizer.LoadGGUF(gguf)

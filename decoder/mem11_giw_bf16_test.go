@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
@@ -35,10 +36,10 @@ func gbWriteGIW(t *testing.T, m *Model, path string, f32Form bool) {
 }
 
 // gbConvs is m's short-conv mixers, in layer order.
-func gbConvs(m *Model) []*shortConvWeights {
-	var out []*shortConvWeights
+func gbConvs(m *Model) []*archparts.ShortConvWeights {
+	var out []*archparts.ShortConvWeights
 	for l := range m.w.Layers {
-		if sc := m.w.Layers[l].shortConv; sc != nil {
+		if sc := m.w.Layers[l].ShortConv; sc != nil {
 			out = append(out, sc)
 		}
 	}
@@ -51,7 +52,7 @@ func gbRoundIslands(t *testing.T, m *Model) int64 {
 	t.Helper()
 	var bytes int64
 	for _, sc := range gbConvs(m) {
-		for _, w := range []*linalg.WeightMat{&sc.inProj, &sc.outProj} {
+		for _, w := range []*linalg.WeightMat{&sc.InProj, &sc.OutProj} {
 			f := slices.Clone(islandF32(w))
 			for i, x := range f {
 				f[i] = linalg.BF16ToF32(linalg.F32ToBF16(x))
@@ -69,7 +70,7 @@ func gbRoundIslands(t *testing.T, m *Model) int64 {
 // gbIslands reports the kind every island of m holds ("" if they differ) and how many of their bytes alias the mapping.
 func gbIslands(m *Model) (kind string, aliased int64) {
 	for i, sc := range gbConvs(m) {
-		for _, w := range []*linalg.WeightMat{&sc.inProj, &sc.outProj} {
+		for _, w := range []*linalg.WeightMat{&sc.InProj, &sc.OutProj} {
 			if i == 0 && kind == "" {
 				kind = w.Kind().String()
 			} else if w.Kind().String() != kind {
@@ -171,10 +172,10 @@ func TestMEM11_giwBF16HeapLFM2(t *testing.T) {
 	}
 	var islandBytes int64
 	for _, sc := range gbConvs(src) {
-		if sc.inProj.Kind() != "bf16" {
-			t.Fatalf("the direct load's island is %s, want bf16 (MEM11-bf16)", sc.inProj.Kind())
+		if sc.InProj.Kind() != "bf16" {
+			t.Fatalf("the direct load's island is %s, want bf16 (MEM11-bf16)", sc.InProj.Kind())
 		}
-		islandBytes += wmBytes(&sc.inProj) + wmBytes(&sc.outProj)
+		islandBytes += wmBytes(&sc.InProj) + wmBytes(&sc.OutProj)
 	}
 	p9, pf := filepath.Join(tmp, "kind9.giw"), filepath.Join(tmp, "f32form.giw")
 	gbWriteGIW(t, src, p9, false)

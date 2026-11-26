@@ -483,7 +483,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 // block would under-attend its own image. Gemma 4's own path applies the correction and does not come here. A
 // refusal by name instead of a quietly wrong answer.
 func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
-	if w := m.w.arch.SlidingWindow; w > 0 && imgLen > w {
+	if w := m.w.Arch.SlidingWindow; w > 0 && imgLen > w {
 		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md)", imgLen, w)
 	}
 	return nil
@@ -492,12 +492,12 @@ func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
 // checkDeepstack validates GenerateQwenVLDeepstack's sets: at most one per decoder layer, each imgLen rows of hidden
 // (every image's rows, for several images).
 func (m *Model) checkDeepstack(deep [][]float32, imgLen int) error {
-	if len(deep) > m.w.arch.NumLayers {
-		return fmt.Errorf("decoder: %d DeepStack sets for %d layers", len(deep), m.w.arch.NumLayers)
+	if len(deep) > m.w.Arch.NumLayers {
+		return fmt.Errorf("decoder: %d DeepStack sets for %d layers", len(deep), m.w.Arch.NumLayers)
 	}
 	for l, set := range deep {
-		if len(set) != imgLen*m.w.arch.HiddenDim {
-			return fmt.Errorf("decoder: DeepStack set %d has %d values, want %d x %d", l, len(set), imgLen, m.w.arch.HiddenDim)
+		if len(set) != imgLen*m.w.Arch.HiddenDim {
+			return fmt.Errorf("decoder: DeepStack set %d has %d values, want %d x %d", l, len(set), imgLen, m.w.Arch.HiddenDim)
 		}
 	}
 	return nil

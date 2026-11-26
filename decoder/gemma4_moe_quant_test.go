@@ -61,27 +61,27 @@ func TestGemma4MoE_quantizedLoad(t *testing.T) {
 			nMoE := 0
 			var worstGU, worstDn float64 = 1, 1
 			for li := range m.w.Layers {
-				mo, fo := m.w.Layers[li].gemma4moe, f32.w.Layers[li].gemma4moe
+				mo, fo := m.w.Layers[li].Gemma4MoE, f32.w.Layers[li].Gemma4MoE
 				if mo == nil || fo == nil {
 					t.Fatalf("layer %d: gemma4moe nil (MoE not wired)", li)
 				}
 				nMoE++
 				// Coverage: all experts present.
-				if len(mo.expertsGateUp) != nExpert || len(mo.expertsDown) != nExpert {
-					t.Fatalf("layer %d: %d/%d experts, want %d", li, len(mo.expertsGateUp), len(mo.expertsDown), nExpert)
+				if len(mo.ExpertsGateUp) != nExpert || len(mo.ExpertsDown) != nExpert {
+					t.Fatalf("layer %d: %d/%d experts, want %d", li, len(mo.ExpertsGateUp), len(mo.ExpertsDown), nExpert)
 				}
 				// Router stays f32; dense mlp quantized.
-				if _, ok := mo.routerProj.F32(); !ok {
-					t.Errorf("layer %d: router.proj quantized (%q) — must stay f32", li, mo.routerProj.Kind())
+				if _, ok := mo.RouterProj.F32(); !ok {
+					t.Errorf("layer %d: router.proj quantized (%q) — must stay f32", li, mo.RouterProj.Kind())
 				}
-				if _, isF32 := mo.mlpDown.F32(); isF32 {
-					t.Errorf("layer %d: dense mlp_down not quantized (%q)", li, mo.mlpDown.Kind())
+				if _, isF32 := mo.MlpDown.F32(); isF32 {
+					t.Errorf("layer %d: dense mlp_down not quantized (%q)", li, mo.MlpDown.Kind())
 				}
-				if mo.denseInter != denseInter {
-					t.Errorf("layer %d: denseInter %d, want %d", li, mo.denseInter, denseInter)
+				if mo.DenseInter != denseInter {
+					t.Errorf("layer %d: denseInter %d, want %d", li, mo.DenseInter, denseInter)
 				}
 				for e := range nExpert {
-					gu, dn := mo.expertsGateUp[e], mo.expertsDown[e]
+					gu, dn := mo.ExpertsGateUp[e], mo.ExpertsDown[e]
 					if _, isF32 := gu.F32(); isF32 {
 						t.Errorf("layer %d expert %d gate_up not quantized (%q)", li, e, gu.Kind())
 					}
@@ -91,8 +91,8 @@ func TestGemma4MoE_quantizedLoad(t *testing.T) {
 					if dn.Rows() != hidden || dn.Cols() != moeInter {
 						t.Errorf("layer %d expert %d down %dx%d, want %dx%d", li, e, dn.Rows(), dn.Cols(), hidden, moeInter)
 					}
-					worstGU = math.Min(worstGU, probeCosine(be, &fo.expertsGateUp[e], &gu))
-					worstDn = math.Min(worstDn, probeCosine(be, &fo.expertsDown[e], &dn))
+					worstGU = math.Min(worstGU, probeCosine(be, &fo.ExpertsGateUp[e], &gu))
+					worstDn = math.Min(worstDn, probeCosine(be, &fo.ExpertsDown[e], &dn))
 				}
 			}
 			if nMoE == 0 {

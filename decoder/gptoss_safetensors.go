@@ -6,6 +6,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // buildGptOssWeights loads gpt-oss (20b/120b) from the released SAFETENSORS checkpoint,
@@ -25,7 +27,7 @@ import (
 // MEMORY. The experts never materialize as f32: gpt-oss-20b is ~76GB dequantized across
 // all layers. Each output row is dequantized on demand straight into streamQuantized,
 // which emits the quantized WeightMat row by row.
-func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*darch.Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -33,7 +35,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	expInter := arch.MoE.IntermediateDim
 	const blockElems = embed.MXFP4BlockElems
 
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
 	// quantizeWM. streamQ is streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row; see this
@@ -164,7 +166,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			return nil, dBErr
 		}
 
-		l.Experts = make([]expertWeights, nE)
+		l.Experts = make([]archparts.ExpertWeights, nE)
 		for e := range nE {
 			// INTERLEAVED: gate row k is tensor row 2k, up row k is 2k+1.
 			gm, gerr := streamQ(expInter, hidden, matmulQuant(quant, "expert_gate"), func(r int, dst []float32) error {
@@ -193,7 +195,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 				gb[k] = guBias[base+2*k]
 				ub[k] = guBias[base+2*k+1]
 			}
-			l.Experts[e] = expertWeights{
+			l.Experts[e] = archparts.ExpertWeights{
 				Gate: gm, Up: um, Down: dm,
 				GateBias: gb, UpBias: ub,
 				DownBias: slices.Clone(dBias[e*hidden : (e+1)*hidden]),

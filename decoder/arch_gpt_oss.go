@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -13,7 +15,7 @@ import (
 // sliding_window) and full (odd); q/k/v/o all carry biases; no QK-norm; YaRN RoPE (one table for both attention types). The router carries a
 // per-expert logit bias (LayerWeights.RouterBias). A resident backend admits the family only by declaring FeatAttnSink and FeatOutBias
 // (features.go).
-func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func gptOssArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateGptOss(); err != nil {
 		return nil, nil, err
 	}
@@ -30,7 +32,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if expInter == 0 {
 		expInter = cfg.IntermediateDim
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:             "gpt-oss",
 		HiddenDim:        cfg.HiddenDim,
 		NumLayers:        cfg.NumLayers,
@@ -39,21 +41,21 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:          hd,
 		IntermediateDim:  expInter, // gpt-oss has no dense layers; experts use this width
 		VocabSize:        cfg.VocabSize,
-		Norm:             NormRMS,
+		Norm:             darch.NormRMS,
 		RMSAddOne:        false,
 		NormEps:          cfg.RMSNormEps,
-		NormPlacement:    NormPre2,
-		Act:              ActSiLU, // the gpt-oss forward uses its own clamped activation; this is only for the matrix/logs
-		QKVBias:          true,    // q/k/v projection biases
-		OutBias:          true,    // attn_output bias
+		NormPlacement:    darch.NormPre2,
+		Act:              darch.ActSiLU, // the gpt-oss forward uses its own clamped activation; this is only for the matrix/logs
+		QKVBias:          true,          // q/k/v projection biases
+		OutBias:          true,          // attn_output bias
 		QKNorm:           false,
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
-		layerIsGlobal:    func(i int) bool { return i%2 == 1 }, // even = sliding, odd = full
+		LayerIsGlobal:    func(i int) bool { return i%2 == 1 }, // even = sliding, odd = full
 		RoPEGlobalBase:   cfg.RoPEGlobalBase,
 		RoPELocalBase:    cfg.RoPEGlobalBase, // one RoPE for both attention types
-		ropeScaling:      scaling,
-		ropeScalingLocal: scaling, // same YaRN table on sliding + full layers
+		RoPEScaling:      scaling,
+		RoPEScalingLocal: scaling, // same YaRN table on sliding + full layers
 		RotaryDim:        cfg.RotaryDim(),
 		MoE: &MoEConfig{
 			NumExperts:      nExperts,
@@ -61,7 +63,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NormTopKProb:    true, // softmax over the top-k logits == softmax-all + renormalize
 			IntermediateDim: expInter,
 		},
-		gptoss:     &gptOssParams{SwigluAlpha: 1.702, SwigluLimit: 7.0}, // gpt-oss constants (not in metadata)
+		GPTOSS:     &archparts.GPTOSSParams{SwigluAlpha: 1.702, SwigluLimit: 7.0}, // gpt-oss constants (not in metadata)
 		EmbedScale: 0,
 		TiedLMHead: false, // finalized from output.weight presence at load
 	}, nil, nil

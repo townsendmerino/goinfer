@@ -44,16 +44,16 @@ func TestRow4_coldTouchLatency(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(2))
 		var ws linalg.Workspace
-		stride := max(len(m.w.Layers[0].gemma4moe.expertsGateUp)*len(m.w.Layers)/nExperts, 1)
+		stride := max(len(m.w.Layers[0].Gemma4MoE.ExpertsGateUp)*len(m.w.Layers)/nExperts, 1)
 		count := 0
 		for li := 0; li < len(m.w.Layers) && count < nExperts; li++ {
-			gm := m.w.Layers[li].gemma4moe
+			gm := m.w.Layers[li].Gemma4MoE
 			if gm == nil {
 				continue
 			}
-			for e := (li * 37) % len(gm.expertsGateUp); e < len(gm.expertsGateUp) && count < nExperts; e += stride {
-				gu := &gm.expertsGateUp[e]
-				dn := &gm.expertsDown[e]
+			for e := (li * 37) % len(gm.ExpertsGateUp); e < len(gm.ExpertsGateUp) && count < nExperts; e += stride {
+				gu := &gm.ExpertsGateUp[e]
+				dn := &gm.ExpertsDown[e]
 				key := unsafe.Pointer(gu)
 
 				actGU := make([]float32, gu.Cols())

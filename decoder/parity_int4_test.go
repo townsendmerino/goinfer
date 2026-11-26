@@ -120,7 +120,7 @@ func BenchmarkPrefillInt4(b *testing.B) {
 	}
 	b.Logf("canBatchN(%d)=%v", L, m.canBatchN(L))
 
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	prompt := make([]int, L)
 	for i := range prompt {
 		prompt[i] = (i*131 + 7) % vocab

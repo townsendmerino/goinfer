@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -31,10 +32,10 @@ func TestResolveArchitecture_llama(t *testing.T) {
 		want any
 	}{
 		{"Name", a.Name, "llama"},
-		{"Norm", a.Norm, NormRMS},
+		{"Norm", a.Norm, darch.NormRMS},
 		{"RMSAddOne", a.RMSAddOne, false},
-		{"NormPlacement", a.NormPlacement, NormPre2},
-		{"Act", a.Act, ActSiLU},
+		{"NormPlacement", a.NormPlacement, darch.NormPre2},
+		{"Act", a.Act, darch.ActSiLU},
 		{"QKNorm", a.QKNorm, false}, // the knob that differs from Qwen3
 		{"HeadDim", a.HeadDim, 4},   // derived: hidden 16 / heads 4
 		{"AttnScale", a.AttnScale, math.Pow(4, -0.5)},
@@ -89,9 +90,9 @@ func TestLlama_ropeScaling(t *testing.T) {
 	}
 	// Scaling must change the low-frequency end of the table vs no scaling.
 	plain := rope.ComputeInvFreq(cfg.RoPEGlobalBase, a.HeadDim, nil)
-	if a.ropeInvFreqGlobal[len(a.ropeInvFreqGlobal)-1] >= plain[len(plain)-1] {
+	if a.RoPEInvFreqGlobal[len(a.RoPEInvFreqGlobal)-1] >= plain[len(plain)-1] {
 		t.Errorf("llama3 scaling did not lower the low-frequency inv_freq (%v vs unscaled %v)",
-			a.ropeInvFreqGlobal[len(a.ropeInvFreqGlobal)-1], plain[len(plain)-1])
+			a.RoPEInvFreqGlobal[len(a.RoPEInvFreqGlobal)-1], plain[len(plain)-1])
 	}
 
 	// null rope_scaling (the common case) loads unchanged.
@@ -164,7 +165,7 @@ func TestResolveArchitecture_mistral(t *testing.T) {
 		t.Errorf("SlidingWindow = %d, want 4096", a.SlidingWindow)
 	}
 	for i := 0; i < a.NumLayers; i++ {
-		if a.isGlobalLayer(i) {
+		if a.IsGlobalLayer(i) {
 			t.Errorf("layer %d global, want all-local", i)
 		}
 	}
@@ -178,7 +179,7 @@ func TestResolveArchitecture_mistral(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture (no window): %v", err)
 	}
-	if !a2.isGlobalLayer(0) {
+	if !a2.IsGlobalLayer(0) {
 		t.Errorf("with sliding_window=0, layers should be global (full attention)")
 	}
 }

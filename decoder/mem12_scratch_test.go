@@ -32,7 +32,7 @@ func TestMEM12Scratch_moeChunks(t *testing.T) {
 	setKnob(t, m, knobMoEExpertMajor, "1")
 	defer func(r int) { prefillChunkRows = r }(prefillChunkRows)
 	prefillChunkRows = 16
-	ids := f1IDs(64, m.w.arch.VocabSize)
+	ids := f1IDs(64, m.w.Arch.VocabSize)
 	var first, last uint64
 	defer func() { prefillChunkDone = nil }()
 	prefillChunkDone = func(c int) {
@@ -84,7 +84,7 @@ func TestMEM12Scratch_headLogits(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	ctx := context.Background()
 	c := m.NewCache(64)
-	prompt := f1IDs(16, m.w.arch.VocabSize)
+	prompt := f1IDs(16, m.w.Arch.VocabSize)
 	seq := []int{3, 5, 7, 9}
 	const n = 50
 	mean := func(fn func()) float64 {
@@ -124,7 +124,7 @@ func TestMEM12Scratch_identity(t *testing.T) {
 	for _, dir := range []string{"mixtral-tiny", "llama-tiny"} {
 		m := f1Load(t, filepath.Join("..", "testdata", dir))
 		setKnob(t, m, knobMoEExpertMajor, "1")
-		V := m.w.arch.VocabSize
+		V := m.w.Arch.VocabSize
 		ids := f1IDs(48, V)
 		seq := m.NewCache(64)
 		var want []float32

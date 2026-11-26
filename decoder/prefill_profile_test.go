@@ -35,7 +35,7 @@ func BenchmarkPrefillLong(b *testing.B) {
 	b.Logf("canBatchN(%d)=%v", L, m.canBatchN(L))
 	// Synthetic but valid token ids — this benchmarks prefill SHAPE/cost, not
 	// output correctness (bit-exactness is gated by the parity tests).
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	prompt := make([]int, L)
 	for i := range prompt {
 		prompt[i] = (i*131 + 7) % vocab

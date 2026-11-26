@@ -92,7 +92,7 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	if m.w.arch.gptoss == nil {
+	if m.w.Arch.GPTOSS == nil {
 		t.Fatalf("%s is not gpt-oss", model)
 	}
 	say("loaded %s in %.0fs; mode %s, depths %v, prompt set a, git %s", filepath.Base(model), time.Since(t0).Seconds(), mode, depths, os.Getenv("GPTOSS_PF_GIT"))

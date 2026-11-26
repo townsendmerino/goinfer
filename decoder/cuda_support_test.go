@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -37,16 +38,16 @@ func checkTablePlantedGapGoesRed(t *testing.T, backend string, table *program.Su
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		gated := !a.NonGatedMLP && a.MoE == nil && a.gptoss == nil && a.gemma4 == nil
+		gated := !a.NonGatedMLP && a.MoE == nil && a.GPTOSS == nil && a.Gemma4 == nil
 		switch {
-		case gated && a.Act == ActGeluTanh:
+		case gated && a.Act == darch.ActGeluTanh:
 			if ResidentEligible(a, backend) {
 				t.Errorf("%s: admitted on %s by a table without GELU-tanh on the gated form", name, backend)
 			} else {
 				red++
 				t.Logf("%s: declined under the plant: %s", name, residentGateReason(a, backend))
 			}
-		case gated && a.Act == ActSiLU && silu == 0:
+		case gated && a.Act == darch.ActSiLU && silu == 0:
 			if !ResidentEligible(a, backend) {
 				t.Errorf("%s: a SiLU row declined under a plant that removes only GELU-tanh: %s", name, residentGateReason(a, backend))
 			}

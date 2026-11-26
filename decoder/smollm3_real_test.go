@@ -41,7 +41,7 @@ func TestSmolLM3_3bReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "smollm3" {
 		t.Fatalf("arch = %q, want smollm3", a.Name)
 	}
@@ -53,7 +53,7 @@ func TestSmolLM3_3bReal_gate(t *testing.T) {
 	var nope int
 	for l := 0; l < a.NumLayers; l++ {
 		want := (l+1)%4 == 0
-		got := a.isNoPELayer(l)
+		got := a.IsNoPELayer(l)
 		if got != want {
 			t.Errorf("layer %d: isNoPELayer=%v, want %v (no_rope_layers repeats [1,1,1,0])", l, got, want)
 		}

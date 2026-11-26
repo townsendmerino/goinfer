@@ -141,7 +141,7 @@ func TestKVPricingFor_metalMLAPricedAsAllocated(t *testing.T) {
 	withFakeMetalCompiled(t)
 	cfg := a3Config("deepseek_v2")
 	arch, _, err := resolveArchitecture(cfg)
-	if err != nil || arch.mla == nil {
+	if err != nil || arch.MLA == nil {
 		t.Fatalf("deepseek_v2 config: arch %v, err %v; want an MLA architecture", arch, err)
 	}
 	for _, kv := range []string{"", "f32"} {
@@ -152,7 +152,7 @@ func TestKVPricingFor_metalMLAPricedAsAllocated(t *testing.T) {
 		got := p.bytes(cfg, 1024)
 		var latent int64
 		for l := 0; l < arch.NumLayers; l++ {
-			latent += int64(arch.kvDimAt(l)) * 4 // one f32 latent row per position (metal/mla.go)
+			latent += int64(arch.KVDimAt(l)) * 4 // one f32 latent row per position (metal/mla.go)
 		}
 		want := latent*(1024+KVBlockRows) + 1024/KVBlockRows*4 // 1024 rows, the pools' null block, the slot's table
 		if got != want {

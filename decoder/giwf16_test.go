@@ -6,13 +6,14 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // Every int4 tensor's group scales are stored as binary16 and aliased from the mapping as the WeightMat's own storage.
 // On a Metal target a fused group's members have their scales back to back in one block, so a no-copy buffer can bind
 // the whole group's scales as one run; a single tensor's scales are one run by themselves (kind 3).
 
-func f16Fixture(t *testing.T) *Weights {
+func f16Fixture(t *testing.T) *darch.Weights {
 	t.Helper()
 	w := fusedFixture(t)                 // int4 Q/K/V and Gate/Up (fused groups)
 	w.LMHead = synthInt4(16, 64, 32, 13) // a single tensor: kind 3

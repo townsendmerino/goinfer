@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -24,7 +26,7 @@ func nopePredicate(kind string) func(int) bool {
 // experts + an ungated shared expert) but its softmax-top-k routing is identical to
 // the Mixtral path, so moeMLP serves it unchanged once the fused tensors are split
 // at load. Dedicated loader (buildGraniteWeights); its program is Architecture.graniteLayerOps.
-func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func graniteArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateGranite(); err != nil {
 		return nil, nil, err
 	}
@@ -56,7 +58,7 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if logitScale == 0 {
 		logitScale = 1
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "granitemoehybrid",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -65,11 +67,11 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim, // expert FFN width (GraniteMoe uses intermediate_size)
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false,
 		MoE: &MoEConfig{
@@ -83,7 +85,7 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:      attnMul, // Granite attention_multiplier (not 1/√d)
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		RotaryDim:      0, // full rotary
 		// position_embedding_type "nope" ⇒ NO positional encoding on the attention layers
 		// (HF builds no rotary_emb at all and passes position_embeddings=None). It is what
@@ -91,12 +93,12 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		// read rather than assumed. Roping a NoPE checkpoint still generates text; it just
 		// generates the wrong text, which is why this is config-driven and gated by the
 		// real-checkpoint oracle rather than by the tiny fixture (which is roped).
-		layerNoPE:    nopePredicate(cfg.PositionEmbeddingType),
+		LayerNoPE:    nopePredicate(cfg.PositionEmbeddingType),
 		EmbedScale:   0, // embedding_multiplier is the program's embed scale (Architecture.embedScale), not the Gemma sqrt path
 		TiedLMHead:   false,
 		LogitScale:   logitScale,
-		layerIsMamba: func(i int) bool { return i < len(types) && types[i] == "mamba" },
-		granite: &graniteParams{
+		LayerIsMamba: func(i int) bool { return i < len(types) && types[i] == "mamba" },
+		Granite: &archparts.GraniteParams{
 			NHeads: cfg.MambaNHeads, HeadDim: cfg.MambaDHead, DState: cfg.MambaDState,
 			NGroups: cfg.MambaNGroups, DConv: cfg.MambaDConv,
 			EmbMul: one(cfg.EmbeddingMultiplier), ResidMul: one(cfg.ResidualMultiplier),

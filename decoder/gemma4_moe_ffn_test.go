@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // TestGemma4MoEFFN_parity gates the Gemma 4 parallel dense+MoE FFN sub-block
@@ -56,27 +58,27 @@ func TestGemma4MoEFFN_parity(t *testing.T) {
 		eGU[e] = linalg.WrapF32(gu[e*guStride:(e+1)*guStride], 2*d.MoeInter, d.Hidden)
 		eDn[e] = linalg.WrapF32(dn[e*dnStride:(e+1)*dnStride], d.Hidden, d.MoeInter)
 	}
-	w := &gemma4MoEWeights{
-		preFFNNorm:     W["pre_ffn_norm"],
-		postFFNNorm1:   W["post_ffn_norm_1"],
-		preFFNNorm2:    W["pre_ffn_norm_2"],
-		postFFNNorm2:   W["post_ffn_norm_2"],
-		postFFNNorm:    W["post_ffn_norm"],
-		mlpGate:        linalg.WrapF32(W["mlp_gate"], d.DenseInter, d.Hidden),
-		mlpUp:          linalg.WrapF32(W["mlp_up"], d.DenseInter, d.Hidden),
-		mlpDown:        linalg.WrapF32(W["mlp_down"], d.Hidden, d.DenseInter),
-		routerProj:     linalg.WrapF32(W["router_proj"], d.NumExperts, d.Hidden),
-		routerScale:    W["router_scale"],
-		perExpertScale: W["per_expert_scale"],
-		expertsGateUp:  eGU,
-		expertsDown:    eDn,
-		layerScalar:    W["layer_scalar"][0],
-		denseInter:     d.DenseInter,
-		moeInter:       d.MoeInter,
-		nE:             d.NumExperts,
-		topK:           d.TopK,
+	w := &archparts.Gemma4MoEWeights{
+		PreFFNNorm:     W["pre_ffn_norm"],
+		PostFFNNorm1:   W["post_ffn_norm_1"],
+		PreFFNNorm2:    W["pre_ffn_norm_2"],
+		PostFFNNorm2:   W["post_ffn_norm_2"],
+		PostFFNNorm:    W["post_ffn_norm"],
+		MlpGate:        linalg.WrapF32(W["mlp_gate"], d.DenseInter, d.Hidden),
+		MlpUp:          linalg.WrapF32(W["mlp_up"], d.DenseInter, d.Hidden),
+		MlpDown:        linalg.WrapF32(W["mlp_down"], d.Hidden, d.DenseInter),
+		RouterProj:     linalg.WrapF32(W["router_proj"], d.NumExperts, d.Hidden),
+		RouterScale:    W["router_scale"],
+		PerExpertScale: W["per_expert_scale"],
+		ExpertsGateUp:  eGU,
+		ExpertsDown:    eDn,
+		LayerScalar:    W["layer_scalar"][0],
+		DenseInter:     d.DenseInter,
+		MoeInter:       d.MoeInter,
+		NE:             d.NumExperts,
+		TopK:           d.TopK,
 	}
-	arch := &Architecture{HiddenDim: d.Hidden, NormEps: d.RmsEps}
+	arch := &darch.Architecture{HiddenDim: d.Hidden, NormEps: d.RmsEps}
 	be := &cpuBackend{}
 
 	var maxAbs, dot, na, nb float64

@@ -22,7 +22,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
-	arch := m.w.arch
+	arch := m.w.Arch
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	qDim, kvDim := nH*hd, nKV*hd
 	group := nH / nKV

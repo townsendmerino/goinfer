@@ -28,7 +28,7 @@ func TestKimi_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &deepseekTensorSchema || arch.mla == nil {
+	if schema != &deepseekTensorSchema || arch.MLA == nil {
 		t.Fatalf("kimi_k2 should resolve to the deepseek MLA descriptor")
 	}
 	if !arch.MoE.RouterSigmoid || arch.MoE.NGroup > 1 || !arch.MoE.SharedUngated {
@@ -37,8 +37,8 @@ func TestKimi_descriptor(t *testing.T) {
 	if arch.MoE.RoutedScale != 2.827 || arch.MoE.NumExperts != 16 || arch.MoE.TopK != 4 {
 		t.Errorf("kimi MoE scalars wrong: scale=%v experts=%d topk=%d", arch.MoE.RoutedScale, arch.MoE.NumExperts, arch.MoE.TopK)
 	}
-	if arch.mla.QLoRARank != 24 || arch.mla.qkHeadDim() != 24 {
-		t.Errorf("kimi MLA dims wrong: qLoRA=%d qkHead=%d", arch.mla.QLoRARank, arch.mla.qkHeadDim())
+	if arch.MLA.QLoRARank != 24 || arch.MLA.QKHeadDim() != 24 {
+		t.Errorf("kimi MLA dims wrong: qLoRA=%d qkHead=%d", arch.MLA.QLoRARank, arch.MLA.QKHeadDim())
 	}
 }
 
@@ -95,8 +95,8 @@ func TestKimi_textParity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "kimi_k2" || m.w.arch.mla == nil {
-		t.Fatalf("arch = %q (mla=%v), want kimi_k2", m.w.arch.Name, m.w.arch.mla != nil)
+	if m.w.Arch.Name != "kimi_k2" || m.w.Arch.MLA == nil {
+		t.Fatalf("arch = %q (mla=%v), want kimi_k2", m.w.Arch.Name, m.w.Arch.MLA != nil)
 	}
 
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)

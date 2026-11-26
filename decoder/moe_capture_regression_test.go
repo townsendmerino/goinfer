@@ -22,11 +22,11 @@ func TestForwardN_capturesMoELayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.MoE == nil {
-		t.Fatalf("expected a MoE arch, got %q", m.w.arch.Name)
+	if m.w.Arch.MoE == nil {
+		t.Fatalf("expected a MoE arch, got %q", m.w.Arch.Name)
 	}
 	ids := []int{1, 2, 3}
-	layers := make([]int, m.w.arch.NumLayers)
+	layers := make([]int, m.w.Arch.NumLayers)
 	for i := range layers {
 		layers[i] = i
 	}
@@ -36,7 +36,7 @@ func TestForwardN_capturesMoELayers(t *testing.T) {
 	if _, err := m.forwardN(context.Background(), ids, cache); err != nil {
 		t.Fatalf("forwardN: %v", err)
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	for ci, l := range layers {
 		if cache.captured[ci] == nil {
 			t.Fatalf("layer %d (MoE): captured hidden is nil — C-07 reintroduced (EAGLE fuseAt would panic)", l)

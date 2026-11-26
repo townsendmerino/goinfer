@@ -7,6 +7,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
@@ -15,8 +17,8 @@ type giwReader struct {
 	data []byte
 	off  int
 	err  error
-	arch *Architecture // resolved from the serialized config; gates the gemma4 tail
-	scan bool          // skip kind-1 matrices (scanGIWWeights)
+	arch *darch.Architecture // resolved from the serialized config; gates the gemma4 tail
+	scan bool                // skip kind-1 matrices (scanGIWWeights)
 }
 
 // opensCopiedF32 reports whether a bundle's first weight record, the embedding, is a kind-1 matrix. A quant bundle's embedding is
@@ -395,7 +397,7 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 	}
 }
 
-func (r *giwReader) layer(l *LayerWeights) {
+func (r *giwReader) layer(l *darch.LayerWeights) {
 	r.fusedGroup(&l.QProj, &l.KProj, &l.VProj)
 	l.OProj = r.weightMat()
 	l.QBias = r.f32()
@@ -429,7 +431,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 		return
 	}
 	if ne > 0 {
-		l.Experts = make([]expertWeights, ne)
+		l.Experts = make([]archparts.ExpertWeights, ne)
 		for e := range l.Experts {
 			l.Experts[e].Gate = r.weightMat()
 			l.Experts[e].Up = r.weightMat()
@@ -441,7 +443,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.SharedExpert.Down = r.weightMat()
 	l.SharedGate = r.weightMat()
 	r.hybridLayer(l)
-	if r.arch != nil && r.arch.gemma4 != nil {
+	if r.arch != nil && r.arch.Gemma4 != nil {
 		r.gemma4Layer(l)
 	}
 	r.v6Layer(l) // the completeness tail
@@ -450,7 +452,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 }
 
 // v6Layer mirrors giwWriter.v6Layer.
-func (r *giwReader) v6Layer(l *LayerWeights) {
+func (r *giwReader) v6Layer(l *darch.LayerWeights) {
 	l.GProj = r.weightMat()
 	l.AttnSinks = r.f32()
 	for e := range l.Experts {
@@ -462,47 +464,47 @@ func (r *giwReader) v6Layer(l *LayerWeights) {
 	l.SharedExpert.UpBias = r.f32()
 	l.SharedExpert.DownBias = r.f32()
 	if r.u8() != 0 {
-		m := &mlaWeights{}
-		m.qAProj, m.qAQ = r.mambaProj()
-		m.qALayernorm = r.f32()
-		m.qBProj, m.qBQ = r.mambaProj()
-		m.qProj, m.qQ = r.mambaProj()
-		m.kvAProj, m.kvAQ = r.mambaProj()
-		m.kvALayernorm = r.f32()
-		m.kvBProj = r.f32()
-		m.oProj, m.oQ = r.mambaProj()
-		l.mla = m
+		m := &archparts.MLAWeights{}
+		m.QAProj, m.QAQ = r.mambaProj()
+		m.QALayernorm = r.f32()
+		m.QBProj, m.QBQ = r.mambaProj()
+		m.QProj, m.QQ = r.mambaProj()
+		m.KVAProj, m.KVAQ = r.mambaProj()
+		m.KVALayernorm = r.f32()
+		m.KVBProj = r.f32()
+		m.OProj, m.OQ = r.mambaProj()
+		l.MLA = m
 	}
 	if r.u8() != 0 {
-		m := &mamba2Weights{}
-		m.inProj, m.inQ = r.mambaProj()
-		m.convW = r.f32()
-		m.convB = r.f32()
-		m.aLog = r.f32()
-		m.d = r.f32()
-		m.dtBias = r.f32()
-		m.normW = r.f32()
-		m.outProj, m.outQ = r.mambaProj()
-		l.mamba = m
+		m := &archparts.Mamba2Weights{}
+		m.InProj, m.InQ = r.mambaProj()
+		m.ConvW = r.f32()
+		m.ConvB = r.f32()
+		m.ALog = r.f32()
+		m.D = r.f32()
+		m.DtBias = r.f32()
+		m.NormW = r.f32()
+		m.OutProj, m.OutQ = r.mambaProj()
+		l.Mamba = m
 	}
 }
 
 // v8Layer mirrors giwWriter.v8Layer. Version-gated, so a v3-v7 bundle's layer block ends where it
 // always did — and an LFM2 bundle written at v7 or earlier is one whose conv weights were never in
 // the file at all, which validateShapes rejects rather than loading into a nil-deref.
-func (r *giwReader) v8Layer(l *LayerWeights) {
+func (r *giwReader) v8Layer(l *darch.LayerWeights) {
 	if r.u8() == 0 {
 		return
 	}
-	c := &shortConvWeights{}
+	c := &archparts.ShortConvWeights{}
 	hidden, cd := 0, 0
-	if r.arch != nil && r.arch.lfm2 != nil {
-		hidden, cd = r.arch.HiddenDim, r.arch.lfm2.ConvDim
+	if r.arch != nil && r.arch.LFM2 != nil {
+		hidden, cd = r.arch.HiddenDim, r.arch.LFM2.ConvDim
 	}
-	c.inProj = r.island(3*cd, hidden)
-	c.convW = r.f32()
-	c.outProj = r.island(hidden, cd)
-	l.shortConv = c
+	c.InProj = r.island(3*cd, hidden)
+	c.ConvW = r.f32()
+	c.OutProj = r.island(hidden, cd)
+	l.ShortConv = c
 }
 
 // island reads giwWriter.island's record by its encoding byte: a kind-9 bf16 matrix aliased from the mapping, or an f32 array,
@@ -528,36 +530,36 @@ func (r *giwReader) island(rows, cols int) linalg.WeightMat {
 // only attach it when this layer actually has MLA weights (v6Layer, read earlier, already set
 // l.mla by the time this runs). Version-gated the same way v8Layer is, so a pre-v9 bundle's layer
 // block ends where it always did.
-func (r *giwReader) v9Layer(l *LayerWeights) {
+func (r *giwReader) v9Layer(l *darch.LayerWeights) {
 	gProj := r.f32()
-	if l.mla != nil {
-		l.mla.gProj = gProj
+	if l.MLA != nil {
+		l.MLA.GProj = gProj
 	}
 	if r.u8() == 0 {
 		return
 	}
-	k := &kdaWeights{}
-	k.qProj = r.weightMat()
-	k.kProj = r.weightMat()
-	k.vProj = r.weightMat()
-	k.qConvW = r.f32()
-	k.kConvW = r.f32()
-	k.vConvW = r.f32()
-	k.fProj = r.weightMat()
-	k.dtBias = r.f32()
-	k.aLog = r.f32()
-	k.bProj = r.f32()
-	k.gProj = r.weightMat()
-	k.oNormW = r.f32()
-	k.oProj = r.weightMat()
-	l.kda = k
+	k := &archparts.KDAWeights{}
+	k.QProj = r.weightMat()
+	k.KProj = r.weightMat()
+	k.VProj = r.weightMat()
+	k.QConvW = r.f32()
+	k.KConvW = r.f32()
+	k.VConvW = r.f32()
+	k.FProj = r.weightMat()
+	k.DtBias = r.f32()
+	k.ALog = r.f32()
+	k.BProj = r.f32()
+	k.GProj = r.weightMat()
+	k.ONormW = r.f32()
+	k.OProj = r.weightMat()
+	l.KDA = k
 }
 
 // gemma4Layer reads the v4 Gemma 4 per-layer tail and, when the MoE sub-block is
 // present, reconstructs gemma4moe — re-aliasing the dense-branch MLP + pre/post norms
 // already read into the standard block, and taking the fixed dims from the resolved
 // arch (denseInter = IntermediateDim, moe/experts/topK from arch.MoE).
-func (r *giwReader) gemma4Layer(l *LayerWeights) {
+func (r *giwReader) gemma4Layer(l *darch.LayerWeights) {
 	l.PLEGate = r.weightMat()
 	l.PLEProj = r.weightMat()
 	l.PostPLENorm = r.f32()
@@ -567,67 +569,67 @@ func (r *giwReader) gemma4Layer(l *LayerWeights) {
 	if r.u8() == 0 { // no gemma4moe sub-block (dense E-model layer)
 		return
 	}
-	mo := &gemma4MoEWeights{
-		preFFNNorm:  l.PreMLPNorm,  // dense pre-norm (already read)
-		postFFNNorm: l.PostMLPNorm, // joint post-norm (already read)
-		mlpGate:     l.GateProj,
-		mlpUp:       l.UpProj,
-		mlpDown:     l.DownProj,
-		layerScalar: l.LayerScalar,
-		denseInter:  r.arch.IntermediateDim,
+	mo := &archparts.Gemma4MoEWeights{
+		PreFFNNorm:  l.PreMLPNorm,  // dense pre-norm (already read)
+		PostFFNNorm: l.PostMLPNorm, // joint post-norm (already read)
+		MlpGate:     l.GateProj,
+		MlpUp:       l.UpProj,
+		MlpDown:     l.DownProj,
+		LayerScalar: l.LayerScalar,
+		DenseInter:  r.arch.IntermediateDim,
 	}
 	if m := r.arch.MoE; m != nil {
-		mo.moeInter, mo.nE, mo.topK = m.IntermediateDim, m.NumExperts, m.TopK
+		mo.MoeInter, mo.NE, mo.TopK = m.IntermediateDim, m.NumExperts, m.TopK
 	}
-	mo.postFFNNorm1 = r.f32()
-	mo.preFFNNorm2 = r.f32()
-	mo.postFFNNorm2 = r.f32()
-	mo.routerProj = r.weightMat()
-	mo.routerScale = r.f32()
-	mo.perExpertScale = r.f32()
+	mo.PostFFNNorm1 = r.f32()
+	mo.PreFFNNorm2 = r.f32()
+	mo.PostFFNNorm2 = r.f32()
+	mo.RouterProj = r.weightMat()
+	mo.RouterScale = r.f32()
+	mo.PerExpertScale = r.f32()
 	ne := int(r.u32())
 	if ne < 0 || ne > maxSerializedExperts {
 		r.fail("implausible gemma4moe expert count")
 		return
 	}
-	mo.expertsGateUp = make([]linalg.WeightMat, ne)
-	mo.expertsDown = make([]linalg.WeightMat, ne)
+	mo.ExpertsGateUp = make([]linalg.WeightMat, ne)
+	mo.ExpertsDown = make([]linalg.WeightMat, ne)
 	for e := range ne {
-		mo.expertsGateUp[e] = r.weightMat()
-		mo.expertsDown[e] = r.weightMat()
+		mo.ExpertsGateUp[e] = r.weightMat()
+		mo.ExpertsDown[e] = r.weightMat()
 	}
-	l.gemma4moe = mo
+	l.Gemma4MoE = mo
 }
 
 // hybridLayer reconstructs the qwen3_5_moe per-layer extras written by
 // giwWriter.hybridLayer. negExpA was stored precomputed, so it loads straight in.
-func (r *giwReader) hybridLayer(l *LayerWeights) {
+func (r *giwReader) hybridLayer(l *darch.LayerWeights) {
 	switch r.u8() {
 	case 0:
 		// no hybrid extras (every non-qwen3_5_moe family)
 	case 1:
 		// Field order is the wire order: a struct literal evaluates its fields in source order, so these must be read in exactly
 		// the order hybridLayer writes them.
-		d := &deltaNetWeights{}
-		d.inProjQKV = r.weightMat()
-		d.inProjZ = r.weightMat()
-		d.inProjB = r.f32()
-		d.inProjA = r.f32()
-		d.convW = r.f32()
-		d.dtBias = r.f32()
-		d.negExpA = r.f32()
-		d.normW = r.f32()
-		d.outProj = r.weightMat()
-		l.delta = d
+		d := &archparts.DeltaNetWeights{}
+		d.InProjQKV = r.weightMat()
+		d.InProjZ = r.weightMat()
+		d.InProjB = r.f32()
+		d.InProjA = r.f32()
+		d.ConvW = r.f32()
+		d.DtBias = r.f32()
+		d.NegExpA = r.f32()
+		d.NormW = r.f32()
+		d.OutProj = r.weightMat()
+		l.Delta = d
 	case 2:
-		a := &qwenAttnWeights{}
-		a.qProj = r.weightMat()
-		a.kProj = r.weightMat()
-		a.vProj = r.weightMat()
-		a.oProj = r.weightMat()
-		a.qNorm = r.f32()
-		a.kNorm = r.f32()
-		l.qattn = a
+		a := &archparts.QwenAttnWeights{}
+		a.QProj = r.weightMat()
+		a.KProj = r.weightMat()
+		a.VProj = r.weightMat()
+		a.OProj = r.weightMat()
+		a.QNorm = r.f32()
+		a.KNorm = r.f32()
+		l.QAttn = a
 	default:
 		r.fail("unknown per-layer hybrid kind")
 	}

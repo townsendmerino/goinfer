@@ -20,7 +20,7 @@ func BenchmarkAttnDistinctBytes(b *testing.B) {
 	if err != nil {
 		b.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
-	arch := m.w.arch
+	arch := m.w.Arch
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	if nH == 0 || nKV == 0 || hd == 0 {
 		b.Skipf("model reports zero-valued head shape (NumHeads=%d NumKVHeads=%d HeadDim=%d)", nH, nKV, hd)

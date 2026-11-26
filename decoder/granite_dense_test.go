@@ -51,21 +51,21 @@ func TestGraniteDense_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "granite" {
-		t.Fatalf("resolved arch %q, want granite", m.w.arch.Name)
+	if m.w.Arch.Name != "granite" {
+		t.Fatalf("resolved arch %q, want granite", m.w.Arch.Name)
 	}
-	if m.w.arch.MoE != nil {
+	if m.w.Arch.MoE != nil {
 		t.Fatalf("expected no MoE (dense Granite)")
 	}
 	// The fixture's multipliers are all non-1.0 (except residual, pinned to 1.0) — a wrong or
 	// dropped derivation would show up as a resolved value equal to the "unset" default instead.
-	if got, want := m.w.arch.EmbedScale, 12.0; got != want {
+	if got, want := m.w.Arch.EmbedScale, 12.0; got != want {
 		t.Errorf("EmbedScale = %v, want %v (embedding_multiplier)", got, want)
 	}
-	if got, want := m.w.arch.AttnScale, 0.5; got != want {
+	if got, want := m.w.Arch.AttnScale, 0.5; got != want {
 		t.Errorf("AttnScale = %v, want %v (attention_multiplier)", got, want)
 	}
-	if got, want := m.w.arch.LogitScale, 6.0; got != want {
+	if got, want := m.w.Arch.LogitScale, 6.0; got != want {
 		t.Errorf("LogitScale = %v, want %v (logits_scaling)", got, want)
 	}
 

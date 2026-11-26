@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
@@ -62,11 +63,11 @@ func TestGlmOcr_realConfig(t *testing.T) {
 		{"HeadDim (explicit, hidden/heads would be 96)", arch.HeadDim, 128},
 		{"IntermediateDim", arch.IntermediateDim, 4608},
 		{"VocabSize", arch.VocabSize, 59392},
-		{"Norm", arch.Norm, NormRMS},
+		{"Norm", arch.Norm, darch.NormRMS},
 		{"RMSAddOne", arch.RMSAddOne, false},
 		{"NormEps", arch.NormEps, 1e-5},
-		{"NormPlacement", arch.NormPlacement, NormSandwich4},
-		{"Act", arch.Act, ActSiLU},
+		{"NormPlacement", arch.NormPlacement, darch.NormSandwich4},
+		{"Act", arch.Act, darch.ActSiLU},
 		{"NonGatedMLP", arch.NonGatedMLP, false},
 		{"MoE", arch.MoE == nil, true},
 		{"QKVBias", arch.QKVBias, false},
@@ -79,9 +80,9 @@ func TestGlmOcr_realConfig(t *testing.T) {
 		{"RotaryDim (partial_rotary_factor 1.0)", arch.RotaryDim, 128},
 		{"MRopeSection", arch.MRopeSection, []int{16, 24, 24}},
 		{"MRopeInterleaved (contiguous layout)", arch.MRopeInterleaved, false},
-		{"ropeInterleave (pairwise)", arch.ropeInterleave, true},
+		{"ropeInterleave (pairwise)", arch.RoPEInterleave, true},
 		{"EmbedScale", arch.EmbedScale, 0.0},
-		{"len(inv-freq table) = head_dim/2", len(arch.ropeInvFreq(0)), 64},
+		{"len(inv-freq table) = head_dim/2", len(arch.RoPEInvFreq(0)), 64},
 		{"EOSIDs", cfg.EOSIDs(), []int{59246, 59253}},
 	}
 	for _, c := range checks {
@@ -96,7 +97,7 @@ func TestGlmOcr_realConfig(t *testing.T) {
 	if err != nil || arch2.HeadDim != 128 || !reflect.DeepEqual(arch2.MRopeSection, []int{16, 24, 24}) {
 		t.Errorf("model_type glm_ocr_text: arch=%+v err=%v", arch2, err)
 	}
-	if got, want := arch.residentFeatures(), []ResidentFeature{FeatPairwiseMRoPE, FeatPairwiseRoPE, FeatSandwichNorm}; !slices.Equal(got, want) {
+	if got, want := arch.ResidentFeatures(), []darch.ResidentFeature{darch.FeatPairwiseMRoPE, darch.FeatPairwiseRoPE, darch.FeatSandwichNorm}; !slices.Equal(got, want) {
 		t.Errorf("residentFeatures = %v, want %v", got, want)
 	}
 }
@@ -119,7 +120,7 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 	}
 	for _, backend := range residentBackends {
 		feats := residentBackendFeatures[backend]
-		wantAdmit := feats[FeatPairwiseRoPE] && feats[FeatPairwiseMRoPE]
+		wantAdmit := feats[darch.FeatPairwiseRoPE] && feats[darch.FeatPairwiseMRoPE]
 		if tb := residentBackendTables[backend]; tb != nil {
 			wantAdmit = tb.PairwiseRope // a table states pairwise rotation, m-RoPE sections included, as a rope parameter
 		}
@@ -142,7 +143,7 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 			t.Errorf("backend %q admits glm_ocr: its rope kernels are NeoX, the model's rotation is pairwise", backend)
 			continue
 		}
-		for _, f := range []ResidentFeature{FeatPairwiseRoPE, FeatPairwiseMRoPE} {
+		for _, f := range []darch.ResidentFeature{darch.FeatPairwiseRoPE, darch.FeatPairwiseMRoPE} {
 			if !strings.Contains(why, string(f)) {
 				t.Errorf("backend %q decline reason %q does not name %q", backend, why, f)
 			}
@@ -307,11 +308,11 @@ func TestGlmOcr_tensorNameMapping(t *testing.T) {
 	if len(w.Layers) != 2 {
 		t.Fatalf("loaded %d layers, want 2 (the MTP layer 2 must not be one of them)", len(w.Layers))
 	}
-	if w.arch.TiedLMHead {
+	if w.Arch.TiedLMHead {
 		t.Errorf("TiedLMHead = true with a lm_head.weight in the checkpoint")
 	}
-	if w.arch.HeadDim != 16 {
-		t.Errorf("HeadDim = %d, want the explicit 16 (hidden/heads would be 6)", w.arch.HeadDim)
+	if w.Arch.HeadDim != 16 {
+		t.Errorf("HeadDim = %d, want the explicit 16 (hidden/heads would be 6)", w.Arch.HeadDim)
 	}
 	eq := func(what string, got, want []float32) {
 		t.Helper()
@@ -770,7 +771,7 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 	if !reflect.DeepEqual(pos, g.Positions) {
 		t.Fatalf("mropePositions != the positions HF's rule produced:\n got  %v\n want %v", pos, g.Positions)
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	feats := make([]float32, 0, g.NImage*hidden)
 	for _, row := range g.Features {
 		feats = append(feats, row...)
@@ -840,7 +841,7 @@ func TestGlmOcr_generateQwenVL_cpuOnly(t *testing.T) {
 	if m.resident != nil || m.ResidentActive() {
 		t.Fatalf("a CPU-only load has a resident (%v): this test would not exercise the nil-resident path", m.DecodePath())
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	feats := make([]float32, 0, g.NImage*hidden)
 	for _, row := range g.Features {
 		feats = append(feats, row...)

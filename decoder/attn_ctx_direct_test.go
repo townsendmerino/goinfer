@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"os"
 	"testing"
@@ -59,7 +60,7 @@ func runCtxCase(t *testing.T, c ctxCase) string {
 	} else {
 		t.Setenv("GOINFER_ATTN_GROUPED", "0")
 	}
-	arch := &Architecture{NumHeads: c.nH, NumKVHeads: c.nKV, HeadDim: c.hd, AttnScale: 1 / math.Sqrt(float64(c.hd))}
+	arch := &darch.Architecture{NumHeads: c.nH, NumKVHeads: c.nKV, HeadDim: c.hd, AttnScale: 1 / math.Sqrt(float64(c.hd))}
 	cache, q := syntheticDecodeCache(t, arch, c.nKeys, int64(c.nH*1000+c.hd))
 	hd := c.hd
 	group := c.nH / c.nKV

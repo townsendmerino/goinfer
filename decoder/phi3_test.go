@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -26,7 +27,7 @@ func TestPhi3_descriptor(t *testing.T) {
 	if schema != &phi3TensorSchema {
 		t.Fatalf("schema mismatch")
 	}
-	if arch.Name != "phi3" || arch.Norm != NormRMS || arch.RMSAddOne || arch.NormPlacement != NormPre2 {
+	if arch.Name != "phi3" || arch.Norm != darch.NormRMS || arch.RMSAddOne || arch.NormPlacement != darch.NormPre2 {
 		t.Errorf("descriptor wrong: %+v", arch)
 	}
 	if arch.QKNorm || arch.QKVBias || arch.MoE != nil {

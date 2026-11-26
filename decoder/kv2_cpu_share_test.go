@@ -23,7 +23,7 @@ func TestKV2_cpuSessionShare(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	pre := make([]int, 1100)
 	for i := range pre {
 		pre[i] = (i*37 + 11) % vocab

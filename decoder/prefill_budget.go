@@ -168,11 +168,11 @@ func prefillScratchBytes(cfg *Config, promptTokens int) int64 {
 }
 
 // hostKVF16 reports whether the CPU (host) KV cache this model builds is f16: requested and allowed for the family.
-func (m *Model) hostKVF16() bool { return m.kvH && m.w.arch.kvF16OK() }
+func (m *Model) hostKVF16() bool { return m.kvH && m.w.Arch.KVF16OK() }
 
 // CPUKVPrecision is the precision the CPU (host) KV cache is built at: "i8", "f16" or "f32".
 func (m *Model) CPUKVPrecision() string {
-	if got, _ := ResolveKV("cpu", m.w.arch, m.opts); got != "" {
+	if got, _ := ResolveKV("cpu", m.w.Arch, m.opts); got != "" {
 		return got
 	}
 	return "f32"
@@ -183,7 +183,7 @@ func (m *Model) CPUKVF16DeclineReason() string {
 	if cpuKVRequested(m.opts) != kvPrecF16 {
 		return ""
 	}
-	if got, why := ResolveKV("cpu", m.w.arch, m.opts); got != kvPrecF16 {
+	if got, why := ResolveKV("cpu", m.w.Arch, m.opts); got != kvPrecF16 {
 		return why
 	}
 	return ""
