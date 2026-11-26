@@ -5,12 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"slices"
+	"sync"
 
 	"github.com/townsendmerino/aikit/encoder"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // embedReq is the subset of the OpenAI /v1/embeddings request we honor, plus the
@@ -99,6 +102,11 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "no embedding model is loaded; start the server with -embed-model <path> to enable /v1/embeddings")
 		return
 	}
+	if !s.embedGate.enter() {
+		writeErr(w, http.StatusServiceUnavailable, "the embedding model is closed: the server is shutting down")
+		return
+	}
+	defer s.embedGate.exit()
 	var req embedReq
 	if !decodeJSON(w, r, &req) {
 		return
@@ -203,7 +211,7 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			if r.Context().Err() != nil {
 				return // the client is gone; nothing to write to
 			}
-			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			writeErr(w, embedErrStatus(err), "encode: "+err.Error())
 			return
 		}
 		for _, c := range counts {
@@ -214,7 +222,7 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		var err error
 		vecs, counts, err = bc.EncodeBatchCounted(inputs, isQueries, 0)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			writeErr(w, embedErrStatus(err), "encode: "+err.Error())
 			return
 		}
 		for _, c := range counts {
@@ -224,7 +232,7 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		var err error
 		vecs, err = s.embed.EncodeBatch(inputs, isQueries, 0)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			writeErr(w, embedErrStatus(err), "encode: "+err.Error())
 			return
 		}
 		promptTokens = s.countEmbedTokens(inputs, isQuery)
@@ -424,4 +432,41 @@ func (s *server) countEmbedTokens(inputs []string, isQuery bool) int {
 		}
 	}
 	return total
+}
+
+// embedErrStatus is an encode failure's status: 503 for an embedder already closed, 500 otherwise.
+func embedErrStatus(err error) int {
+	if errors.Is(err, decoder.ErrClosed) {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusInternalServerError
+}
+
+// embedGate keeps an embedder's Close from racing the requests using it: a request holds it shared for its whole
+// encode, and close takes it exclusively, so Close waits for the requests in flight and the ones after it are refused.
+type embedGate struct {
+	mu     sync.RWMutex
+	closed bool
+}
+
+// enter admits a request, or reports false once the embedder is closed. A true return obliges the caller to exit.
+func (g *embedGate) enter() bool {
+	g.mu.RLock()
+	if g.closed {
+		g.mu.RUnlock()
+		return false
+	}
+	return true
+}
+
+func (g *embedGate) exit() { g.mu.RUnlock() }
+
+// close runs fn once no request is in flight and refuses every request after it.
+func (g *embedGate) close(fn func()) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.closed {
+		g.closed = true
+		fn()
+	}
 }

@@ -103,7 +103,7 @@ func (c *handlerCloser) Close() error {
 		}
 	}
 	if cl, ok := c.srv.embed.(io.Closer); ok {
-		_ = cl.Close()
+		c.srv.embedGate.close(func() { _ = cl.Close() })
 	}
 	c.srv.regMu.Lock()
 	speech := make([]*speechModel, 0, len(c.srv.speech))

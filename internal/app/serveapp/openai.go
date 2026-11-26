@@ -360,12 +360,13 @@ type server struct {
 	draining map[string]struct{}
 
 	// Embedding (encoder) half — nil when only a generative model is served.
-	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
-	// served without a mutex (the per-model mutex guards only the shared decoder).
-	embed    encoder.Encoder
-	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
-	embedID  string
-	embedDim int
+	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings takes no
+	// per-request mutex; embedGate only keeps Close from tearing it down under a request.
+	embed     encoder.Encoder
+	embedGate embedGate        // /v1/embeddings requests hold it shared; Close takes it to close embed
+	embedTok  *embed.Tokenizer // counts tokens for usage.prompt_tokens
+	embedID   string
+	embedDim  int
 	// embedMRLMin is the smallest width this embedder may be truncated to (0 = NOT truncatable,
 	// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimensions.
 	embedMRLMin int
