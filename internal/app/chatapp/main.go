@@ -485,7 +485,6 @@ func configureSession(s *session, cf *chatFlags, img *imageInput, opts decoder.O
 		s.jsonOut = true
 		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *cf.schema)
 	}
-
 }
 
 // configureSpeculation applies --spec and --draft to s, loading the draft model when one is named.
@@ -522,7 +521,6 @@ func configureSpeculation(s *session, cf *chatFlags, opts decoder.Options) {
 			fmt.Fprintf(os.Stderr, "  note: --temp %.2g is not greedy; set --temp 0 to use the draft (else plain decode)\n", *cf.temp)
 		}
 	}
-
 }
 
 // stdout is where text meant for the reader goes: os.Stdout, or the writer a test installed.
