@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/testassets"
 )
 
 // benchModel loads the 0.5B once and caches it — the go test harness calls a
@@ -24,7 +25,7 @@ func loadBenchModel() (*Model, error) {
 		// lookupAsset, not assetPath: this runs inside a sync.Once with no testing.TB to skip
 		// on. The error carries the predicate's reason, so a caller reporting benchErr says
 		// WHICH candidate failed and why, instead of a bare stat error.
-		path, err := lookupAsset("GOINFER_PREQUANT_GGUF")
+		path, err := testassets.Lookup("GOINFER_PREQUANT_GGUF")
 		if err != nil {
 			benchErr = err
 			return
