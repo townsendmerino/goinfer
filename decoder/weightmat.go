@@ -765,12 +765,6 @@ func isW8A8(w *linalg.WeightMat) bool {
 	return ok && w8a8
 }
 
-// wmInt8 / wmScales pull the int8 codes / per-row scales out of a WeightMat for the
-// batched W8A8 ops (the forward's only sites that read the raw arrays directly, to
-// fuse several matrices into one matmulW8A8Batch dispatch). Both assume isW8A8(w).
-func wmInt8(w *linalg.WeightMat) []int8      { q8, _, _, _ := w.Int8(); return q8 }
-func wmScales(w *linalg.WeightMat) []float32 { _, s, _, _ := w.Int8(); return s }
-
 // isW4A8 reports whether w is int4-resident, the only precision with a batched dispatch on the W4A8 path. It uses
 // IsInt4(), not Int4()'s narrower "canonical bytes present": a repacked-only WeightMat is still int4 and routes here, and
 // wmW4A8Op builds the matching op shape for it.

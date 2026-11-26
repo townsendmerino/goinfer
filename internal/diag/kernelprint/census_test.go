@@ -53,6 +53,7 @@ var uncalled = map[string]struct {
 const (
 	repair        = "SelfCheck's repair: it runs only when a kernel disagrees with its reference at goinfer's startup self-test"
 	noSplitHalf   = "reached only through a split-half layout, which RepackInt4SplitHalf builds only where splitHalfUsable (AVX2 without VNNI+VL); with AVX2 off nothing has one"
+	row4Refusal   = "the DotProd refusal of the four row4 W4A8 matmuls aikit v1.80.0 unexported (matmulBTW4A8Row4Into and its Tile, Prefetch and Deshared forms); only aikit's own tests call them, and WeightMat reaches the row4 kernels without them, so goinfer enters it in no configuration"
 	canonicalOnly = "goinfer repacks only canonical int4 weights (decoder's repackW4A8IfEligible), so q4 is never nil there; with the predicate decided the early return is required"
 )
 
@@ -65,6 +66,8 @@ var unreachableSide = map[string]string{
 	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX2|false here":                                                                            repair,
 	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX512VNNI || HasAVX512VNNIVL|true here":                                                    repair,
 	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX512VNNI || HasAVX512VNNIVL|false here":                                                   repair,
+	"linalg/weightmat_row4_arm64.go|requireRow4DotProd|!row4Usable()|false here":                                                                     row4Refusal,
+	"linalg/weightmat_row4_arm64.go|requireRow4DotProd|!row4Usable()|true here":                                                                      row4Refusal,
 	"linalg/weightmat_row4_arm64.go|(*WeightMat).RepackInt4Row4|w.q4 == nil || !cpufeat.HasDotProd|undecided here":                                   canonicalOnly,
 	"linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !cpufeat.HasAVX2 || cpufeat.HasAVX512VNNIVL|undecided here": canonicalOnly,
 	"linalg/attn/attn_acc64_amd64.go|qkAcc64Keys16|!cpufeat.HasAVX2 || K == 0 || K%4 != 0|undecided here":                                            "a head dim is never 0 and always a multiple of 4, so with AVX2 on the 16-key kernel always takes the call",

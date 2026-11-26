@@ -42,7 +42,7 @@ moved symbol; those are edited by hand.
 - LS6 step 2 (the batch call through `WeightMat`): `batch.rules` turns `W8A8Op`/`W4A8Op` into `BatchOp`, a W8A8 op
   literal built from one weight (`W8A8Op{BQ: wmInt8(w), Scales: wmScales(w), ...}`) into `BatchOp{W: w, Dst: d}`, and
   both batch calls into `MatmulBTBatchInto`. 21 files. By hand: `wmW4A8Op` (`decoder/weightmat.go`) builds
-  `BatchOp{W: w, Dst: dst}`; backend/webgpu's `MatmulW8A8Batch` and `MatmulW4A8Batch` read the bytes through `op.W.Int8()`
+  `BatchOp{W: w, Dst: dst}`, and `wmInt8`/`wmScales`, which only the old op literals called, go; backend/webgpu's `MatmulW8A8Batch` and `MatmulW4A8Batch` read the bytes through `op.W.Int8()`
   and `op.W.Int4F16()` (residency still keyed by the same backing pointer); kernelprint's two batch kernels wrap their
   quantized bytes in a `WeightMat` (labels and draw order unchanged); four tests that built ops from raw slices
   (`decoder/backend_w4a8_batch_test.go`, `decoder/parthreshold_test.go`, `backend/webgpu/internal/kernels/batch_test.go`,
