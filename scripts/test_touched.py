@@ -81,6 +81,16 @@ class PlanSelectsTheScanTests(unittest.TestCase):
         self.assertIn(("backend/cuda/kernels", "TestKernelFMALint"), got)
         self.assertIn(("decoder", "TestResidentMoECap_pinsKernelConstant"), got)
 
+    def test_a_metal_shader_change_selects_its_package_and_graded_pin(self):
+        tests, _ = touched.plan({"backend/metal/kernels/decode_norm.metal"})
+        self.assertIn(("backend/metal", "backend/metal/kernels"), tests)
+        self.assertIsNone(tests[("backend/metal", "backend/metal/kernels")])
+        tests_vit, _ = touched.plan({"backend/metal/internal/gpudev/vit_siglip.metal"})
+        self.assertIn(("backend/metal", "backend/metal/internal/gpudev"), tests_vit)
+        self.assertIsNone(tests_vit[("backend/metal", "backend/metal/internal/gpudev")])
+        got = selected(["backend/metal/kernels/decode_attention_fa_blk.metal"])
+        self.assertIn(("backend/metal", "TestAttnFABlkIsTheGradedKernel"), got)
+
     def test_a_doc_a_test_reads_selects_it(self):
         self.assertIn(("decoder", "TestEnvVars_docAndCodeAgree"), selected(["docs/env-vars.md"]))
 
