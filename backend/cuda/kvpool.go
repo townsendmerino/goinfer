@@ -788,3 +788,48 @@ func (r *cudaResident) KVPool() decoder.KVPoolDetail {
 	}
 	return d
 }
+
+// kvState is cudaResident's KV cache: each layer's K/V pools and scale pools, their precision, the resident slots over the paged
+// pools with their block tables and capacity rule, and each slot's demotion, validity and use.
+type kvState struct {
+	kv8Store Pipeline // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
+	kc, vc   []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
+	ksc, vsc []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
+	// The resident KV slots over the paged pools (kvpool.go). kvSlotsReq is the model's
+	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
+	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
+	// one, or a batched decode step row's while its attention runs.
+	kvSlotsReq int
+	kvF16      bool // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
+	kvI8       bool // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
+	kvSlotsN   int  // what checkKVFits granted (>= 1)
+	kvSlot     int
+	kvTabSlot  int
+	kvPools    [kvGroups]kvPool
+	kvTabs     []kvSlotTabs
+	kvTabDev   Buffer
+	kvTabStage *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables
+	kvTabEv    []gpu.Event            // each staging entry's last copy
+	kvTabNext  int
+	// The pool's capacity rule (kvpool.go, KV4a-3): every slot is guaranteed kvShareBlocks blocks of the full group, the context the
+	// plan chose for one slot (kvShareCtx); kvRaise lets one conversation's cap (ctxCap) grow to the pool, up to modelCtx. kvSlotBusy marks
+	// the slots a running generation holds (decoder.ResidentKVSubsystem), kvSlotUse each slot's last write, kvEvicted the slots whose
+	// blocks were released to make room.
+	kvShareCtx, kvShareBlocks int
+	kvRaise                   bool
+	modelCtx                  int
+	kvSlotBusy, kvEvicted     []bool
+	// kvDemoted holds, per slot, the rows kvEvictIdle kept in host memory for a released slot (kvdemote.go), charged to kvHost, nil when
+	// demotion is off. kvValid is, per slot, the end of its sequence's written rows: its table can name blocks past that, from a longer
+	// sequence before.
+	kvDemoted   []*cudaKVSnapshot
+	kvHost      decoder.KVHostBudget
+	kvValid     []int
+	kvFloor     []int         // per slot, the shortest prefix it answers for: a wrapped upload holds no sliding-layer rows below its base, so a shorter prefix's window has none (0: any)
+	kvCopySrc   int           // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
+	kvUpload    *kvUploadPass // the upload in progress, nil when none
+	kvStopped   []bool        // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
+	kvStepAbort bool          // a reclaim happened while a batched step mapped its rows: the step must not launch
+	kvSlotUse   []uint64
+	kvUseTick   uint64
+}
