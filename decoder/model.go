@@ -867,8 +867,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l) || a.gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
 	})
 	c.reserveWidths(kvCapHint, a.kvDimAt)
-	c.knobs = m.knobs
-	c.scr = newDecodeScratch(a, c.knobs)
+	c.knobs, c.scr = m.knobs, newDecodeScratch(a, m.knobs)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
 		c.setQuant(quant, capHint)
