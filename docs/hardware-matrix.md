@@ -66,7 +66,7 @@ features). Two load-time notes the taxonomy does not encode:
   int4 only: an int8 Nemotron-H declines to the CPU there rather than re-quantize its projections.
 - **Granite-4.0-H's CPU row is the SAME env var, a DIFFERENT gate (N-94, docs/audit-2026-09-10.md).**
   `GOINFER_SSM_RESIDENT` is Nemotron-H's precision knob above, but for Granite-4.0-H it is an
-  ELIGIBILITY gate inside `Architecture.decodeRunnerEligible()` itself, still parity-bring-up-guarded
+  ELIGIBILITY gate inside `decodeRunnerEligible` itself, still parity-bring-up-guarded
   off by default — this table's generator pins it empty, so every column reads CPU regardless of
   backend capability. WebGPU and Metal already declare `FeatSSM`; the gap here is the gate not yet being
   lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits
@@ -94,7 +94,7 @@ Every reason the default configuration declines, for each CPU cell above. The ru
 every later gate that also refuses is listed after it: the features the backend does not implement, an activation
 hazard, the MoE router's capacity. A family is resident on a backend only when nothing is listed for it, so lifting
 the first reason is not enough while another remains. Generated from
-`decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`, the checks
+`decoder/residency.go:runnerShapeDecline` and `decoder/features.go:residentGateReasons`, the checks
 admission runs.
 
 | Family | CPU on | Why |

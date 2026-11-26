@@ -101,7 +101,7 @@ func main() {
 - It walks the registry and resolves each key's `representativeConfig`, the hardware matrix's own fixtures.
 - It dedupes by `Architecture.Name`.
 - For each GPU backend where `decoder/features.go:ResidentEligible` is false, it prints the reason:
-  - a runner-shape line when `decoder/residency.go:Architecture.decodeRunnerEligible` refuses first;
+  - a runner-shape line when `decoder/residency.go:decodeRunnerEligible` refuses first;
   - otherwise `decoder/features.go:residentGateReason`.
 - `GOINFER_SSM_RESIDENT` and `GOINFER_GEMMA4_RESIDENT` are set empty, as the matrix generator sets them.
 - The run command, from a detached worktree at `9593bd70`, was `GOWORK=off go test ./decoder -run '^TestZZDeclineCensus$' -count=1 -v`.
@@ -111,7 +111,7 @@ model can differ, because `decoder/admit.go:Admit` reads the model's own configu
 - On CUDA, a Phi-3/4 GGUF loads at `--quant q4k` (`internal/runtime/modelload/modelload.go:activationSafeQuant`) and runs resident.
 - On Metal it runs resident only at an explicit `--quant q4k`.
 - `representativeConfig("nemotron_h")` is dense (`MoE == nil`), so the matrix shows it resident on WebGPU. A Nemotron-H MoE
-  checkpoint (Nemotron 3 Nano) fails `decoder/residency.go:Architecture.decodeRunnerEligible` on CUDA and Metal, and WebGPU
+  checkpoint (Nemotron 3 Nano) fails `decoder/residency.go:decodeRunnerEligible` on CUDA and Metal, and WebGPU
   admits it through `decoder/residency.go:Model.decodeRunnerDecline` (`docs/hardware-matrix.md`'s note).
 
 **The runner-shape lines, broken down by a second test** (its output is the second block):

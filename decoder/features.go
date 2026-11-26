@@ -274,7 +274,7 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 //
 // It is capability, not runtime admission: load-time policy such as Nemotron's int4-only precision gate lives in
 // Model.DecodeRunnerEligible, and the matrix footnotes it. "Arch flags only" is also not strictly true of granite: its admission gate is
-// inside Architecture.decodeRunnerEligible and reads GOINFER_SSM_RESIDENT from the live environment (ssmResidentEnv). The matrix generator pins that variable empty, so the published table shows granite CPU-only on every
+// inside decodeRunnerEligible and reads GOINFER_SSM_RESIDENT from the live environment (ssmResidentEnv). The matrix generator pins that variable empty, so the published table shows granite CPU-only on every
 // backend (docs/hardware-matrix.md footnote); docs/code-notes/decoder.md#ResidentEligible.
 func ResidentEligible(a *Architecture, backend string) bool {
 	if !residentDeclared(backend) {

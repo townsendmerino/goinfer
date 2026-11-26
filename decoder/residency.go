@@ -327,7 +327,7 @@ func (m *Model) residentProjsInt4() bool {
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
-func (a *Architecture) decodeRunnerEligible() bool { return a.runnerShapeDecline() == "" }
+func decodeRunnerEligible(a *Architecture) bool { return runnerShapeDecline(a) == "" }
 
 // Runner-shape decline reasons. The hardware matrix prints them, so they are short and name no backend.
 const (
@@ -342,7 +342,7 @@ const (
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
 // reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the environment
 // (ssmResidentEnv).
-func (a *Architecture) runnerShapeDecline() string {
+func runnerShapeDecline(a *Architecture) string {
 	return a.runnerShapeDeclineSSM(ssmResidentEnv())
 }
 

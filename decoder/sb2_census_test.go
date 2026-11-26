@@ -120,7 +120,7 @@ func buildSB2Census(t *testing.T) []string {
 				return strings.Join(gs, " | ")
 			}
 			lines = append(lines, fmt.Sprintf("F %s %s eligible=%v shape=%q gates=%q gates-per32=%q",
-				mt, be, ResidentEligible(arch, be), arch.runnerShapeDecline(), gates(false), gates(true)))
+				mt, be, ResidentEligible(arch, be), runnerShapeDecline(arch), gates(false), gates(true)))
 		}
 	}
 

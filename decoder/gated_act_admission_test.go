@@ -22,7 +22,7 @@ func plainGatedArch(act ActKind) *Architecture {
 func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 	for act := ActKind(0); act <= ActGelu+2; act++ {
 		a := plainGatedArch(act)
-		if !a.decodeRunnerEligible() {
+		if !decodeRunnerEligible(a) {
 			t.Fatalf("act %d: the plain gated arch fails the runner shape, so this test would pass for the wrong reason", act)
 		}
 		m := &Model{w: &Weights{arch: a}}
