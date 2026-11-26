@@ -5,7 +5,6 @@ backend/cuda/resident_build.go:buildState.planLayers 438 -- over the ceiling bef
 backend/cuda/resident_build.go:buildState.uploadLayers 202 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/batch.go:resident.forwardMultiOut 417 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/batch_rows.go:deriveRowsKernels 219 -- over the ceiling before the ratchet; split it when next changed
-backend/metal/decode_scratch.go:decodeShape.buffers 202 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/resident_build.go:residentBuild.buildLayer 346 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_batched.go:Context.DecodeTokenFusedBatched 315 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_fused.go:Context.DecodeTokenFused 216 -- over the ceiling before the ratchet; split it when next changed
