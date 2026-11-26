@@ -16,4 +16,3 @@ decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratc
 decoder/spec_ngram.go:ngramSpecLoop 344 -- over the ceiling before the ratchet; split it when next changed
 decoder/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed
 decoder/weights.go:buildWeightsFromSafetensorsTo 256 -- over the ceiling before the ratchet; split it when next changed
-internal/app/chatapp/main.go:Main 327 -- over the ceiling before the ratchet; split it when next changed
