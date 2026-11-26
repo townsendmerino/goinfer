@@ -218,7 +218,7 @@ func (r *VisionEncoder) ai(n int) Buffer {
 }
 
 // bGemv projects a[M,K] (already int8-quantized, scale as) through wt[N,K] + bias into dst[M,N].
-// The plain int8 half of cuda/prefill.go's bGemvB — this tower never needs int4.
+// The plain int8 half of bGemvB (prefill_kernels.go) — this tower never needs int4.
 func (r *VisionEncoder) bGemv(q *Queue, wt cudaWQ, a, as Buffer, bias Buffer, dst Buffer, M int) error {
 	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	return q.Launch(r.bW8, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), Arg(bias),
@@ -226,8 +226,8 @@ func (r *VisionEncoder) bGemv(q *Queue, wt cudaWQ, a, as Buffer, bias Buffer, ds
 		Arg(dst), gpu.ArgValue(int32(0)))
 }
 
-// quant batches x[M,N] (f32) into q/scale (int8, plain — no norm). Mirrors cuda/prefill.go's own
-// bQuant (r.bQuant field there, same underlying kernel).
+// quant batches x[M,N] (f32) into q/scale (int8, plain — no norm). Mirrors the resident's own
+// bQuant (prefillKernels.bQuant, same underlying kernel).
 func (r *VisionEncoder) quant(q *Queue, x Buffer, N int, qOut, sOut Buffer, M int) error {
 	return q.Launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 		Arg(x), gpu.ArgValue(int32(N)), Arg(qOut), Arg(sOut), gpu.ArgValue(int32(M)))
