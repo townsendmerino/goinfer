@@ -868,7 +868,7 @@ Since M2 an unpinned load no longer gets a flat 4096: it gets
 
 ## PrefillBlockRows
 
-How Metal bounds a long prompt's prefill memory (`backend/metal/backend.go:metalResident.PrefillBlockRows`,
+How Metal bounds a long prompt's prefill memory (`backend/metal/resident_prefill.go:metalResident.PrefillBlockRows`,
 `backend/metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
 are in `docs/completed/task-integration-harness-2026-10.md`, "I8".
 
@@ -5415,14 +5415,14 @@ decoder/spec_adaptive.go ships Theta = 0.5, calls it the batched-CPU value, and 
 
 WHAT TO EXPECT HERE, AND WHY IT IS NOT THE CUDA STORY. CUDA's low Theta comes from a verify
 that streams the weights ONCE for the whole block, so the marginal node is far cheaper than a
-step. Metal's ForwardN (backend/metal/backend.go:metalResident.ForwardN) is NOT a batched kernel — it is a plain loop of
+step. Metal's ForwardN (backend/metal/resident_adapter.go:metalResident.ForwardN) is NOT a batched kernel — it is a plain loop of
 single-token Forward calls. If that is the whole story then T(n) = n*T(1) and Theta ~ 1.0,
 which would mean the controller is running Metal on a constant that is too LOW and therefore
 OVER-drafting — the opposite direction from CUDA, where 0.5 is too high and under-drafts.
 That is a prediction from reading the dispatch, and the point of this test is to measure it
 rather than assert it.
 
-TruncateTo is a NO-OP on Metal (backend/metal/backend.go:metalResident.TruncateTo), unlike CUDA where the probe leans on
+TruncateTo is a NO-OP on Metal (backend/metal/resident_adapter.go:metalResident.TruncateTo), unlike CUDA where the probe leans on
 it to hold context depth constant between timed calls. It is safe here for the reason its own
 comment gives — KV positions are overwritten on write and attention reads only keys[0..pos],
 so re-running ForwardN at the same startPos re-attends over the same span. It is called
