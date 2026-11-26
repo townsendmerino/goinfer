@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // olmo3Architecture expresses Olmo 3 (model_type olmo3): a softmax-GQA/MHA model with two departures from every other family, both checked
@@ -27,26 +29,26 @@ import (
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
 	localBase := base
-	var scaling, scalingLocal *ropeScaling
+	var scaling, scalingLocal *rope.Scaling
 	if len(cfg.RopeParameters) > 0 {
 		// NESTED {"full_attention": {...yarn...}, "sliding_attention": {"rope_type": "default", "rope_theta": <same theta>}}: full and sliding are
 		// both real and different (see the doc comment). Theta is the same on both layer types, so only the scaling differs; sliding gets none.
-		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+		full, sliding, err := rope.ParseParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
 		if full != nil {
-			base = full.base
-			scaling = full.scaling
+			base = full.Base
+			scaling = full.Scaling
 		}
 		localBase = base
 		if sliding != nil {
-			localBase = sliding.base
-			scalingLocal = sliding.scaling
+			localBase = sliding.Base
+			scalingLocal = sliding.Scaling
 		}
 		cfg.RoPEGlobalBase = base // so ValidateLlama's rope_theta>0 check sees a populated base
 	} else {
-		sc, err := parseRopeScaling(cfg.RopeScaling)
+		sc, err := rope.ParseScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}

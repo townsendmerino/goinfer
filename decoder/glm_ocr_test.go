@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -447,7 +448,7 @@ func maxAbsDiff(a, b []float32) float64 {
 // apply_rotary_pos_emb (first half of cos/sin, repeat_interleave(2), rotate_half_llm), at the real
 // geometry (head_dim 128), on 32 positions mixing plain text with two image-style blocks (t = base,
 // h = base + row, w = base + col, one at base 5 and one at base 200). Same way
-// mropeComponentInterleaved was pinned: ground truth from the reference implementation, not a
+// rope.MRoPEComponentInterleaved was pinned: ground truth from the reference implementation, not a
 // transcription of the Go.
 //
 // HF builds cos/sin in float32 (a float32 inv_freq and a float32 position matmul); goinfer in float64.
@@ -455,7 +456,7 @@ func maxAbsDiff(a, b []float32) float64 {
 // and far below what any misrouted component produces (checked below).
 func TestApplyMRoPEPairwise_matchesHF(t *testing.T) {
 	g := readGlmRopeGolden(t)
-	inv := computeInvFreq(g.RopeTheta, g.HeadDim, nil)
+	inv := rope.ComputeInvFreq(g.RopeTheta, g.HeadDim, nil)
 	if len(inv) != 64 || !reflect.DeepEqual(g.MRopeSection, []int{16, 24, 24}) {
 		t.Fatalf("golden geometry: %d freqs, section %v", len(inv), g.MRopeSection)
 	}
@@ -463,7 +464,7 @@ func TestApplyMRoPEPairwise_matchesHF(t *testing.T) {
 	var imageRows int
 	for s, pos := range g.Positions {
 		q := flatHeads(g.QIn[s])
-		applyMRoPEPairwise(q, g.Heads, g.HeadDim, pos, g.MRopeSection, inv, 1)
+		rope.ApplyMRoPEPairwise(q, g.Heads, g.HeadDim, pos, g.MRopeSection, inv, 1)
 		d := maxAbsDiff(q, flatHeads(g.QOut[s]))
 		if d > worst {
 			worst = d
@@ -485,19 +486,19 @@ func TestApplyMRoPEPairwise_matchesHF(t *testing.T) {
 	// tolerance on the image rows.
 	wrong := map[string]func(q []float32, pos [3]int){
 		"NeoX m-RoPE (applyMRoPE, contiguous)": func(q []float32, pos [3]int) {
-			applyMRoPE(q, g.Heads, g.HeadDim, pos, g.MRopeSection, inv, 1, false)
+			rope.ApplyMRoPE(q, g.Heads, g.HeadDim, pos, g.MRopeSection, inv, 1, false)
 		},
 		"pairwise at the temporal position only": func(q []float32, pos [3]int) {
-			applyRoPEInterleaved(q, g.Heads, g.HeadDim, pos[0], inv, 1)
+			rope.ApplyInterleaved(q, g.Heads, g.HeadDim, pos[0], inv, 1)
 		},
 		"pairwise with Qwen3-VL's strided layout": func(q []float32, pos [3]int) {
-			// reference formulation of the strided layout through applyMRoPEPairwise's own loop is not
+			// reference formulation of the strided layout through rope.ApplyMRoPEPairwise's own loop is not
 			// exposed; emulate it by rotating with per-index components directly
 			half := len(inv)
 			for h := range g.Heads {
 				v := q[h*g.HeadDim : (h+1)*g.HeadDim]
 				for d := range half {
-					th := float64(pos[mropeComponentInterleaved(d, g.MRopeSection)]) * inv[d]
+					th := float64(pos[rope.MRoPEComponentInterleaved(d, g.MRopeSection)]) * inv[d]
 					c, s := math.Cos(th), math.Sin(th)
 					x1, x2 := float64(v[2*d]), float64(v[2*d+1])
 					v[2*d], v[2*d+1] = float32(x1*c-x2*s), float32(x2*c+x1*s)
@@ -524,14 +525,14 @@ func TestApplyMRoPEPairwise_matchesHF(t *testing.T) {
 	}
 }
 
-// TestApplyMRoPEPairwise_textIsInterleaved: with equal positions the function IS applyRoPEInterleaved,
+// TestApplyMRoPEPairwise_textIsInterleaved: with equal positions the function IS rope.ApplyInterleaved,
 // bit for bit (text tokens must not change at all), for every head_dim / section the family uses.
 func TestApplyMRoPEPairwise_textIsInterleaved(t *testing.T) {
 	for _, tc := range []struct {
 		hd      int
 		section []int
 	}{{128, []int{16, 24, 24}}, {32, []int{4, 6, 6}}, {16, []int{2, 3, 3}}} {
-		inv := computeInvFreq(10000, tc.hd, nil)
+		inv := rope.ComputeInvFreq(10000, tc.hd, nil)
 		for _, p := range []int{0, 1, 7, 300, 4096} {
 			for _, heads := range []int{1, 3} {
 				vec := make([]float32, heads*tc.hd)
@@ -540,8 +541,8 @@ func TestApplyMRoPEPairwise_textIsInterleaved(t *testing.T) {
 				}
 				a := slices.Clone(vec)
 				b := slices.Clone(vec)
-				applyMRoPEPairwise(a, heads, tc.hd, [3]int{p, p, p}, tc.section, inv, 1)
-				applyRoPEInterleaved(b, heads, tc.hd, p, inv, 1)
+				rope.ApplyMRoPEPairwise(a, heads, tc.hd, [3]int{p, p, p}, tc.section, inv, 1)
+				rope.ApplyInterleaved(b, heads, tc.hd, p, inv, 1)
 				if !slices.Equal(a, b) {
 					t.Fatalf("hd %d pos %d heads %d: text rotation differs from applyRoPEInterleaved (max|diff| %.3e)", tc.hd, p, heads, maxAbsDiff(a, b))
 				}
@@ -550,10 +551,10 @@ func TestApplyMRoPEPairwise_textIsInterleaved(t *testing.T) {
 	}
 }
 
-// TestRopeAt_dispatch pins which rotation ropeAt picks, so the Qwen paths provably keep theirs.
+// TestRopeAt_dispatch pins which rotation rope.At picks, so the Qwen paths provably keep theirs.
 func TestRopeAt_dispatch(t *testing.T) {
 	const hd = 32
-	inv := computeInvFreq(10000, hd, nil)
+	inv := rope.ComputeInvFreq(10000, hd, nil)
 	section := []int{4, 6, 6}
 	mpos := [][3]int{{0, 0, 0}, {1, 1, 1}, {2, 2, 5}, {2, 3, 2}} // an image-style block at rows 2..3
 	vec := func() []float32 {
@@ -565,38 +566,38 @@ func TestRopeAt_dispatch(t *testing.T) {
 	}
 	run := func(seq int, interleave, mInter bool) []float32 {
 		v := vec()
-		ropeAt(v, 2, hd, seq, inv, 1, section, mpos, -3, interleave, mInter)
+		rope.At(v, 2, hd, seq, inv, 1, section, mpos, -3, interleave, mInter)
 		return v
 	}
 	want := func(f func(v []float32)) []float32 { v := vec(); f(v); return v }
 
-	// pairwise + contiguous (GLM-OCR) -> applyMRoPEPairwise, inside the block
-	if got, w := run(2, true, false), want(func(v []float32) { applyMRoPEPairwise(v, 2, hd, mpos[2], section, inv, 1) }); !slices.Equal(got, w) {
+	// pairwise + contiguous (GLM-OCR) -> rope.ApplyMRoPEPairwise, inside the block
+	if got, w := run(2, true, false), want(func(v []float32) { rope.ApplyMRoPEPairwise(v, 2, hd, mpos[2], section, inv, 1) }); !slices.Equal(got, w) {
 		t.Errorf("interleave && !mropeInterleaved inside the block did not reach applyMRoPEPairwise")
 	}
-	// NeoX m-RoPE (Qwen2.5-VL) -> applyMRoPE, bit-identical to calling it directly
-	if got, w := run(2, false, false), want(func(v []float32) { applyMRoPE(v, 2, hd, mpos[2], section, inv, 1, false) }); !slices.Equal(got, w) {
+	// NeoX m-RoPE (Qwen2.5-VL) -> rope.ApplyMRoPE, bit-identical to calling it directly
+	if got, w := run(2, false, false), want(func(v []float32) { rope.ApplyMRoPE(v, 2, hd, mpos[2], section, inv, 1, false) }); !slices.Equal(got, w) {
 		t.Errorf("Qwen2.5-VL path (interleave=false) changed: not applyMRoPE")
 	}
-	// Qwen3-VL strided layout, no pairwise -> applyMRoPE(interleaved)
-	if got, w := run(3, false, true), want(func(v []float32) { applyMRoPE(v, 2, hd, mpos[3], section, inv, 1, true) }); !slices.Equal(got, w) {
+	// Qwen3-VL strided layout, no pairwise -> rope.ApplyMRoPE(interleaved)
+	if got, w := run(3, false, true), want(func(v []float32) { rope.ApplyMRoPE(v, 2, hd, mpos[3], section, inv, 1, true) }); !slices.Equal(got, w) {
 		t.Errorf("Qwen3-VL path changed: not applyMRoPE(interleaved)")
 	}
 	// the unregistered combination keeps the old behaviour
-	if got, w := run(3, true, true), want(func(v []float32) { applyMRoPE(v, 2, hd, mpos[3], section, inv, 1, true) }); !slices.Equal(got, w) {
+	if got, w := run(3, true, true), want(func(v []float32) { rope.ApplyMRoPE(v, 2, hd, mpos[3], section, inv, 1, true) }); !slices.Equal(got, w) {
 		t.Errorf("pairwise + strided layout changed behaviour")
 	}
 	// past the block: scalar rotation at seqPos+delta, pairwise when the flag is set
-	if got, w := run(6, true, false), want(func(v []float32) { applyRoPEInterleaved(v, 2, hd, 6-3, inv, 1) }); !slices.Equal(got, w) {
+	if got, w := run(6, true, false), want(func(v []float32) { rope.ApplyInterleaved(v, 2, hd, 6-3, inv, 1) }); !slices.Equal(got, w) {
 		t.Errorf("decode past the block is not pairwise scalar RoPE at seqPos+delta")
 	}
-	if got, w := run(6, false, false), want(func(v []float32) { applyRoPE(v, 2, hd, 6-3, inv, 1) }); !slices.Equal(got, w) {
+	if got, w := run(6, false, false), want(func(v []float32) { rope.Apply(v, 2, hd, 6-3, inv, 1) }); !slices.Equal(got, w) {
 		t.Errorf("Qwen decode past the block changed")
 	}
 	// no m-RoPE positions at all: scalar, pairwise per the flag
 	v := vec()
-	ropeAt(v, 2, hd, 9, inv, 1, section, nil, 0, true, false)
-	if w := want(func(v []float32) { applyRoPEInterleaved(v, 2, hd, 9, inv, 1) }); !slices.Equal(v, w) {
+	rope.At(v, 2, hd, 9, inv, 1, section, nil, 0, true, false)
+	if w := want(func(v []float32) { rope.ApplyInterleaved(v, 2, hd, 9, inv, 1) }); !slices.Equal(v, w) {
 		t.Errorf("text-only path is not pairwise scalar RoPE")
 	}
 }
@@ -738,10 +739,10 @@ type glmMropeGolden struct {
 
 // TestGlmOcr_mropeParity drives the pairwise m-RoPE THROUGH its caller: a prompt with an
 // image-placeholder run whose embeddings are random features, positions from the REAL
-// mropePositions (checked against the positions HF's get_rope_index rule produced), the generic
-// batched prefill (prefillLogitsQwenVL: ropeAt reads cache.mropePos), then greedy decode past the
-// image on the sequential path (cache.mropeDelta resumes the scalar position). Compared with HF's
-// text model run on inputs_embeds + the same 3-D position ids. A unit test of applyMRoPEPairwise
+// rope.MRoPEPositions (checked against the positions HF's get_rope_index rule produced), the generic
+// batched prefill (prefillLogitsQwenVL: rope.At reads cache.mropePos), then greedy decode past the
+// image on the sequential path (cache.rope.MRoPEDelta resumes the scalar position). Compared with HF's
+// text model run on inputs_embeds + the same 3-D position ids. A unit test of rope.ApplyMRoPEPairwise
 // proves the function; only this proves the forward calls it with the right arguments.
 func TestGlmOcr_mropeParity(t *testing.T) {
 	raw, err := os.ReadFile("../testdata/glm_ocr_tiny_mrope_golden.json")
@@ -762,7 +763,7 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 	}
 	defer m.Close()
 
-	pos, err := mropePositions(g.PromptIDs, g.ImageToken, [][3]int{g.Grid}, g.Merge)
+	pos, err := rope.MRoPEPositions(g.PromptIDs, g.ImageToken, [][3]int{g.Grid}, g.Merge)
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}
@@ -792,7 +793,7 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 		t.Fatalf("golden is insensitive to the m-RoPE positions (scalar-position cosine %.3f)", g.ScalarCos)
 	}
 
-	// Decode past the image: the scalar position resumes at seqPos + mropeDelta.
+	// Decode past the image: the scalar position resumes at seqPos + rope.MRoPEDelta.
 	var cont []int
 	next := sampling.Argmax(logits)
 	for i := range g.NNew {

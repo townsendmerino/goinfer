@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // internlm2Architecture expresses InternLM2 (model_type internlm2). The DESCRIPTOR is llama's
@@ -12,7 +14,7 @@ import (
 // aliasing llamaArchitecture outright: an alias would send the loader looking for
 // self_attn.q_proj in a checkpoint that has never heard of it.
 //
-// rope_scaling is "dynamic" on the released checkpoints, which parseRopeScaling accepts as no
+// rope_scaling is "dynamic" on the released checkpoints, which rope.ParseScaling accepts as no
 // scaling (exact within the trained window; see its comment for the boundary caveat).
 func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "internlm2"); err != nil {
@@ -21,7 +23,7 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
 	}

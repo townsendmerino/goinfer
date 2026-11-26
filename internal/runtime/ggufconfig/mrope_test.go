@@ -17,7 +17,7 @@ func kvI32Arr(k string, vs []int32) ggufKV {
 // TestGGUFMRopeJSON: a Qwen3.5 GGUF's rope.dimension_sections ([11,11,10,0], llama.cpp's four) becomes the
 // safetensors config's mrope_section [11,11,10] with mrope_interleaved, so a GGUF text model can take an image turn
 // (docs/multimodal.md F5); and a missing key, a nonzero fourth section, a negative one, or all zero leaves it out, so
-// such a model stays text-only and an image turn is refused by name. decoder's TestParseMRopeFlat_ggufSynthesizedForm
+// such a model stays text-only and an image turn is refused by name. internal/runtime/rope's TestParseMRopeFlat_ggufSynthesizedForm
 // reads the first case's form back.
 func TestGGUFMRopeJSON(t *testing.T) {
 	cases := []struct {

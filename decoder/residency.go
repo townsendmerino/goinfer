@@ -611,7 +611,7 @@ type Gemma4MoEResidentBundle struct {
 // all-ZERO table of the same width. The resident rope kernels compute cos=cos(pos·invFreq)·mscale and
 // sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (Layer(i).RopeMscale).
 // That holds for every family that sets layerNoPE today; a family combining YaRN with NoPE needs this revisited.
-// A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
+// A RESIDENT-ONLY accessor: the CPU forward skips rope.At for a NoPE layer.
 //
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
 // so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope

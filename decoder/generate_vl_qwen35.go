@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // prefillLogitsQwen35VL is prefillLogitsQwenVL for the Gated-DeltaNet hybrid (qwen3_5 / qwen3_5_moe): the same splice
@@ -12,7 +14,7 @@ import (
 // prefillQwen35VLBatched when qwen35BatchNAnyPos allows it and otherwise the per-token prefillQwen35VLPerToken loop,
 // because the recurrent state must see every token in order.
 //
-// It leaves cache.mropePos / cache.mropeDelta set so decode past the prompt rotates at seqPos+delta, as
+// It leaves cache.mropePos / cache.rope.MRoPEDelta set so decode past the prompt rotates at seqPos+delta, as
 // prefillLogitsQwenVL does.
 func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
@@ -27,7 +29,7 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 		return nil, err
 	}
 	cache.mropePos = mropePos
-	cache.mropeDelta = mropeDelta(mropePos, len(ids))
+	cache.mropeDelta = rope.MRoPEDelta(mropePos, len(ids))
 	if !qwen35VLPerToken && m.qwen35BatchNAnyPos(len(ids), cache) {
 		return m.prefillQwen35VLBatched(ctx, ids, imageFeats, spans, cache)
 	}
@@ -39,7 +41,7 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 // rotate q and k by cache.mropePos exactly as the per-token loop does. It is not bit-identical to that loop (a batched
 // matmul can reduce in a different order): TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the
 // HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.mropePos
-// and mropeDelta.
+// and rope.MRoPEDelta.
 //
 // The prompt runs in passes of prefillChunkRows rows, each embedding and splicing its own rows: the DeltaNet state and
 // conv windows carry in the cache, and the full-attention layers read m-RoPE at absolute positions. A capture or a speculative tree
@@ -110,7 +112,7 @@ var qwen35VLPerToken bool
 
 // checkQwen35VLReady refuses an image turn on an architecture whose m-RoPE the image path cannot
 // honour: not the qwen3_5 family, or a config without a usable mrope_section. Text-only loading
-// never depends on it (parseMRopeFlat returns nil rather than failing); the image path does, and a
+// never depends on it (rope.ParseMRoPEFlat returns nil rather than failing); the image path does, and a
 // silent fall-back to scalar RoPE would put every image token at a wrong angle without an error.
 func (m *Model) checkQwen35VLReady() error {
 	arch := m.w.arch

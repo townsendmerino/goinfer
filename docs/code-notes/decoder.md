@@ -11878,7 +11878,7 @@ production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwe
 Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.
 
 ```text
-MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (rope.go's mropeDelta —
+MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (internal/runtime/rope's MRoPEDelta —
 scalar decode past the prefill rotates at seqPos+delta), set by prefillLogitsQwenVL. A
 cross-package resident-decode test needs this to compute the same ropePos GenerateQwenVL's
 production decode loop does (gap 0, docs/multimodal.md).

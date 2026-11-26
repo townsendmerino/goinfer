@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 
 	"github.com/townsendmerino/aikit/linalg/attn"
 )
@@ -1144,7 +1145,7 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 // run [imgPos,imgPos+imgLen), under m-RoPE 3D positions (mropePos, one (t,h,w) per
 // absolute sequence position). Two deltas vs prefillLogitsVL (Gemma 3): the image
 // tokens attend CAUSALLY — no bidirectional image block (Qwen's bidirectionality is
-// inside the ViT, not the decoder) — and the rotary uses m-RoPE (ropeAt reads
+// inside the ViT, not the decoder) — and the rotary uses m-RoPE (rope.At reads
 // cache.mropePos). The merged features are RAW (no embed scale), matching HF's
 // scatter into inputs_embeds.
 func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
@@ -1152,7 +1153,7 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 }
 
 // prefillLogitsQwenVLSpans is prefillLogitsQwenVL for several images: every span's merged rows, concatenated in
-// span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (mropePositions with one
+// span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (rope.MRoPEPositions with one
 // grid per image).
 func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids take their own prefill (batched when qwen35BatchNAnyPos applies)
@@ -1168,8 +1169,8 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if len(mropePos) != len(ids) {
 		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
 	}
-	cache.mropePos = mropePos                         // ropeAt switches to m-RoPE for this prefill
-	cache.mropeDelta = mropeDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
+	cache.mropePos = mropePos                              // rope.At switches to m-RoPE for this prefill
+	cache.mropeDelta = rope.MRoPEDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
 	hN, err := m.prefillSpliced(ctx, ids, spans, imageFeats, cache, false)
 	if err != nil {
 		return nil, err

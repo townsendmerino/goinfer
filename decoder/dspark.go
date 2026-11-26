@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -135,11 +136,11 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 
 	theta := c.RopeTheta
 	if len(c.RopeParameters) > 0 {
-		spec, _, perr := parseRopeFlat(c.RopeParameters)
+		spec, _, perr := rope.ParseFlat(c.RopeParameters)
 		if perr != nil {
 			return nil, fmt.Errorf("dspark: rope_parameters: %w", perr)
 		}
-		theta = spec.base
+		theta = spec.Base
 	}
 	if theta <= 0 {
 		return nil, fmt.Errorf("dspark: rope_theta must be >0, got %v", theta)
@@ -150,7 +151,7 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 	d := &DSparkDrafter{
 		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
 		inter: c.IntermediateSize, normEps: c.RMSNormEps,
-		invFreq:   computeInvFreq(theta, hd, nil),
+		invFreq:   rope.ComputeInvFreq(theta, hd, nil),
 		layers:    make([]dflashLayer, c.NumHiddenLayers),
 		blockSize: c.BlockSize, maskTokenID: c.MaskTokenID,
 		vocab: c.VocabSize, markovRank: c.MarkovRank,

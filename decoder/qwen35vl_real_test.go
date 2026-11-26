@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
@@ -117,8 +118,8 @@ func qwen35VLRealG2(t *testing.T, ckpt, dir string) {
 				t.Fatalf("image_features worst-row cosine %.9f < 0.9999", fc)
 			}
 			// Stage: positions.
-			pos, _ := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, pp.MergeSize)
-			if d := mropeDelta(pos, len(g.InputIDs)); d != g.RopeDelta {
+			pos, _ := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, pp.MergeSize)
+			if d := rope.MRoPEDelta(pos, len(g.InputIDs)); d != g.RopeDelta {
 				t.Fatalf("mropeDelta %d, HF %d", d, g.RopeDelta)
 			}
 

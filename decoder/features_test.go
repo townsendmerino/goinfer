@@ -541,7 +541,7 @@ func TestResidentFeatures_derivation(t *testing.T) {
 
 // TestPairwiseRoPE_derivationScope pins what FeatPairwiseRoPE is NOT: MLA carries its own interleave
 // flag into mla.cu (gated by FeatMLA, where pairwise rope already works), and qwen35's forward passes
-// interleave=false to ropeAt whatever ropeInterleave says. Neither may newly need the feature, or
+// interleave=false to rope.At whatever ropeInterleave says. Neither may newly need the feature, or
 // DeepSeek/Kimi/Qwen3.5 admission would change under it. And PairwiseRoPEResident must read the same
 // predicate the feature derives from.
 func TestPairwiseRoPE_derivationScope(t *testing.T) {

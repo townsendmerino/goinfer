@@ -31,6 +31,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -206,11 +207,11 @@ func TestQwen25VLLayoutSplit(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[layout] table.png grid %v, %d image tokens at %d, prompt %d tokens\n", grid, n, tPos, len(tableIDs))
 
-	gPos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	gPos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tMPos, err := mropePositions(tableIDs, imgTok, [][3]int{grid}, merge)
+	tMPos, err := rope.MRoPEPositions(tableIDs, imgTok, [][3]int{grid}, merge)
 	if err != nil {
 		t.Fatal(err)
 	}
