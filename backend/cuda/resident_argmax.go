@@ -208,3 +208,22 @@ func argmaxID(idx int32, read func() ([]float32, error)) (int, error) {
 	}
 	return sampling.Argmax(row), nil
 }
+
+// argmaxState is the batched head tails' argmax: the device kernel, the host-loop arms that check it, the verify tail's logits
+// scratch and the head profiler.
+type argmaxState struct {
+	headProf *headArgProf // the head-argmax phase profiler; nil is off
+	// The batched head tails' argmax runs on the device (fArgRows, M ints back) unless hostArgmaxPath forces the
+	// M×vocab download + host loop (the A/B's do-nothing arm). argCheck additionally runs the host loop on the same
+	// logits and counts agreement.
+	fArgRows       Pipeline
+	hostArgmaxPath bool
+	argCheck       bool
+	argChecks      int
+	// Batched-head verify scratch (PrefillLastNArgmax). Allocated lazily INSIDE the executor
+	// job — af/ai require r.dev's context current — and reused across rounds. logitsBCap is the
+	// row count the current allocation covers; a wider block reallocates once and then holds.
+	logitsB    Buffer
+	logitsBIdx Buffer // [logitsBCap] int32: argmax_rows' output for the verify tail
+	logitsBCap int
+}
