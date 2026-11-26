@@ -155,6 +155,49 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 }
 
 func Main() {
+	if dispatchSubcommand() {
+		return
+	}
+	cf := parseFlags()
+	if cf == nil {
+		return
+	}
+	img, plan, done := preflight(cf)
+	if done {
+		return
+	}
+	s, opts := loadSession(cf)
+	configureSession(s, cf, img, opts)
+	configureSpeculation(s, cf, opts)
+
+	if plan != nil {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		bd := newBatchDefaults(cf, explicit)
+		bd.rec = s.model.Config().Sampling
+		if bd.rec != nil && len(bd.rec.Applied()) > 0 {
+			fmt.Fprintf(os.Stderr, "batch: a line that leaves a sampling field out takes the model's recommended value (%s: %s) unless a flag sets it\n",
+				bd.rec.Source, strings.Join(bd.rec.Applied(), ", "))
+		}
+		if bd.rec != nil && bd.rec.RepetitionPenalty != nil {
+			fmt.Fprintf(os.Stderr, "batch: the model's repetition_penalty %g is not applied (it divides logits; the sampler's penalties are subtractive)\n", *bd.rec.RepetitionPenalty)
+		}
+		os.Exit(s.runBatch(plan, bd, modelNameOf(*cf.model)))
+	}
+	// Plain one-shot mode: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
+	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
+	if *cf.prompt != "" || img != nil { // --image is one image, one answer: it never opens the REPL
+		if img != nil && *cf.prompt != "" && *cf.schema != "" {
+			fmt.Fprintln(os.Stderr, "note: -p text with --schema is kept as your own prompt unless it is empty or a bare task prompt (Text Recognition: and the like); include the JSON template yourself, or omit -p to send the schema's")
+		}
+		os.Exit(s.oneShot(*cf.prompt))
+	}
+	s.repl(os.Stdin)
+}
+
+// dispatchSubcommand runs a subcommand named by the first argument and exits, or prints the version. It reports
+// whether Main is done; it returns false when the arguments are for a chat session.
+func dispatchSubcommand() bool {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set.
 	//
 	// `pull` lives INSIDE this binary rather than shipping as a separate tool on purpose.
@@ -221,8 +264,14 @@ func Main() {
 	// too.
 	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
-		return
+		return true
 	}
+	return false
+}
+
+// parseFlags parses chat's command line onto flag.CommandLine, exiting 2 on an argument it cannot take. It returns
+// nil when --version was printed and Main is done.
+func parseFlags() *chatFlags {
 	cf := registerFlags(flag.CommandLine)
 	if serveOnly := serveOnlyInvocation(os.Args[1:], flag.CommandLine); serveOnly != "" {
 		fmt.Fprintf(os.Stderr, `%s: %q belongs to goinfer-serve, not this binary.
@@ -272,7 +321,7 @@ All flags:
 	flag.Parse()
 	if *cf.showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
-		return
+		return nil
 	}
 	// An unrecognized subcommand/positional would otherwise fall through silently: flag.Parse
 	// stops at the first non-flag argument and leaves it in flag.Args(), so `goinfer-chat version`
@@ -284,7 +333,11 @@ All flags:
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
+	return cf
+}
 
+// preflight checks --image and --batch before a model loads. done reports that a batch has nothing left to run.
+func preflight(cf *chatFlags) (*imageInput, *batchPlan, bool) {
 	// --image: check the flags and read + preprocess the image BEFORE loading a model, like --batch below: a bad path or a
 	// non-GLM-OCR directory costs a second, not a load.
 	if *cf.noSelfTest {
@@ -320,10 +373,14 @@ All flags:
 			plan.in, len(plan.lines), len(plan.lines)-len(plan.todo), plan.out, len(plan.todo))
 		if len(plan.todo) == 0 {
 			fmt.Fprintln(os.Stderr, "nothing to do")
-			return
+			return nil, nil, true
 		}
 	}
+	return img, plan, false
+}
 
+// loadSession validates the load flags and loads the model into a session, exiting on an error.
+func loadSession(cf *chatFlags) (*session, decoder.Options) {
 	if err := cf.load.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -377,6 +434,11 @@ All flags:
 		fmt.Fprintf(os.Stderr, "%v\n", qerr)
 		os.Exit(1)
 	}
+	return s, opts
+}
+
+// configureSession applies the system prompt, thinking, sampling, image and schema flags to s.
+func configureSession(s *session, cf *chatFlags, img *imageInput, opts decoder.Options) {
 	s.system = *cf.system
 	mode, ok := chat.ParseThinkMode(*cf.thinking)
 	if !ok {
@@ -424,6 +486,10 @@ All flags:
 		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *cf.schema)
 	}
 
+}
+
+// configureSpeculation applies --spec and --draft to s, loading the draft model when one is named.
+func configureSpeculation(s *session, cf *chatFlags, opts decoder.Options) {
 	switch *cf.spec {
 	case "":
 	case "ngram":
@@ -457,29 +523,6 @@ All flags:
 		}
 	}
 
-	if plan != nil {
-		explicit := map[string]bool{}
-		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-		bd := newBatchDefaults(cf, explicit)
-		bd.rec = s.model.Config().Sampling
-		if bd.rec != nil && len(bd.rec.Applied()) > 0 {
-			fmt.Fprintf(os.Stderr, "batch: a line that leaves a sampling field out takes the model's recommended value (%s: %s) unless a flag sets it\n",
-				bd.rec.Source, strings.Join(bd.rec.Applied(), ", "))
-		}
-		if bd.rec != nil && bd.rec.RepetitionPenalty != nil {
-			fmt.Fprintf(os.Stderr, "batch: the model's repetition_penalty %g is not applied (it divides logits; the sampler's penalties are subtractive)\n", *bd.rec.RepetitionPenalty)
-		}
-		os.Exit(s.runBatch(plan, bd, modelNameOf(*cf.model)))
-	}
-	// Plain one-shot mode: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
-	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
-	if *cf.prompt != "" || img != nil { // --image is one image, one answer: it never opens the REPL
-		if img != nil && *cf.prompt != "" && *cf.schema != "" {
-			fmt.Fprintln(os.Stderr, "note: -p text with --schema is kept as your own prompt unless it is empty or a bare task prompt (Text Recognition: and the like); include the JSON template yourself, or omit -p to send the schema's")
-		}
-		os.Exit(s.oneShot(*cf.prompt))
-	}
-	s.repl(os.Stdin)
 }
 
 // stdout is where text meant for the reader goes: os.Stdout, or the writer a test installed.
