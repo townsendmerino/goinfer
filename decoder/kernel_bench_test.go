@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -23,7 +24,7 @@ func BenchmarkRMSNorm_Dim896(b *testing.B) {
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		rmsNorm(x, weight, 1, dim, 1e-6, false)
+		normact.RMS(x, weight, 1, dim, 1e-6, false)
 	}
 }
 
@@ -33,7 +34,7 @@ func BenchmarkRMSNorm_Dim2048(b *testing.B) {
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		rmsNorm(x, weight, 1, dim, 1e-6, false)
+		normact.RMS(x, weight, 1, dim, 1e-6, false)
 	}
 }
 
@@ -43,7 +44,7 @@ func BenchmarkRMSNorm_Dim4096(b *testing.B) {
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		rmsNorm(x, weight, 1, dim, 1e-6, false)
+		normact.RMS(x, weight, 1, dim, 1e-6, false)
 	}
 }
 
@@ -54,7 +55,7 @@ func BenchmarkLayerNorm_Dim896(b *testing.B) {
 	bias := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		layerNorm(x, weight, bias, 1, dim, 1e-5)
+		normact.Layer(x, weight, bias, 1, dim, 1e-5)
 	}
 }
 
@@ -65,7 +66,7 @@ func BenchmarkLayerNorm_Dim2048(b *testing.B) {
 	bias := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		layerNorm(x, weight, bias, 1, dim, 1e-5)
+		normact.Layer(x, weight, bias, 1, dim, 1e-5)
 	}
 }
 
@@ -272,7 +273,7 @@ func BenchmarkNormCopy_Dim2048(b *testing.B) {
 	weight := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
 	for b.Loop() {
-		rmsNormInto(dst, src, weight, 1, dim, 1e-6, false)
+		normact.RMSInto(dst, src, weight, 1, dim, 1e-6, false)
 	}
 }
 
@@ -300,7 +301,7 @@ func BenchmarkForwardN_NormPrefill_K512_Dim2048(b *testing.B) {
 	b.SetBytes(K * dim * 4)
 	for b.Loop() {
 		for r := range K {
-			rmsNormInto(norm[r*dim:(r+1)*dim], h[r*dim:(r+1)*dim], weight, 1, dim, 1e-6, false)
+			normact.RMSInto(norm[r*dim:(r+1)*dim], h[r*dim:(r+1)*dim], weight, 1, dim, 1e-6, false)
 		}
 	}
 }

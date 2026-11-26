@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -113,7 +114,7 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 				matmul(be, &gateW, h, g, 1)
 				matmul(be, &upW, h, u, 1)
 				for j := range g {
-					g[j] = silu(g[j]) * u[j]
+					g[j] = normact.SiLU(g[j]) * u[j]
 				}
 				matmul(be, &downW, g, downOut[i*hidden:(i+1)*hidden], 1)
 			}
@@ -123,7 +124,7 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 			matmul(be, &gateW, hIn, gateOut, N)
 			matmul(be, &upW, hIn, upOut, N)
 			for j := range gateOut {
-				gateOut[j] = silu(gateOut[j]) * upOut[j]
+				gateOut[j] = normact.SiLU(gateOut[j]) * upOut[j]
 			}
 			matmul(be, &downW, gateOut, downOut, N)
 		}

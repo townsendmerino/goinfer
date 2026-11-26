@@ -9,7 +9,7 @@ after data.
 ## What carries over from CUDA, and what does not
 
 - **The save point and the bar carry over:** `c = len(prompt)`, no cut; gate 2's bar is bit-identity. Metal promises the property the
-  bar rests on: `backend/metal/backend.go:metalResident.PrefillTailExact` is true, proven for the Gated-DeltaNet pass by
+  bar rests on: `backend/metal/resident_prefill.go:metalResident.PrefillTailExact` is true, proven for the Gated-DeltaNet pass by
   `TestDB01_chunkedPrefillMatchesWhole` and `TestMC5_prefillChunkInvariance`. The routing reads the whole prompt's length, so a restore
   at `c` followed by the suffix runs the cold pass's kernels.
 - **The trap to test against** (the 2026-09-27 and 2026-10-04 Metal identity incidents): a warm arm and a cold arm that reuse different
