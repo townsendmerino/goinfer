@@ -101,6 +101,7 @@ func TestValidateShapes_gemma4PLE(t *testing.T) {
 		layers := make([]LayerWeights, nLayers)
 		for i := range layers {
 			layers[i] = completeDenseLayer(arch, i)
+			layers[i].PLEGate, layers[i].PLEProj, layers[i].PostPLENorm = f(pleDim, hidden), f(hidden, pleDim), make([]float32, hidden)
 		}
 		return &Weights{
 			arch:               arch,
@@ -312,5 +313,59 @@ func TestValidateShapes_hybridMixers(t *testing.T) {
 			{"convB short", func(w *Weights) { w.Layers[0].mamba.convB = make([]float32, 1) }, "mamba.convB"},
 			{"attention layer QProj absent", func(w *Weights) { w.Layers[1].QProj = linalg.WeightMat{} }, "layer 1 QProj: absent"},
 		})
+	})
+}
+
+// Gemma 4's dense||MoE layer and its PLE branch dereference every norm and projection unconditionally once the program runs
+// them, so a bundle missing any of them must be refused at load, not panic in the decode goroutine.
+func TestValidateShapes_gemma4MoEAndPLEComplete(t *testing.T) {
+	const h, ffn, nE, moeI, pleDim = 8, 16, 4, 12, 4
+	vec := func() []float32 { return make([]float32, h) }
+	moeArch := &Architecture{
+		VocabSize: 32, HiddenDim: h, NumHeads: 2, NumKVHeads: 1, HeadDim: 4, IntermediateDim: ffn, NumLayers: 1,
+		MoE:    &MoEConfig{NumExperts: nE, TopK: 2, IntermediateDim: moeI},
+		gemma4: &gemma4Params{GlobalHeadDim: 4, GlobalRotaryDim: 4},
+	}
+	moeGood := func() *Weights {
+		lw := completeDenseLayer(moeArch, 0)
+		lw.GateProj, lw.UpProj, lw.DownProj = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
+		mo := &gemma4MoEWeights{
+			preFFNNorm: vec(), postFFNNorm1: vec(), preFFNNorm2: vec(), postFFNNorm2: vec(), postFFNNorm: vec(),
+			mlpGate: mat(ffn, h), mlpUp: mat(ffn, h), mlpDown: mat(h, ffn),
+			routerProj: mat(nE, h), routerScale: vec(), perExpertScale: make([]float32, nE),
+			denseInter: ffn, moeInter: moeI, nE: nE, topK: 2,
+		}
+		for range nE {
+			mo.expertsGateUp = append(mo.expertsGateUp, mat(2*moeI, h))
+			mo.expertsDown = append(mo.expertsDown, mat(h, moeI))
+		}
+		lw.gemma4moe = mo
+		return &Weights{arch: moeArch, Embed: mat(32, h), Layers: []LayerWeights{lw}}
+	}
+	mo := func(w *Weights) *gemma4MoEWeights { return w.Layers[0].gemma4moe }
+	requireRefused(t, moeArch, moeGood, []shapeCase{
+		{"dense mlpGate absent", func(w *Weights) { mo(w).mlpGate = linalg.WeightMat{} }, "layer 0 gemma4moe mlpGate: absent"},
+		{"dense mlpUp rows wrong", func(w *Weights) { mo(w).mlpUp = mat(ffn+1, h) }, "layer 0 gemma4moe mlpUp: 17 rows"},
+		{"dense mlpDown cols wrong", func(w *Weights) { mo(w).mlpDown = mat(h, ffn-1) }, "layer 0 gemma4moe mlpDown: 15 cols"},
+		{"preFFNNorm absent", func(w *Weights) { mo(w).preFFNNorm = nil }, "layer 0 gemma4moe preFFNNorm: absent"},
+		{"postFFNNorm short", func(w *Weights) { mo(w).postFFNNorm = make([]float32, h-1) }, "layer 0 gemma4moe postFFNNorm: len 7"},
+		{"postFFNNorm2 absent", func(w *Weights) { mo(w).postFFNNorm2 = nil }, "layer 0 gemma4moe postFFNNorm2: absent"},
+	})
+
+	pleArch := &Architecture{
+		VocabSize: 32, HiddenDim: h, NumHeads: 2, NumKVHeads: 1, HeadDim: 4, IntermediateDim: ffn, NumLayers: 1,
+		gemma4: &gemma4Params{GlobalHeadDim: 4, GlobalRotaryDim: 4, HiddenSizePerLayerInput: pleDim},
+	}
+	pleGood := func() *Weights {
+		lw := completeDenseLayer(pleArch, 0)
+		lw.PLEGate, lw.PLEProj, lw.PostPLENorm = mat(pleDim, h), mat(h, pleDim), vec()
+		return &Weights{arch: pleArch, Embed: mat(32, h), Layers: []LayerWeights{lw},
+			PerLayerTokenEmbed: mat(32, pleDim), PerLayerModelProj: mat(pleDim, h), PerLayerProjNorm: make([]float32, pleDim)}
+	}
+	l0 := func(w *Weights) *LayerWeights { return &w.Layers[0] }
+	requireRefused(t, pleArch, pleGood, []shapeCase{
+		{"PLEGate absent", func(w *Weights) { l0(w).PLEGate = linalg.WeightMat{} }, "layer 0 PLEGate: absent"},
+		{"PLEProj absent", func(w *Weights) { l0(w).PLEProj = linalg.WeightMat{} }, "layer 0 PLEProj: absent"},
+		{"PostPLENorm absent", func(w *Weights) { l0(w).PostPLENorm = nil }, "layer 0 PostPLENorm: absent"},
 	})
 }
