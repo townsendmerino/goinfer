@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
@@ -335,7 +336,7 @@ func TestGlmOcrE2E_f32(t *testing.T) {
 				t.Fatalf("grid %v len %d, HF's processor gave %v with %d patches", grid, len(pv), g.Grid[0], g.NPatches)
 			}
 			// Stage: pixel_values against HF's own, when the dump is on disk (reported, not gated).
-			if dir, err := lookupAsset("GOINFER_GLM_OCR_E2E"); err == nil {
+			if dir, err := testassets.Lookup("GOINFER_GLM_OCR_E2E"); err == nil {
 				hf := readF32LE(t, filepath.Join(dir, name+".pv.f32"))
 				logPixelDiff(t, pv, hf)
 			} else {
