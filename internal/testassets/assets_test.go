@@ -2,7 +2,6 @@ package testassets
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,21 +15,6 @@ import (
 // registry states, instead of each re-implementing "is this asset present" (a directory satisfies bash
 // `-e`; GOINFER_QWEN35_GOLDEN needs a readable manifest.json INSIDE its directory). The two implementations
 // are checked against each other by TestAssetRegistry_agreesWithPreflight rather than assumed to match.
-
-// assetPath is what gates call. It SKIPS when the asset is absent, exactly as the hand-written
-// resolutions it replaces did, but with the reason the predicate produced rather than a bare
-// "no model at <path>".
-func assetPath(tb testing.TB, env string) string {
-	tb.Helper()
-	p, err := Lookup(env)
-	if errors.Is(err, ErrRegistryUnreadable) {
-		tb.Fatalf("asset %s: %v", env, err)
-	}
-	if err != nil {
-		tb.Skipf("asset %s: %v", env, err)
-	}
-	return p
-}
 
 // ---------------------------------------------------------------------------------------------
 // The registry's own gates.
