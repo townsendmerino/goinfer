@@ -77,7 +77,7 @@ func (b *stBuild) loadLayer(i int) error {
 			return err
 		}
 		if mlaProjInt8(quant) {
-			l.mla.quantizeProjections(arch)
+			l.mla.quantizeProjections(arch.mla, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
 		}
 	} else if arch.gemma4 != nil {
 		// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers

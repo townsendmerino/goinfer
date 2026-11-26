@@ -65,7 +65,7 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 				return err
 			}
 			if mlaProjInt8(quant) {
-				l.mla.quantizeProjections(arch)
+				l.mla.quantizeProjections(arch.mla, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
 			}
 		} else if arch.Name == "phi3" {
 			// Phi-3/Phi-4: fused attn_qkv [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output

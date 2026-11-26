@@ -27,10 +27,9 @@ var mlaProjF32ForTest map[string]bool
 
 // quantizeProjections replaces the q (or q-LoRA pair), kv-A and o projections with their int8 form: linalg.QuantizeInt8 of the
 // f32, weight-only, the codes and scales every GPU backend makes from the f32 (the form the Mamba projections take).
-func (w *mlaWeights) quantizeProjections(arch *Architecture) {
-	p := arch.mla
-	H, hidden, qkHead := arch.NumHeads, arch.HiddenDim, p.QKNopeHeadDim+p.QKRopeHeadDim
-	if mlaProjF32ForTest["q"] {
+func (w *mlaWeights) quantizeProjections(p *mlaParams, H, hidden int, skipF32 map[string]bool) {
+	qkHead := p.QKNopeHeadDim + p.QKRopeHeadDim
+	if skipF32["q"] {
 		// q stays f32.
 	} else if p.QLoRARank > 0 {
 		w.qAQ = linalg.QuantizeInt8(w.qAProj, p.QLoRARank, hidden, false)
@@ -40,11 +39,11 @@ func (w *mlaWeights) quantizeProjections(arch *Architecture) {
 		w.qQ = linalg.QuantizeInt8(w.qProj, H*qkHead, hidden, false)
 		w.qProj = nil
 	}
-	if !mlaProjF32ForTest["kva"] {
+	if !skipF32["kva"] {
 		w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
 		w.kvAProj = nil
 	}
-	if !mlaProjF32ForTest["o"] {
+	if !skipF32["o"] {
 		w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
 		w.oProj = nil
 	}
