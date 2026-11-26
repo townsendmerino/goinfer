@@ -64,8 +64,8 @@ func programFixtures(t *testing.T) []programFixture {
 	return out
 }
 
-// programFixtureWeightCap is the most weight bytes a fixture the name filter admits may hold. The largest tiny fixture is
-// about 10 MB; a real checkpoint under a tiny name is gigabytes at f32, and every sweep would load it.
+// programFixtureWeightCap is the most weight bytes a fixture the name filter admits may hold: well above every tiny fixture,
+// far below a real checkpoint under a tiny name, which every sweep would otherwise load at f32.
 const programFixtureWeightCap = 32 << 20
 
 // programFixtureDirs lists the tiny fixtures under roots: a directory with a config.json, or a .gguf file, whose name is a tiny
