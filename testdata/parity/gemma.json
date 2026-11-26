@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/gemma12.go"
+    "internal/runtime/families/gemma12.go"
   ],
   "programs": [
     "testdata/gemma1-tiny"
   ],
-  "deps_hash": "sha256:7c5d57bb409987adac01b73d5216eabb042ec79b774241bd964fbff091d9f187",
+  "deps_hash": "sha256:b83eb5fc5481a6ec3735bf2904494c7ac4a980633a6e7fc42be0bf71dd4c398c",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

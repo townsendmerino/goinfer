@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_gemma3.go"
+    "internal/runtime/families/arch_gemma3.go"
   ],
   "programs": [
     "testdata/gemma3-vl-tiny"
   ],
-  "deps_hash": "sha256:57c6d71095d09e2029830b9832881b71f6c03da1e32cbc9c6928f766cdc3f8ef",
+  "deps_hash": "sha256:2f153ff91ff70988e192c4e49d12b02d03ce17e69ec77cb9f9cc05861c315bad",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

@@ -5,10 +5,10 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen3_vl.go",
-    "decoder/arch_qwen3.go"
+    "internal/runtime/families/arch_qwen3_vl.go",
+    "internal/runtime/families/arch_qwen3.go"
   ],
-  "deps_hash": "sha256:74964eb7580314b7853e19d2d943a6d98f7fd3b8a72e6be39de2352814cfdd07",
+  "deps_hash": "sha256:d44c17e4694b01a681560cdc42bcac5e36e71f36d4da6893d030c94c04cfee28",
   "status": "validated",
   "validated_at": "7ee05f0a",
   "date": "2026-10-08",

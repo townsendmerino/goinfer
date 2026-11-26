@@ -6,14 +6,14 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_flint.go",
+    "internal/runtime/families/arch_flint.go",
     "decoder/flint_parity_test.go",
     "scripts/pin_flint_tiny.py"
   ],
   "programs": [
     "testdata/flint-tiny"
   ],
-  "deps_hash": "sha256:4382cba6d1c231a25ee1431c2d0c8bd70dc8941ed558bc3a3d70eddb18f1bb42",
+  "deps_hash": "sha256:cd96cf2935f0280795364b0d54ad822f571c7cdc4bc43dceaead58dc18a568c9",
   "status": "experimental",
   "validated_at": "d29d1ba4",
   "date": "2026-11-11",

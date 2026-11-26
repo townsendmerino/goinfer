@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_olmo3.go"
+    "internal/runtime/families/arch_olmo3.go"
   ],
   "programs": [
     "testdata/olmo3-tiny"
   ],
-  "deps_hash": "sha256:6dac993e3df5dbdb2730de95648f3dcd80fd7e76d5e9b69d4ee464ac9d33a005",
+  "deps_hash": "sha256:f8e11520fbcea912f06d5f5e24762cec4dae37b94fec6ccae379e8ac5488436a",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

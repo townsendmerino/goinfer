@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -123,7 +124,7 @@ func TestQwen3VL_mropeSectionFromRopeScaling(t *testing.T) {
 	cfg.RopeParameters = nil // the released checkpoint has none: rope_theta sits at the text config's top level
 	cfg.RoPEGlobalBase = 5e6
 	cfg.RopeScaling = json.RawMessage(`{"mrope_interleaved": true, "mrope_section": [24, 20, 20], "rope_type": "default"}`)
-	arch, _, err := qwen3_vlArchitecture(cfg)
+	arch, _, err := families.Qwen3VLArchitecture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

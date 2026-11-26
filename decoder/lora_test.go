@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"math"
 	"os"
 	"path/filepath"
@@ -72,13 +73,13 @@ func TestLoRAValidateTargets(t *testing.T) {
 	a := &loraAdapter{deltas: map[string]loraDelta{
 		"model.layers.0.self_attn.q_proj.weight": {},
 	}}
-	if err := a.validateTargets(1, &llamaTensorSchema, tensorName); err != nil {
+	if err := a.validateTargets(1, &families.LlamaTensorSchema, tensorName); err != nil {
 		t.Errorf("q_proj should be a valid target: %v", err)
 	}
 	bad := &loraAdapter{deltas: map[string]loraDelta{
 		"model.embed_tokens.weight": {},
 	}}
-	if err := bad.validateTargets(1, &llamaTensorSchema, tensorName); err == nil {
+	if err := bad.validateTargets(1, &families.LlamaTensorSchema, tensorName); err == nil {
 		t.Error("embed_tokens is not a supported merge target — want error")
 	}
 }
@@ -93,7 +94,7 @@ func TestLoRAValidateTargets_prefixMismatch(t *testing.T) {
 		"model.layers.0.self_attn.q_proj.weight": {}, // as loraBaseName produces (unprefixed)
 	}}
 	// Plain base: merge looks up bare names → validation passes (and merge would find the delta).
-	if err := a.validateTargets(1, &llamaTensorSchema, tensorName); err != nil {
+	if err := a.validateTargets(1, &families.LlamaTensorSchema, tensorName); err != nil {
 		t.Errorf("unprefixed base should validate: %v", err)
 	}
 	// VL-prefixed base: merge looks up language_model.model.layers.N.* — the unprefixed delta will
@@ -101,7 +102,7 @@ func TestLoRAValidateTargets_prefixMismatch(t *testing.T) {
 	prefixed := func(i int, suf string) string {
 		return "language_model." + tensorName(i, suf)
 	}
-	if err := a.validateTargets(1, &llamaTensorSchema, prefixed); err == nil {
+	if err := a.validateTargets(1, &families.LlamaTensorSchema, prefixed); err == nil {
 		t.Error("a prefixed (VL) base with an unprefixed adapter must fail validation, not silently no-op (M18)")
 	}
 }

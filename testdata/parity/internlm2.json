@@ -8,9 +8,9 @@
     "decoder/internlm2.go",
     "decoder/internlm2_test.go",
     "scripts/pin_internlm2_tiny.py",
-    "decoder/arch_internlm2.go"
+    "internal/runtime/families/arch_internlm2.go"
   ],
-  "deps_hash": "sha256:103150b746df253b3297a227640a1198ac8fb5238dbd3e6c4786207e7c9a218d",
+  "deps_hash": "sha256:de674af29faa420181584715166ab83879e0895465630ea433339f74bca16982",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

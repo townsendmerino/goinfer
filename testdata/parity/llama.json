@@ -5,13 +5,13 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_llama.go"
+    "internal/runtime/families/arch_llama.go"
   ],
   "programs": [
     "testdata/llama-attnfa-tiny",
     "testdata/llama-tiny"
   ],
-  "deps_hash": "sha256:578397d6c36d8bcc166b713a7236ff8cf187a5a0419fbf10d142e7d032ca4218",
+  "deps_hash": "sha256:0072c22a8f98da5aaddab9dbe24d2ce9febc481b0f70a87d1fc1e1b8f5d3ab99",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

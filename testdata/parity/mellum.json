@@ -8,12 +8,12 @@
   "own": [
     "decoder/mellum_slice_test.go",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_mellum.go"
+    "internal/runtime/families/arch_mellum.go"
   ],
   "programs": [
     "testdata/mellum21-config"
   ],
-  "deps_hash": "sha256:766d2bea20bdc2e710e41cc6f612772a6af3a0dcef13f0653e9621e5f10192a4",
+  "deps_hash": "sha256:695258aca7eda520f61a1444e53757b9293fd66313b078c09407c73ace0ff9bd",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestValidateConfigBounds_refusesAnAbsurdFeedForwardWidth(t *testing.T) {
 	real := func() *Config {
 		return &Config{NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 8, VocabSize: 128256, IntermediateDim: 53248}
 	}
-	if err := validateConfigBounds(real()); err != nil {
+	if err := families.ValidateConfigBounds(real()); err != nil {
 		t.Fatalf("the widest real FFN (53248) refused: %v", err)
 	}
 	huge := 1 << 40
@@ -26,7 +27,7 @@ func TestValidateConfigBounds_refusesAnAbsurdFeedForwardWidth(t *testing.T) {
 	} {
 		c := real()
 		mutate(c)
-		err := validateConfigBounds(c)
+		err := families.ValidateConfigBounds(c)
 		if err == nil || !strings.Contains(err.Error(), "ceiling") {
 			t.Errorf("%s = 2^40: err = %v, want a refusal naming the ceiling", name, err)
 		}

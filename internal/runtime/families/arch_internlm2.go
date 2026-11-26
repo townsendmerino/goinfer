@@ -1,0 +1,52 @@
+package families
+
+import (
+	"fmt"
+	"math"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+)
+
+// internlm2Architecture expresses InternLM2 (model_type internlm2). The DESCRIPTOR is llama's
+// — same norms, same SwiGLU, same single-base RoPE, no biases, no QK-norm — because the math
+// is llama's. What differs is entirely on the loader side (renamed tensors, a grouped fused
+// wqkv), which is why this returns llama's shape with its OWN tensor schema rather than
+// aliasing llamaArchitecture outright: an alias would send the loader looking for
+// self_attn.q_proj in a checkpoint that has never heard of it.
+//
+// rope_scaling is "dynamic" on the released checkpoints, which rope.ParseScaling accepts as no
+// scaling (exact within the trained window; see its comment for the boundary caveat).
+func internlm2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
+	if err := backfillFlatRope(cfg, "internlm2"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.ValidateLlama(); err != nil {
+		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
+	}
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
+	}
+	hd := cfg.EffectiveHeadDim()
+	return &darch.Architecture{
+		Name:            "internlm2",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            darch.NormRMS,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		RoPELocalBase:   cfg.RoPEGlobalBase,
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RoPEScaling:     scaling,
+		TiedLMHead:      false,
+	}, &internlm2TensorSchema, nil
+}

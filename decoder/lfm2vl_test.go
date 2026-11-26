@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"io/fs"
 	"math/rand"
 	"os"
@@ -132,7 +133,7 @@ func TestLfm2FFNDim(t *testing.T) {
 		{1000, 256, true, nil, 666},      // no multiplier: HF does not round
 	} {
 		cfg := &Config{IntermediateDim: c.inter, BlockAutoAdjustFFDim: c.auto, BlockFFNDimMultiplier: c.mult, BlockMultipleOf: c.multipleOf}
-		if got := lfm2FFNDim(cfg); got != c.want {
+		if got := families.LFM2FFNDim(cfg); got != c.want {
 			t.Errorf("intermediate %d auto %v mult %v multiple_of %d: %d, want %d", c.inter, c.auto, c.mult, c.multipleOf, got, c.want)
 		}
 	}

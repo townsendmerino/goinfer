@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_bailing_hybrid.go",
+    "internal/runtime/families/arch_bailing_hybrid.go",
     "decoder/kda.go",
     "decoder/kda_rehearsal.go",
     "decoder/forward_deepseek.go",
@@ -15,7 +15,7 @@
   "programs": [
     "testdata/bailing_hybrid-tiny"
   ],
-  "deps_hash": "sha256:1f426a1db8128b1764a5d37851ccbcfa1d350d8632fdd8fc825fe16b5a298cb7",
+  "deps_hash": "sha256:920b104bb42867c333668d8c72b9cf8f0ca2cb33617e44f7b0dafa999aeb34d5",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

@@ -7,13 +7,13 @@
   ],
   "own": [
     "decoder/forward_deepseek.go",
-    "decoder/arch_deepseek.go",
+    "internal/runtime/families/arch_deepseek.go",
     "decoder/mla_int8.go"
   ],
   "programs": [
     "testdata/deepseek-tiny"
   ],
-  "deps_hash": "sha256:d3435fe9c09b13303ea948af4ef207bfa74d1c3ab451fd926ce3918f3f12f780",
+  "deps_hash": "sha256:0664faa4c91407fcd95125ca6c18942fd844eaaa53148eafbcd34bb4c487f4ee",
   "status": "validated",
   "validated_at": "d5c5a1d53",
   "date": "2026-10-23",

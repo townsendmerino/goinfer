@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -24,7 +25,7 @@ func TestPhi3_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &phi3TensorSchema {
+	if schema != &families.Phi3TensorSchema {
 		t.Fatalf("schema mismatch")
 	}
 	if arch.Name != "phi3" || arch.Norm != darch.NormRMS || arch.RMSAddOne || arch.NormPlacement != darch.NormPre2 {

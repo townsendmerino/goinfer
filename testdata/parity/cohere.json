@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_cohere.go"
+    "internal/runtime/families/arch_cohere.go"
   ],
   "programs": [
     "testdata/cohere-tiny"
   ],
-  "deps_hash": "sha256:7e20d24607a2e825bbb0d7a240eb1e3f777c7e3b3de8382582a3df027905dbf0",
+  "deps_hash": "sha256:e2cf86d8ecacb597232da6ea9456a01fa4ad670a177cacba191ad774835418be",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

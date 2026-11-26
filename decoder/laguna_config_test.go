@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,9 +81,9 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 			if cfg.ModelType != "laguna" {
 				t.Fatalf("model_type = %q, want laguna", cfg.ModelType)
 			}
-			arch, schema, err := lagunaArchitecture(&cfg)
+			arch, schema, err := families.LagunaArchitecture(&cfg)
 			if err != nil {
-				t.Fatalf("lagunaArchitecture(%s): %v", tc.repo, err)
+				t.Fatalf("families.LagunaArchitecture(%s): %v", tc.repo, err)
 			}
 			arch.FinalizeRoPE()
 

@@ -7,14 +7,14 @@
   ],
   "own": [
     "decoder/forward_nemotron.go",
-    "decoder/arch_nemotron_h.go",
+    "internal/runtime/families/arch_nemotron_h.go",
     "decoder/gguf_build_nemotron.go"
   ],
   "programs": [
     "testdata/nemotron-tiny",
     "testdata/nemotron3nano-tiny"
   ],
-  "deps_hash": "sha256:f0ad4aabd0141bea4deed8c0469a8b8d32241abf3a8f8e111f1da12b8e08ce1e",
+  "deps_hash": "sha256:8dc12302597162b0b891c3d268d671338fa35ebed25d52cfd31aa889ee517c04",
   "status": "validated",
   "validated_at": "0b74e671",
   "date": "2026-09-18",

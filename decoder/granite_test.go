@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestGranite_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &graniteTensorSchema {
+	if schema != &families.GraniteTensorSchema {
 		t.Fatalf("schema mismatch")
 	}
 	if !arch.IsMambaLayer(0) || arch.IsMambaLayer(1) || !arch.IsMambaLayer(2) {

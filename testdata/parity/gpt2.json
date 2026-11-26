@@ -5,9 +5,9 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_gpt2.go"
+    "internal/runtime/families/arch_gpt2.go"
   ],
-  "deps_hash": "sha256:d356618c7c34595a83ab39223523e39e3db444495ec7a13d235637987912b9a4",
+  "deps_hash": "sha256:9600579b3d8c481e19737bd33e8a884f24823a10f5f8804b38ca8a94a6be13e2",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
