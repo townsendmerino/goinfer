@@ -571,3 +571,22 @@ func (r *cudaResident) captureGraphs() error {
 	r.launchErr = nil // capture invoked launch() to RECORD (not execute); clear the sticky accumulator
 	return nil
 }
+
+// mlaState is latent attention's geometry, kernels and per-token scratch (DeepSeek / Kimi, FeatMLA). Zero unless isMLA.
+type mlaState struct {
+	fMlaStore, fMlaHeadMV, fMlaQRope, fMlaAttn Pipeline // MLA (mla module, FeatMLA)
+	// MLA (DeepSeek / Kimi, FeatMLA) geometry & params
+	isMLA         bool
+	mlaRank       int // kv_lora_rank
+	mlaLatDim     int // kv_lora_rank + qk_rope_head_dim
+	mlaQKHead     int // qk_nope + qk_rope
+	mlaQKNope     int // qk_nope_head_dim
+	mlaQKRope     int // qk_rope_head_dim
+	mlaVHead      int // v_head_dim
+	mlaQLoRA      int // q_lora_rank (0 if direct q_proj)
+	mlaInterleave bool
+	mlaRopeScale  float32
+	// MLA per-token scratch (allocated only when isMLA).
+	mlaQAOut, mlaQAQ, mlaQASc Buffer
+	mlaKVDown, qAbs, wsum     Buffer
+}

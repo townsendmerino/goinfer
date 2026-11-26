@@ -191,3 +191,64 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 	}
 	return nil
 }
+
+// captureState holds cudaResident's hidden-state and diagnostic captures: the per-layer residual probe, the drafter taps (per
+// token and batched), Gemma 4's MoE-branch readback and the per-sublayer contributions. Each is off (nil or false) in production.
+type captureState struct {
+	layerCap    bool // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	layerCapBuf [][]float32
+	// hidCap is the hidden-state seam a resident CUDA target would need to feed a hidden-state drafter (DFlash,
+	// DSpark): the resident analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. It is NOT
+	// wired into production: SetHiddenCapture/HiddenCapture have no non-test caller (the block drafter arms the batched
+	// counterpart below, via SetBatchedCapture), so nothing reaches this per-token seam yet
+	// (docs/code-notes/cuda.md#cudaResident.hidCap).
+	//
+	// It is distinct from layerCap, deliberately: layerCap is a divergence-localization probe (EVERY layer, a
+	// stream.Sync() and a download each, into an unbounded buffer: 36 syncs per token at 36 layers), far too
+	// expensive to decode against. hidCap copies only the TAPPED layers into fixed slots, so a 5-tap drafter costs 5.
+	hidCapTaps []int       // layer indices to capture, ascending; nil ⇒ seam off
+	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
+	// The BATCHED counterpart, for the block-drafting verify: one download per tap covering
+	// all M rows, instead of the per-token seam's one per tap PER TOKEN.
+	capBTaps []int       // layer indices, ascending; nil ⇒ off
+	capBOut  [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
+	// g4cap (GOINFER_G4_CAPTURE) reads back the four MoE-layer buffers (rn / wgt / x1 / x2), so a whole-forward miss localizes to
+	// router vs dense vs expert vs join in one run.
+	g4cap                               bool
+	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
+	g4capIdx                            [][]uint32 // APPEND order (token-outer, layer-inner), matching the CPU routerCaptureBuf — for the per-POSITION routing-agreement check (a top-k flip at pos N reads like accumulation in a cosine)
+	// g4capLayer is g4capIdx's layer index, recorded in parallel so a consumer replaying the trace through a
+	// per-layer cache need not infer the (token, layer) shape from the append order and a divisor.
+	g4capLayer []int
+	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
+	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
+	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
+	// ForwardSubCapture, so a cross-backend per-sublayer diff is possible.
+	subCap                                 bool
+	subAttnC, subMLPC, subCtxC, subMLPpreC [][]float32
+}
+
+// dnetState is the Gated-DeltaNet mixer: its kernels (per token, row-batched and the speculative verify's), the family's
+// parameters, the verify arena and the per-token scratch. Zero for every other family.
+type dnetState struct {
+	// Gated-DeltaNet mixer (deltanet.ptx, its own module). Loaded only for that family; every other model leaves
+	// these zero and never dispatches them.
+	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
+	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
+	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
+	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
+	// The speculative verify's twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
+	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
+	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
+	dnSpec                                            *dnSpecArena
+	dnSpecOn                                          bool
+	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                              *dnetParams
+	// Gated-DeltaNet per-token scratch (allocated only when any layer isDeltaNet). Sized from
+	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
+	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP, dnBt, dnAt, dnZOut, dnCore, dnGated Buffer
+	dnGq, dnGSc                                                                  Buffer // int8 activation + scale for the gated output's out_proj GEMV
+	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
+	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
+}
