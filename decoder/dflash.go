@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
@@ -670,7 +671,7 @@ func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, e
 		}
 		f := make([]float32, d.hidden)
 		matmul(be, &d.fc, row, f, 1)
-		rmsNorm(f, d.hiddenNorm, 1, d.hidden, d.normEps, false)
+		normact.RMS(f, d.hiddenNorm, 1, d.hidden, d.normEps, false)
 		fused[i] = f
 	}
 	return fused, nil
@@ -725,7 +726,7 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 			v := make([]float32, kvDim)
 			matmul(be, &l.k, row, k, 1)
 			matmul(be, &l.v, row, v, 1)
-			rmsNorm(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
+			normact.RMS(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
 			rope.Apply(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
 			ctx.k[li] = append(ctx.k[li], k)
 			ctx.v[li] = append(ctx.v[li], v)
@@ -758,7 +759,7 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 	out := make([][]float32, len(h))
 	for i, row := range h {
 		r := slices.Clone(row)
-		rmsNorm(r, d.finalNorm, 1, d.hidden, d.normEps, false)
+		normact.RMS(r, d.finalNorm, 1, d.hidden, d.normEps, false)
 		out[i] = r
 	}
 	return out, nil
@@ -841,7 +842,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	xb := make([][]float32, nBlk)
 	for i, row := range h {
 		x := slices.Clone(row)
-		rmsNorm(x, l.inputNorm, 1, hid, d.normEps, false)
+		normact.RMS(x, l.inputNorm, 1, hid, d.normEps, false)
 		xb[i] = x
 	}
 
@@ -858,8 +859,8 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 		v := make([]float32, kvDim)
 		matmul(be, &l.k, xb[j-nCtx], k, 1)
 		matmul(be, &l.v, xb[j-nCtx], v, 1)
-		rmsNorm(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
-		rope.Apply(k, d.nKV, hd, j, d.invFreq, 1)        // V is NOT roped and NOT normed
+		normact.RMS(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
+		rope.Apply(k, d.nKV, hd, j, d.invFreq, 1)            // V is NOT roped and NOT normed
 		keys[j], vals[j] = k, v
 	}
 
@@ -870,7 +871,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	for i := range nBlk {
 		q := make([]float32, qDim)
 		matmul(be, &l.q, xb[i], q, 1)
-		rmsNorm(q, l.qNorm, d.nHeads, hd, d.normEps, false)
+		normact.RMS(q, l.qNorm, d.nHeads, hd, d.normEps, false)
 		rope.Apply(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
 
 		// Non-causal: every block query attends every context key AND every block key,
@@ -917,11 +918,11 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	down := make([]float32, hid)
 	for i := range nBlk {
 		x := slices.Clone(h[i])
-		rmsNorm(x, l.postAttnNorm, 1, hid, d.normEps, false)
+		normact.RMS(x, l.postAttnNorm, 1, hid, d.normEps, false)
 		matmul(be, &l.gate, x, gate, 1)
 		matmul(be, &l.up, x, up, 1)
 		for t := range gate {
-			gate[t] = silu(gate[t]) * up[t]
+			gate[t] = normact.SiLU(gate[t]) * up[t]
 		}
 		matmul(be, &l.down, gate, down, 1)
 		for t := range hid {

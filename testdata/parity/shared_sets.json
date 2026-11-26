@@ -7,7 +7,7 @@
     "decoder/kvcache.go",
     "internal/runtime/rope/rope.go",
     "internal/runtime/rope/ropescale.go",
-    "decoder/rmsnorm.go",
+    "internal/runtime/normact/rmsnorm.go",
     "decoder/registry.go",
     "decoder/arch.go",
     "decoder/config.go",
