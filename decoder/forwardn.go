@@ -342,7 +342,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 	// treeMask excludes speculative verify (kvAttend.groupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
 	// (not wired); attnGroupedKernels is the per-architecture platform gate.
 	a.groupedOK = useAcc64 && !a.f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
-		a.group == attnGroupedNEONSize && a.nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
+		a.group == attnGroupedNEONSize && a.nKeys >= attnGroupedMinKeys && cache.knobs.attnGrouped()
 
 	if !useAcc64 {
 		a.f32Heads(pool)
@@ -528,7 +528,7 @@ func (a *kvAttend) oneHead(qhead int, ws *headWorkerScratch, mm func(a, b, dst [
 	// `i` indexes the tile; `gi` is the global row. Positions and masks use `gi` (startPos+gi, treeRowPos[gi], treeMask[gi]), buffers
 	// use `i`. The tile comes from attendTileForK, not attnRowTile: the slot's capacity binds, and recomputing it from this layer's key
 	// count panicked a warm windowed session.
-	tile := attendTileForK(a.arch.knobs, ws, K, nKeys, hd)
+	tile := attendTileForK(a.cache.knobs, ws, K, nKeys, hd)
 	for t0 := 0; t0 < K; t0 += tile {
 		kt := min(tile, K-t0)
 		for i := range kt { // gather this tile's Q_head [kt,hd]

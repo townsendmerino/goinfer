@@ -219,7 +219,7 @@ func TestDecodeScratch_reuseIsBitIdenticalAndAllocatesLess(t *testing.T) {
 			var mWarm, mFresh []uint64
 			for pos := range steps {
 				id := (pos*37 + 11) % vocab
-				fresh.scr = newDecodeScratch(m.w.arch)
+				fresh.scr = newDecodeScratch(m.w.arch, fresh.knobs)
 				var got, want []float32
 				mWarm = append(mWarm, mallocsDuring(func() { got, err = m.forward(id, warm) }))
 				if err != nil {

@@ -340,15 +340,15 @@ const (
 
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
-// reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the arch's knob
-// snapshot, or the environment for an arch built without one.
+// reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the environment
+// (ssmResidentKnob).
 func (a *Architecture) runnerShapeDecline() string {
 	return a.runnerShapeDeclineSSM(a.ssmResidentKnob())
 }
 
-// ssmResidentKnob reports whether GOINFER_SSM_RESIDENT is set for this arch: its knob snapshot, or the environment for an arch
-// built without one.
-func (a *Architecture) ssmResidentKnob() bool { return a.knobs.get(knobSSMResident) != "" }
+// ssmResidentKnob reports whether GOINFER_SSM_RESIDENT is set in the environment: the model-free admission's reading. An
+// Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
+func (a *Architecture) ssmResidentKnob() bool { return (*knobSet)(nil).get(knobSSMResident) != "" }
 
 // runnerShapeDeclineSSM is runnerShapeDecline with the GOINFER_SSM_RESIDENT knob given (ssmResident), not read: Admit's form.
 func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {

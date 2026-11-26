@@ -178,13 +178,10 @@ func (k *knobSet) optFwdTempCap() float64 {
 	return optFwdMaxTemp
 }
 
-// bindKnobs gives a freshly constructed model its knob snapshot and shares it with the model's
-// Architecture, which the deep forward helpers receive instead of the Model. Called before
-// withResidency, so a backend that builds or probes during residency already sees the snapshot.
+// bindKnobs gives a freshly constructed model its knob snapshot. The deep forward helpers, which receive a cache instead of
+// the Model, read it from the cache (NewCache copies it there). Called before withResidency, so a backend that builds or
+// probes during residency already sees the snapshot.
 func (m *Model) bindKnobs(over map[string]string) *Model {
 	m.knobs = snapshotKnobs(over)
-	if m.w != nil && m.w.arch != nil {
-		m.w.arch.knobs = m.knobs
-	}
 	return m
 }

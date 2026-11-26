@@ -16,7 +16,7 @@ func TestKSO4_kvHeldBytes(t *testing.T) {
 	n := 4*a.SlidingWindow + 3 // well past the window
 	withRings := m.NewCache(n)
 	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n, a.hasNoAttentionKVAt)
-	appendForever.scr = newDecodeScratch(a)
+	appendForever.scr = newDecodeScratch(a, appendForever.knobs)
 	for range n {
 		if _, err := m.forward(1, withRings); err != nil {
 			t.Fatal(err)

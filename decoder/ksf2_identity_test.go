@@ -57,7 +57,7 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 						p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd))}
 						a, b := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil), NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)
 						if withScr {
-							a.scr = newDecodeScratch(arch)
+							a.scr = newDecodeScratch(arch, a.knobs)
 						}
 						for range nKeys - 1 {
 							k, v := ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
@@ -114,7 +114,7 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 								b.enableRings(W, func(int) bool { return false })
 							}
 							if withScr {
-								a.scr = newDecodeScratch(arch)
+								a.scr = newDecodeScratch(arch, a.knobs)
 							}
 							for i := range nKeys {
 								k, v := ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
@@ -287,7 +287,7 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 		kvDim := sh.nKV * sh.hd
 		lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
-		scr := newDecodeScratch(arch)
+		scr := newDecodeScratch(arch, nil)
 		fanned, steps := 0, 0
 		run := func(name string, window, n int) {
 			p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: 30}

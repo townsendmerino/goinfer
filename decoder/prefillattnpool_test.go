@@ -274,7 +274,7 @@ func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
 	arch := &Architecture{HiddenDim: 8, NumHeads: 2, NumKVHeads: 2, HeadDim: 4, IntermediateDim: 8, VocabSize: 8}
 	const nH, K, nKeys, hd = 2, 1, 64, 4
 
-	accScr := newDecodeScratch(arch)
+	accScr := newDecodeScratch(arch, nil)
 	accPool := accScr.headWorkerPool(nH, K, nKeys, hd, false, true)
 	if accPool[0].kh != nil {
 		t.Errorf("kh allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].kh))
@@ -286,7 +286,7 @@ func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
 		t.Errorf("scores = %d floats, want %d — acc64 still needs it (MatmulQKAcc64 writes into it)", len(accPool[0].scores), K*nKeys)
 	}
 
-	matScr := newDecodeScratch(arch)
+	matScr := newDecodeScratch(arch, nil)
 	matPool := matScr.headWorkerPool(nH, K, nKeys, hd, false, false)
 	if len(matPool[0].kh) != nKeys*hd {
 		t.Errorf("kh = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].kh), nKeys*hd)

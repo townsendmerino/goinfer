@@ -7,10 +7,6 @@ import "github.com/townsendmerino/goinfer/internal/runtime/program"
 // config.json, so adding a family is descriptor population, not new forward code. Every field is consumed by the forward
 // pass, which rejects descriptor values it does not implement rather than silently mis-running.
 type Architecture struct {
-	// knobs is the owning model's per-model operator-knob snapshot (knobs.go); nil = read the live environment
-	// (an Architecture built by hand in a test, never Loaded).
-	knobs *knobSet
-
 	Name string // family name, for logs/errors ("gemma3")
 
 	// Dims (mirrors config.json; the loader also reads these for tensor shapes).
