@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -14,7 +16,7 @@ import (
 // moe_intermediate_size; the shared expert is a gated MLP at
 // shared_expert_intermediate_size scaled by sigmoid(shared_gate·h). The tensor
 // schema is qwen2MoeTensorSchema.
-func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen2MoeArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateQwen2Moe(); err != nil {
 		return nil, nil, err
 	}
@@ -27,7 +29,7 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "qwen2_moe",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -36,11 +38,11 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         true, // qwen2-style q/k/v bias
 		QKNorm:          false,
 		MoE: &MoEConfig{
@@ -52,11 +54,11 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		AttnScale:      math.Pow(float64(hd), -0.5),
 		SlidingWindow:  0, // full attention
-		layerIsGlobal:  nil,
+		LayerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
 		RotaryDim:      cfg.RotaryDim(),
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 	}, &qwen2MoeTensorSchema, nil

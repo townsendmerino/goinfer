@@ -177,7 +177,7 @@ func TestGrammarAlphaPredictor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
-	vocabBytes := constrain.TokenBytes(m.w.arch.VocabSize, tk.TokenText)
+	vocabBytes := constrain.TokenBytes(m.w.Arch.VocabSize, tk.TokenText)
 	encode := func(s string) []int { ids, _ := tk.Encode(s, false); return ids }
 	ctx := context.Background()
 	greedy := SamplingParams{Temperature: 0}

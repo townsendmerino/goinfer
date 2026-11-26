@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "math"
 
 // qwen3Architecture expresses Qwen3 dense: RMSNorm
@@ -7,14 +12,14 @@ import "math"
 // SwiGLU, QK-norm (Qwen3 keeps it), 1/√head_dim attention scale, single-base
 // RoPE, no embedding scale, and a separate lm_head (untied). No QKV bias
 // (Qwen3 dropped Qwen2's). The tensor schema is qwen3TensorSchema.
-func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen3"); err != nil {
 		return nil, nil, err
 	}
 	if err := cfg.ValidateQwen3(); err != nil {
 		return nil, nil, err
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "qwen3",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -23,15 +28,15 @@ func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         cfg.HeadDim,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKNorm:          true,
 		AttnScale:       math.Pow(float64(cfg.HeadDim), -0.5),
 		SlidingWindow:   0,                  // Qwen3 dense: full attention
-		layerIsGlobal:   nil,                // all-global
+		LayerIsGlobal:   nil,                // all-global
 		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		EmbedScale:      0,     // none

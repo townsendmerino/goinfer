@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"path/filepath"
 	"testing"
 )
@@ -21,14 +22,14 @@ func loadTinyOps(t *testing.T, dir string) *Model {
 func TestResidentLayerOps_kinds(t *testing.T) {
 	nemo := loadTinyOps(t, "nemotron-tiny")
 	seen := map[ResidentMixer]int{}
-	for l, k := range nemo.w.arch.nemotron.blockKind {
+	for l, k := range nemo.w.Arch.Nemotron.BlockKind {
 		mixer, ffn := nemo.BackendView().Layer(l).Ops()
 		var want ResidentMixer
 		wantFFN := false
 		switch k {
-		case nemoMamba:
+		case archparts.NemoMamba:
 			want = MixerMamba
-		case nemoAttn:
+		case archparts.NemoAttn:
 			want = MixerAttention
 		default:
 			want, wantFFN = MixerNone, true
@@ -43,9 +44,9 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 	}
 	q := loadTinyOps(t, "qwen35-tiny")
 	delta := 0
-	for l := range q.w.arch.NumLayers {
+	for l := range q.w.Arch.NumLayers {
 		mixer, ffn := q.BackendView().Layer(l).Ops()
-		if want := map[bool]ResidentMixer{true: MixerDeltaNet, false: MixerAttention}[q.w.arch.isLinearLayer(l)]; mixer != want || !ffn {
+		if want := map[bool]ResidentMixer{true: MixerDeltaNet, false: MixerAttention}[q.w.Arch.IsLinearLayer(l)]; mixer != want || !ffn {
 			t.Errorf("qwen35-tiny layer %d: ops (%d, %v), want (%d, true)", l, mixer, ffn, want)
 		}
 		if mixer == MixerDeltaNet {
@@ -56,7 +57,7 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 		t.Fatal("qwen35-tiny has no DeltaNet layer")
 	}
 	ll := loadTinyOps(t, "llama-tiny")
-	for l := range ll.w.arch.NumLayers {
+	for l := range ll.w.Arch.NumLayers {
 		if mixer, ffn := ll.BackendView().Layer(l).Ops(); mixer != MixerAttention || !ffn {
 			t.Errorf("llama-tiny layer %d: ops (%d, %v), want attention with an FFN", l, mixer, ffn)
 		}
@@ -73,7 +74,7 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 		m := loadTinyOps(t, dir)
 		var want int64
 		attn := 0
-		for l := range m.w.arch.NumLayers {
+		for l := range m.w.Arch.NumLayers {
 			if mixer, _ := m.BackendView().Layer(l).Ops(); mixer != MixerAttention {
 				continue
 			}
@@ -82,9 +83,9 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 		}
 		want += blocks * 4 // the slot's table
 		if got := m.ResidentKVBytes("metal", ctx, false, false); got != want {
-			t.Errorf("%s: ResidentKVBytes(metal) = %d, want %d (%d attention layers of %d)", dir, got, want, attn, m.w.arch.NumLayers)
+			t.Errorf("%s: ResidentKVBytes(metal) = %d, want %d (%d attention layers of %d)", dir, got, want, attn, m.w.Arch.NumLayers)
 		}
-		if dir != "llama-tiny" && attn == m.w.arch.NumLayers {
+		if dir != "llama-tiny" && attn == m.w.Arch.NumLayers {
 			t.Fatalf("%s has no non-attention layer: the gate cannot see one priced", dir)
 		}
 	}
@@ -96,7 +97,7 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 func TestRopeInvFreqLayer_nemotronIsNoPE(t *testing.T) {
 	nemo := loadTinyOps(t, "nemotron-tiny")
 	checked := 0
-	for l := range nemo.w.arch.NumLayers {
+	for l := range nemo.w.Arch.NumLayers {
 		if mixer, _ := nemo.BackendView().Layer(l).Ops(); mixer != MixerAttention {
 			continue
 		}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -25,7 +27,7 @@ import (
 //
 // No YaRN/rope_scaling override is wired (the mscale/mscale_all_dim ratio deepseekArchitecture applies): the released config carries
 // rope_scaling: null, so a Bailing checkpoint that sets YaRN would need it added.
-func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func bailingHybridArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.NormalizeBailingLayerTypes(); err != nil {
 		return nil, nil, err
 	}
@@ -52,7 +54,7 @@ func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error
 	if cfg.RopeInterleave != nil {
 		ropeInterleave = *cfg.RopeInterleave
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "bailing_hybrid",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -61,11 +63,11 @@ func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error
 		HeadDim:         cfg.HeadDim,  // KDA's per-head width; MLA reads its own qkHeadDim/VHeadDim via mlaParams
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2, // uniform for BOTH mixer kinds — verified against the real decoder layer forward
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2, // uniform for BOTH mixer kinds — verified against the real decoder layer forward
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false,
 		FirstKDense:     cfg.FirstKDenseReplace,
@@ -84,19 +86,19 @@ func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error
 		AttnScale:      math.Pow(float64(qk), -0.5), // plain qk_head_dim^-0.5, the MLA layers' own scale
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		RotaryDim:      cfg.QKRopeHeadDim,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load; tie_word_embeddings false on the release
-		layerIsLinear:  cfg.IsLinearLayer,
-		mla: &mlaParams{
+		LayerIsLinear:  cfg.IsLinearLayer,
+		MLA: &archparts.MLAParams{
 			QLoRARank: cfg.QLoRARank, KVLoRARank: cfg.KVLoRARank,
 			QKNopeHeadDim: cfg.QKNopeHeadDim, QKRopeHeadDim: cfg.QKRopeHeadDim,
-			VHeadDim: cfg.VHeadDim, ropeInterleave: ropeInterleave,
+			VHeadDim: cfg.VHeadDim, RoPEInterleave: ropeInterleave,
 			AttnPrefix: "attention", DenseSuffix: "dense.weight",
 			GateGranularity: cfg.GatedAttentionProjGranularity,
 		},
-		kda: &kdaParams{
+		KDA: &archparts.KDAParams{
 			HeadDim: cfg.HeadDim, NumHeads: cfg.NumHeads, ConvKernel: cfg.ShortConvKernelSize,
 			NoLora: cfg.NoKDALora, SafeGate: cfg.KDASafeGate, LowerBound: cfg.KDALowerBound,
 		},

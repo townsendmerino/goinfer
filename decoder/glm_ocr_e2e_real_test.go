@@ -123,7 +123,7 @@ func glmOcrF32(t *testing.T) (*Model, *vision.GlmOcrVisionEncoder, multimodal.Qw
 		t.Fatal(glmOcrShared.err)
 	}
 	m := glmOcrShared.m
-	if a := m.w.arch; a.Name != "glm_ocr" || len(a.MRopeSection) != 3 {
+	if a := m.w.Arch; a.Name != "glm_ocr" || len(a.MRopeSection) != 3 {
 		t.Fatalf("arch %q mrope %v: the wrong adapter ran", a.Name, a.MRopeSection)
 	}
 	if m.quant != "" {
@@ -220,7 +220,7 @@ func glmOcrRun(t *testing.T, g *glmOcrGolden, pv []float32, grid [3]int, tag str
 	m, enc, pp := glmOcrF32(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 
 	stop := beat(tag + " tower")
 	t0 := time.Now()

@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "math"
 
 // cohereArchitecture expresses Cohere / Command-R (model_type "cohere":
@@ -17,7 +22,7 @@ import "math"
 // divides, so we store its reciprocal and reuse the Granite logit-scale kernel.
 // use_qk_norm (Command-R+) and sliding_window (that's cohere2) are rejected in
 // ValidateCohere, so reaching here implies a plain cohere1 checkpoint.
-func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func cohereArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	// Older CohereLabs configs carry rope_theta top-level; transformers ≥5 nests it
 	// under rope_parameters. Backfill the flat field so both load identically.
 	if err := backfillFlatRope(cfg, "cohere"); err != nil {
@@ -27,7 +32,7 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, err
 	}
 	hd := cfg.EffectiveHeadDim()
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "cohere",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -36,18 +41,18 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormLayer, // bias-free LayerNorm (mean-subtract), NOT RMSNorm
+		Norm:            darch.NormLayer, // bias-free LayerNorm (mean-subtract), NOT RMSNorm
 		NormEps:         cfg.LayerNormEps,
-		NormPlacement:   NormParallel, // one input norm → attn + mlp → single residual add
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormParallel, // one input norm → attn + mlp → single residual add
+		Act:             darch.ActSiLU,
 		QKNorm:          false, // cohere1 use_qk_norm is rejected in ValidateCohere
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   0, // cohere1: full attention (sliding_window ⇒ cohere2, rejected)
-		layerIsGlobal:   nil,
+		LayerIsGlobal:   nil,
 		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		RotaryDim:       cfg.RotaryDim(), // 0 = full head_dim
-		ropeInterleave:  true,            // GPT-J pairwise rotation (rope_gptj), not NeoX
+		RoPEInterleave:  true,            // GPT-J pairwise rotation (rope_gptj), not NeoX
 		EmbedScale:      0,
 		LogitScale:      1.0 / cfg.LogitScale, // reciprocal: HF multiplies, goinfer divides
 		TiedLMHead:      true,                 // Cohere always ties (no lm_head.weight in checkpoint)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -17,7 +19,7 @@ import (
 //     at all (top-level rope_theta + rope_scaling). So this mirrors deepseekArchitecture's dual-path RoPE resolution (nested if present, flat
 //     fields otherwise) rather than qwen35Architecture's nested-only rope.ParseFlat, which hard-errors on an empty rope_parameters
 //     (rope.ParseSpec refuses it).
-func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen3NextArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.NormalizeQwen3NextLayerTypes(); err != nil {
 		return nil, nil, err
 	}
@@ -50,7 +52,7 @@ func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "qwen3_next",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -59,11 +61,11 @@ func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         cfg.HeadDim,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       true, // Qwen3NextRMSNorm(Gemma3RMSNorm): pass — inherits Gemma's (1+w), verified against modular_qwen3_next.py
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		MoE: &MoEConfig{
 			NumExperts:            cfg.NumExperts,
 			TopK:                  cfg.NumExpertsPerTok,
@@ -73,16 +75,16 @@ func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		QKNorm:           true,
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
-		layerIsGlobal:    cfg.IsGlobalLayer,
-		layerIsLinear:    cfg.IsLinearLayer,
+		LayerIsGlobal:    cfg.IsGlobalLayer,
+		LayerIsLinear:    cfg.IsLinearLayer,
 		RoPELocalBase:    base,
 		RoPEGlobalBase:   base,
-		ropeScaling:      scaling,
-		ropeScalingLocal: scaling,
+		RoPEScaling:      scaling,
+		RoPEScalingLocal: scaling,
 		RotaryDim:        rotaryDim,
 		EmbedScale:       0,
 		TiedLMHead:       false,
-		qwen35: &qwen35Params{
+		Qwen35: &archparts.Qwen35Params{
 			ConvKernel:        cfg.LinearConvKernelDim,
 			KeyHeadDim:        cfg.LinearKeyHeadDim,
 			ValueHeadDim:      cfg.LinearValueHeadDim,

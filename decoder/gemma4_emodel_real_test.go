@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -30,16 +31,16 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 	defer m.Close()
 
 	// It must resolve to the E-model shape (PLE present).
-	if g := m.w.arch.gemma4; g == nil || g.HiddenSizePerLayerInput == 0 {
+	if g := m.w.Arch.Gemma4; g == nil || g.HiddenSizePerLayerInput == 0 {
 		t.Fatalf("E2B did not resolve to a Gemma-4 E-model (gemma4=%v ple=%d) — the fixture/loader changed",
-			m.w.arch.gemma4 != nil, func() int {
-				if m.w.arch.gemma4 != nil {
-					return m.w.arch.gemma4.HiddenSizePerLayerInput
+			m.w.Arch.Gemma4 != nil, func() int {
+				if m.w.Arch.Gemma4 != nil {
+					return m.w.Arch.Gemma4.HiddenSizePerLayerInput
 				}
 				return -1
 			}())
 	}
-	t.Logf("E2B resolved: hidden_size_per_layer_input=%d (E-model)", m.w.arch.gemma4.HiddenSizePerLayerInput)
+	t.Logf("E2B resolved: hidden_size_per_layer_input=%d (E-model)", m.w.Arch.Gemma4.HiddenSizePerLayerInput)
 
 	// A resident backend without the E-model bridge must report FeatGemma4EModel missing ⇒ decline. Every real backend has
 	// it now, so the backend without it is each real one's feature set with that one feature removed.
@@ -63,17 +64,17 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 		t.Errorf("cuda's table declines the E-model shape although it lists the PLE operation: %v", err)
 	}
 	for _, be := range []string{"webgpu"} {
-		without := map[ResidentFeature]bool{}
+		without := map[darch.ResidentFeature]bool{}
 		for f, ok := range residentBackendFeatures[be] {
-			without[f] = ok && f != FeatGemma4EModel
+			without[f] = ok && f != darch.FeatGemma4EModel
 		}
 		missing := m.MissingResidentFeatures(without)
-		if !slices.Contains(missing, FeatGemma4EModel) {
+		if !slices.Contains(missing, darch.FeatGemma4EModel) {
 			t.Errorf("%s without the E-model feature: real E2B is NOT declined for the E-model shape (missing=%v) — it would be admitted and mis-run", be, missing)
 		}
 	}
 	for _, be := range []string{"webgpu"} {
-		if missing := m.MissingResidentFeatures(residentBackendFeatures[be]); slices.Contains(missing, FeatGemma4EModel) {
+		if missing := m.MissingResidentFeatures(residentBackendFeatures[be]); slices.Contains(missing, darch.FeatGemma4EModel) {
 			t.Errorf("%s reports the E-model shape missing (missing=%v) although it declares FeatGemma4EModel", be, missing)
 		}
 	}

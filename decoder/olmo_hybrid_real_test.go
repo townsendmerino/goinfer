@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -45,20 +46,20 @@ func TestOlmoHybridReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "olmo_hybrid" {
 		t.Fatalf("arch = %q, want olmo_hybrid", a.Name)
 	}
-	if a.qwen35 == nil {
+	if a.Qwen35 == nil {
 		t.Fatalf("arch.qwen35 is nil, want the DeltaNet geometry set")
 	}
-	if !a.qwen35.NegEigval {
+	if !a.Qwen35.NegEigval {
 		t.Error("qwen35.NegEigval = false, want true (linear_allow_neg_eigval on the real release)")
 	}
-	if a.NormPlacement != NormPostOnly {
+	if a.NormPlacement != darch.NormPostOnly {
 		t.Errorf("NormPlacement = %v, want NormPostOnly (full-attention layers)", a.NormPlacement)
 	}
-	if a.NormPlacementLinear == nil || *a.NormPlacementLinear != NormPre2 {
+	if a.NormPlacementLinear == nil || *a.NormPlacementLinear != darch.NormPre2 {
 		t.Errorf("NormPlacementLinear = %v, want &NormPre2 (DeltaNet layers)", a.NormPlacementLinear)
 	}
 	if !a.QKNorm || !a.QKNormWhole {
@@ -66,7 +67,7 @@ func TestOlmoHybridReal_gate(t *testing.T) {
 	}
 	var linear, full int
 	for l := 0; l < a.NumLayers; l++ {
-		if a.isLinearLayer(l) {
+		if a.IsLinearLayer(l) {
 			linear++
 		} else {
 			full++

@@ -49,14 +49,14 @@ func TestSmolLM3_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "smollm3" {
-		t.Fatalf("resolved arch %q, want smollm3", m.w.arch.Name)
+	if m.w.Arch.Name != "smollm3" {
+		t.Fatalf("resolved arch %q, want smollm3", m.w.Arch.Name)
 	}
 	// The fixture's own no_rope_layers is [1,1,1,0] (4 layers): only the LAST layer is NoPE.
 	// Getting the field's polarity backwards would flip this exactly (3 NoPE, 1 RoPE).
 	wantNoPE := []bool{false, false, false, true}
 	for i, want := range wantNoPE {
-		if got := m.w.arch.isNoPELayer(i); got != want {
+		if got := m.w.Arch.IsNoPELayer(i); got != want {
 			t.Errorf("isNoPELayer(%d) = %v, want %v (no_rope_layers=[1,1,1,0]: 1=has-rope, 0=NoPE)", i, got, want)
 		}
 	}

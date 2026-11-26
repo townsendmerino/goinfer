@@ -26,15 +26,15 @@ func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbed
 // prefillLogitsGemma4VLSpans is prefillLogitsGemma4VL for several images: every span's rows, concatenated in span
 // order in imageEmbeds, replace that span's placeholders.
 func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if arch.gemma4 == nil {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil {
 		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VL called on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	padID := arch.gemma4.PadTokenID
+	padID := arch.Gemma4.PadTokenID
 	var h []float32
 	var err error
 	for i, id := range ids {
@@ -72,8 +72,8 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // prefillLogitsGemma4VLBidirectionalSpans is prefillLogitsGemma4VLBidirectional for several images: each span is its
 // own bidirectional block (gemma4BatchRange).
 func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if arch.gemma4 == nil {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil {
 		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VLBidirectional called on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
@@ -158,7 +158,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			return
 		}
 		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
-		eModel := gemma4IsEModel(m.w.arch)
+		eModel := gemma4IsEModel(m.w.Arch)
 		// An E-model's or a bidirectional checkpoint's image turn prefills on the resident when the backend takes it, from the
 		// rows the CPU path would run (gemma4VLResidentPrefill). A decline falls through to the CPU prefill and upload below,
 		// unchanged.
@@ -239,7 +239,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	var prefill func(rows [][]float32) ([]float32, error)
 	build := m.gemma4EModelImageRowsSpans
 	if m.w.Cfg.UseBidirectionalAttention != "" {
-		if !canStep(m.resident, stepBatch{Pass: passRows, In: inSpans, Emb: stepProbe}) || gemma4IsEModel(m.w.arch) {
+		if !canStep(m.resident, stepBatch{Pass: passRows, In: inSpans, Emb: stepProbe}) || gemma4IsEModel(m.w.Arch) {
 			return false
 		}
 		blocks := imageSpanBlocks(spans)
@@ -302,11 +302,11 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 // feature, unscaled (as the CPU's prefillLogitsGemma4VL splices it), then for an E-model the PLE inputs from PAD's token
 // identity (as runLayersFromEmbedPLE computes them).
 func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	row := make([]float32, m.BackendView().EmbedLen())
 	copy(row[:hidden], feature)
 	if len(row) > hidden {
-		m.gemma4PLEInputs(row[:hidden], m.w.arch.gemma4.PadTokenID, row[hidden:])
+		m.gemma4PLEInputs(row[:hidden], m.w.Arch.Gemma4.PadTokenID, row[hidden:])
 	}
 	return row
 }
@@ -316,8 +316,8 @@ func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
 // feature. It checks the image run against the prompt and the feature count, and returns an error (a decline) rather
 // than slice out of range. gemma4VLRowsDefectForTest plants defects here for the tests that prove the gate can fail.
 func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
-	arch := m.w.arch
-	if arch.gemma4 == nil {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil {
 		return nil, fmt.Errorf("decoder: gemma4EModelImageRows on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
@@ -363,8 +363,8 @@ func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []I
 // prefillLogitsGemma4VLBidirectionalSpans embeds them: embedN of the ids (the program's embed scale applied), with each
 // span's projected features spliced in unscaled. gemma4VLRowsDefectForTest 2 scales the features by the embed scale.
 func (m *Model) gemma4BidirImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
-	arch := m.w.arch
-	if arch.gemma4 == nil {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil {
 		return nil, fmt.Errorf("decoder: gemma4BidirImageRows on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim

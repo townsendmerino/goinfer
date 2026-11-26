@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 
 	"github.com/townsendmerino/aikit/linalg/attn"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // cpuFastAttention reports whether the live environment enables f32 prefill attention (GOINFER_CPU_FAST_ATTENTION; on unless
@@ -34,7 +35,7 @@ func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
 // sinks (gpt-oss), else the env var's answer. gpt-oss's f32 batched attention failed its fidelity gate against the exact path
 // (docs/measurements/gptoss-cpu-prefill-2026-11-23, G3), so its batched prefill always runs the exact kernel.
 func (m *Model) cpuFastAttention() bool {
-	if m.w != nil && m.w.arch != nil && m.w.arch.hasAttnSinks() {
+	if m.w != nil && m.w.Arch != nil && m.w.Arch.HasAttnSinks() {
 		return false
 	}
 	return !m.opts.ExactPrefill && m.knobs.cpuFastAttention()
@@ -101,10 +102,10 @@ func (m *Model) canBatchN(K int) bool {
 func (m *Model) hasRecurrentState() bool {
 	// Nil-safe because residentReuseLen is reachable from a Model with no weights loaded (its unit test builds one). A model with no
 	// arch has no family and so no recurrent state.
-	if m == nil || m.w == nil || m.w.arch == nil {
+	if m == nil || m.w == nil || m.w.Arch == nil {
 		return false
 	}
-	return m.w.arch.recurrent()
+	return m.w.Arch.Recurrent()
 }
 
 // specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores
@@ -121,7 +122,7 @@ func (m *Model) specRollbackSafe() bool { return m.specRollbackSafeVia(nil, 0) }
 // (RecurrentSpecAvailable). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
 // all be Gated DeltaNet (RecurrentSpecArenaBytes), the kind the path is built for.
 func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bool {
-	a := m.w.arch
+	a := m.w.Arch
 	if m.hasRecurrentState() && (fold == nil || width < 1 || width > fold.RecurrentSpecRows() || RecurrentSpecArenaBytes(a, 1) == 0) {
 		return false
 	}
@@ -156,12 +157,12 @@ func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache
 // embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
 // times any embedding scale) — the text input to the batched stack.
 func (m *Model) embedN(ids []int) []float32 {
-	return m.embedNInto(make([]float32, len(ids)*m.w.arch.HiddenDim), ids)
+	return m.embedNInto(make([]float32, len(ids)*m.w.Arch.HiddenDim), ids)
 }
 
 // embedNInto is embedN into h, which holds exactly len(ids)*HiddenDim floats.
 func (m *Model) embedNInto(h []float32, ids []int) []float32 {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	for i, id := range ids {
 		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
@@ -182,7 +183,7 @@ func (m *Model) embedNInto(h []float32, ids []int) []float32 {
 // masked_scatter overwrites the scaled placeholder embed). Returns the [K,
 // HiddenDim] post-final-norm hidden states (the LM head is the caller's).
 func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
-	return m.runLayersFromEmbedNFloor(reqCtx, h, cache, fastAttn, len(h)/m.w.arch.HiddenDim, nil)
+	return m.runLayersFromEmbedNFloor(reqCtx, h, cache, fastAttn, len(h)/m.w.Arch.HiddenDim, nil)
 }
 
 // runLayersFromEmbedNFloor is runLayersFromEmbedN with the fast-attention floor keyed on floorK, the length of the whole
@@ -296,13 +297,13 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // base 0 for a global layer; for a local (sliding-window) layer an assembled [base, startPos+K) window, so the ring's wrap is
 // invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
 // (WindowStart/attendHi), mapped to physical columns by s-base.
-func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, attnParamsFor(arch, cache, global), arch, useAcc64, pool)
 }
 
 // attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
 // form (attentionParams). arch supplies the shapes and the knobs.
-func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, 0, base, cache, layer, startPos, K, ap, arch, useAcc64, pool)
 }
 
@@ -310,9 +311,9 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 // IEEE binary16 bits, keys and vals nil), which the acc64 kernels read in place: bit-identical to widening them into f32 first. f16
 // rows need useAcc64; they skip the grouped kernels, which have no f16 form. rowStride is the elements between one key's row and the
 // next (0: kvDim): a padded cache's rows, read in place.
-func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
-	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
+	nH, nKV, hd := arch.HeadsAt(layer), arch.NumKVHeads, arch.HeadDim
 	a := &kvAttend{q: q, ctx: ctx, keys: keys, vals: vals, keysH: keysH, valsH: valsH, base: base, cache: cache, startPos: startPos,
 		K: K, ap: ap, arch: arch, useAcc64: useAcc64, nH: nH, nKV: nKV, hd: hd, qDim: nH * hd, group: nH / nKV, scale: ap.Scale}
 	a.rs = nKV * hd
@@ -328,7 +329,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 		a.nKeys = len(keysH) / a.rs
 		cache.f16InPlaceReads++
 	}
-	if arch.hasAttnSinks() && ap.Sinks == nil {
+	if arch.HasAttnSinks() && ap.Sinks == nil {
 		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
 	}
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
@@ -390,7 +391,7 @@ type kvAttend struct {
 	rs, base, startPos, K           int
 	cache                           *KVCache
 	ap                              attentionParams
-	arch                            *Architecture
+	arch                            *darch.Architecture
 	useAcc64, f16                   bool
 	fusedOK, groupedOK              bool
 	nH, nKV, hd, qDim, group, nKeys int
@@ -813,7 +814,7 @@ func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
 	hp := &m.program().Head
 	logits := dst
 	if logits == nil {
-		logits = make([]float32, M*m.w.arch.VocabSize)
+		logits = make([]float32, M*m.w.Arch.VocabSize)
 	}
 	if hp.Tied {
 		matmul(m.be, &m.w.Embed, h, logits, M)
@@ -879,7 +880,7 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 	if err != nil {
 		return nil, err
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	t0 := costStart(cache)
 	logits := m.lmHeadNInto(h, K, cache.headLogits(K*vocab))
 	if cache.cost != nil {
@@ -926,9 +927,9 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		return nil, err
 	}
 	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	t0 := costStart(cache)
-	logits := m.lmHeadNInto(h[len(h)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)) // the LM head on the last row only
+	logits := m.lmHeadNInto(h[len(h)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)) // the LM head on the last row only
 	if cache.cost != nil {
 		m.countHead(cache, 1, t0)
 	}
@@ -952,7 +953,7 @@ func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed
 	if cache.prefillChunkable() && !(cache.localAny && fast) {
 		C = prefillChunkRows
 	}
-	hidden, start := m.w.arch.HiddenDim, cache.Pos()
+	hidden, start := m.w.Arch.HiddenDim, cache.Pos()
 	// One working set for every chunk, sized by the first (the largest, unless an image block stretches a later one) and the
 	// whole prefill's keys.
 	ps := &prefillPassScratch{poolKeys: start + n}
@@ -1057,7 +1058,7 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
 	var hN []float32
 	var err error
-	if causal && m.w.arch.lfm2 != nil {
+	if causal && m.w.Arch.LFM2 != nil {
 		hN, err = m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
 	} else {
 		hN, err = m.prefillVLRows(ctx, ids, spans, imageEmbeds, cache, causal, false)
@@ -1065,14 +1066,14 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 	if err != nil {
 		return nil, err
 	}
-	hidden := m.w.arch.HiddenDim
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
+	hidden := m.w.Arch.HiddenDim
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)), nil
 }
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
 // the LM head), so a test can grade every position, not only the last, through the production path.
 func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
-	if causal && m.w.arch.lfm2 != nil { // LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
+	if causal && m.w.Arch.LFM2 != nil { // LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
 		return m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
 	}
 	return m.prefillVLRows(ctx, ids, spans, imageEmbeds, cache, causal, true)
@@ -1084,7 +1085,7 @@ func (m *Model) prefillVLRows(ctx context.Context, ids []int, spans []ImageSpan,
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
@@ -1097,7 +1098,7 @@ func (m *Model) prefillVLRows(ctx context.Context, ids []int, spans []ImageSpan,
 // prefillSpliced runs ids through prefillPassesN with each pass's image rows replaced by their features (raw, no embed scale),
 // returning every position's rows when all, else the last pass's.
 func (m *Model) prefillSpliced(ctx context.Context, ids []int, spans []ImageSpan, feats []float32, cache *KVCache, all bool) ([]float32, error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	var out []float32
 	var keep func(lo int, rows []float32)
 	if all {
@@ -1118,7 +1119,7 @@ func (m *Model) prefillSpliced(ctx context.Context, ids []int, spans []ImageSpan
 // in, each run through the per-token walker in order (the conv windows see every row, image rows included), and each
 // position's hidden state final-normed, as the batched entry returns them.
 func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	hidden := arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
@@ -1156,13 +1157,13 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 // span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (rope.MRoPEPositions with one
 // grid per image).
 func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, mropePos [][3]int, cache *KVCache) ([]float32, error) {
-	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids take their own prefill (batched when qwen35BatchNAnyPos applies)
+	if m.w.Arch.Qwen35 != nil { // the Gated-DeltaNet hybrids take their own prefill (batched when qwen35BatchNAnyPos applies)
 		return m.prefillLogitsQwen35VL(ctx, ids, imageFeats, spans, mropePos, cache)
 	}
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: Qwen2.5-VL prefill needs the batched path (canBatchN false)")
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
 		return nil, err
 	}
@@ -1175,7 +1176,7 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)), nil
 }
 
 // addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image

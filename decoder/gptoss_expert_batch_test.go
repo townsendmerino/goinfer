@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -73,10 +75,10 @@ func TestGptOssExpertBatch_fanOutBitIdentical(t *testing.T) {
 	q4 := func(rows, cols int) linalg.WeightMat {
 		return quantizeLayerWM(linalg.WrapF32(fill(rows*cols, 0.05), rows, cols), quantInt4, false, false)
 	}
-	lw := &LayerWeights{Router: linalg.WrapF32(fill(nExp*hidden, 0.1), nExp, hidden), RouterBias: fill(nExp, 0.1)}
-	lw.Experts = make([]expertWeights, nExp)
+	lw := &darch.LayerWeights{Router: linalg.WrapF32(fill(nExp*hidden, 0.1), nExp, hidden), RouterBias: fill(nExp, 0.1)}
+	lw.Experts = make([]archparts.ExpertWeights, nExp)
 	for e := range lw.Experts {
-		lw.Experts[e] = expertWeights{
+		lw.Experts[e] = archparts.ExpertWeights{
 			Gate: q4(inter, hidden), Up: q4(inter, hidden), Down: q4(hidden, inter),
 			GateBias: fill(inter, 0.1), UpBias: fill(inter, 0.1), DownBias: fill(hidden, 0.1),
 		}
@@ -131,10 +133,10 @@ func TestGptOssMoEBatch_expertMajorEqualsPerRow(t *testing.T) {
 	q4 := func(rows, cols int) linalg.WeightMat {
 		return quantizeLayerWM(linalg.WrapF32(fill(rows*cols, 0.05), rows, cols), quantInt4, false, false)
 	}
-	lw := &LayerWeights{Router: linalg.WrapF32(fill(nExp*hidden, 0.1), nExp, hidden), RouterBias: fill(nExp, 0.1)}
-	lw.Experts = make([]expertWeights, nExp)
+	lw := &darch.LayerWeights{Router: linalg.WrapF32(fill(nExp*hidden, 0.1), nExp, hidden), RouterBias: fill(nExp, 0.1)}
+	lw.Experts = make([]archparts.ExpertWeights, nExp)
 	for e := range lw.Experts {
-		lw.Experts[e] = expertWeights{
+		lw.Experts[e] = archparts.ExpertWeights{
 			Gate: q4(inter, hidden), Up: q4(inter, hidden), Down: q4(hidden, inter),
 			GateBias: fill(inter, 0.1), UpBias: fill(inter, 0.1), DownBias: fill(hidden, 0.1),
 		}
@@ -180,9 +182,9 @@ func TestGptOssPrefill_batchedEqualsSequential(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			a := m.w.arch
-			if a.gptoss == nil || a.SlidingWindow <= 0 {
-				t.Fatalf("the fixture must be a windowed gpt-oss: gptoss %v, window %d", a.gptoss != nil, a.SlidingWindow)
+			a := m.w.Arch
+			if a.GPTOSS == nil || a.SlidingWindow <= 0 {
+				t.Fatalf("the fixture must be a windowed gpt-oss: gptoss %v, window %d", a.GPTOSS != nil, a.SlidingWindow)
 			}
 			n := 2*a.SlidingWindow + 10
 			if !m.canBatchN(n) {

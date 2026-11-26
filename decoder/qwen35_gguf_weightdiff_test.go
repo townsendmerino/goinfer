@@ -21,6 +21,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -28,7 +29,7 @@ import (
 // at f32 (the DeltaNet/softmax tensors are always f32 on this path; experts go
 // int8 since this probe never compares them). Truncating NumLayers makes the
 // loader touch only blk.0..nLayer-1 — fast, a few GB vs the 37 GB file.
-func loadQwen35GGUFSlice(t *testing.T, path string, nLayer int) (*Weights, func()) {
+func loadQwen35GGUFSlice(t *testing.T, path string, nLayer int) (*darch.Weights, func()) {
 	t.Helper()
 	g, err := embed.OpenGGUFMmap(path)
 	if err != nil {
@@ -122,7 +123,7 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 	}
 
 	for i := range nLayer {
-		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.arch, i))
+		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.Arch, i))
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]
 		check("attn_norm", lg.PreAttnNorm, lr.PreAttnNorm)
 		check("post_attention_norm", lg.PreMLPNorm, lr.PreMLPNorm)
@@ -138,35 +139,35 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		if lr.RouterBias != nil || lg.RouterBias != nil {
 			check("router_bias", lg.RouterBias, lr.RouterBias)
 		}
-		if lr.delta != nil && lg.delta != nil {
-			dr, dg := lr.delta, lg.delta
-			check("in_proj_qkv", wmDense(t, "in_proj_qkv", &dg.inProjQKV), wmDense(t, "in_proj_qkv", &dr.inProjQKV)) // V-block un-tile
-			check("in_proj_z", wmDense(t, "in_proj_z", &dg.inProjZ), wmDense(t, "in_proj_z", &dr.inProjZ))           // full un-tile
-			check("in_proj_a", dg.inProjA, dr.inProjA)
-			check("in_proj_b", dg.inProjB, dr.inProjB)
-			check("conv1d", dg.convW, dr.convW) // V-channel un-tile
-			check("dt_bias", dg.dtBias, dr.dtBias)
-			check("negExpA", dg.negExpA, dr.negExpA)                                                    // −exp(A_log) bake vs computed
-			check("ssm_norm", dg.normW, dr.normW)                                                       // NOT (1+w)'d — raw load
-			check("out_proj", wmDense(t, "out_proj", &dg.outProj), wmDense(t, "out_proj", &dr.outProj)) // column un-tile
-		} else if lr.qattn != nil && lg.qattn != nil {
-			ar, ag := lr.qattn, lg.qattn
-			check("q_proj(query‖gate)", wmDense(t, "q_proj", &ag.qProj), wmDense(t, "q_proj", &ar.qProj)) // fused double-width — prime suspect
-			check("k_proj", wmDense(t, "k_proj", &ag.kProj), wmDense(t, "k_proj", &ar.kProj))
-			check("v_proj", wmDense(t, "v_proj", &ag.vProj), wmDense(t, "v_proj", &ar.vProj))
-			check("o_proj", wmDense(t, "o_proj", &ag.oProj), wmDense(t, "o_proj", &ar.oProj))
-			check("q_norm", ag.qNorm, ar.qNorm)
-			check("k_norm", ag.kNorm, ar.kNorm)
+		if lr.Delta != nil && lg.Delta != nil {
+			dr, dg := lr.Delta, lg.Delta
+			check("in_proj_qkv", wmDense(t, "in_proj_qkv", &dg.InProjQKV), wmDense(t, "in_proj_qkv", &dr.InProjQKV)) // V-block un-tile
+			check("in_proj_z", wmDense(t, "in_proj_z", &dg.InProjZ), wmDense(t, "in_proj_z", &dr.InProjZ))           // full un-tile
+			check("in_proj_a", dg.InProjA, dr.InProjA)
+			check("in_proj_b", dg.InProjB, dr.InProjB)
+			check("conv1d", dg.ConvW, dr.ConvW) // V-channel un-tile
+			check("dt_bias", dg.DtBias, dr.DtBias)
+			check("negExpA", dg.NegExpA, dr.NegExpA)                                                    // −exp(A_log) bake vs computed
+			check("ssm_norm", dg.NormW, dr.NormW)                                                       // NOT (1+w)'d — raw load
+			check("out_proj", wmDense(t, "out_proj", &dg.OutProj), wmDense(t, "out_proj", &dr.OutProj)) // column un-tile
+		} else if lr.QAttn != nil && lg.QAttn != nil {
+			ar, ag := lr.QAttn, lg.QAttn
+			check("q_proj(query‖gate)", wmDense(t, "q_proj", &ag.QProj), wmDense(t, "q_proj", &ar.QProj)) // fused double-width — prime suspect
+			check("k_proj", wmDense(t, "k_proj", &ag.KProj), wmDense(t, "k_proj", &ar.KProj))
+			check("v_proj", wmDense(t, "v_proj", &ag.VProj), wmDense(t, "v_proj", &ar.VProj))
+			check("o_proj", wmDense(t, "o_proj", &ag.OProj), wmDense(t, "o_proj", &ar.OProj))
+			check("q_norm", ag.QNorm, ar.QNorm)
+			check("k_norm", ag.KNorm, ar.KNorm)
 		} else {
 			t.Errorf("layer %d: attn kind mismatch (ref delta=%v qattn=%v / gguf delta=%v qattn=%v)",
-				i, lr.delta != nil, lr.qattn != nil, lg.delta != nil, lg.qattn != nil)
+				i, lr.Delta != nil, lr.QAttn != nil, lg.Delta != nil, lg.QAttn != nil)
 		}
 	}
 	t.Logf("=== weightDiff: worst tensor cosine %.6f (%s) over layers 0-%d ===", worstCos, worstName, nLayer-1)
 }
 
-func layerKind(arch *Architecture, i int) string {
-	if arch.isLinearLayer(i) {
+func layerKind(arch *darch.Architecture, i int) string {
+	if arch.IsLinearLayer(i) {
 		return "DeltaNet/linear"
 	}
 	return "softmax"

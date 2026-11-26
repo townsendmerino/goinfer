@@ -67,19 +67,19 @@ func TestQwen3NextSlice_realWeightOracle(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "qwen3_next" || a.NumLayers != g.NLayers {
 		t.Fatalf("arch = %q with %d layers, want qwen3_next with %d", a.Name, a.NumLayers, g.NLayers)
 	}
 	// The hybrid split, synthesized from full_attention_interval rather than read from a
 	// layer_types list. Layers 0-2 linear (Gated DeltaNet), layer 3 full attention.
 	for i, wantLinear := range []bool{true, true, true, false} {
-		if got := a.isLinearLayer(i); got != wantLinear {
+		if got := a.IsLinearLayer(i); got != wantLinear {
 			t.Fatalf("isLinearLayer(%d) = %v, want %v — full_attention_interval=4 puts the only "+
 				"full-attention layer of this slice at index 3", i, got, wantLinear)
 		}
 	}
-	if a.qwen35 == nil {
+	if a.Qwen35 == nil {
 		t.Fatal("arch.qwen35 is nil — qwen3_next rides the qwen3_5_moe DeltaNet geometry")
 	}
 	if a.MoE == nil || a.MoE.NumExperts != 512 || a.MoE.TopK != 10 {

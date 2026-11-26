@@ -1,37 +1,13 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+
 	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
-	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
-
-// shortConvWeights is one LFM2 gated short-convolution mixer.
-//
-// The block, from transformers' Lfm2ShortConv:
-//
-//	B, C, x = split(inProj(h), 3)      each [convDim]
-//	Bx      = B * x
-//	conv    = depthwise_causal_conv(Bx, convW)     kernel K, NO activation
-//	y       = C * conv
-//	out     = outProj(y)
-//
-// TWO THINGS HERE ARE EASY TO GET PLAUSIBLY WRONG, so both are stated rather than left
-// to the reader:
-//
-//   - THERE IS NO ACTIVATION on the conv output. Mamba-2's structurally-identical conv
-//     applies SiLU and DeltaNet's does too, so the third copy of this loop in this tree is
-//     the odd one out. Upstream passes activation=None; adding SiLU would still generate
-//     fluent text, just not this model's text.
-//   - THE SPLIT ORDER IS B, C, x — the gate that multiplies BEFORE the conv is first and
-//     the one that multiplies AFTER is second. Swapping B and C is a silent transposition
-//     of two gates that are both elementwise and both [convDim], so nothing errors.
-type shortConvWeights struct {
-	inProj  linalg.WeightMat // [3*convDim, hidden] — B|C|x stacked in that order; bf16 or f32 (islandMat)
-	convW   []float32        // [convDim, K]        — depthwise ([convDim,1,K] flattened)
-	outProj linalg.WeightMat // [hidden, convDim]; bf16 or f32 (islandMat)
-}
 
 // loadLFM2Conv reads one LFM2 gated short-convolution mixer from a safetensors checkpoint.
 //
@@ -43,25 +19,25 @@ type shortConvWeights struct {
 // Stored f32, matching the qwen3_5_moe linear layers: this is a parity-first forward, and the
 // conv is ~0.6% of the model's bytes (three tensors per layer against a 10752-wide FFN), so
 // quantizing it would buy little and add a numeric variable to a new family's first oracle.
-func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
+func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, arch *darch.Architecture, hidden int,
 	tn func(int, string) string,
 ) error {
-	g := arch.lfm2
+	g := arch.LFM2
 	nm := func(suf string) string { return tn(i, suf) }
-	c := &shortConvWeights{}
+	c := &archparts.ShortConvWeights{}
 	var err error
-	if c.inProj, err = stIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
+	if c.InProj, err = stIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
 		return err
 	}
 	// [convDim, 1, K] on disk — the middle dim is the depthwise groups=channels marker and is
 	// always 1, so it flattens to [convDim, K].
-	if c.convW, err = st.TensorF32(nm("conv.conv.weight"), g.ConvDim, 1, g.ConvLCache); err != nil {
+	if c.ConvW, err = st.TensorF32(nm("conv.conv.weight"), g.ConvDim, 1, g.ConvLCache); err != nil {
 		return err
 	}
-	if c.outProj, err = stIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
+	if c.OutProj, err = stIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
 		return err
 	}
-	l.shortConv = c
+	l.ShortConv = c
 	return nil
 }
 

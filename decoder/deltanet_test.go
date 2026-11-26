@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
@@ -36,7 +37,7 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 	}
 	d := func(k string) int { return int(g.Dims[k]) }
 	hidden, seq := d("hidden"), d("seq")
-	p := qwen35Params{
+	p := archparts.Qwen35Params{
 		ConvKernel:    d("conv_kernel"),
 		KeyHeadDim:    d("head_k_dim"),
 		ValueHeadDim:  d("head_v_dim"),
@@ -45,16 +46,16 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 	}
 	keyDim, valueDim := p.KeyHeadDim*p.NumKeyHeads, p.ValueHeadDim*p.NumValueHeads
 	convDim := 2*keyDim + valueDim
-	w := &deltaNetWeights{
-		inProjQKV: linalg.WrapF32(g.W["in_proj_qkv"], convDim, hidden),
-		inProjZ:   linalg.WrapF32(g.W["in_proj_z"], valueDim, hidden),
-		inProjB:   g.W["in_proj_b"],
-		inProjA:   g.W["in_proj_a"],
-		convW:     g.W["conv1d_weight"],
-		dtBias:    g.W["dt_bias"],
-		negExpA:   hybridattn.NegExpAFromLog(g.W["A_log"]),
-		normW:     g.W["norm_weight"],
-		outProj:   linalg.WrapF32(g.W["out_proj"], hidden, valueDim),
+	w := &archparts.DeltaNetWeights{
+		InProjQKV: linalg.WrapF32(g.W["in_proj_qkv"], convDim, hidden),
+		InProjZ:   linalg.WrapF32(g.W["in_proj_z"], valueDim, hidden),
+		InProjB:   g.W["in_proj_b"],
+		InProjA:   g.W["in_proj_a"],
+		ConvW:     g.W["conv1d_weight"],
+		DtBias:    g.W["dt_bias"],
+		NegExpA:   hybridattn.NegExpAFromLog(g.W["A_log"]),
+		NormW:     g.W["norm_weight"],
+		OutProj:   linalg.WrapF32(g.W["out_proj"], hidden, valueDim),
 	}
 
 	h := make([][]float32, seq)
@@ -101,7 +102,7 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 		eps      = 1e-6
 		steps    = 4
 	)
-	p := qwen35Params{
+	p := archparts.Qwen35Params{
 		ConvKernel:    convK,
 		KeyHeadDim:    hk,
 		ValueHeadDim:  hv,
@@ -170,16 +171,16 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &deltaNetWeights{
-				inProjQKV: tc.wrap(qkvF32, convDim, hidden),
-				inProjZ:   tc.wrap(zF32, valueDim, hidden),
-				inProjB:   inProjB,
-				inProjA:   inProjA,
-				convW:     convW,
-				dtBias:    dtBias,
-				negExpA:   negExpA,
-				normW:     normW,
-				outProj:   tc.wrap(outF32, hidden, valueDim),
+			w := &archparts.DeltaNetWeights{
+				InProjQKV: tc.wrap(qkvF32, convDim, hidden),
+				InProjZ:   tc.wrap(zF32, valueDim, hidden),
+				InProjB:   inProjB,
+				InProjA:   inProjA,
+				ConvW:     convW,
+				DtBias:    dtBias,
+				NegExpA:   negExpA,
+				NormW:     normW,
+				OutProj:   tc.wrap(outF32, hidden, valueDim),
 			}
 			gotSt := newDeltaState(p)
 			wantSt := newDeltaState(p)
@@ -187,14 +188,14 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 				h := fill(hidden, float32(step+2)*0.37)
 				got := gatedDeltaNetStep(nil, h, w, p, hidden, eps, gotSt)
 
-				wantSt.hq.prepare(nil, &w.inProjQKV, h, 1)
-				mixed := matvecWMPre(nil, &w.inProjQKV, &wantSt.hq, h)
-				bt := hybridattn.Matvec(w.inProjB, nv, hidden, h)
-				at := hybridattn.Matvec(w.inProjA, nv, hidden, h)
-				z := matvecWMPre(nil, &w.inProjZ, &wantSt.hq, h)
+				wantSt.hq.prepare(nil, &w.InProjQKV, h, 1)
+				mixed := matvecWMPre(nil, &w.InProjQKV, &wantSt.hq, h)
+				bt := hybridattn.Matvec(w.InProjB, nv, hidden, h)
+				at := hybridattn.Matvec(w.InProjA, nv, hidden, h)
+				z := matvecWMPre(nil, &w.InProjZ, &wantSt.hq, h)
 				core := make([]float32, valueDim)
 				deltaNetCore(core, mixed, bt, at, z, w, p, eps, wantSt)
-				want := matvecWM(nil, &w.outProj, core)
+				want := matvecWM(nil, &w.OutProj, core)
 
 				nonZero := false
 				for _, v := range want {

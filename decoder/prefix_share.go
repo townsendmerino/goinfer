@@ -110,7 +110,7 @@ func (m *Model) resumeHidden(ctx context.Context, cp *prefixCheckpoint, suffix [
 	if len(suffix) == 0 {
 		return nil, fmt.Errorf("decoder: an empty suffix (the prompt would end at the shared prefix)")
 	}
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(cp.n + len(suffix))
 	if err := cache.copyStateFrom(cp.cache); err != nil {
 		return nil, err

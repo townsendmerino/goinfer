@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -15,7 +17,7 @@ import (
 // RotaryDim; LongRoPE (the 128k variants' su/longrope scaling) is deferred — a checkpoint
 // carrying it fails loudly at rope.ParseScaling. Phi-4 (14B) and Phi-3-mini-4k use full
 // rotary + no scaling. The tensor schema is the phi3TensorSchema marker.
-func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func phi3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	hd := cfg.EffectiveHeadDim()
 	// RoPE: transformers ≥5.11 saves the flat rope_parameters {rope_theta,
 	// partial_rotary_factor, rope_type}; the released Phi-4/Phi-3 configs use a
@@ -53,7 +55,7 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.SlidingWindow > 0 {
 		layerIsGlobal = func(int) bool { return false }
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "phi3",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -62,11 +64,11 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false,
 		AttnScale:       math.Pow(float64(hd), -0.5),
@@ -74,8 +76,8 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RoPEGlobalBase:  base,
 		RotaryDim:       rotaryDim,         // partial_rotary_factor · head_dim; 0 = full
 		SlidingWindow:   cfg.SlidingWindow, // 0 ⇒ full attention (Phi-4, and the GGUFs)
-		layerIsGlobal:   layerIsGlobal,     // all-local when windowed
-		ropeScaling:     scaling,
+		LayerIsGlobal:   layerIsGlobal,     // all-local when windowed
+		RoPEScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &phi3TensorSchema, nil

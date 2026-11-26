@@ -10,6 +10,7 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -44,28 +45,28 @@ func TestGemma12_forwardParity(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
-			a := m.w.arch
+			a := m.w.Arch
 			if tc.file != "" { // the GGUF load must derive what the HF config states
 				st, err := Load("../testdata/"+tc.name+"-tiny", Options{})
 				if err != nil {
 					t.Fatal(err)
 				}
-				b := st.w.arch
+				b := st.w.Arch
 				st.Close()
 				if a.AttnScale != b.AttnScale || a.SlidingWindow != b.SlidingWindow || a.AttnLogitSoftcap != b.AttnLogitSoftcap ||
 					a.FinalLogitSoftcap != b.FinalLogitSoftcap || a.NumKVHeads != b.NumKVHeads || a.HeadDim != b.HeadDim {
 					t.Fatalf("GGUF arch %+v differs from the safetensors one %+v", a, b)
 				}
 				for i := range a.NumLayers {
-					if a.isGlobalLayer(i) != b.isGlobalLayer(i) {
-						t.Fatalf("layer %d: GGUF global %v, safetensors %v", i, a.isGlobalLayer(i), b.isGlobalLayer(i))
+					if a.IsGlobalLayer(i) != b.IsGlobalLayer(i) {
+						t.Fatalf("layer %d: GGUF global %v, safetensors %v", i, a.IsGlobalLayer(i), b.IsGlobalLayer(i))
 					}
 				}
 			}
 			if a.Name != tc.arch || !a.RMSAddOne || a.EmbedScale != 8 || !a.TiedLMHead || a.QKNorm {
 				t.Fatalf("resolved %s: RMSAddOne %v EmbedScale %v Tied %v QKNorm %v", a.Name, a.RMSAddOne, a.EmbedScale, a.TiedLMHead, a.QKNorm)
 			}
-			if (a.NormPlacement == NormSandwich4) != tc.sandw || (a.AttnLogitSoftcap == 5 && a.FinalLogitSoftcap == 3) != tc.softcap {
+			if (a.NormPlacement == darch.NormSandwich4) != tc.sandw || (a.AttnLogitSoftcap == 5 && a.FinalLogitSoftcap == 3) != tc.softcap {
 				t.Fatalf("%s: placement %v softcaps %v/%v", a.Name, a.NormPlacement, a.AttnLogitSoftcap, a.FinalLogitSoftcap)
 			}
 			check := func(path string, logits []float32) {

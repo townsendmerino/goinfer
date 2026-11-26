@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -28,7 +29,7 @@ import (
 //	  if Sandwich4 { g = rmsNorm(g, PostMLPNorm) }
 //	  h += g
 func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
@@ -82,7 +83,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 // runLayers and grow the same seam when those families go multimodal).
 func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	pad := -1
-	if g := m.w.arch.gemma4; g != nil {
+	if g := m.w.Arch.Gemma4; g != nil {
 		pad = g.PadTokenID // a row with no token behind it takes the pad id's PLE, as HF's multimodal forward does
 	}
 	return m.runLayersFromEmbedPLE(h, pad, cache)
@@ -92,7 +93,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 // text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, the Gemma 4 vision entry).
 func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
-		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.arch, m.knobs)
+		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.Arch, m.knobs)
 	}
 	return m.walkToken(m.program(), h, pleID, cache)
 }
@@ -149,8 +150,8 @@ func addResidual2(h, sub, sub2 []float32) {
 // normalizeInto applies the architecture's normalization from src into dst over one row:
 // LayerNorm (mean-centered, with bias) for GPT-2/NeoX, else RMSNorm. bias is
 // ignored by RMSNorm (and nil for the Sandwich4 post-norms).
-func normalizeInto(arch *Architecture, dst, src, weight, bias []float32, dim int) {
-	if arch.Norm == NormLayer {
+func normalizeInto(arch *darch.Architecture, dst, src, weight, bias []float32, dim int) {
+	if arch.Norm == darch.NormLayer {
 		normact.LayerInto(dst, src, weight, bias, 1, dim, arch.NormEps)
 		return
 	}
@@ -158,7 +159,7 @@ func normalizeInto(arch *Architecture, dst, src, weight, bias []float32, dim int
 }
 
 // normalize applies the architecture's normalization in place over one row.
-func normalize(arch *Architecture, x, weight, bias []float32, dim int) {
+func normalize(arch *darch.Architecture, x, weight, bias []float32, dim int) {
 	normalizeInto(arch, x, x, weight, bias, dim)
 }
 
@@ -199,7 +200,7 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
-	a := m.w.arch
+	a := m.w.Arch
 	for _, l := range layers {
 		if l < 0 || l >= a.NumLayers {
 			return nil, nil, fmt.Errorf("decoder.ForwardCapture: layer %d out of range [0,%d)", l, a.NumLayers)
@@ -223,7 +224,7 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // two; gate S of §4.8's seams PR rebuilds each layer's residual from them. Refused where a layer has an operation they do not
 // cover (program.subCaptureUncovered).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
-	a := m.w.arch
+	a := m.w.Arch
 	if m.program().SubCaptureUncovered() {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q: a layer has an operation its contributions do not cover (Gemma 4's PLE branch or MoE block)", a.Name)
 	}
@@ -278,7 +279,7 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 		b = nil
 	}
 	t0 := costStart(cache)
-	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
+	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.Arch.HiddenDim)
 	if cache.cost != nil {
 		m.countFinalNorm(cache, 1, b, t0)
 		t0 = time.Now()

@@ -4,6 +4,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder/quant"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // MLX quantized safetensors checkpoints (mlx-lm).
@@ -17,7 +18,7 @@ func reconstructSafetensorsMat2D(st *embed.SafetensorsFile, qc *quantConfig, nam
 
 // loadSwitchMLPExperts loads MLX's 3-D stacked MoE experts (`mlp.switch_mlp.{gate_proj,up_proj,down_proj}`)
 // one expert at a time through `forExperts`.
-func loadSwitchMLPExperts(st *embed.SafetensorsFile, switchPrefix string, nExpert, inter, hidden int, qMode quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]expertWeights, error) {
+func loadSwitchMLPExperts(st *embed.SafetensorsFile, switchPrefix string, nExpert, inter, hidden int, qMode quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]archparts.ExpertWeights, error) {
 	gateSlice, err := quant.MLXExpertSlice3D(st, switchPrefix+".gate_proj", nExpert, inter, hidden)
 	if err != nil {
 		return nil, err
@@ -33,7 +34,7 @@ func loadSwitchMLPExperts(st *embed.SafetensorsFile, switchPrefix string, nExper
 	q := func(data []float32, rows, cols int) linalg.WeightMat {
 		return quantizeLayerWM(linalg.WrapF32(data, rows, cols), qMode, needCanonical, skipRow4)
 	}
-	experts := make([]expertWeights, nExpert)
+	experts := make([]archparts.ExpertWeights, nExpert)
 	err = forExperts(nExpert, sink, func(e int) error {
 		gData, err := gateSlice(e)
 		if err != nil {
@@ -47,7 +48,7 @@ func loadSwitchMLPExperts(st *embed.SafetensorsFile, switchPrefix string, nExper
 		if err != nil {
 			return err
 		}
-		experts[e] = expertWeights{
+		experts[e] = archparts.ExpertWeights{
 			Gate: q(gData, inter, hidden),
 			Up:   q(uData, inter, hidden),
 			Down: q(dData, hidden, inter),

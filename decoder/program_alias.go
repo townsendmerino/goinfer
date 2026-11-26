@@ -10,25 +10,17 @@ type (
 	opKind           = program.OpKind
 	opReg            = program.Reg
 	op               = program.Op
-	normSlot         = program.NormSlot
-	normForm         = program.NormForm
 	normParams       = program.NormParams
 	projParams       = program.ProjParams
 	qkNormParams     = program.QKNormParams
 	ropeParams       = program.RopeParams
-	attnTempParams   = program.AttnTempParams
-	attnOrder        = program.AttnOrder
 	attentionParams  = program.AttentionParams
-	outGateParams    = program.OutGateParams
 	mlaOpParams      = program.MLAOpParams
-	kdaOpParams      = program.KDAOpParams
 	ffnParams        = program.FFNParams
-	residualParams   = program.ResidualParams
 	deltaNetOpParams = program.DeltaNetOpParams
 	gatedAttnParams  = program.GatedAttnParams
 	gemma4AttnParams = program.Gemma4AttnParams
 	normEpsParams    = program.NormEpsParams
-	mamba2OpParams   = program.Mamba2OpParams
 	embedParams      = program.EmbedParams
 	headParams       = program.HeadParams
 )
@@ -85,7 +77,6 @@ const (
 )
 
 // genericKinds are the operations of the generic layer (program.GenericKinds).
-var genericKinds = program.GenericKinds
 
 // Program returns m's program. The GPU backends read it at build time. It is read-only by contract, slices included: every
 // walker and backend shares the one copy. A Model assembled by a test without modelFromOptions has none, and each call builds a

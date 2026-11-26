@@ -50,7 +50,7 @@ func TestLlamaReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "llama" {
 		t.Fatalf("arch = %q, want llama", a.Name)
 	}

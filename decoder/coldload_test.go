@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
@@ -50,12 +51,12 @@ func TestPlanColdLoad(t *testing.T) {
 // on the CPU only; and a system with no policy none.
 func TestColdLoadPolicy_qualifies(t *testing.T) {
 	const gb = int64(1) << 30
-	moe := &Architecture{NumLayers: 40, MoE: &MoEConfig{NumExperts: 256}}
-	dense := &Architecture{NumLayers: 28}
+	moe := &darch.Architecture{NumLayers: 40, MoE: &MoEConfig{NumExperts: 256}}
+	dense := &darch.Architecture{NumLayers: 28}
 	for _, c := range []struct {
 		name   string
 		policy coldLoadPolicy
-		arch   *Architecture
+		arch   *darch.Architecture
 		onCPU  bool
 		want   bool
 	}{
@@ -81,19 +82,19 @@ func TestColdLoadPolicy_qualifies(t *testing.T) {
 // TestExpertMatricesAreSmall: only an MoE whose separate expert matrices average at most coldSmallMatrixBytes counts.
 func TestExpertMatricesAreSmall(t *testing.T) {
 	const gb = int64(1) << 30
-	moe := func(layers, experts int) *Architecture {
-		return &Architecture{NumLayers: layers, MoE: &MoEConfig{NumExperts: experts}}
+	moe := func(layers, experts int) *darch.Architecture {
+		return &darch.Architecture{NumLayers: layers, MoE: &MoEConfig{NumExperts: experts}}
 	}
 	for _, c := range []struct {
 		name string
-		arch *Architecture
+		arch *darch.Architecture
 		file int64
 		want bool
 	}{
 		{"40 layers of 256 experts in 20 GB (0.65 MB a matrix)", moe(40, 256), 20 * gb, true},
 		{"28 layers of 64 experts in 7 GB", moe(28, 64), 7 * gb, true},
 		{"32 layers of 8 experts in 26 GB (34 MB a matrix)", moe(32, 8), 26 * gb, false},
-		{"a dense model", &Architecture{NumLayers: 28}, 5 * gb, false},
+		{"a dense model", &darch.Architecture{NumLayers: 28}, 5 * gb, false},
 		{"no architecture", nil, 5 * gb, false},
 		{"an MoE descriptor with no experts", moe(28, 0), 5 * gb, false},
 	} {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // layerPager streams a dense model's per-layer weights out of the read-only .giw mapping (docs/ideas-weight-memory.md,
@@ -42,13 +43,13 @@ type layerPager struct {
 // newLayerPager builds a streaming pager over a dense mmap-backed model, or returns
 // nil when paging doesn't apply (MoE, not mmap-backed, no mapped layer weights, or
 // the budget already holds every layer). budget ≤ 0 selects ~half of available RAM.
-func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
-	if w.arch.MoE != nil || len(mapping) == 0 {
+func newLayerPager(w *darch.Weights, mapping []byte, budget int64) *layerPager {
+	if w.Arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
 	// Only a layer made of the generic operations pages: an own loop never calls enterLayer, and the spans below cover the
 	// generic layer's weights, not a mixer's (Architecture.genericKindsOnly).
-	if !w.arch.genericKindsOnly() {
+	if !w.Arch.GenericKindsOnly() {
 		return nil
 	}
 	base := uintptr(unsafe.Pointer(&mapping[0]))

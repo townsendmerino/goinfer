@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "testing"
 
 // TestSpecRollbackSafe_refusesWindowedAndRecurrent is the C-04 regression gate. specRollbackSafe used
@@ -11,19 +16,19 @@ import "testing"
 // pins that: a change reopening windowed/recurrent speculation without consuming TruncateTo's exact
 // bool at every rollback site fails here.
 func TestSpecRollbackSafe_refusesWindowedAndRecurrent(t *testing.T) {
-	mk := func(a *Architecture) *Model { return &Model{w: &Weights{arch: a}} }
+	mk := func(a *darch.Architecture) *Model { return &Model{w: &darch.Weights{Arch: a}} }
 	for _, c := range []struct {
 		name string
-		arch *Architecture
+		arch *darch.Architecture
 		want bool
 	}{
-		{"plain (no window, no recurrent)", &Architecture{}, true},
-		{"sliding-window (Gemma-3 local / Mistral / Phi-3)", &Architecture{SlidingWindow: 512}, false},
-		{"sliding-window even with a resident-eligible dense arch", &Architecture{SlidingWindow: 4096}, false},
+		{"plain (no window, no recurrent)", &darch.Architecture{}, true},
+		{"sliding-window (Gemma-3 local / Mistral / Phi-3)", &darch.Architecture{SlidingWindow: 512}, false},
+		{"sliding-window even with a resident-eligible dense arch", &darch.Architecture{SlidingWindow: 4096}, false},
 		// One recurrent layer each: a family whose layers are all attention carries no in-place state.
-		{"recurrent: granite (Mamba-2)", &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}, false},
-		{"recurrent: nemotron-h", &Architecture{NumLayers: 1, nemotron: &nemotronParams{blockKind: []uint8{nemoMamba}}}, false},
-		{"recurrent: qwen3_5_moe (Gated DeltaNet)", &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}, false},
+		{"recurrent: granite (Mamba-2)", &darch.Architecture{NumLayers: 1, Granite: &archparts.GraniteParams{}, LayerIsMamba: func(int) bool { return true }}, false},
+		{"recurrent: nemotron-h", &darch.Architecture{NumLayers: 1, Nemotron: &archparts.NemotronParams{BlockKind: []uint8{archparts.NemoMamba}}}, false},
+		{"recurrent: qwen3_5_moe (Gated DeltaNet)", &darch.Architecture{NumLayers: 1, Qwen35: &archparts.Qwen35Params{}, LayerIsLinear: func(int) bool { return true }}, false},
 	} {
 		if got := mk(c.arch).specRollbackSafe(); got != c.want {
 			t.Errorf("%s: specRollbackSafe = %v, want %v", c.name, got, c.want)

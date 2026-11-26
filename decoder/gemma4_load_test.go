@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -47,8 +48,8 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 	eq("HeadDim(local)", arch.HeadDim, 256)
 	eq("RMSAddOne", arch.RMSAddOne, false)
 	eq("AttnScale", arch.AttnScale, 1.0)
-	eq("NormPlacement", arch.NormPlacement, NormSandwich4)
-	eq("Act", arch.Act, ActGeluTanh)
+	eq("NormPlacement", arch.NormPlacement, darch.NormSandwich4)
+	eq("Act", arch.Act, darch.ActGeluTanh)
 	eq("QKNorm", arch.QKNorm, true)
 	eq("TiedLMHead", arch.TiedLMHead, true)
 	eq("FinalLogitSoftcap", arch.FinalLogitSoftcap, float64(30))
@@ -58,7 +59,7 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 		t.Errorf("EmbedScale = %v, want %v", arch.EmbedScale, want)
 	}
 
-	g4 := arch.gemma4
+	g4 := arch.Gemma4
 	if g4 == nil {
 		t.Fatal("arch.gemma4 nil")
 	}
@@ -73,18 +74,18 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 	if len(g4.FFNPerLayer) != 35 {
 		t.Fatalf("FFNPerLayer len = %d, want 35", len(g4.FFNPerLayer))
 	}
-	eq("ffnAt(0)", arch.ffnAt(0), 6144)
-	eq("ffnAt(14)", arch.ffnAt(14), 6144)
-	eq("ffnAt(15)", arch.ffnAt(15), 12288)
-	eq("ffnAt(34)", arch.ffnAt(34), 12288)
+	eq("ffnAt(0)", arch.FFNAt(0), 6144)
+	eq("ffnAt(14)", arch.FFNAt(14), 6144)
+	eq("ffnAt(15)", arch.FFNAt(15), 12288)
+	eq("ffnAt(34)", arch.FFNAt(34), 12288)
 
 	// 4 sliding : 1 global (global at i where (i+1)%5==0).
-	eq("isGlobal(0)", arch.isGlobalLayer(0), false)
-	eq("isGlobal(4)", arch.isGlobalLayer(4), true)
-	eq("isGlobal(34)", arch.isGlobalLayer(34), true)
+	eq("isGlobal(0)", arch.IsGlobalLayer(0), false)
+	eq("isGlobal(4)", arch.IsGlobalLayer(4), true)
+	eq("isGlobal(34)", arch.IsGlobalLayer(34), true)
 	// Per-layer head_dim follows the pattern.
-	eq("headDimAt(0)", arch.headDimAt(0), 256)
-	eq("headDimAt(4)", arch.headDimAt(4), 512)
+	eq("headDimAt(0)", arch.HeadDimAt(0), 256)
+	eq("headDimAt(4)", arch.HeadDimAt(4), 512)
 }
 
 // TestGemma4Load exercises the full gemma4 weight load against the real E2B GGUF: per-layer head_dim/FFN, the KV-shared

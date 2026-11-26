@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -12,7 +14,7 @@ import (
 // at moe_intermediate_size, norm_topk_prob) but with NO always-on shared expert. The GGUF loader's generic loadLayer path (gated on
 // arch.QKNorm / arch.MoE / arch.MoE.SharedIntermediateDim>0) handles the family with no loader code of its own. The tensor schema is
 // qwen3MoeTensorSchema.
-func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen3MoeArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen3_moe"); err != nil {
 		return nil, nil, err
 	}
@@ -27,7 +29,7 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "qwen3_moe",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -36,11 +38,11 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         cfg.HeadDim,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKNorm:          true,
 		MoE: &MoEConfig{
 			NumExperts:      cfg.NumExperts,
@@ -51,11 +53,11 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		AttnScale:      math.Pow(float64(cfg.HeadDim), -0.5),
 		SlidingWindow:  0, // full attention
-		layerIsGlobal:  nil,
+		LayerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
 		RotaryDim:      cfg.RotaryDim(),
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 	}, &qwen3MoeTensorSchema, nil

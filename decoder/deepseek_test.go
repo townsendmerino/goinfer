@@ -29,20 +29,20 @@ func TestDeepseek_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &deepseekTensorSchema || arch.mla == nil {
+	if schema != &deepseekTensorSchema || arch.MLA == nil {
 		t.Fatalf("schema/mla mismatch")
 	}
-	p := arch.mla
+	p := arch.MLA
 	if p.QLoRARank != 24 || p.KVLoRARank != 16 || p.QKNopeHeadDim != 16 || p.QKRopeHeadDim != 8 || p.VHeadDim != 16 {
 		t.Errorf("MLA dims wrong: %+v", p)
 	}
-	if p.qkHeadDim() != 24 || arch.HeadDim != 24 {
-		t.Errorf("qk_head_dim=%d arch.HeadDim=%d, want 24", p.qkHeadDim(), arch.HeadDim)
+	if p.QKHeadDim() != 24 || arch.HeadDim != 24 {
+		t.Errorf("qk_head_dim=%d arch.HeadDim=%d, want 24", p.QKHeadDim(), arch.HeadDim)
 	}
 	if arch.RotaryDim != 8 {
 		t.Errorf("RotaryDim=%d, want 8 (rope rotates only the rope-carrying dims)", arch.RotaryDim)
 	}
-	if !p.ropeInterleave {
+	if !p.RoPEInterleave {
 		t.Errorf("rope_interleave should default true (V3)")
 	}
 	if !arch.MoE.RouterSigmoid || arch.MoE.NGroup != 2 || arch.MoE.TopkGroup != 1 || !arch.MoE.SharedUngated {
@@ -67,8 +67,8 @@ func TestDeepseek_v2lite_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if arch.mla.QLoRARank != 0 {
-		t.Errorf("V2-Lite should have no q-LoRA, got %d", arch.mla.QLoRARank)
+	if arch.MLA.QLoRARank != 0 {
+		t.Errorf("V2-Lite should have no q-LoRA, got %d", arch.MLA.QLoRARank)
 	}
 	if arch.MoE.RouterSigmoid {
 		t.Errorf("V2 should use softmax scoring, not sigmoid")
@@ -248,7 +248,7 @@ func TestMLAAbsorb_scratchReuseIsBitIdenticalAndAllocatesLess(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	arch := m.w.arch
+	arch := m.w.Arch
 	prog := m.program()
 	opAt := func(l int) *mlaOpParams {
 		for i := range prog.Layers[l] {

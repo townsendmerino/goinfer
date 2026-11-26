@@ -1,10 +1,15 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 // qwen3VLMoeArchitecture expresses Qwen3-VL MoE's text decoder (Qwen3-VL-30B-A3B): qwen3_moe's attention, experts and
 // router (128 experts, top 8, renormalised; no shared expert) with qwen3_vl's interleaved m-RoPE. The released checkpoint
 // stores its experts in transformers 4.57's fused layout, which loadFusedExperts reads by shape. The vision tower and
 // DeepStack are the dense Qwen3-VL's (aikit's tower, GenerateQwenVLDeepstack).
-func qwen3VLMoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen3VLMoeArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	section, err := qwen3VLMRopeSection(cfg, "qwen3_vl_moe")
 	if err != nil {
 		return nil, nil, err

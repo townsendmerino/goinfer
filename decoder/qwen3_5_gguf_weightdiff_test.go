@@ -43,17 +43,17 @@ func TestQwen38GGUF_weightDiff(t *testing.T) {
 	prev := runtime.GOMAXPROCS(2)
 	mRef, freeRef := loadQwen35Slice(t, dir, nLayer)
 	wRef := mRef.w
-	if wRef.arch.Name != "qwen3_5" || wRef.arch.MoE != nil {
+	if wRef.Arch.Name != "qwen3_5" || wRef.Arch.MoE != nil {
 		freeRef()
 		runtime.GOMAXPROCS(prev)
-		t.Fatalf("safetensors resolved arch %q (MoE=%v), want qwen3_5 dense", wRef.arch.Name, wRef.arch.MoE != nil)
+		t.Fatalf("safetensors resolved arch %q (MoE=%v), want qwen3_5 dense", wRef.Arch.Name, wRef.Arch.MoE != nil)
 	}
 	gW, freeG := loadQwen35GGUFSlice(t, gguf, nLayer)
 	runtime.GOMAXPROCS(prev)
 	defer freeRef()
 	defer freeG()
-	if gW.arch.Name != "qwen3_5" || gW.arch.MoE != nil {
-		t.Fatalf("GGUF resolved arch %q (MoE=%v), want qwen3_5 dense", gW.arch.Name, gW.arch.MoE != nil)
+	if gW.Arch.Name != "qwen3_5" || gW.Arch.MoE != nil {
+		t.Fatalf("GGUF resolved arch %q (MoE=%v), want qwen3_5 dense", gW.Arch.Name, gW.Arch.MoE != nil)
 	}
 
 	quants, err := ggufTensorQuants(gguf)
@@ -97,33 +97,33 @@ func TestQwen38GGUF_weightDiff(t *testing.T) {
 	}
 
 	for i := range nLayer {
-		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.arch, i))
+		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.Arch, i))
 		p := fmt.Sprintf("blk.%d.", i) // the GGUF prefix loadQ35 uses, for the per-tensor quant lookup
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]
 		check("attn_norm", p+"attn_norm.weight", lg.PreAttnNorm, lr.PreAttnNorm)
 		check("post_attention_norm", p+"post_attention_norm.weight", lg.PreMLPNorm, lr.PreMLPNorm)
-		if lr.delta != nil && lg.delta != nil {
-			dr, dg := lr.delta, lg.delta
-			check("in_proj_qkv", p+"attn_qkv.weight", wmDense(t, "in_proj_qkv", &dg.inProjQKV), wmDense(t, "in_proj_qkv", &dr.inProjQKV))
-			check("in_proj_z", p+"attn_gate.weight", wmDense(t, "in_proj_z", &dg.inProjZ), wmDense(t, "in_proj_z", &dr.inProjZ))
-			check("in_proj_a", p+"ssm_alpha.weight", dg.inProjA, dr.inProjA)
-			check("in_proj_b", p+"ssm_beta.weight", dg.inProjB, dr.inProjB)
-			check("conv1d", p+"ssm_conv1d.weight", dg.convW, dr.convW)
-			check("dt_bias", p+"ssm_dt.bias", dg.dtBias, dr.dtBias)
-			check("negExpA", p+"ssm_a", dg.negExpA, dr.negExpA)
-			check("ssm_norm", p+"ssm_norm.weight", dg.normW, dr.normW)
-			check("out_proj", p+"ssm_out.weight", wmDense(t, "out_proj", &dg.outProj), wmDense(t, "out_proj", &dr.outProj))
-		} else if lr.qattn != nil && lg.qattn != nil {
-			ar, ag := lr.qattn, lg.qattn
-			check("q_proj(query‖gate)", p+"attn_q.weight", wmDense(t, "q_proj", &ag.qProj), wmDense(t, "q_proj", &ar.qProj))
-			check("k_proj", p+"attn_k.weight", wmDense(t, "k_proj", &ag.kProj), wmDense(t, "k_proj", &ar.kProj))
-			check("v_proj", p+"attn_v.weight", wmDense(t, "v_proj", &ag.vProj), wmDense(t, "v_proj", &ar.vProj))
-			check("o_proj", p+"attn_output.weight", wmDense(t, "o_proj", &ag.oProj), wmDense(t, "o_proj", &ar.oProj))
-			check("q_norm", p+"attn_q_norm.weight", ag.qNorm, ar.qNorm)
-			check("k_norm", p+"attn_k_norm.weight", ag.kNorm, ar.kNorm)
+		if lr.Delta != nil && lg.Delta != nil {
+			dr, dg := lr.Delta, lg.Delta
+			check("in_proj_qkv", p+"attn_qkv.weight", wmDense(t, "in_proj_qkv", &dg.InProjQKV), wmDense(t, "in_proj_qkv", &dr.InProjQKV))
+			check("in_proj_z", p+"attn_gate.weight", wmDense(t, "in_proj_z", &dg.InProjZ), wmDense(t, "in_proj_z", &dr.InProjZ))
+			check("in_proj_a", p+"ssm_alpha.weight", dg.InProjA, dr.InProjA)
+			check("in_proj_b", p+"ssm_beta.weight", dg.InProjB, dr.InProjB)
+			check("conv1d", p+"ssm_conv1d.weight", dg.ConvW, dr.ConvW)
+			check("dt_bias", p+"ssm_dt.bias", dg.DtBias, dr.DtBias)
+			check("negExpA", p+"ssm_a", dg.NegExpA, dr.NegExpA)
+			check("ssm_norm", p+"ssm_norm.weight", dg.NormW, dr.NormW)
+			check("out_proj", p+"ssm_out.weight", wmDense(t, "out_proj", &dg.OutProj), wmDense(t, "out_proj", &dr.OutProj))
+		} else if lr.QAttn != nil && lg.QAttn != nil {
+			ar, ag := lr.QAttn, lg.QAttn
+			check("q_proj(query‖gate)", p+"attn_q.weight", wmDense(t, "q_proj", &ag.QProj), wmDense(t, "q_proj", &ar.QProj))
+			check("k_proj", p+"attn_k.weight", wmDense(t, "k_proj", &ag.KProj), wmDense(t, "k_proj", &ar.KProj))
+			check("v_proj", p+"attn_v.weight", wmDense(t, "v_proj", &ag.VProj), wmDense(t, "v_proj", &ar.VProj))
+			check("o_proj", p+"attn_output.weight", wmDense(t, "o_proj", &ag.OProj), wmDense(t, "o_proj", &ar.OProj))
+			check("q_norm", p+"attn_q_norm.weight", ag.QNorm, ar.QNorm)
+			check("k_norm", p+"attn_k_norm.weight", ag.KNorm, ar.KNorm)
 		} else {
 			t.Errorf("layer %d: attn kind mismatch (ref delta=%v qattn=%v / gguf delta=%v qattn=%v)",
-				i, lr.delta != nil, lr.qattn != nil, lg.delta != nil, lg.qattn != nil)
+				i, lr.Delta != nil, lr.QAttn != nil, lg.Delta != nil, lg.QAttn != nil)
 		}
 	}
 	t.Logf("=== weightDiff: worst tensor used %.0f%% of its own dequant budget — %s (%s) — over layers 0-%d ===",

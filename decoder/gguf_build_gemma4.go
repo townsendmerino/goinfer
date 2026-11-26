@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // Gemma 4 (E-models): a dedicated layer loader. Per-layer head_dim/FFN, the
@@ -11,7 +13,7 @@ import (
 // carry no k/v), and the PLE branch (inp_gate/proj/post_norm + layer scalar).
 // The model-level PLE inputs (per_layer_*) load here. NEOX rope ⇒ no q/k
 // permute, so plain mat() throughout.
-func (b *ggufBuild) loadGemma4(g4 *gemma4Params) (*Weights, error) {
+func (b *ggufBuild) loadGemma4(g4 *archparts.Gemma4Params) (*darch.Weights, error) {
 	arch, g, w, quant, sink, abort, hidden, cfg, streamMat, mat, vec, vnorm, stackedExperts, embInto, id := b.arch, b.g, b.w, b.quant, b.sink, b.abort, b.hidden, b.cfg, b.streamMat, b.mat, b.vec, b.vnorm, b.stackedExperts, b.embInto, b.id
 	var err error
 	if g4.HiddenSizePerLayerInput > 0 {
@@ -30,8 +32,8 @@ func (b *ggufBuild) loadGemma4(g4 *gemma4Params) (*Weights, error) {
 	loadG4 := func(i int) error {
 		l := &w.Layers[i]
 		p := fmt.Sprintf("blk.%d.", i)
-		hdL := arch.headDimAt(i)
-		qDimL, kvDimL, ffn := arch.NumHeads*hdL, arch.kvHeadsAt(i)*hdL, arch.ffnAt(i)
+		hdL := arch.HeadDimAt(i)
+		qDimL, kvDimL, ffn := arch.NumHeads*hdL, arch.KVHeadsAt(i)*hdL, arch.FFNAt(i)
 		var e error
 		if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
 			return e
@@ -100,44 +102,44 @@ func (b *ggufBuild) loadGemma4(g4 *gemma4Params) (*Weights, error) {
 		// artifact (both real model parameters — routerScale/perExpertScale below).
 		if arch.MoE != nil {
 			nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
-			gm := &gemma4MoEWeights{
-				preFFNNorm:  l.PreMLPNorm,
-				postFFNNorm: l.PostMLPNorm,
-				mlpGate:     l.GateProj,
-				mlpUp:       l.UpProj,
-				mlpDown:     l.DownProj,
-				layerScalar: l.LayerScalar,
-				denseInter:  ffn,
-				moeInter:    moeInter,
-				nE:          nE,
-				topK:        arch.MoE.TopK,
+			gm := &archparts.Gemma4MoEWeights{
+				PreFFNNorm:  l.PreMLPNorm,
+				PostFFNNorm: l.PostMLPNorm,
+				MlpGate:     l.GateProj,
+				MlpUp:       l.UpProj,
+				MlpDown:     l.DownProj,
+				LayerScalar: l.LayerScalar,
+				DenseInter:  ffn,
+				MoeInter:    moeInter,
+				NE:          nE,
+				TopK:        arch.MoE.TopK,
 			}
-			if gm.postFFNNorm1, e = vnorm(p+"post_ffw_norm_1.weight", hidden); e != nil {
+			if gm.PostFFNNorm1, e = vnorm(p+"post_ffw_norm_1.weight", hidden); e != nil {
 				return e
 			}
-			if gm.preFFNNorm2, e = vnorm(p+"pre_ffw_norm_2.weight", hidden); e != nil {
+			if gm.PreFFNNorm2, e = vnorm(p+"pre_ffw_norm_2.weight", hidden); e != nil {
 				return e
 			}
-			if gm.postFFNNorm2, e = vnorm(p+"post_ffw_norm_2.weight", hidden); e != nil {
+			if gm.PostFFNNorm2, e = vnorm(p+"post_ffw_norm_2.weight", hidden); e != nil {
 				return e
 			}
 			// Router stays f32 (see the Laguna site above); the safetensors Gemma4 loader does the same.
-			if gm.routerProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+			if gm.RouterProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
-			if gm.routerScale, e = vec(p+"ffn_gate_inp.scale", hidden); e != nil {
+			if gm.RouterScale, e = vec(p+"ffn_gate_inp.scale", hidden); e != nil {
 				return e
 			}
-			if gm.perExpertScale, e = vec(p+"ffn_down_exps.scale", nE); e != nil {
+			if gm.PerExpertScale, e = vec(p+"ffn_down_exps.scale", nE); e != nil {
 				return e
 			}
-			if gm.expertsGateUp, e = stackedExperts(p+"ffn_gate_up_exps.weight", 2*moeInter, hidden, nE); e != nil {
+			if gm.ExpertsGateUp, e = stackedExperts(p+"ffn_gate_up_exps.weight", 2*moeInter, hidden, nE); e != nil {
 				return e
 			}
-			if gm.expertsDown, e = stackedExperts(p+"ffn_down_exps.weight", hidden, moeInter, nE); e != nil {
+			if gm.ExpertsDown, e = stackedExperts(p+"ffn_down_exps.weight", hidden, moeInter, nE); e != nil {
 				return e
 			}
-			l.gemma4moe = gm
+			l.Gemma4MoE = gm
 		}
 		if g4.HiddenSizePerLayerInput > 0 {
 			if l.PLEGate, e = mat(p+"inp_gate.weight", g4.HiddenSizePerLayerInput, hidden); e != nil {

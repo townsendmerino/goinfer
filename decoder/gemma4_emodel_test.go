@@ -52,7 +52,7 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 	defer m.Close()
 
 	// The load really carries the E-model parts (a silently-skipped tensor would leave a zero WeightMat).
-	g4 := m.w.arch.gemma4
+	g4 := m.w.Arch.Gemma4
 	if g4 == nil || g4.HiddenSizePerLayerInput != 32 || g4.SharedKVLayers != 2 {
 		t.Fatalf("arch: %+v, want PLE 32 and 2 shared-KV layers", g4)
 	}
@@ -61,10 +61,10 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 	}
 	for i := range m.w.Layers {
 		l := &m.w.Layers[i]
-		if l.PLEGate.Rows() != 32 || l.PLEProj.Rows() != m.w.arch.HiddenDim || len(l.PostPLENorm) != m.w.arch.HiddenDim {
+		if l.PLEGate.Rows() != 32 || l.PLEProj.Rows() != m.w.Arch.HiddenDim || len(l.PostPLENorm) != m.w.Arch.HiddenDim {
 			t.Fatalf("layer %d: PLE branch not loaded", i)
 		}
-		if w := m.w.arch.ffnAt(i); w != g.FFNWidths[i] {
+		if w := m.w.Arch.FFNAt(i); w != g.FFNWidths[i] {
 			t.Fatalf("layer %d: ffn width %d, want %d", i, w, g.FFNWidths[i])
 		}
 	}
@@ -149,8 +149,8 @@ func TestGemma4EModel_residentEmbedRow(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	H := m.w.arch.HiddenDim
-	LP := m.w.arch.NumLayers * m.BackendView().Gemma4PLEDim()
+	H := m.w.Arch.HiddenDim
+	LP := m.w.Arch.NumLayers * m.BackendView().Gemma4PLEDim()
 	if LP != 6*32 || m.BackendView().EmbedLen() != H+LP {
 		t.Fatalf("EmbedLen %d, PLE %d; want %d + %d", m.BackendView().EmbedLen(), LP, H, 6*32)
 	}
@@ -164,7 +164,7 @@ func TestGemma4EModel_residentEmbedRow(t *testing.T) {
 		h := make([]float32, H)
 		m.w.Embed.Row(id, h)
 		for i := range h {
-			if want := h[i] * float32(m.w.arch.EmbedScale); row[i] != want {
+			if want := h[i] * float32(m.w.Arch.EmbedScale); row[i] != want {
 				t.Fatalf("pos %d: row[%d] = %v, want the scaled embedding %v", p, i, row[i], want)
 			}
 		}

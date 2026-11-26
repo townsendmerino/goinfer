@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -21,7 +23,7 @@ import (
 // mscale/mscale_all_dim (both 1.0 on the release) are DeepSeek's spelling of the YaRN attention_factor, not the generic `attention_factor`
 // key rope.ParseScaling reads. Left unhandled, its default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct 1.0, so it is
 // overridden the way deepseekArchitecture does.
-func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func ministral3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	// backfillFlatRope BEFORE ValidateLlama: the released checkpoints carry ONLY a nested
 	// rope_parameters (no flat rope_theta), and ValidateLlama itself requires RoPEGlobalBase > 0
 	// — the same ordering mistralArchitecture uses, for the same reason.
@@ -71,7 +73,7 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.SlidingWindow > 0 {
 		layerIsGlobal = func(int) bool { return false }
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:               "mistral3",
 		HiddenDim:          cfg.HiddenDim,
 		NumLayers:          cfg.NumLayers,
@@ -80,21 +82,21 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:            hd,
 		IntermediateDim:    cfg.IntermediateDim,
 		VocabSize:          cfg.VocabSize,
-		Norm:               NormRMS,
+		Norm:               darch.NormRMS,
 		RMSAddOne:          false,
 		NormEps:            cfg.RMSNormEps,
-		NormPlacement:      NormPre2,
-		Act:                ActSiLU,
+		NormPlacement:      darch.NormPre2,
+		Act:                darch.ActSiLU,
 		QKNorm:             false,
 		AttnScale:          math.Pow(float64(hd), -0.5),
 		AttnTempBeta:       attnTemp.Beta,
 		AttnTempOrigMaxPos: attnTemp.OrigMaxPos,
 		SlidingWindow:      cfg.SlidingWindow, // 0 ⇒ full attention — confirmed null on the real release
-		layerIsGlobal:      layerIsGlobal,
+		LayerIsGlobal:      layerIsGlobal,
 		RoPELocalBase:      base,
 		RoPEGlobalBase:     base,
 		RotaryDim:          cfg.RotaryDim(),
-		ropeScaling:        scaling,
+		RoPEScaling:        scaling,
 		EmbedScale:         0,
 		TiedLMHead:         false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil

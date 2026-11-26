@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -11,7 +13,7 @@ import (
 // is the exception: granitemoehybrid's own forward applies it via graniteParams.ResidMul, and the generic uniform-layer forward this family
 // rides has no such hook. All three released sizes ship residual_multiplier 1.0 (identity), so ValidateGraniteDense rejects anything else
 // rather than silently dropping it, the discipline ValidateLlama applies to attention bias.
-func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func graniteDenseArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateGraniteDense(); err != nil {
 		return nil, nil, err
 	}
@@ -37,7 +39,7 @@ func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error)
 	if embedScale == 0 {
 		embedScale = 1
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "granite",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -46,17 +48,17 @@ func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error)
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false,
 		AttnScale:       attnMul, // Granite attention_multiplier (not 1/√d)
 		RoPELocalBase:   base,
 		RoPEGlobalBase:  base,
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		RotaryDim:       0, // full rotary
 		EmbedScale:      embedScale,
 		LogitScale:      logitScale,

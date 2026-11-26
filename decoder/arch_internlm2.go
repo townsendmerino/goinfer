@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -16,7 +18,7 @@ import (
 //
 // rope_scaling is "dynamic" on the released checkpoints, which rope.ParseScaling accepts as no
 // scaling (exact within the trained window; see its comment for the boundary caveat).
-func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func internlm2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "internlm2"); err != nil {
 		return nil, nil, err
 	}
@@ -28,7 +30,7 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
 	}
 	hd := cfg.EffectiveHeadDim()
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "internlm2",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -37,14 +39,14 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		TiedLMHead:      false,
 	}, &internlm2TensorSchema, nil
 }

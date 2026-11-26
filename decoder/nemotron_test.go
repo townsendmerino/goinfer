@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -25,16 +27,16 @@ func TestNemotron_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &nemotronTensorSchema || arch.nemotron == nil {
+	if schema != &nemotronTensorSchema || arch.Nemotron == nil {
 		t.Fatalf("schema/nemotron mismatch")
 	}
-	want := []uint8{nemoMamba, nemoAttn, nemoMLP, nemoMamba, nemoAttn}
+	want := []uint8{archparts.NemoMamba, archparts.NemoAttn, archparts.NemoMLP, archparts.NemoMamba, archparts.NemoAttn}
 	for i, k := range want {
-		if arch.nemotron.blockKind[i] != k {
-			t.Errorf("blockKind[%d]=%d, want %d", i, arch.nemotron.blockKind[i], k)
+		if arch.Nemotron.BlockKind[i] != k {
+			t.Errorf("blockKind[%d]=%d, want %d", i, arch.Nemotron.BlockKind[i], k)
 		}
 	}
-	if arch.Act != ActReLU2 || !arch.NonGatedMLP {
+	if arch.Act != darch.ActReLU2 || !arch.NonGatedMLP {
 		t.Errorf("Act=%v NonGatedMLP=%v, want ReLU2/true", arch.Act, arch.NonGatedMLP)
 	}
 	if arch.RotaryDim != 0 || arch.QKNorm || arch.QKVBias {

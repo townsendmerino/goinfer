@@ -24,7 +24,7 @@ func TestGrammarSpec_sessionTwoTurnsMatchPlain(t *testing.T) {
 	if err != nil {
 		t.Skipf("no tokenizer (%v)", err)
 	}
-	vocabBytes := constrain.TokenBytes(m.w.arch.VocabSize, tk.TokenText)
+	vocabBytes := constrain.TokenBytes(m.w.Arch.VocabSize, tk.TokenText)
 	encode := func(s string) []int { ids, _ := tk.Encode(s, false); return ids }
 	schema := `{"type":"object","properties":{"location":{"type":"string"},"unit":{"enum":["celsius","fahrenheit"]}},"required":["location","unit"],"additionalProperties":false}`
 	newMask := func() *constrain.Masker {

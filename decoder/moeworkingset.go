@@ -111,14 +111,14 @@ func mappedMoEWorkingSetPrediction(m *Model, requested int64) (tokPerSec float64
 //     alongside it), so the WHOLE dense weight set is read every single token at M=1 decode —
 //     exactly the quantity a per-token byte budget needs.
 func predictMoEWorkingSet(m *Model, total int64, nExperts int, budget int64) (tokPerSec float64, ok bool) {
-	if m == nil || m.w == nil || m.w.arch == nil || m.w.arch.MoE == nil || nExperts <= 0 || total <= 0 {
+	if m == nil || m.w == nil || m.w.Arch == nil || m.w.Arch.MoE == nil || nExperts <= 0 || total <= 0 {
 		return 0, false
 	}
 	avgExpertBytes := total / int64(nExperts)
 	if avgExpertBytes <= 0 {
 		return 0, false
 	}
-	activeExpertsPerToken := int64(len(m.w.Layers)) * int64(m.w.arch.MoE.TopK)
+	activeExpertsPerToken := int64(len(m.w.Layers)) * int64(m.w.Arch.MoE.TopK)
 	if activeExpertsPerToken <= 0 {
 		return 0, false
 	}

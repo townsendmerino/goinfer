@@ -76,7 +76,7 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "flint" {
 		t.Fatalf("arch.Name = %q, want flint", a.Name)
 	}
@@ -94,10 +94,10 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 	}
 	wantGlobal := []bool{true, true, false, false, false, true}
 	for l := range a.NumLayers {
-		if got := a.isGlobalLayer(l); got != wantGlobal[l] {
+		if got := a.IsGlobalLayer(l); got != wantGlobal[l] {
 			t.Errorf("layer %d isGlobalLayer = %v, want %v", l, got, wantGlobal[l])
 		}
-		if got := a.isNoPELayer(l); got != wantGlobal[l] {
+		if got := a.IsNoPELayer(l); got != wantGlobal[l] {
 			t.Errorf("layer %d isNoPELayer = %v, want %v", l, got, wantGlobal[l])
 		}
 		if len(m.w.Layers[l].AttnSinks) != a.NumHeads {
@@ -245,13 +245,13 @@ func TestFlint_windowBoundaryParity(t *testing.T) {
 		t.Fatalf("Load(sliding_window=513): %v", err)
 	}
 	defer m.Close()
-	if m.w.arch.SlidingWindow != 513 {
-		t.Fatalf("SlidingWindow = %d, want 513", m.w.arch.SlidingWindow)
+	if m.w.Arch.SlidingWindow != 513 {
+		t.Fatalf("SlidingWindow = %d, want 513", m.w.Arch.SlidingWindow)
 	}
 
 	ids := make([]int, g.Window513.PromptLen)
 	for i := range ids {
-		ids[i] = (i*31 + 7) % m.w.arch.VocabSize
+		ids[i] = (i*31 + 7) % m.w.Arch.VocabSize
 	}
 
 	byPos := map[int]struct {
@@ -340,7 +340,7 @@ func TestFlint_breakItFirst(t *testing.T) {
 		defer m.Close()
 
 		// Perturb: strip learned attention sinks from all layers.
-		m.w.arch.AttnSinks = false
+		m.w.Arch.AttnSinks = false
 		for l := range m.w.Layers {
 			m.w.Layers[l].AttnSinks = nil
 		}
@@ -366,7 +366,7 @@ func TestFlint_breakItFirst(t *testing.T) {
 		defer m.Close()
 
 		// Perturb: apply RoPE on all layers (clearing layerNoPE on full-attention layers).
-		m.w.arch.layerNoPE = nil
+		m.w.Arch.LayerNoPE = nil
 		m.rebuildProgramForTest()
 
 		c := m.NewCache(len(g.PromptIDs))
@@ -393,12 +393,12 @@ func TestFlint_breakItFirst(t *testing.T) {
 		// inclusive 513 and exclusive 512). At len=512 (pos=511), 512 keys fit inside both
 		// windows so logits must be identical; at len=513 (pos=512), window=512 evicts pos 0
 		// while window=513 keeps it, so logits must diverge.
-		m.w.arch.SlidingWindow = 512
+		m.w.Arch.SlidingWindow = 512
 		m.rebuildProgramForTest()
 
 		ids := make([]int, 514)
 		for i := range ids {
-			ids[i] = (i*31 + 7) % m.w.arch.VocabSize
+			ids[i] = (i*31 + 7) % m.w.Arch.VocabSize
 		}
 		var want512, want513 []float32
 		for _, cp := range g.Window513.Checkpoints {
@@ -439,7 +439,7 @@ func TestFlint_breakItFirst(t *testing.T) {
 		defer m.Close()
 
 		// Perturb: disable QKNorm so q_norm and k_norm are skipped.
-		m.w.arch.QKNorm = false
+		m.w.Arch.QKNorm = false
 		m.rebuildProgramForTest()
 
 		c := m.NewCache(len(g.PromptIDs))
@@ -469,11 +469,11 @@ func TestFlint_realCheckpointParity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", dir, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "flint" {
-		t.Fatalf("arch.Name = %q, want flint", m.w.arch.Name)
+	if m.w.Arch.Name != "flint" {
+		t.Fatalf("arch.Name = %q, want flint", m.w.Arch.Name)
 	}
-	if !m.w.arch.AttnSinks || !m.w.arch.QKNorm || m.w.arch.SlidingWindow != 513 {
-		t.Fatalf("arch = %+v, want AttnSinks=true QKNorm=true SlidingWindow=513", m.w.arch)
+	if !m.w.Arch.AttnSinks || !m.w.Arch.QKNorm || m.w.Arch.SlidingWindow != 513 {
+		t.Fatalf("arch = %+v, want AttnSinks=true QKNorm=true SlidingWindow=513", m.w.Arch)
 	}
 	cache := m.NewCache(64)
 	logits, err := m.prefillLogits(context.Background(), []int{150000, 9125, 198}, cache)
@@ -529,8 +529,8 @@ func TestFlint_ggufConfig(t *testing.T) {
 	}
 	wantGlobal := []bool{true, true, false, false, false, true}
 	for l := range arch.NumLayers {
-		if arch.isGlobalLayer(l) != wantGlobal[l] || arch.isNoPELayer(l) != wantGlobal[l] {
-			t.Fatalf("layer %d global=%v nope=%v, want %v", l, arch.isGlobalLayer(l), arch.isNoPELayer(l), wantGlobal[l])
+		if arch.IsGlobalLayer(l) != wantGlobal[l] || arch.IsNoPELayer(l) != wantGlobal[l] {
+			t.Fatalf("layer %d global=%v nope=%v, want %v", l, arch.IsGlobalLayer(l), arch.IsNoPELayer(l), wantGlobal[l])
 		}
 	}
 }
@@ -664,8 +664,8 @@ func TestFlint_kv0hBShapedWindowReuse(t *testing.T) {
 	// 1. CPU KVCache ring: once wrapped past 513 (committed=640 > 513), a rewind of
 	// 26 positions (to 614) is inexact on the sliding layers, so rewind drops to 0.
 	cpuCache := m.NewCache(1024)
-	for l := range m.w.arch.NumLayers {
-		if m.w.arch.ringLayerAt(l) {
+	for l := range m.w.Arch.NumLayers {
+		if m.w.Arch.RingLayerAt(l) {
 			cpuCache.rings[l].count = 640
 			if exact := cpuCache.rings[l].truncate(614); exact {
 				t.Fatalf("layer %d ring.truncate(614) from wrapped 640 on 513-ring reported exact=true, want false", l)

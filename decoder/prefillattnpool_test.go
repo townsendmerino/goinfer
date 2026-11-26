@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"os"
 	"testing"
 )
@@ -271,7 +272,7 @@ func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 // sets acc64 := true, making that the only case headWorkerPool's one caller reaches. Both states are checked directly
 // (kh/vt nil under acc64, still allocated under !acc64), so a caller that genuinely needs kh/vt is not left with nothing.
 func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
-	arch := &Architecture{HiddenDim: 8, NumHeads: 2, NumKVHeads: 2, HeadDim: 4, IntermediateDim: 8, VocabSize: 8}
+	arch := &darch.Architecture{HiddenDim: 8, NumHeads: 2, NumKVHeads: 2, HeadDim: 4, IntermediateDim: 8, VocabSize: 8}
 	const nH, K, nKeys, hd = 2, 1, 64, 4
 
 	accScr := newDecodeScratch(arch, nil)

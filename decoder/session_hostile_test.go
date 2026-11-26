@@ -53,8 +53,8 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 	}
 	// The premise: those offsets really are the fields. If this drifts, every case below
 	// mutates something else and passes for the wrong reason.
-	if got := int(binary.LittleEndian.Uint32(clean[off["numLayers"]:])); got != m.w.arch.NumLayers {
-		t.Fatalf("header layout drifted: numLayers reads %d, model has %d", got, m.w.arch.NumLayers)
+	if got := int(binary.LittleEndian.Uint32(clean[off["numLayers"]:])); got != m.w.Arch.NumLayers {
+		t.Fatalf("header layout drifted: numLayers reads %d, model has %d", got, m.w.Arch.NumLayers)
 	}
 
 	reseal := func(b []byte) []byte {

@@ -170,9 +170,9 @@ func TestW4A8Row4_skippedForMetalBackend_MoE(t *testing.T) {
 					if l.SharedExpert.Gate.Rows() > 0 {
 						out = append(out, &l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down)
 					}
-					if l.gemma4moe != nil {
-						for e := range l.gemma4moe.expertsGateUp {
-							out = append(out, &l.gemma4moe.expertsGateUp[e], &l.gemma4moe.expertsDown[e])
+					if l.Gemma4MoE != nil {
+						for e := range l.Gemma4MoE.ExpertsGateUp {
+							out = append(out, &l.Gemma4MoE.ExpertsGateUp[e], &l.Gemma4MoE.ExpertsDown[e])
 						}
 					}
 				}

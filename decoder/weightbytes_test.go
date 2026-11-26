@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
@@ -37,7 +38,7 @@ func loadGemma4MoETiny(t *testing.T) *Model {
 // PLE tables. Kept here (not deleted) so the M-01 gate measures the actual delta the fix
 // introduces, rather than an absolute floor a fixture's embed/vocab size could satisfy by
 // coincidence regardless of whether the omitted fields are counted at all.
-func preM01ResidentWeightBytes(w *Weights) int64 {
+func preM01ResidentWeightBytes(w *darch.Weights) int64 {
 	n := wmBytes(&w.Embed) + wmBytes(&w.LMHead) + wmBytes(&w.PosEmbed)
 	for i := range w.Layers {
 		l := &w.Layers[i]
@@ -71,14 +72,14 @@ func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 	var expertOnly int64
 	sawExperts := false
 	for i := range m.w.Layers {
-		mo := m.w.Layers[i].gemma4moe
+		mo := m.w.Layers[i].Gemma4MoE
 		if mo == nil {
 			continue
 		}
-		expertOnly += wmBytes(&mo.routerProj)
-		for e := range mo.expertsGateUp {
+		expertOnly += wmBytes(&mo.RouterProj)
+		for e := range mo.ExpertsGateUp {
 			sawExperts = true
-			expertOnly += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+			expertOnly += wmBytes(&mo.ExpertsGateUp[e]) + wmBytes(&mo.ExpertsDown[e])
 		}
 	}
 	if !sawExperts {
@@ -111,8 +112,8 @@ func TestResidentWeightBytesPaged_capsAtSlots(t *testing.T) {
 	}
 	maxNE := 0
 	for i := range m.w.Layers {
-		if mo := m.w.Layers[i].gemma4moe; mo != nil && len(mo.expertsGateUp) > maxNE {
-			maxNE = len(mo.expertsGateUp)
+		if mo := m.w.Layers[i].Gemma4MoE; mo != nil && len(mo.ExpertsGateUp) > maxNE {
+			maxNE = len(mo.ExpertsGateUp)
 		}
 	}
 	if maxNE < 2 {
@@ -134,17 +135,17 @@ func TestResidentWeightBytesPaged_capsAtSlots(t *testing.T) {
 	// agree by construction, not by re-reading the same arithmetic.
 	want := unpaged
 	for i := range m.w.Layers {
-		mo := m.w.Layers[i].gemma4moe
+		mo := m.w.Layers[i].Gemma4MoE
 		if mo == nil {
 			continue
 		}
-		nE := len(mo.expertsGateUp)
+		nE := len(mo.ExpertsGateUp)
 		if nE == 0 || slots >= nE {
 			continue
 		}
 		var layerFull int64
-		for e := range mo.expertsGateUp {
-			layerFull += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+		for e := range mo.ExpertsGateUp {
+			layerFull += wmBytes(&mo.ExpertsGateUp[e]) + wmBytes(&mo.ExpertsDown[e])
 		}
 		want -= layerFull - layerFull/int64(nE)*int64(slots)
 	}
@@ -169,8 +170,8 @@ func TestResidentHostCopyBytes_exemptsPagedExperts(t *testing.T) {
 
 	maxNE := 0
 	for i := range m.w.Layers {
-		if mo := m.w.Layers[i].gemma4moe; mo != nil && len(mo.expertsGateUp) > maxNE {
-			maxNE = len(mo.expertsGateUp)
+		if mo := m.w.Layers[i].Gemma4MoE; mo != nil && len(mo.ExpertsGateUp) > maxNE {
+			maxNE = len(mo.ExpertsGateUp)
 		}
 	}
 	if maxNE < 2 {
@@ -194,9 +195,9 @@ func TestResidentHostCopyBytes_exemptsPagedExperts(t *testing.T) {
 			e := &m.w.Layers[i].Experts[j]
 			allExpertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
 		}
-		if mo := m.w.Layers[i].gemma4moe; mo != nil {
-			for e := range mo.expertsGateUp {
-				allExpertBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+		if mo := m.w.Layers[i].Gemma4MoE; mo != nil {
+			for e := range mo.ExpertsGateUp {
+				allExpertBytes += wmBytes(&mo.ExpertsGateUp[e]) + wmBytes(&mo.ExpertsDown[e])
 			}
 		}
 	}

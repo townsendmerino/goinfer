@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"math/rand"
 	"slices"
@@ -15,12 +16,12 @@ import (
 // also gate this, need their models). W is kept small so the ring wraps many
 // times within the sequence.
 
-func ringTestArch(nH, nKV, hd, window int, globalLayer func(int) bool) *Architecture {
-	return &Architecture{
+func ringTestArch(nH, nKV, hd, window int, globalLayer func(int) bool) *darch.Architecture {
+	return &darch.Architecture{
 		NumHeads: nH, NumKVHeads: nKV, HeadDim: hd,
 		AttnScale:     1.0 / math.Sqrt(float64(hd)),
 		SlidingWindow: window,
-		layerIsGlobal: globalLayer,
+		LayerIsGlobal: globalLayer,
 	}
 }
 
@@ -41,7 +42,7 @@ func TestRing_decodeBitExact(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 })
 
 	ringC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	ringC.enableRings(W, arch.isGlobalLayer)
+	ringC.enableRings(W, arch.IsGlobalLayer)
 	ringC.scr = newDecodeScratch(arch, ringC.knobs)
 	fullC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	fullC.scr = newDecodeScratch(arch, fullC.knobs)
@@ -49,7 +50,7 @@ func TestRing_decodeBitExact(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))
 	for pos := range N {
 		for l := range nLayers {
-			global := arch.isGlobalLayer(l)
+			global := arch.IsGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
 			rk, rv, rq := slices.Clone(k), slices.Clone(v), slices.Clone(q)
@@ -110,7 +111,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 
 	// Ring: empty cache (startPos 0), assemble [base, K) from (empty history + new).
 	ring := NewKVCache(1, nKV, hd, W, K, nil)
-	ring.enableRings(W, arch.isGlobalLayer)
+	ring.enableRings(W, arch.IsGlobalLayer)
 	alk := make([]float32, K*kvDim)
 	alv := make([]float32, K*kvDim)
 	base, nRows := ring.batchReadLocal(0, 0, K, k, v, alk, alv)
@@ -142,7 +143,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
 	ring := NewKVCache(1, nKV, hd, W, N+1, nil)
-	ring.enableRings(W, arch.isGlobalLayer)
+	ring.enableRings(W, arch.IsGlobalLayer)
 	full := NewKVCache(1, nKV, hd, W, N+1, nil)
 
 	mkbufs := func(nKeys int) []headWorkerScratch {

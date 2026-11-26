@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -30,10 +31,10 @@ func TestResolveArchitecture_gemma3(t *testing.T) {
 		want any
 	}{
 		{"Name", a.Name, "gemma3"},
-		{"Norm", a.Norm, NormRMS},
+		{"Norm", a.Norm, darch.NormRMS},
 		{"RMSAddOne", a.RMSAddOne, true},
-		{"NormPlacement", a.NormPlacement, NormSandwich4},
-		{"Act", a.Act, ActGeluTanh},
+		{"NormPlacement", a.NormPlacement, darch.NormSandwich4},
+		{"Act", a.Act, darch.ActGeluTanh},
 		{"QKNorm", a.QKNorm, true},
 		{"TiedLMHead", a.TiedLMHead, true},
 		{"AttnScale", a.AttnScale, 0.5},                 // 4^-0.5
@@ -45,7 +46,7 @@ func TestResolveArchitecture_gemma3(t *testing.T) {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
 		}
 	}
-	if b := a.ropeBase(0); b != 10000 { // layer 0 is local under pattern 6
+	if b := a.RoPEBase(0); b != 10000 { // layer 0 is local under pattern 6
 		t.Errorf("ropeBase(0) = %v, want local 10000", b)
 	}
 }

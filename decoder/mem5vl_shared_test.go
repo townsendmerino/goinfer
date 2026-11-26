@@ -19,7 +19,7 @@ import (
 // grid then a 2×2), deep two DeepStack sets.
 func v1Prompt(m *Model) (ids []int, spans []ImageSpan, feats []float32, mrope [][3]int, deep [][]float32) {
 	_, _, _, _, _, _, vocab := m.Dims()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	ids = make([]int, 60)
 	for i := range ids {
 		ids[i] = (i*37 + 11) % vocab
@@ -208,7 +208,7 @@ func TestMEM5VL_sharedRouteBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, _, _, _, _, _, vocab := m.Dims()
-		hidden := m.w.arch.HiddenDim
+		hidden := m.w.Arch.HiddenDim
 		const n, chunk, block = 200, 16, 20
 		ids := make([]int, n)
 		mrope := make([][3]int, n)

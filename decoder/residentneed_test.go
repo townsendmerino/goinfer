@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // `fit`'s verdict (Plan) and Metal's resident guard (ResidentNeedBytes,
@@ -214,7 +215,7 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 func TestResidentKVBytes_cudaLayout(t *testing.T) {
 	// The CUDA backend's policy lives in the cuda package, which this binary does not link: stand in for it with the one fact the pricing reads (dense, no MLA).
 	saved := kvPolicies["cuda"]
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: func(f KVFacts, _ Options) string {
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: func(f darch.KVFacts, _ Options) string {
 		if f.MLA {
 			return "an MLA latent cache has no f16 form"
 		}
@@ -230,11 +231,11 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", c.dir, err)
 		}
-		a := m.w.arch
+		a := m.w.Arch
 		_, nLayers, _, _, _, _, _ := m.Dims()
 		var perRow int64 // bytes of one position across the layers
 		for l := range nLayers {
-			per := int64(a.kvDimAt(l)) * 4
+			per := int64(a.KVDimAt(l)) * 4
 			if !c.mla {
 				per *= 2
 			}
@@ -242,8 +243,8 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 		}
 		blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 		rows, tables := (blocks+1)*KVBlockRows, 2*4*blocks
-		if (a.mla != nil) != c.mla {
-			t.Fatalf("%s: fixture MLA=%v, expected %v", c.dir, a.mla != nil, c.mla)
+		if (a.MLA != nil) != c.mla {
+			t.Fatalf("%s: fixture MLA=%v, expected %v", c.dir, a.MLA != nil, c.mla)
 		}
 		for _, p := range []struct{ f16, i8 bool }{{false, false}, {true, false}, {false, true}} {
 			w := perRow*rows + tables

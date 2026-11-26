@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 	"slices"
 )
@@ -19,7 +21,7 @@ import (
 //
 // Reuses cohereTensorSchema (identical tensor names — one shared input_layernorm
 // per layer, no biases, tied head).
-func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func cohere2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "cohere2"); err != nil {
 		return nil, nil, err
 	}
@@ -41,7 +43,7 @@ func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		return (i+1)%pattern == 0
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "cohere2",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -50,19 +52,19 @@ func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormLayer,
+		Norm:            darch.NormLayer,
 		NormEps:         cfg.LayerNormEps,
-		NormPlacement:   NormParallel,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormParallel,
+		Act:             darch.ActSiLU,
 		QKNorm:          false, // cohere2 has no QK-norm
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   cfg.SlidingWindow, // sliding layers window; global layers full
-		layerIsGlobal:   isGlobal,
-		layerNoPE:       isGlobal, // global (full) layers are NoPE; sliding layers keep RoPE
+		LayerIsGlobal:   isGlobal,
+		LayerNoPE:       isGlobal, // global (full) layers are NoPE; sliding layers keep RoPE
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		RotaryDim:       cfg.RotaryDim(),
-		ropeInterleave:  true, // GPT-J pairwise on the sliding (RoPE) layers
+		RoPEInterleave:  true, // GPT-J pairwise on the sliding (RoPE) layers
 		EmbedScale:      0,
 		LogitScale:      1.0 / cfg.LogitScale,
 		TiedLMHead:      true,

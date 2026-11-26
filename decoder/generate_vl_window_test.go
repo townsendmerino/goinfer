@@ -32,10 +32,10 @@ func TestGenerateVL_refusesImageBlockLongerThanWindow(t *testing.T) {
 		t.Fatalf("load ../testdata/gemma3-vl-tiny: %v", err)
 	}
 	defer m.Close()
-	saved := m.w.arch.SlidingWindow
-	defer func() { m.w.arch.SlidingWindow = saved; m.rebuildProgramForTest() }()
+	saved := m.w.Arch.SlidingWindow
+	defer func() { m.w.Arch.SlidingWindow = saved; m.rebuildProgramForTest() }()
 	run := func(window int) (int, bool, error) {
-		m.w.arch.SlidingWindow = window
+		m.w.Arch.SlidingWindow = window
 		m.rebuildProgramForTest()
 		towerRan := false
 		features := func() ([]float32, error) { towerRan = true; return g.ImageFeatures, nil }

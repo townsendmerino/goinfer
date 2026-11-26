@@ -39,7 +39,7 @@ func pixtralCausalCase(m *Model) (ids []int, spans []ImageSpan, feats []float32)
 	const img, brk, end = 10, 12, 13
 	ids = []int{1, 3, 5, 7, img, img, img, brk, img, img, img, end, 20, 21, 22}
 	spans = []ImageSpan{{Pos: 4, Len: 3, Hash: 9}, {Pos: 8, Len: 3, Hash: 9}}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	r := rand.New(rand.NewSource(11))
 	feats = make([]float32, 6*hidden)
 	for i := range feats {
@@ -51,7 +51,7 @@ func pixtralCausalCase(m *Model) (ids []int, spans []ImageSpan, feats []float32)
 func TestPixtralCausalSpans_tiny(t *testing.T) {
 	m := loadMinistral3Tiny(t)
 	ctx := context.Background()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	ids, spans, feats := pixtralCausalCase(m)
 
 	got, err := m.prefillHiddenVLSpans(ctx, ids, spans, feats, m.NewCache(len(ids)), true)

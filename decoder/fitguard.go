@@ -162,7 +162,7 @@ func denseStreamable(cfg *Config) bool {
 	if err != nil || arch == nil || arch.MoE != nil {
 		return false
 	}
-	return arch.genericKindsOnly()
+	return arch.GenericKindsOnly()
 }
 
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a

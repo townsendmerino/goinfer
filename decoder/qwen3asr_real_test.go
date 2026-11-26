@@ -68,7 +68,7 @@ func TestQwen3ASRReal_gate(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	t.Logf("loaded in %.1fs: arch %s, %d layers, hidden %d, vocab %d, quant %s", time.Since(t0).Seconds(), m.w.arch.Name, m.w.arch.NumLayers, m.w.arch.HiddenDim, m.w.arch.VocabSize, m.Quant())
+	t.Logf("loaded in %.1fs: arch %s, %d layers, hidden %d, vocab %d, quant %s", time.Since(t0).Seconds(), m.w.Arch.Name, m.w.Arch.NumLayers, m.w.Arch.HiddenDim, m.w.Arch.VocabSize, m.Quant())
 	ctx := context.Background()
 
 	// c1: the text path.

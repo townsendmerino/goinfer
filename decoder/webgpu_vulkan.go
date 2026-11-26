@@ -180,7 +180,7 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	mixer, _ := m.BackendView().Layer(i).Ops()
 	switch mixer {
 	case MixerAttention:
-		if m.w.arch != nil {
+		if m.w.Arch != nil {
 			return m.webgpuKVBuffers(i, ctx, kvF16, kvI8), true
 		}
 		kvDim := m.BackendView().Layer(i).KVHeads() * m.BackendView().Layer(i).HeadDim() // no resolved architecture: the layer view's own width
@@ -196,7 +196,7 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	case MixerMLA:
 		// The latent row (kv_lora_rank + the rope key) is f32 at any precision. kvDimAt is 0 on a layer with no latent, such as a
 		// Kimi Delta Attention layer that ResidentLayerOps reports as MLA.
-		if m.w.arch == nil {
+		if m.w.Arch == nil {
 			return nil, true
 		}
 		return m.webgpuKVBuffers(i, ctx, kvF16, kvI8), true
@@ -281,22 +281,22 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		l := &w.Layers[i]
 		// A recurrent mixer's weights come first and its state after them, as the build uploads them; the layer's other matrices
 		// follow. Any other layer's caches come first.
-		switch d, mb := l.delta, l.mamba; {
+		switch d, mb := l.Delta, l.Mamba; {
 		case d != nil:
-			mats(&d.inProjQKV, &d.inProjZ, &d.outProj)
-			w8a8(len(d.inProjB)/max(hidden, 1), hidden)
-			w8a8(len(d.inProjA)/max(hidden, 1), hidden)
-			f32s(d.convW, d.dtBias, d.negExpA, d.normW)
+			mats(&d.InProjQKV, &d.InProjZ, &d.OutProj)
+			w8a8(len(d.InProjB)/max(hidden, 1), hidden)
+			w8a8(len(d.InProjA)/max(hidden, 1), hidden)
+			f32s(d.ConvW, d.DtBias, d.NegExpA, d.NormW)
 			caches()
 		case mb != nil:
-			if mb.inQ.Rows() != 0 {
-				w8a8(mb.inQ.Rows(), mb.inQ.Cols())
-				w8a8(mb.outQ.Rows(), mb.outQ.Cols())
+			if mb.InQ.Rows() != 0 {
+				w8a8(mb.InQ.Rows(), mb.InQ.Cols())
+				w8a8(mb.OutQ.Rows(), mb.OutQ.Cols())
 			} else {
-				w8a8(len(mb.inProj)/max(hidden, 1), hidden)
-				w8a8(hidden, len(mb.outProj)/max(hidden, 1))
+				w8a8(len(mb.InProj)/max(hidden, 1), hidden)
+				w8a8(hidden, len(mb.OutProj)/max(hidden, 1))
 			}
-			f32s(mb.convW, mb.convB, make([]float32, 3*len(mb.aLog)), mb.normW)
+			f32s(mb.ConvW, mb.ConvB, make([]float32, 3*len(mb.ALog)), mb.NormW)
 			caches()
 		default:
 			caches()
@@ -304,10 +304,10 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		// The mixer's matrices, then the FFN's: the dense MLP, or the router, each projection's experts stacked into one buffer, the
 		// shared expert and its gate.
 		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj)
-		if q := l.qattn; q != nil {
-			mats(&q.qProj, &q.kProj, &q.vProj, &q.oProj)
+		if q := l.QAttn; q != nil {
+			mats(&q.QProj, &q.KProj, &q.VProj, &q.OProj)
 		}
-		if a := l.mla; a != nil {
+		if a := l.MLA; a != nil {
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
 			mla, _ := m.BackendView().MLA()
 			qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
@@ -319,29 +319,29 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 				w8a8(rows, cols)
 			}
 			if qLoRA > 0 {
-				proj(&a.qAQ, qLoRA, hidden)
-				proj(&a.qBQ, nH*(qkNope+qkRope), qLoRA)
+				proj(&a.QAQ, qLoRA, hidden)
+				proj(&a.QBQ, nH*(qkNope+qkRope), qLoRA)
 			} else {
-				proj(&a.qQ, nH*(qkNope+qkRope), hidden)
+				proj(&a.QQ, nH*(qkNope+qkRope), hidden)
 			}
-			proj(&a.kvAQ, kvLoRA+qkRope, hidden)
-			proj(&a.oQ, hidden, nH*vHead)
+			proj(&a.KVAQ, kvLoRA+qkRope, hidden)
+			proj(&a.OQ, hidden, nH*vHead)
 			for _, n := range []int64{4 * int64(nH*kvLoRA*qkNope), 4 * int64(nH*vHead*kvLoRA)} {
 				slot0 = append(slot0, n)
 				weights += n
 			}
 		}
-		if k := l.kda; k != nil {
-			mats(&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj)
-			f32s(k.qConvW, k.kConvW, k.vConvW, k.bProj, k.dtBias, k.aLog, k.oNormW)
+		if k := l.KDA; k != nil {
+			mats(&k.QProj, &k.KProj, &k.VProj, &k.FProj, &k.GProj, &k.OProj)
+			f32s(k.QConvW, k.KConvW, k.VConvW, k.BProj, k.DtBias, k.ALog, k.ONormW)
 		}
-		if sc := l.shortConv; sc != nil {
-			mats(&sc.inProj, &sc.outProj)
-			f32s(sc.convW)
+		if sc := l.ShortConv; sc != nil {
+			mats(&sc.InProj, &sc.OutProj)
+			f32s(sc.ConvW)
 		}
-		mo := l.gemma4moe
+		mo := l.Gemma4MoE
 		if mo != nil { // Gemma 4's parallel block: its router, f32, ahead of the dense MLP
-			if n := 4 * int64(mo.routerProj.Rows()) * int64(mo.routerProj.Cols()); n > 0 {
+			if n := 4 * int64(mo.RouterProj.Rows()) * int64(mo.RouterProj.Cols()); n > 0 {
 				slot0 = append(slot0, n)
 				weights += n
 			}
@@ -356,9 +356,9 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			mats(&l.Router)
 		}
 		mats(&l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate)
-		if mo != nil && len(mo.expertsGateUp) > 0 {
-			stacked(len(mo.expertsGateUp), &mo.expertsGateUp[0])
-			stacked(len(mo.expertsDown), &mo.expertsDown[0])
+		if mo != nil && len(mo.ExpertsGateUp) > 0 {
+			stacked(len(mo.ExpertsGateUp), &mo.ExpertsGateUp[0])
+			stacked(len(mo.ExpertsDown), &mo.ExpertsDown[0])
 		}
 	}
 	slot0 = append(slot0, webgpuVkScratch)
@@ -394,12 +394,12 @@ func (m *Model) webgpuExpertLine() int64 {
 // layer binds, and on each of Gemma 4's MoE blocks the router norm's unit weight and the router's zero bias, less the router scale
 // the build folds into the router. The plan prices it on the dense line, beside the blocks, as it prices the vectors.
 func (m *Model) webgpuDerivedTableBytes() int64 {
-	if m == nil || m.w == nil || m.w.arch == nil {
+	if m == nil || m.w == nil || m.w.Arch == nil {
 		return 0
 	}
 	var tabs [][]float32
 	var n int64
-	for i := range m.w.arch.NumLayers {
+	for i := range m.w.Arch.NumLayers {
 		if inv := m.BackendView().Layer(i).RopeInvFreq(); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
 			tabs = append(tabs, inv)
 			n += 4 * int64(len(inv))
@@ -407,8 +407,8 @@ func (m *Model) webgpuDerivedTableBytes() int64 {
 		if len(m.BackendView().Layer(i).AttnSinks()) == 0 {
 			n += 4
 		}
-		if g4 := m.w.Layers[i].gemma4moe; g4 != nil {
-			n += 4 * (int64(m.w.arch.HiddenDim) + int64(g4.nE) - int64(len(g4.routerScale)))
+		if g4 := m.w.Layers[i].Gemma4MoE; g4 != nil {
+			n += 4 * (int64(m.w.Arch.HiddenDim) + int64(g4.NE) - int64(len(g4.RouterScale)))
 		}
 	}
 	if q, ok := m.BackendView().Qwen35(); ok {

@@ -92,41 +92,41 @@ func TestQwen35Real_loaderSlice(t *testing.T) {
 
 	// Loader sanity: the hybrid arch resolved, the slice has 4 layers, and the
 	// per-layer-kind tensor sets landed where they should.
-	if m.w.arch.qwen35 == nil {
-		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.arch.Name)
+	if m.w.Arch.Qwen35 == nil {
+		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.Arch.Name)
 	}
 	if got := len(m.w.Layers); got != 4 {
 		t.Fatalf("loaded %d layers, want 4", got)
 	}
 	for l := range 3 { // 0,1,2 are Gated DeltaNet (linear)
-		if m.w.Layers[l].delta == nil {
+		if m.w.Layers[l].Delta == nil {
 			t.Errorf("layer %d: delta (linear-attn) weights not loaded", l)
 		}
-		if m.w.Layers[l].qattn != nil {
+		if m.w.Layers[l].QAttn != nil {
 			t.Errorf("layer %d: unexpected softmax-attn weights on a linear layer", l)
 		}
 	}
-	if m.w.Layers[3].qattn == nil { // 3 is full (softmax) attention
+	if m.w.Layers[3].QAttn == nil { // 3 is full (softmax) attention
 		t.Errorf("layer 3: softmax-attn weights not loaded")
 	}
-	if m.w.Layers[3].delta != nil {
+	if m.w.Layers[3].Delta != nil {
 		t.Errorf("layer 3: unexpected delta weights on a softmax layer")
 	}
 	// Fused-stacked MoE: all 256 experts de-stacked, each gate/up [moe_inter,hidden].
-	moe := m.w.arch.MoE
+	moe := m.w.Arch.MoE
 	for _, l := range []int{0, 3} {
 		exps := m.w.Layers[l].Experts
 		if len(exps) != moe.NumExperts {
 			t.Fatalf("layer %d: %d experts, want %d", l, len(exps), moe.NumExperts)
 		}
 		e0 := exps[0]
-		if e0.Gate.Rows() != moe.IntermediateDim || e0.Gate.Cols() != m.w.arch.HiddenDim {
+		if e0.Gate.Rows() != moe.IntermediateDim || e0.Gate.Cols() != m.w.Arch.HiddenDim {
 			t.Errorf("layer %d expert0 gate shape = [%d,%d], want [%d,%d]",
-				l, e0.Gate.Rows(), e0.Gate.Cols(), moe.IntermediateDim, m.w.arch.HiddenDim)
+				l, e0.Gate.Rows(), e0.Gate.Cols(), moe.IntermediateDim, m.w.Arch.HiddenDim)
 		}
-		if e0.Down.Rows() != m.w.arch.HiddenDim || e0.Down.Cols() != moe.IntermediateDim {
+		if e0.Down.Rows() != m.w.Arch.HiddenDim || e0.Down.Cols() != moe.IntermediateDim {
 			t.Errorf("layer %d expert0 down shape = [%d,%d], want [%d,%d]",
-				l, e0.Down.Rows(), e0.Down.Cols(), m.w.arch.HiddenDim, moe.IntermediateDim)
+				l, e0.Down.Rows(), e0.Down.Cols(), m.w.Arch.HiddenDim, moe.IntermediateDim)
 		}
 		if m.w.Layers[l].SharedExpert.Gate.Rows() != moe.SharedIntermediateDim {
 			t.Errorf("layer %d shared-expert gate rows = %d, want %d",
@@ -146,8 +146,8 @@ func TestQwen35Real_loaderSlice(t *testing.T) {
 			t.Fatalf("runLayers token %d (id %d): %v", i, id, err)
 		}
 	}
-	if len(h) != m.w.arch.HiddenDim {
-		t.Fatalf("hidden len %d, want %d", len(h), m.w.arch.HiddenDim)
+	if len(h) != m.w.Arch.HiddenDim {
+		t.Fatalf("hidden len %d, want %d", len(h), m.w.Arch.HiddenDim)
 	}
 	var ss float64
 	for _, x := range h {

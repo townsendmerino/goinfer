@@ -45,7 +45,7 @@ func TestCohere2R7bReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "cohere2" {
 		t.Fatalf("arch = %q, want cohere2", a.Name)
 	}
@@ -54,14 +54,14 @@ func TestCohere2R7bReal_gate(t *testing.T) {
 	// classification would silently pass the cosine on short prompts, so assert it holds.
 	var global, nope int
 	for l := 0; l < a.NumLayers; l++ {
-		if a.isGlobalLayer(l) {
+		if a.IsGlobalLayer(l) {
 			global++
 		}
-		if a.isNoPELayer(l) {
+		if a.IsNoPELayer(l) {
 			nope++
 		}
-		if a.isGlobalLayer(l) != a.isNoPELayer(l) {
-			t.Errorf("layer %d: isGlobal=%v but isNoPE=%v (cohere2: global ⇔ NoPE)", l, a.isGlobalLayer(l), a.isNoPELayer(l))
+		if a.IsGlobalLayer(l) != a.IsNoPELayer(l) {
+			t.Errorf("layer %d: isGlobal=%v but isNoPE=%v (cohere2: global ⇔ NoPE)", l, a.IsGlobalLayer(l), a.IsNoPELayer(l))
 		}
 	}
 	t.Logf("command-r7b: %d layers (%d global/NoPE, %d sliding/RoPE), H=%d kv=%d headDim=%d window=%d logitScale(recip)=%.4f",

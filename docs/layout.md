@@ -40,6 +40,8 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 |---|---|
 | `decoder/` | the decoder-only transformer runtime: loaders, forward passes, KV cache, fit guards, the `.giw` sidecar |
 | `decoder/config/` | checkpoint `Config` JSON loading, family defaults and validation; a leaf importing no goinfer package |
+| `decoder/arch/` | resolved `Architecture` descriptor, `Weights`, `LayerWeights`, feature flags, KV geometry and `LoadProfile`; a leaf below `decoder` (rule `arch-leaf` in `internal/layout/imports.json`), aliased from `decoder/zz_arch_alias.go` |
+| `internal/runtime/archparts/` | per-family parameter/weight structs and internal shape helpers below `decoder/arch` (rule `archparts-leaf` in `internal/layout/imports.json`) |
 | `decoder/fit/` | the types the fit guard and the placement planner hand their callers (`Plan`, `PlanRequest`, `Placement`, `FitAnswer`, `FitDeclineError`); a leaf over `internal/runtime/mem` |
 | `decoder/resident/` | the contract a resident backend implements: the four subsystem interfaces, `SubsystemProvider`, `Forward` (the base every resident implements), the drafter host and the small data their signatures carry; a leaf over `internal/cost` and `internal/runtime/adapter`, aliased from `decoder` as `decoder.Resident*` |
 | `decoder/quant/` | safetensors checkpoint quantization config parsing and weight reconstruction (`Reconstructor`, `RowStreamReconstructor` for FP8, GPTQ, AWQ, NVFP4, MLX); a leaf over `aikit/embed` (its `SafetensorsFile`; it imports no goinfer package, rule `quant-leaf` in `internal/layout/imports.json`) |

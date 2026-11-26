@@ -25,7 +25,7 @@ func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {
 		t.Fatalf("load gguf (int4, row4-eligible): %v", err)
 	}
 	var repackedCount, int4Count int
-	for _, wm := range m1.w.matmulWeights() {
+	for _, wm := range m1.w.MatmulWeights() {
 		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
@@ -48,7 +48,7 @@ func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {
 		t.Fatalf("deserialize (.giw path): %v", err)
 	}
 
-	for i, wm := range w2.matmulWeights() {
+	for i, wm := range w2.MatmulWeights() {
 		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}

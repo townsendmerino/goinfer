@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"path/filepath"
 	"testing"
 )
@@ -12,12 +13,12 @@ import (
 // has exactly the int8 and ring state the OLD lists produced (reproduced below as the reference; the MoE exclusion narrowed to gpt-oss, whose own loop still refuses).
 func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 	slowTest(t)
-	oldInt8 := func(a *Architecture) bool {
-		return a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.gptoss == nil &&
-			a.lfm2 == nil && a.llama4 == nil
+	oldInt8 := func(a *darch.Architecture) bool {
+		return a.Gemma4 == nil && a.Qwen35 == nil && a.Granite == nil && a.Nemotron == nil && a.GPTOSS == nil &&
+			a.LFM2 == nil && a.Llama4 == nil
 	}
-	oldRings := func(a *Architecture) bool {
-		return a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.gptoss == nil
+	oldRings := func(a *darch.Architecture) bool {
+		return a.Gemma4 == nil && a.Qwen35 == nil && a.Granite == nil && a.Nemotron == nil && a.GPTOSS == nil
 	}
 	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "model.safetensors"))
 	checked, int8On, ringsOn := 0, 0, 0
@@ -28,7 +29,7 @@ func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 		if err != nil {
 			continue // not a decoder checkpoint (vision towers, …)
 		}
-		a := m.w.arch
+		a := m.w.Arch
 		c := m.NewCache(16)
 		gotI8 := c.quant == kvI8
 		gotRings := c.localAny
@@ -55,9 +56,9 @@ func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 	}
 }
 
-func hasLocalLayer(a *Architecture) bool {
+func hasLocalLayer(a *darch.Architecture) bool {
 	for l := range a.NumLayers {
-		if !a.isGlobalLayer(l) {
+		if !a.IsGlobalLayer(l) {
 			return true
 		}
 	}

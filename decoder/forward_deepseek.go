@@ -4,6 +4,7 @@ import (
 	"math"
 	"slices"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
@@ -20,7 +21,7 @@ import (
 // so no per-key K/V is ever rebuilt) or the naive reconstruct-per-key path (the parity reference). The two are algebraically
 // identical (cosine ~1.0, not bit-exact), gated by TestMLAAbsorb_parity on the tiny golden and the real-model gates. Which runs is a
 // knob (GOINFER_MLA_NAIVE) and a test seam, not part of the program, as fast attention is.
-func (m *Model) mlaAttentionWith(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
+func (m *Model) mlaAttentionWith(op *mlaOpParams, n []float32, lw *darch.LayerWeights, arch *darch.Architecture, cache *KVCache, layer, pos int) []float32 {
 	if mlaForceNaive || m.knobs.mlaNaive() {
 		return m.mlaAttentionNaive(op, n, lw, arch, cache, layer, pos)
 	}
@@ -34,9 +35,9 @@ func (m *Model) mlaAttentionWith(op *mlaOpParams, n []float32, lw *LayerWeights,
 // per-position key. The q·k width (qk_head_dim) differs from the v width (v_head_dim), so
 // this can't reuse the uniform attendQuery — it's the new primitive. This is the
 // parity-reference path (bit-identical to HF); the production default is the absorb path.
-func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	p := arch.mla
-	w := lw.mla
+func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *darch.LayerWeights, arch *darch.Architecture, cache *KVCache, layer, pos int) []float32 {
+	p := arch.MLA
+	w := lw.MLA
 	hidden := arch.HiddenDim
 	eps := op.Eps
 	H := arch.NumHeads
@@ -51,16 +52,16 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	// per head: [qk_nope | qk_rope].
 	var q []float32
 	if p.QLoRARank > 0 {
-		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
-		normact.RMS(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
-		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
+		qa := mlaMatvec(w.QAProj, &w.QAQ, p.QLoRARank, hidden, n)
+		normact.RMS(qa, w.QALayernorm, 1, p.QLoRARank, eps, false)
+		q = mlaMatvec(w.QBProj, &w.QBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
-		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
+		q = mlaMatvec(w.QProj, &w.QQ, H*qkHead, hidden, n)
 	}
 
 	// 2. KV down-projection → [latent (kv_lora_rank) | rope key (qk_rope_head_dim)].
 	// The whole vector is the cached latent payload.
-	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
+	kvDown := mlaMatvec(w.KVAProj, &w.KVAQ, latDim, hidden, n)
 	cache.AppendLatent(layer, kvDown)
 
 	// 3. RoPE the query's rope dims (per head), gathered out of the [nope|rope] layout.
@@ -80,8 +81,8 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := slices.Clone(lat[:rank])
-		normact.RMS(cn, w.kvALayernorm, 1, rank, eps, false)
-		kvUp := hybridattn.Matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
+		normact.RMS(cn, w.KVALayernorm, 1, rank, eps, false)
+		kvUp := hybridattn.Matvec(w.KVBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave) // key rope at its own position
 		for hh := range H {
@@ -127,13 +128,13 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 
 	// 5.5. Bailing Hybrid's optional MLA output gate (Laguna-shaped, sigmoid-activated — see
 	// applySigmoidGateRow's own comment). nil for every DeepSeek family.
-	if w.gProj != nil {
-		gate := hybridattn.Matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+	if w.GProj != nil {
+		gate := hybridattn.Matvec(w.GProj, len(w.GProj)/hidden, hidden, n)
 		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 
 	// 6. Output projection (over the v_head_dim-wide context).
-	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
+	return mlaMatvec(w.OProj, &w.OQ, hidden, H*vHead, ctx)
 }
 
 // mlaAttentionAbsorb is the perf path: the "absorb" trick that never reconstructs
@@ -150,9 +151,9 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 // O(nKeys·H·rank) + O(H·(qkNope+vHead)·rank). Algebraically equal to the naive path
 // (cosine ~1.0; f32 reorder, not bit-exact). The latent append, query projection, and
 // RoPE are identical to the naive path.
-func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	p := arch.mla
-	w := lw.mla
+func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *darch.LayerWeights, arch *darch.Architecture, cache *KVCache, layer, pos int) []float32 {
+	p := arch.MLA
+	w := lw.MLA
 	hidden := arch.HiddenDim
 	eps := op.Eps
 	H := arch.NumHeads
@@ -167,15 +168,15 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	// 1. Query (identical to naive): q_a→norm→q_b LoRA bottleneck, or a direct q_proj.
 	var q []float32
 	if p.QLoRARank > 0 {
-		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
-		normact.RMS(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
-		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
+		qa := mlaMatvec(w.QAProj, &w.QAQ, p.QLoRARank, hidden, n)
+		normact.RMS(qa, w.QALayernorm, 1, p.QLoRARank, eps, false)
+		q = mlaMatvec(w.QBProj, &w.QBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
-		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
+		q = mlaMatvec(w.QProj, &w.QQ, H*qkHead, hidden, n)
 	}
 
 	// 2. KV down-projection → [latent | rope key]; the whole vector is cached.
-	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
+	kvDown := mlaMatvec(w.KVAProj, &w.KVAQ, latDim, hidden, n)
 	cache.AppendLatent(layer, kvDown)
 
 	// The working buffers come from the stream's scratch (a cache built without one gets fresh ones); every element is written
@@ -200,7 +201,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		dst := qNopeAbs[hh*rank : (hh+1)*rank]
 		qn := q[hh*qkHead : hh*qkHead+qkNope]
 		for d := range qkNope {
-			row := w.kvBProj[(hh*hRow+d)*rank : (hh*hRow+d)*rank+rank]
+			row := w.KVBProj[(hh*hRow+d)*rank : (hh*hRow+d)*rank+rank]
 			qd := qn[d]
 			for c := range rank {
 				dst[c] += qd * row[c]
@@ -218,7 +219,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := cnAll[j*rank : (j+1)*rank]
 		copy(cn, lat[:rank])
-		normact.RMS(cn, w.kvALayernorm, 1, rank, eps, false)
+		normact.RMS(cn, w.KVALayernorm, 1, rank, eps, false)
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave)
 		for hh := range H {
@@ -268,7 +269,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		acc := wsum[hh*rank : (hh+1)*rank]
 		out := ctx[hh*vHead : (hh+1)*vHead]
 		for e := range vHead {
-			row := w.kvBProj[(hh*hRow+qkNope+e)*rank : (hh*hRow+qkNope+e)*rank+rank]
+			row := w.KVBProj[(hh*hRow+qkNope+e)*rank : (hh*hRow+qkNope+e)*rank+rank]
 			var s float32
 			for c := range rank {
 				s += row[c] * acc[c]
@@ -278,13 +279,13 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	}
 
 	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
-	if w.gProj != nil {
-		gate := hybridattn.Matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+	if w.GProj != nil {
+		gate := hybridattn.Matvec(w.GProj, len(w.GProj)/hidden, hidden, n)
 		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 
 	// 7. Output projection (over the v_head_dim-wide context).
-	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
+	return mlaMatvec(w.OProj, &w.OQ, hidden, H*vHead, ctx)
 }
 
 // mlaForceNaive forces the naive (reconstruct-per-key) MLA path over the absorb default.

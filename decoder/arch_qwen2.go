@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -12,7 +14,7 @@ import (
 // head_dim, tied-or-untied head) plus QKVBias — Qwen2 carries an additive bias
 // on the q/k/v projections (o_proj stays biasless). The tensor schema is
 // qwen2TensorSchema.
-func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen2"); err != nil {
 		return nil, nil, err
 	}
@@ -24,7 +26,7 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, fmt.Errorf("decoder(qwen2): %w", err)
 	}
 	hd := cfg.EffectiveHeadDim()
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "qwen2",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -33,20 +35,20 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         true, // the one knob that differs from llama
 		QKNorm:          false,
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   0,   // ValidateQwen2 rejects use_sliding_window=true
-		layerIsGlobal:   nil, // all-global
+		LayerIsGlobal:   nil, // all-global
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		RotaryDim:       cfg.RotaryDim(),
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &qwen2TensorSchema, nil

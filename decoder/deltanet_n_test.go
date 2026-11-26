@@ -17,10 +17,10 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 		t.Fatalf("load ../testdata/qwen35-tiny: %v", err)
 	}
 	defer m.Close()
-	arch := m.w.arch
+	arch := m.w.Arch
 	layer := -1
 	for l := range arch.NumLayers {
-		if arch.isLinearLayer(l) {
+		if arch.IsLinearLayer(l) {
 			layer = l
 			break
 		}
@@ -28,8 +28,8 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	if layer < 0 {
 		t.Fatal("the fixture has no DeltaNet layer")
 	}
-	w := m.w.Layers[layer].delta
-	p := *arch.qwen35
+	w := m.w.Layers[layer].Delta
+	p := *arch.Qwen35
 	eps := arch.NormEps
 	nv, hk, hv, nk := p.NumValueHeads, p.KeyHeadDim, p.ValueHeadDim, p.NumKeyHeads
 	valueDim, convDim := hv*nv, 2*hk*nk+hv*nv

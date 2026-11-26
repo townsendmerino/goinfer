@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -24,7 +26,7 @@ import (
 //     and TestQwen35_textIdentityHashes pins the text path byte-identical.
 //
 // rope fields are NESTED under rope_parameters on this release, which rope.ParseFlat reads.
-func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen35DenseArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateQwen35Dense(); err != nil {
 		return nil, nil, err
 	}
@@ -36,7 +38,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 	if partialRotary > 0 && partialRotary < 1 {
 		rotaryDim = int(partialRotary * float64(cfg.HeadDim))
 	}
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		Name:             "qwen3_5",
 		HiddenDim:        cfg.HiddenDim,
 		NumLayers:        cfg.NumLayers,
@@ -45,24 +47,24 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 		HeadDim:          cfg.HeadDim,
 		IntermediateDim:  cfg.IntermediateDim, // the DENSE SwiGLU width — load-bearing here, unlike the MoE sibling
 		VocabSize:        cfg.VocabSize,
-		Norm:             NormRMS,
+		Norm:             darch.NormRMS,
 		RMSAddOne:        true,
 		NormEps:          cfg.RMSNormEps,
-		NormPlacement:    NormPre2,
-		Act:              ActSiLU,
+		NormPlacement:    darch.NormPre2,
+		Act:              darch.ActSiLU,
 		MoE:              nil, // the one structural difference; the program's FFN branches on it
 		QKNorm:           true,
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
-		layerIsGlobal:    cfg.IsGlobalLayer,
-		layerIsLinear:    cfg.IsLinearLayer,
+		LayerIsGlobal:    cfg.IsGlobalLayer,
+		LayerIsLinear:    cfg.IsLinearLayer,
 		RoPELocalBase:    spec.Base,
 		RoPEGlobalBase:   spec.Base,
-		ropeScaling:      spec.Scaling,
-		ropeScalingLocal: spec.Scaling,
+		RoPEScaling:      spec.Scaling,
+		RoPEScalingLocal: spec.Scaling,
 		RotaryDim:        rotaryDim,
 		EmbedScale:       0,
 		TiedLMHead:       false,
-		qwen35: &qwen35Params{
+		Qwen35: &archparts.Qwen35Params{
 			ConvKernel:    cfg.LinearConvKernelDim,
 			KeyHeadDim:    cfg.LinearKeyHeadDim,
 			ValueHeadDim:  cfg.LinearValueHeadDim,

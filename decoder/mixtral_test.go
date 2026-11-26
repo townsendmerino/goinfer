@@ -53,14 +53,14 @@ func TestMixtral_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "mixtral" {
-		t.Fatalf("resolved arch %q, want mixtral", m.w.arch.Name)
+	if m.w.Arch.Name != "mixtral" {
+		t.Fatalf("resolved arch %q, want mixtral", m.w.Arch.Name)
 	}
-	if m.w.arch.MoE == nil {
+	if m.w.Arch.MoE == nil {
 		t.Fatalf("expected a MoE config")
 	}
-	if m.w.arch.MoE.NumExperts != 8 || m.w.arch.MoE.TopK != 2 {
-		t.Errorf("MoE = %dx top-%d, want 8x top-2", m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK)
+	if m.w.Arch.MoE.NumExperts != 8 || m.w.Arch.MoE.TopK != 2 {
+		t.Errorf("MoE = %dx top-%d, want 8x top-2", m.w.Arch.MoE.NumExperts, m.w.Arch.MoE.TopK)
 	}
 	if got := len(m.w.Layers[0].Experts); got != 8 {
 		t.Fatalf("layer 0 loaded %d experts, want 8", got)
@@ -109,7 +109,7 @@ func TestMixtral_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, mixtralForwardFullPath)
 	t.Logf("mixtral: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
+		m.w.Arch.MoE.NumExperts, m.w.Arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped on any failure
 	// above). tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED mixtral-tiny — an
 	// exact numeric oracle for the loader + MoE routing arithmetic (the method used when the real

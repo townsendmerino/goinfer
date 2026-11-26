@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -28,7 +30,7 @@ import (
 // Every Architecture field is set below on purpose, including the ones left at a legal zero:
 // validateResolved exists because an omitted field in a hand-built struct literal loads clean and
 // computes something else.
-func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func glmOcrArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	hd := cfg.EffectiveHeadDim()
 	if err := cfg.ValidateGlmOcr(hd); err != nil {
 		return nil, nil, err
@@ -54,7 +56,7 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, fmt.Errorf("decoder(glm_ocr): mrope_section %v sums to %d, want head_dim/2 = %d", section, sum, hd/2)
 	}
 	cfg.MRopeSection = section
-	return &Architecture{
+	return &darch.Architecture{
 		Name:             "glm_ocr",
 		HiddenDim:        cfg.HiddenDim,
 		NumLayers:        cfg.NumLayers, // num_hidden_layers excludes the MTP layer at index NumLayers
@@ -64,11 +66,11 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		IntermediateDim:  cfg.IntermediateDim,
 		VocabSize:        cfg.VocabSize,
 		MaxPositions:     0, // RoPE family: no learned position table
-		Norm:             NormRMS,
+		Norm:             darch.NormRMS,
 		RMSAddOne:        false, // GlmOcrRMSNorm is weight * x (no 1+w)
 		NormEps:          cfg.RMSNormEps,
-		NormPlacement:    NormSandwich4,
-		Act:              ActSiLU,
+		NormPlacement:    darch.NormSandwich4,
+		Act:              darch.ActSiLU,
 		NonGatedMLP:      false,
 		MoE:              nil,
 		FirstKDense:      0,
@@ -80,15 +82,15 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(hd), -0.5), // head_dim^-0.5 with head_dim 128, not hidden/heads
 		AttnTempBeta:     0,
 		SlidingWindow:    0, // full attention on every layer
-		layerIsGlobal:    nil,
-		layerNoPE:        nil,
+		LayerIsGlobal:    nil,
+		LayerNoPE:        nil,
 		RoPELocalBase:    spec.Base,
 		RoPEGlobalBase:   spec.Base,
 		RotaryDim:        hd, // partial_rotary_factor 1.0: all 128 dims rotate
 		MRopeSection:     section,
 		MRopeInterleaved: false, // contiguous t/h/w blocks (chunk[i%3] over split(mrope_section))
-		ropeScaling:      nil,
-		ropeInterleave:   true, // rotate_half_llm: pair (2d, 2d+1) shares frequency d
+		RoPEScaling:      nil,
+		RoPEInterleave:   true, // rotate_half_llm: pair (2d, 2d+1) shares frequency d
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load; the checkpoint ships one
 	}, &glmOcrTensorSchema, nil

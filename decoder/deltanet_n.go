@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
@@ -69,7 +70,7 @@ func deltaNetCoreNOK(K int) bool {
 
 // deltaNetCoreN is deltaNetCore over K rows. core [K*valueDim] receives the result; mixed [K*convDim], z [K*valueDim] and the raw gate projections bt, at
 // [K*nv] are K-row slabs. st's conv window keeps copies of the rows it needs, so the slab is the caller's again on return.
-func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
+func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, eps float64, st *deltaState) {
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
 	keyDim, valueDim := hk*nk, hv*nv
@@ -115,10 +116,10 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 			cur := mixed[i*convDim : (i+1)*convDim]
 			out := conv[i*convDim : (i+1)*convDim]
 			for c := range convDim {
-				s := w.convW[c*Kc+(Kc-1)] * cur[c] // j=Kc-1 tap = current token
+				s := w.ConvW[c*Kc+(Kc-1)] * cur[c] // j=Kc-1 tap = current token
 				for j := 0; j < Kc-1; j++ {
 					if wv[j] != nil {
-						s += w.convW[c*Kc+j] * wv[j][c]
+						s += w.ConvW[c*Kc+j] * wv[j][c]
 					}
 				}
 				out[c] = normact.SiLU(s)
@@ -142,7 +143,7 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				q := qAll[i*keyDim+headK*hk : i*keyDim+(headK+1)*hk]
 				k := kAll[i*keyDim+headK*hk : i*keyDim+(headK+1)*hk]
 				v := conv[i*convDim+2*keyDim+headV*hv : i*convDim+2*keyDim+headV*hv+hv]
-				g := w.negExpA[headV] * hybridattn.Softplusf(at[i*nv+headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
+				g := w.NegExpA[headV] * hybridattn.Softplusf(at[i*nv+headV]+w.DtBias[headV]) // log-decay (negExpA = −exp(A_log))
 				gt := float32(math.Exp(float64(g)))
 				beta := hybridattn.Sigmoidf(bt[i*nv+headV])
 				if p.NegEigval {
@@ -214,7 +215,7 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				}
 				inv := float32(1 / math.Sqrt(ss/float64(hv)+onEps))
 				for vd := range hv {
-					seg[vd] = seg[vd] * inv * w.normW[vd] * normact.SiLU(zt[vd])
+					seg[vd] = seg[vd] * inv * w.NormW[vd] * normact.SiLU(zt[vd])
 				}
 			}
 		}

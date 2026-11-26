@@ -105,8 +105,8 @@ func runStep(f func() ([][]float32, error)) (out [][]float32, err error) {
 // forwardN's canBatchN, whose batched kernels the step reuses. TestCPUBatch_everyEligibleFixtureBitIdentical holds every
 // committed family it admits to bit-identity with the production forward.
 func (m *Model) cpuBatchModelEligible() error {
-	a := m.w.arch
-	if a.ownLoopFamily() {
+	a := m.w.Arch
+	if a.OwnLoopFamily() {
 		return fmt.Errorf("cpu batch: %s has its own forward", a.Name)
 	}
 	if m.layerPager != nil || m.w.Embed.Rows() == 0 {
@@ -173,7 +173,7 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 		}
 	}
 	prog := m.program()
-	hidden, vocab := m.w.arch.HiddenDim, m.w.arch.VocabSize
+	hidden, vocab := m.w.Arch.HiddenDim, m.w.Arch.VocabSize
 	h := make([]float32, len(ids)*hidden)
 	for b, id := range ids {
 		hb := h[b*hidden : (b+1)*hidden]

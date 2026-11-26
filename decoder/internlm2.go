@@ -5,6 +5,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // buildInternLM2Weights loads InternLM2 (model_type internlm2), which is a llama in every
@@ -30,7 +31,7 @@ import (
 //     keeps meeting. The de-interleave below is the only new code, and gathering group by
 //     group yields head order directly (head = g*groups + j), so no permutation is needed
 //     beyond the gather.
-func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildInternLM2Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*darch.Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	nH, nKV := arch.NumHeads, arch.NumKVHeads
@@ -41,7 +42,7 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 	gs := 2 + groups   // rows per KV group: `groups` Q, then K, then V
 	qDim, kvDim := nH*hd, nKV*hd
 
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
 	// quantizeWM. Named qw, not q, because q is already the query-tensor local below.

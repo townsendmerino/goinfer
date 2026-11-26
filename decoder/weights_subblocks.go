@@ -6,6 +6,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
@@ -17,10 +19,10 @@ import (
 // passed in because the quant resolution lives in buildWeights. mkQ and f32 are the loader's merge-aware readers
 // (loadMatMerged, loadF32Merged): every tensor here is read through one of them, so a LoRA delta on any projection is
 // merged on the on-disk tensor, before qwen3_next's fused split or Olmo's q/k/v concatenation rearranges it.
-func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
+func loadQwen35Attn(i int, l *darch.LayerWeights, arch *darch.Architecture, hidden int,
 	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error),
 	f32 func(string, ...int) ([]float32, error), quant quantMode, needCanonical, skipRow4 bool) error {
-	g := arch.qwen35
+	g := arch.Qwen35
 	var err error
 	nm := func(suf string) string { return tn(i, suf) }
 	// qw is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for the fused-tensor split cases below, which build their
@@ -28,10 +30,10 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 	qw := func(m linalg.WeightMat) linalg.WeightMat {
 		return quantizeLayerWM(m, quant, needCanonical, skipRow4)
 	}
-	if arch.isLinearLayer(i) {
+	if arch.IsLinearLayer(i) {
 		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
 		convDim := 2*keyDim + valueDim
-		d := &deltaNetWeights{}
+		d := &archparts.DeltaNetWeights{}
 		if g.FusedDeltaNetProj {
 			qkvzRows := 2*keyDim + 2*valueDim
 			qkvz, e := f32(nm("linear_attn.in_proj_qkvz.weight"), qkvzRows, hidden)
@@ -43,9 +45,9 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 				return e
 			}
 			qkvF, zF := splitQwen3NextQKVZ(qkvz, g, hidden)
-			d.inProjQKV = qw(linalg.WrapF32(qkvF, convDim, hidden))
-			d.inProjZ = qw(linalg.WrapF32(zF, valueDim, hidden))
-			d.inProjB, d.inProjA = splitQwen3NextBA(ba, g, hidden)
+			d.InProjQKV = qw(linalg.WrapF32(qkvF, convDim, hidden))
+			d.InProjZ = qw(linalg.WrapF32(zF, valueDim, hidden))
+			d.InProjB, d.InProjA = splitQwen3NextBA(ba, g, hidden)
 		} else if g.SeparateQKVProj {
 			// Olmo Hybrid: q_proj/k_proj/v_proj are three fully independent tensors —
 			// more unfused than qwen3.5's own pre-concatenated in_proj_qkv. Each
@@ -71,27 +73,27 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 			qkv = append(qkv, qf...)
 			qkv = append(qkv, kf...)
 			qkv = append(qkv, vf...)
-			d.inProjQKV = qw(linalg.WrapF32(qkv, convDim, hidden))
-			if d.inProjZ, err = mkQ(nm("linear_attn.g_proj.weight"), valueDim, hidden); err != nil {
+			d.InProjQKV = qw(linalg.WrapF32(qkv, convDim, hidden))
+			if d.InProjZ, err = mkQ(nm("linear_attn.g_proj.weight"), valueDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjB, err = f32(nm("linear_attn.b_proj.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.InProjB, err = f32(nm("linear_attn.b_proj.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
-			if d.inProjA, err = f32(nm("linear_attn.a_proj.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.InProjA, err = f32(nm("linear_attn.a_proj.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
 		} else {
-			if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
+			if d.InProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjZ, err = mkQ(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
+			if d.InProjZ, err = mkQ(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjB, err = f32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.InProjB, err = f32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
-			if d.inProjA, err = f32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.InProjA, err = f32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
 		}
@@ -115,18 +117,18 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 			conv = append(conv, qc...)
 			conv = append(conv, kc...)
 			conv = append(conv, vc...)
-			d.convW = conv
-		} else if d.convW, err = f32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
+			d.ConvW = conv
+		} else if d.ConvW, err = f32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
 			return err
 		}
-		if d.dtBias, err = f32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
+		if d.DtBias, err = f32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
 			return err
 		}
 		aLog, aerr := f32(nm("linear_attn.A_log"), g.NumValueHeads)
 		if aerr != nil {
 			return aerr
 		}
-		d.negExpA = hybridattn.NegExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
+		d.NegExpA = hybridattn.NegExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
 		// DeltaNetNormSuffix/DeltaNetOutProjSuffix (Olmo Hybrid: o_norm/o_proj instead of
 		// qwen3.5's norm/out_proj) — see their own comment on qwen35Params.
 		normSuffix := "linear_attn.norm.weight"
@@ -137,37 +139,37 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 		if g.DeltaNetOutProjSuffix != "" {
 			outProjSuffix = g.DeltaNetOutProjSuffix
 		}
-		if d.normW, err = f32(nm(normSuffix), g.ValueHeadDim); err != nil {
+		if d.NormW, err = f32(nm(normSuffix), g.ValueHeadDim); err != nil {
 			return err
 		}
-		if d.outProj, err = mkQ(nm(outProjSuffix), hidden, valueDim); err != nil {
+		if d.OutProj, err = mkQ(nm(outProjSuffix), hidden, valueDim); err != nil {
 			return err
 		}
-		l.delta = d
+		l.Delta = d
 		return nil
 	}
 	hd := arch.HeadDim
 	kvd := arch.NumKVHeads * hd
-	a := &qwenAttnWeights{}
-	if a.qProj, err = mkQ(nm("self_attn.q_proj.weight"), arch.NumHeads*hd*2, hidden); err != nil {
+	a := &archparts.QwenAttnWeights{}
+	if a.QProj, err = mkQ(nm("self_attn.q_proj.weight"), arch.NumHeads*hd*2, hidden); err != nil {
 		return err
 	}
-	if a.kProj, err = mkQ(nm("self_attn.k_proj.weight"), kvd, hidden); err != nil {
+	if a.KProj, err = mkQ(nm("self_attn.k_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.vProj, err = mkQ(nm("self_attn.v_proj.weight"), kvd, hidden); err != nil {
+	if a.VProj, err = mkQ(nm("self_attn.v_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.oProj, err = mkQ(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
+	if a.OProj, err = mkQ(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
 		return err
 	}
-	if a.qNorm, err = f32(nm("self_attn.q_norm.weight"), hd); err != nil {
+	if a.QNorm, err = f32(nm("self_attn.q_norm.weight"), hd); err != nil {
 		return err
 	}
-	if a.kNorm, err = f32(nm("self_attn.k_norm.weight"), hd); err != nil {
+	if a.KNorm, err = f32(nm("self_attn.k_norm.weight"), hd); err != nil {
 		return err
 	}
-	l.qattn = a
+	l.QAttn = a
 	return nil
 }
 
@@ -177,53 +179,53 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 // no_kda_lora path (a single f_proj/g_proj linear per gate) is implemented — see kdaArchitecture's
 // own "what was deliberately not done" for the LoRA'd a/b-split variant, which ValidateBailingHybrid
 // refuses before this is ever reached.
-func loadBailingKDA(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
+func loadBailingKDA(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, arch *darch.Architecture, hidden int,
 	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error)) error {
-	g := arch.kda
+	g := arch.KDA
 	projSize := g.NumHeads * g.HeadDim
 	nm := func(suf string) string { return tn(i, "attention."+suf) }
-	w := &kdaWeights{}
+	w := &archparts.KDAWeights{}
 	var err error
-	if w.qProj, err = mkQ(nm("q_proj.weight"), projSize, hidden); err != nil {
+	if w.QProj, err = mkQ(nm("q_proj.weight"), projSize, hidden); err != nil {
 		return err
 	}
-	if w.kProj, err = mkQ(nm("k_proj.weight"), projSize, hidden); err != nil {
+	if w.KProj, err = mkQ(nm("k_proj.weight"), projSize, hidden); err != nil {
 		return err
 	}
-	if w.vProj, err = mkQ(nm("v_proj.weight"), projSize, hidden); err != nil {
+	if w.VProj, err = mkQ(nm("v_proj.weight"), projSize, hidden); err != nil {
 		return err
 	}
-	if w.qConvW, err = st.TensorF32(nm("q_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+	if w.QConvW, err = st.TensorF32(nm("q_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
 		return err
 	}
-	if w.kConvW, err = st.TensorF32(nm("k_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+	if w.KConvW, err = st.TensorF32(nm("k_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
 		return err
 	}
-	if w.vConvW, err = st.TensorF32(nm("v_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+	if w.VConvW, err = st.TensorF32(nm("v_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
 		return err
 	}
-	if w.fProj, err = mkQ(nm("f_proj.weight"), projSize, hidden); err != nil {
+	if w.FProj, err = mkQ(nm("f_proj.weight"), projSize, hidden); err != nil {
 		return err
 	}
-	if w.dtBias, err = st.TensorF32(nm("dt_bias"), projSize); err != nil {
+	if w.DtBias, err = st.TensorF32(nm("dt_bias"), projSize); err != nil {
 		return err
 	}
-	if w.aLog, err = st.TensorF32(nm("A_log"), g.NumHeads); err != nil {
+	if w.ALog, err = st.TensorF32(nm("A_log"), g.NumHeads); err != nil {
 		return err
 	}
-	if w.bProj, err = st.TensorF32(nm("b_proj.weight"), g.NumHeads, hidden); err != nil {
+	if w.BProj, err = st.TensorF32(nm("b_proj.weight"), g.NumHeads, hidden); err != nil {
 		return err
 	}
-	if w.gProj, err = mkQ(nm("g_proj.weight"), projSize, hidden); err != nil {
+	if w.GProj, err = mkQ(nm("g_proj.weight"), projSize, hidden); err != nil {
 		return err
 	}
-	if w.oNormW, err = st.TensorF32(nm("o_norm.weight"), g.HeadDim); err != nil {
+	if w.ONormW, err = st.TensorF32(nm("o_norm.weight"), g.HeadDim); err != nil {
 		return err
 	}
-	if w.oProj, err = mkQ(nm("o_proj.weight"), hidden, projSize); err != nil {
+	if w.OProj, err = mkQ(nm("o_proj.weight"), hidden, projSize); err != nil {
 		return err
 	}
-	l.kda = w
+	l.KDA = w
 	return nil
 }
 
@@ -232,9 +234,9 @@ func loadBailingKDA(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 // arch.mla.QLoRARank > 0, else a direct q_proj (V2-Lite). The KV down-proj
 // (kv_a_proj_with_mqa) emits the latent ‖ the shared rope key; kv_b_proj reconstructs
 // per-head k_nope ‖ v from the normalized latent.
-func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int, tn func(int, string) string) error {
-	p := arch.mla
-	qkHeadDim := p.qkHeadDim()
+func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, arch *darch.Architecture, hidden int, tn func(int, string) string) error {
+	p := arch.MLA
+	qkHeadDim := p.QKHeadDim()
 	qOut := arch.NumHeads * qkHeadDim
 	kvUp := arch.NumHeads * (p.QKNopeHeadDim + p.VHeadDim)
 	// AttnPrefix/DenseSuffix (Bailing Hybrid: "attention"/"dense.weight") override the
@@ -248,46 +250,46 @@ func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *A
 		oProjSuffix = "o_proj.weight"
 	}
 	nm := func(suf string) string { return tn(i, prefix+"."+suf) }
-	w := &mlaWeights{}
+	w := &archparts.MLAWeights{}
 	var err error
 	if p.QLoRARank > 0 {
-		if w.qAProj, err = st.TensorF32(nm("q_a_proj.weight"), p.QLoRARank, hidden); err != nil {
+		if w.QAProj, err = st.TensorF32(nm("q_a_proj.weight"), p.QLoRARank, hidden); err != nil {
 			return err
 		}
-		if w.qALayernorm, err = st.TensorF32(nm("q_a_layernorm.weight"), p.QLoRARank); err != nil {
+		if w.QALayernorm, err = st.TensorF32(nm("q_a_layernorm.weight"), p.QLoRARank); err != nil {
 			return err
 		}
-		if w.qBProj, err = st.TensorF32(nm("q_b_proj.weight"), qOut, p.QLoRARank); err != nil {
+		if w.QBProj, err = st.TensorF32(nm("q_b_proj.weight"), qOut, p.QLoRARank); err != nil {
 			return err
 		}
 	} else {
-		if w.qProj, err = st.TensorF32(nm("q_proj.weight"), qOut, hidden); err != nil {
+		if w.QProj, err = st.TensorF32(nm("q_proj.weight"), qOut, hidden); err != nil {
 			return err
 		}
 	}
-	if w.kvAProj, err = st.TensorF32(nm("kv_a_proj_with_mqa.weight"), p.KVLoRARank+p.QKRopeHeadDim, hidden); err != nil {
+	if w.KVAProj, err = st.TensorF32(nm("kv_a_proj_with_mqa.weight"), p.KVLoRARank+p.QKRopeHeadDim, hidden); err != nil {
 		return err
 	}
-	if w.kvALayernorm, err = st.TensorF32(nm("kv_a_layernorm.weight"), p.KVLoRARank); err != nil {
+	if w.KVALayernorm, err = st.TensorF32(nm("kv_a_layernorm.weight"), p.KVLoRARank); err != nil {
 		return err
 	}
-	if w.kvBProj, err = st.TensorF32(nm("kv_b_proj.weight"), kvUp, p.KVLoRARank); err != nil {
+	if w.KVBProj, err = st.TensorF32(nm("kv_b_proj.weight"), kvUp, p.KVLoRARank); err != nil {
 		return err
 	}
-	if w.oProj, err = st.TensorF32(nm(oProjSuffix), hidden, arch.NumHeads*p.VHeadDim); err != nil {
+	if w.OProj, err = st.TensorF32(nm(oProjSuffix), hidden, arch.NumHeads*p.VHeadDim); err != nil {
 		return err
 	}
 	switch p.GateGranularity {
 	case "head_wise":
-		if w.gProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads, hidden); err != nil {
+		if w.GProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads, hidden); err != nil {
 			return err
 		}
 	case "element_wise":
-		if w.gProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads*p.VHeadDim, hidden); err != nil {
+		if w.GProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads*p.VHeadDim, hidden); err != nil {
 			return err
 		}
 	}
-	l.mla = w
+	l.MLA = w
 	return nil
 }
 
@@ -321,7 +323,7 @@ func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, 
 // streamExperts does for gemma4's fused experts: whole-tensor TensorF32 reads would materialize both stacks as f32, a
 // multi-GB transient per layer times every layer parallelLayers has in flight. The experts are built through
 // forExperts.
-func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]expertWeights, error) {
+func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]archparts.ExpertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
@@ -359,7 +361,7 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		}
 		return m
 	}
-	experts := make([]expertWeights, nExpert)
+	experts := make([]archparts.ExpertWeights, nExpert)
 	err = forExperts(nExpert, sink, func(e int) error {
 		var guE, dnE []float32
 		var err error
@@ -379,7 +381,7 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		if err != nil {
 			return err
 		}
-		experts[e] = expertWeights{
+		experts[e] = archparts.ExpertWeights{
 			Gate: q(guE[:half:half], inter, hidden, guView),
 			Up:   q(guE[half:], inter, hidden, guView),
 			Down: q(dnE, hidden, inter, dnView),
@@ -401,38 +403,38 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 // Router weights stay f32 (loadMat, no quant: the router is logit-critical); the experts quantize at load through the
 // layer's quant mode. The experts stream one at a time via Tensor.SubF32, so a bf16 checkpoint never materializes the
 // whole [nExperts, 2*inter, hidden] gate_up, only one expert's f32 at a time.
-func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string, needCanonical, skipRow4 bool, sink *giwWriter) (*gemma4MoEWeights, error) {
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *darch.Architecture, hidden int, l *darch.LayerWeights, quant quantMode, tn func(int, string) string, needCanonical, skipRow4 bool, sink *giwWriter) (*archparts.Gemma4MoEWeights, error) {
 	m := arch.MoE
 	nm := func(s string) string { return tn(i, s) }
-	w := &gemma4MoEWeights{
-		preFFNNorm:  l.PreMLPNorm,  // pre_feedforward_layernorm   (dense pre-norm)
-		postFFNNorm: l.PostMLPNorm, // post_feedforward_layernorm  (joint post-norm on x1+x2)
-		mlpGate:     l.GateProj,
-		mlpUp:       l.UpProj,
-		mlpDown:     l.DownProj,
-		layerScalar: l.LayerScalar,
-		denseInter:  cfg.IntermediateDim,
-		moeInter:    m.IntermediateDim,
-		nE:          m.NumExperts,
-		topK:        m.TopK,
+	w := &archparts.Gemma4MoEWeights{
+		PreFFNNorm:  l.PreMLPNorm,  // pre_feedforward_layernorm   (dense pre-norm)
+		PostFFNNorm: l.PostMLPNorm, // post_feedforward_layernorm  (joint post-norm on x1+x2)
+		MlpGate:     l.GateProj,
+		MlpUp:       l.UpProj,
+		MlpDown:     l.DownProj,
+		LayerScalar: l.LayerScalar,
+		DenseInter:  cfg.IntermediateDim,
+		MoeInter:    m.IntermediateDim,
+		NE:          m.NumExperts,
+		TopK:        m.TopK,
 	}
 	var err error
-	if w.postFFNNorm1, err = st.TensorF32(nm("post_feedforward_layernorm_1.weight"), hidden); err != nil {
+	if w.PostFFNNorm1, err = st.TensorF32(nm("post_feedforward_layernorm_1.weight"), hidden); err != nil {
 		return nil, err
 	}
-	if w.preFFNNorm2, err = st.TensorF32(nm("pre_feedforward_layernorm_2.weight"), hidden); err != nil {
+	if w.PreFFNNorm2, err = st.TensorF32(nm("pre_feedforward_layernorm_2.weight"), hidden); err != nil {
 		return nil, err
 	}
-	if w.postFFNNorm2, err = st.TensorF32(nm("post_feedforward_layernorm_2.weight"), hidden); err != nil {
+	if w.PostFFNNorm2, err = st.TensorF32(nm("post_feedforward_layernorm_2.weight"), hidden); err != nil {
 		return nil, err
 	}
-	if w.routerProj, err = loadMat(st, nm("router.proj.weight"), m.NumExperts, hidden); err != nil {
+	if w.RouterProj, err = loadMat(st, nm("router.proj.weight"), m.NumExperts, hidden); err != nil {
 		return nil, err
 	}
-	if w.routerScale, err = st.TensorF32(nm("router.scale"), hidden); err != nil {
+	if w.RouterScale, err = st.TensorF32(nm("router.scale"), hidden); err != nil {
 		return nil, err
 	}
-	if w.perExpertScale, err = st.TensorF32(nm("router.per_expert_scale"), m.NumExperts); err != nil {
+	if w.PerExpertScale, err = st.TensorF32(nm("router.per_expert_scale"), m.NumExperts); err != nil {
 		return nil, err
 	}
 	// Fused experts: gate_up [E, 2*moeInter, hidden] (gate ‖ up on the row axis),
@@ -445,10 +447,10 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 	if err != nil {
 		return nil, err
 	}
-	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, needCanonical, skipRow4, sink); err != nil {
+	if w.ExpertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, needCanonical, skipRow4, sink); err != nil {
 		return nil, err
 	}
-	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, needCanonical, skipRow4, sink); err != nil {
+	if w.ExpertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, needCanonical, skipRow4, sink); err != nil {
 		return nil, err
 	}
 	return w, nil

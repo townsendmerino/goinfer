@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/ggufconfig"
 )
 
@@ -43,7 +44,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	// everything from scratch for each call rules out cross-call state leakage
 	// as a source of any observed difference, so a real difference (if any)
 	// can only be the code path itself.
-	openFresh := func() (*embed.GGUFFile, *Config, *Architecture) {
+	openFresh := func() (*embed.GGUFFile, *Config, *darch.Architecture) {
 		g, err := embed.OpenGGUFMmap(path)
 		if err != nil {
 			t.Fatalf("open gguf: %v", err)
@@ -60,7 +61,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve architecture: %v", err)
 		}
-		if arch.qwen35 == nil {
+		if arch.Qwen35 == nil {
 			t.Fatalf("fixture at %s did not resolve to the qwen35 family — wrong model for this gate", path)
 		}
 		// Reduce to 2 layers: loadQ35's tensor names are blk.<i>. for i in
@@ -178,7 +179,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	// Both must resolve to the same live label once loaded (LoadSerializedWeights
 	// always fully populates Layers regardless of how the bundle was written, so
 	// quantLabel()'s live-inference fallback sees identical tensor kinds either way).
-	if oldGot, newGot := wOldDecoded.quantLabel(), wNewDecoded.quantLabel(); oldGot != newGot {
+	if oldGot, newGot := wOldDecoded.QuantLabel(), wNewDecoded.QuantLabel(); oldGot != newGot {
 		t.Fatalf("decoded quantLabel mismatch: old=%q new=%q", oldGot, newGot)
 	}
 

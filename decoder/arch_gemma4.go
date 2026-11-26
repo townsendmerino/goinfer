@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "math"
 
 // gemma4Architecture expresses Gemma 4 dense (HF model_type
@@ -16,7 +21,7 @@ import "math"
 //
 // The forward pass (the Gemma 4 program walk) consumes the per-layer deltas; E2B/E4B and
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
-func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func gemma4Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	globalHeadDim, globalKVHeads, err := cfg.Gemma4GlobalGeometry()
 	if err != nil {
 		return nil, nil, err
@@ -46,7 +51,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			PerExpertScale:  true,
 		}
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "gemma4",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -55,19 +60,19 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         cfg.HeadDim,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		// HF Gemma4RMSNorm is plain `x*weight` (weight init 1), not Gemma 3's `x*(1+weight)` (init 0), so the spec is no offset. Unverified
 		// against the real GGUF: if llama.cpp's gemma4 convert pre-subtracts 1 (as some Gemma converts do), flip this to true (modeling_gemma4.py).
 		RMSAddOne:     false,
 		NormEps:       cfg.RMSNormEps,
-		NormPlacement: NormSandwich4,
-		Act:           ActGeluTanh,
+		NormPlacement: darch.NormSandwich4,
+		Act:           darch.ActGeluTanh,
 		QKNorm:        true,
 		// Gemma 4 text attention uses scale 1.0 (modeling_gemma4.py): the learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit
 		// query_pre_attn_scalar^-0.5. A new scale-less v_norm normalizes V.
 		AttnScale:      1.0,
 		SlidingWindow:  cfg.SlidingWindow,
-		layerIsGlobal:  cfg.IsGlobalLayer,
+		LayerIsGlobal:  cfg.IsGlobalLayer,
 		RoPELocalBase:  localBase,
 		RoPEGlobalBase: globalBase,
 		EmbedScale:     math.Sqrt(float64(cfg.HiddenDim)),
@@ -76,7 +81,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		// had dropped it. Attn softcap stays 0.
 		FinalLogitSoftcap: cfg.FinalLogitSoftcap,
 		MoE:               moe, // nil for the dense E2B/E4B/12B variants (byte-unchanged)
-		gemma4: &gemma4Params{
+		Gemma4: &archparts.Gemma4Params{
 			GlobalHeadDim:           globalHeadDim,
 			NumGlobalKVHeads:        globalKVHeads,
 			GlobalRotaryDim:         globalRotary,

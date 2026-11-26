@@ -83,7 +83,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	imgPos, imgLen := -1, 0
 	for i, id := range in.IDs {
 		if id == in.Tok {

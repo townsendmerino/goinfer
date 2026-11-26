@@ -159,7 +159,7 @@ func TestKV2FU1_ownRollbackScheduleIndependence(t *testing.T) {
 		for _, s := range scheds {
 			t.Run(fmt.Sprintf("slots%d/%s", slots, s.name), func(t *testing.T) {
 				m, rf := loadWithTwoClassFake(t, slots)
-				vocab := m.w.arch.VocabSize
+				vocab := m.w.Arch.VocabSize
 				pre := kv2Preamble(vocab)
 				got := make([][]fu1Turn, convs)
 				last := map[int][2]int{} // slot -> the (conversation, turn) it last served

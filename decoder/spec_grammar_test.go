@@ -22,7 +22,7 @@ func TestGrammarForcedFraction(t *testing.T) {
 	if err != nil {
 		t.Skipf("no tokenizer (%v)", err)
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	vocabBytes := constrain.TokenBytes(vocab, tk.TokenText)
 
 	cases := []struct {

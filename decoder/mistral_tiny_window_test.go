@@ -69,7 +69,7 @@ func TestMistralTinyWindow_matchesHF(t *testing.T) {
 		t.Fatalf("Load (the fixture's weights are committed; a skip would hide their absence): %v", err)
 	}
 	defer m.Close()
-	if got := m.w.arch.SlidingWindow; got != g.Window {
+	if got := m.w.Arch.SlidingWindow; got != g.Window {
 		t.Fatalf("the loaded model's sliding window is %d, want %d: the window is not in play, so this would test nothing", got, g.Window)
 	}
 	last, cont := forwardMistralWindow(t, m, g.PromptIDs, g.NNew)
@@ -103,7 +103,7 @@ func TestMistralTinyWindow_goldenSeesTheWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	m.w.arch.SlidingWindow = 0
+	m.w.Arch.SlidingWindow = 0
 	m.rebuildProgramForTest()
 	last, _ := forwardMistralWindow(t, m, g.PromptIDs, 0)
 	var ne, nw float64

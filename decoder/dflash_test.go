@@ -207,8 +207,8 @@ func TestDFlash_targetEndToEnd(t *testing.T) {
 		t.Fatalf("Load(%s): %v", tdir, err)
 	}
 	defer m.Close()
-	if m.w.arch.HiddenDim != d.hidden {
-		t.Fatalf("target hidden %d != drafter hidden %d", m.w.arch.HiddenDim, d.hidden)
+	if m.w.Arch.HiddenDim != d.hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d", m.w.Arch.HiddenDim, d.hidden)
 	}
 
 	for _, tr := range g.Traces {

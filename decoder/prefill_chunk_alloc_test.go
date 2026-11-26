@@ -34,8 +34,8 @@ func bigMallocs() uint64 {
 // chunkWorkingSet is one pass's activation buffers for C rows, by the arch's geometry (the buffers runLayersFromEmbedNFloor
 // takes), in bytes.
 func chunkWorkingSet(m *Model, C int) int64 {
-	a := m.w.arch
-	maxQ, kvDim := a.maxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
+	a := m.w.Arch
+	maxQ, kvDim := a.MaxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
 	return int64(C) * int64(5*a.HiddenDim+2*maxQ+2*kvDim+2*a.IntermediateDim) * 4
 }
 
@@ -131,7 +131,7 @@ func TestG40T0b_peakLiveHeapReal0p5B(t *testing.T) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	const n, C = 7000, 2048
 	_, _, peak := chunkAllocs(t, m, chunkPrompt(n, vocab, 1), C, true)
-	a := m.w.arch
+	a := m.w.Arch
 	kv := int64(n) * int64(a.NumLayers) * 2 * int64(a.NumKVHeads*a.HeadDim) * 4
 	bound := kv + chunkWorkingSet(m, C) + prefillAttnScratchBudget + 128<<20
 	fmt.Fprintf(os.Stderr, "[g40-t0b] peak live heap over the post-load baseline %.1f MiB; bound %.1f MiB (KV %.1f + one chunk %.1f + attention pool %.0f + margin 128)\n",

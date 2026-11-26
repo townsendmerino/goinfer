@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -48,21 +49,21 @@ func TestSpark25Tiny_textParity(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "spark2_5" {
-		t.Fatalf("arch = %q, want spark2_5", m.w.arch.Name)
+	if m.w.Arch.Name != "spark2_5" {
+		t.Fatalf("arch = %q, want spark2_5", m.w.Arch.Name)
 	}
-	if m.w.arch.HeadDim != 32 {
+	if m.w.Arch.HeadDim != 32 {
 		t.Fatalf("HeadDim = %d, want 32 (decoupled from hidden/heads=16 — a wrong value means the "+
-			"loader silently fell back to hidden/heads instead of reading the explicit head_dim)", m.w.arch.HeadDim)
+			"loader silently fell back to hidden/heads instead of reading the explicit head_dim)", m.w.Arch.HeadDim)
 	}
-	if m.w.arch.AttnGate != GateSigmoid {
-		t.Fatalf("AttnGate = %v, want GateSigmoid", m.w.arch.AttnGate)
+	if m.w.Arch.AttnGate != darch.GateSigmoid {
+		t.Fatalf("AttnGate = %v, want GateSigmoid", m.w.Arch.AttnGate)
 	}
-	if m.w.arch.NormPlacement != NormPre2 {
+	if m.w.Arch.NormPlacement != darch.NormPre2 {
 		t.Fatalf("NormPlacement = %v, want NormPre2 (sequential) — Spark-X2.5 is NOT Cohere's "+
-			"parallel block, despite the audit's original claim; see spark25Architecture's doc comment", m.w.arch.NormPlacement)
+			"parallel block, despite the audit's original claim; see spark25Architecture's doc comment", m.w.Arch.NormPlacement)
 	}
-	if m.w.arch.TiedLMHead {
+	if m.w.Arch.TiedLMHead {
 		t.Fatal("fixture resolved as tied; it is built untied on purpose (tie_word_embeddings=False — " +
 			"see pin_spark2_5_tiny.py's own note on why), so a tied read here means the config was misparsed")
 	}

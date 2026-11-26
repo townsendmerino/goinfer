@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
-
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/adapter"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
@@ -263,7 +263,7 @@ func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == 
 // runner supports and the load-time precision policy admits it.
 func (m *Model) decodeRunnerDecline() string {
 	f := m.admitFacts()
-	return admitRunner(f, f.Arch.runnerShapeDeclineSSM(f.SSMResident))
+	return admitRunner(f, f.Arch.RunnerShapeDeclineSSM(f.SSMResident))
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate: per-group activation scales are implemented by CUDA
@@ -286,13 +286,13 @@ func actGroupResidentDecline(backend string, actGroup int, quant string) string 
 // can: the per-32 twins cover the dense decode path over widths in whole groups of 32, and every mixer or FFN listed
 // here has kernels that read one activation scale per vector (the build's own check, webgpu's actG32Decline, refuses
 // the same shapes).
-func webgpuActGroupShapeDecline(backend string, actGroup int, a *Architecture) string {
+func webgpuActGroupShapeDecline(backend string, actGroup int, a *darch.Architecture) string {
 	if backend != "webgpu" || actGroup == 0 || a == nil {
 		return ""
 	}
-	for _, f := range a.residentFeatures() {
+	for _, f := range a.ResidentFeatures() {
 		switch f {
-		case FeatMoE, FeatMLA, FeatSSM, FeatDeltaNet, FeatKDA, FeatGemma4EModel, FeatAttnSink, FeatLayerNorm:
+		case darch.FeatMoE, darch.FeatMLA, darch.FeatSSM, darch.FeatDeltaNet, darch.FeatKDA, darch.FeatGemma4EModel, darch.FeatAttnSink, darch.FeatLayerNorm:
 			return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels cover the dense decode path, and this model needs %s", actGroup, f)
 		}
 	}
@@ -327,124 +327,14 @@ func (m *Model) residentProjsInt4() bool {
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
-func decodeRunnerEligible(a *Architecture) bool { return runnerShapeDecline(a) == "" }
-
-// Runner-shape decline reasons. The hardware matrix prints them, so they are short and name no backend.
-const (
-	runnerShapeOwnForward = "own forward, not bridged"
-	runnerShapeBringUp    = "bring-up gate (GOINFER_SSM_RESIDENT unset)"
-	runnerShapeNemoMoE    = "Nemotron MoE block"
-	runnerShapeMoE        = "MoE shape"
-	runnerShapeRoPE       = "local and global RoPE tables differ in length"
-)
+func decodeRunnerEligible(a *darch.Architecture) bool { return runnerShapeDecline(a) == "" }
 
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
 // reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the environment
 // (ssmResidentEnv).
-func runnerShapeDecline(a *Architecture) string {
-	return a.runnerShapeDeclineSSM(ssmResidentEnv())
-}
-
-// runnerShapeDeclineSSM is runnerShapeDecline with the GOINFER_SSM_RESIDENT knob given (ssmResident), not read: Admit's form.
-func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
-	// Own-forward families (their non-uniform forward the uniform-layer runners can't express).
-	// Only Gemma 4 (dense, env-gated) is bridged so far; the rest keep the staged path. A
-	// bridged family does NOT early-return true — it FALLS THROUGH to the common feature/shape
-	// checks below, so a later decline COMPOSES instead of being short-circuited past. That is
-	// the trap the old blanket `return false` set for whoever narrows the next family here: move
-	// one line to a conditional admit and it silently skips every check below it. Structuring the
-	// bridged case as a fall-through makes that mistake un-writable (cf. the geometry port).
-	switch {
-	case a.gptoss != nil:
-		// gpt-oss falls through to the common checks below, same discipline as gemma4: the sink
-		// (FeatAttnSink) and the MoE bias-in-combine kernels are backend feature gates, not an
-		// arch-level decline, so a backend without them declines there instead of here.
-	case a.gemma4 != nil:
-		// Gemma 4 is admitted UNCONDITIONALLY: do not re-gate a family on an env var without a gate behind it (the flag reads
-		// as caution and functions as a coverage hole). The gates are cuda.TestGemma4MoEScaled_residentParity and
-		// TestGemma4DenseScaled_residentParity. Dense and MoE both fall through to the common checks below; softcap and the
-		// E-model's PLE (FeatGemma4EModel) are per-backend feature gates. The parallel dense‖MoE FFN runs on cuda's own path,
-		// routed around the generic MoE checks via HasGemma4MoE.
-	case a.qwen35 != nil:
-		// Gated-DeltaNet hybrids (qwen3_5, qwen3_5_moe, qwen3_next) fall through, same discipline as gemma4/gpt-oss: the
-		// recurrence and the fused output gate are a BACKEND capability (FeatDeltaNet), so a backend without them declines at
-		// the feature gate, and falling through is what keeps the checks below composing. The MoE siblings also need FeatMoE,
-		// from the ordinary MoE checks.
-	case a.llama4 != nil:
-		return runnerShapeOwnForward
-	case a.lfm2 != nil:
-		// LFM2/LFM2.5: its short-convolution layers (opShortConv) are not bridged. Declining HERE and not only via FeatShortConv is
-		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
-		// convolution with a rolling window that no uniform-layer runner can express, a property of the family
-		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident
-		// column is generated from this predicate, and without this case LFM2 would fall through to
-		// ropeResidentCompatible and read "yes".
-		return runnerShapeOwnForward
-	}
-	// Granite-4.0-H resident SSM hybrid: its own mixer-kind path (Mamba-2 ⊕
-	// attention), so it bypasses the standard GQA gates below. Admitted only
-	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentEnv).
-	if a.granite != nil {
-		if !ssmResident {
-			return runnerShapeBringUp
-		}
-		return ""
-	}
-	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP,
-	// reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in precision gate is applied
-	// at the Model level (DecodeRunnerEligible).
-	//
-	// Nemotron 3 Nano adds a fourth block kind (MoE FFN, arch.MoE != nil). cuda and metal build no MoE block
-	// and their per-layer switch has no default, so an unhandled kind would leave that layer's buffers nil: a
-	// crash-or-garbage risk, not a clean decline. Decline here, at the one predicate every backend's admission
-	// funnels through; decodeRunnerDecline overrides it for webgpu, which implements the block.
-	if a.nemotron != nil {
-		if a.MoE != nil {
-			return runnerShapeNemoMoE
-		}
-		return ""
-	}
-	if a.MoE != nil && !a.moeResidentEligible() {
-		return runnerShapeMoE
-	}
-	// FFN / norm / head constraints common to both attention paths (sandwich norms, logit softcap, NonGatedMLP,
-	// LearnedPosEmbed, OutBias) are all representable, and a backend that lacks one declines via the feature gate
-	// (decoder/features.go), not here: this stays an ARCH-shape predicate, because a capability blocked here for everyone
-	// blocks the family for a backend that implements it. GPT-2, the only LearnedPosEmbed family, has no RoPE, so
-	// ropeResidentCompatible passes vacuously.
-	// MLA (DeepSeek/Kimi) runs its own latent-attention path (gpu/mla.go), so the GQA/RoPE/QK-norm/sliding-window checks
-	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
-	if a.mla != nil {
-		return ""
-	}
-	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (per-head RMSNorm
-	// before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
-	// (GLM/Phi rotary_dim < HeadDim) is handled, sliding window, and per-layer-type RoPE
-	// (Mellum YaRN-on-global vs default-local invFreq + mscale). The last gate is
-	// ropeResidentCompatible below.
-	if !a.ropeResidentCompatible() {
-		return runnerShapeRoPE
-	}
-	return ""
-}
-
-// ropeResidentCompatible is a coarse ARCH-level screen on the GENERIC (finalizeRoPE) local/global inv-freq tables:
-// they must share a length. Gemma passes it trivially (both come from one model-level rd), and that is NOT proof the
-// runner ropes Gemma correctly: its REAL per-layer tables (Layer(i).RopeInvFreq) differ in length, an inequality
-// this check never sees. The real invariant (each bound invFreq buffer has exactly rhalf entries) is asserted per layer
-// where the buffer meets the geometry (cuda/backend.go).
-func (a *Architecture) ropeResidentCompatible() bool {
-	return len(a.ropeInvFreqLocal) == len(a.ropeInvFreqGlobal)
-}
-
-// moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
-// runner handles. The route kernel now covers every routing flavor — softmax/sigmoid,
-// optional selection bias, norm_topk_prob, routed scaling, and DeepSeek group-limited
-// top-k (NGroup > 1) — plus the always-on shared expert and dense
-// prefix layers (FirstKDense > 0), so any int8-stackable MoE qualifies.
-func (a *Architecture) moeResidentEligible() bool {
-	return a.MoE != nil
+func runnerShapeDecline(a *darch.Architecture) string {
+	return a.RunnerShapeDeclineSSM(ssmResidentEnv())
 }
 
 // ResidentMoESpec holds the MoE geometry and routing knobs for a resident backend or planner.
@@ -521,7 +411,7 @@ type ResidentSpec struct {
 // architecture carries that subsystem.
 func (m *Model) ResidentSpec() ResidentSpec {
 	var spec ResidentSpec
-	a := m.w.arch
+	a := m.w.Arch
 	if mo := a.MoE; mo != nil {
 		spec.MoE = &ResidentMoESpec{
 			NumExperts:            mo.NumExperts,
@@ -536,19 +426,19 @@ func (m *Model) ResidentSpec() ResidentSpec {
 			TopkGroup:             mo.TopkGroup,
 		}
 	}
-	if p := a.mla; p != nil {
+	if p := a.MLA; p != nil {
 		spec.MLA = &ResidentMLASpec{
 			QLoRARank:      p.QLoRARank,
 			KVLoRARank:     p.KVLoRARank,
 			QKNopeHeadDim:  p.QKNopeHeadDim,
 			QKRopeHeadDim:  p.QKRopeHeadDim,
 			VHeadDim:       p.VHeadDim,
-			RopeInterleave: p.ropeInterleave,
+			RopeInterleave: p.RoPEInterleave,
 			AttnScale:      a.AttnScale,
-			RopeScale:      a.ropeMscale(0),
+			RopeScale:      a.RoPEMscale(0),
 		}
 	}
-	if g := a.qwen35; g != nil {
+	if g := a.Qwen35; g != nil {
 		spec.Qwen35 = &ResidentQwen35Spec{
 			ConvKernel:    g.ConvKernel,
 			KeyHeadDim:    g.KeyHeadDim,
@@ -558,7 +448,7 @@ func (m *Model) ResidentSpec() ResidentSpec {
 			AttnGate:      g.AttnGate,
 		}
 	}
-	if np := a.nemotron; np != nil {
+	if np := a.Nemotron; np != nil {
 		spec.Nemotron = &ResidentNemotronSpec{
 			NHeads:     np.NHeads,
 			HeadDim:    np.HeadDim,
@@ -569,7 +459,7 @@ func (m *Model) ResidentSpec() ResidentSpec {
 			AttnScale:  float32(a.AttnScale),
 		}
 	}
-	if g := a.granite; g != nil {
+	if g := a.Granite; g != nil {
 		ls := float32(1)
 		if a.LogitScale != 0 {
 			ls = float32(a.LogitScale)
@@ -618,14 +508,14 @@ type Gemma4MoEResidentBundle struct {
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
 // (docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
-	a := m.w.arch
-	inv := a.ropeInvFreq(i)
+	a := m.w.Arch
+	inv := a.RoPEInvFreq(i)
 	width := len(inv)
 	if width == 0 {
-		width = a.rotaryDim() / 2
+		width = a.EffectiveRotaryDim() / 2
 	}
 	out := make([]float32, width)
-	if a.isNoPELayer(i) {
+	if a.IsNoPELayer(i) {
 		return out // all-zero: identity rotation, given mscale==1 on every NoPE layer today
 	}
 	for j, v := range inv {
@@ -640,10 +530,10 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 // attention_multiplier; MLA uses the qk head-dim). Never hardcode 1/√headDim here: the small parity fixtures
 // (scalar == headDim) cannot see the difference. Falls back to 1/√headDim only if an arch left AttnScale unset.
 func (m *Model) AttnScale() float32 {
-	if s := m.w.arch.AttnScale; s != 0 {
+	if s := m.w.Arch.AttnScale; s != 0 {
 		return float32(s)
 	}
-	return float32(1.0 / math.Sqrt(float64(m.w.arch.HeadDim)))
+	return float32(1.0 / math.Sqrt(float64(m.w.Arch.HeadDim)))
 }
 
 // ResidentDims is the model-level shape from the resolved Architecture. Per-layer geometry (a layer's own head dim and
@@ -664,7 +554,7 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {
-	if e := float32(m.w.arch.NormEps); e != 0 {
+	if e := float32(m.w.Arch.NormEps); e != 0 {
 		return e
 	}
 	return 1e-6
@@ -682,8 +572,8 @@ var attnSoftcapOffForTest atomic.Bool
 func (m *Model) withResidency() *Model {
 	defer m.releaseKQuantFile() // the q4k load's GGUF mapping is read by this build only (KQuantReader)
 	if attnSoftcapOffForTest.Load() {
-		m.w.arch.AttnLogitSoftcap = 0
-		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
+		m.w.Arch.AttnLogitSoftcap = 0
+		m.prog = buildProgram(m.w.Arch, m.w.HasExperts) // the CPU reads the softcap from the program
 	}
 	if m.opts.planResidency {
 		return m // FitQuery's open: plannedDecodePath asks the backend instead
@@ -890,7 +780,7 @@ func (m *Model) ResidentKVPrecision() string {
 	if m.resident == nil || m.be == nil || m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.opts)
+	got, _ := ResolveKV(m.be.Name(), m.w.Arch, m.opts)
 	return got
 }
 
@@ -900,7 +790,7 @@ func (m *Model) HeadTable() string {
 	if m.w == nil {
 		return ""
 	}
-	if m.w.arch != nil && m.w.arch.TiedLMHead {
+	if m.w.Arch != nil && m.w.Arch.TiedLMHead {
 		return m.w.Embed.Kind().String()
 	}
 	return m.w.LMHead.Kind().String()
@@ -1070,10 +960,10 @@ func (m *Model) embedResident(id int) []float32 { return m.embedResidentInto(id,
 // embedIsTableRow reports whether embedResidentInto is exactly m.w.Embed.Row: no embedding multiplier of either kind is
 // applied. A resident that gathers the next token's embedding itself (GreedyChainAvailable) is exact only then.
 func (m *Model) embedIsTableRow() bool {
-	if sc := m.w.arch.EmbedScale; sc != 0 && sc != 1 {
+	if sc := m.w.Arch.EmbedScale; sc != 0 && sc != 1 {
 		return false
 	}
-	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
+	if g := m.w.Arch.Granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
 		return false
 	}
 	return true
@@ -1096,7 +986,7 @@ func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 // embedResidentScratch is embedResidentInto with a Gemma 4 E-model's per-layer-input scratch (gemma4PLEInputsScratch) supplied,
 // so embedding row after row allocates nothing per row.
 func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float32 {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	n := m.BackendView().EmbedLen()
 	var row []float32
 	if cap(dst) >= n {
@@ -1108,7 +998,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	m.w.Embed.Row(id, h)
 	// Gemma's √hidden embedding multiplier (Architecture.EmbedScale), mirroring runLayers.
 	// Applied here rather than on the GPU so the resident stream starts where the CPU's does.
-	if sc := m.w.arch.EmbedScale; sc != 0 && sc != 1 {
+	if sc := m.w.Arch.EmbedScale; sc != 0 && sc != 1 {
 		f := float32(sc)
 		for i := range h {
 			h[i] *= f
@@ -1116,7 +1006,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	}
 	// Granite embedding_multiplier — the resident residual stream starts at emb·EmbMul
 	// (the only Granite scalar applied outside the resident runner / weight folds).
-	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
+	if g := m.w.Arch.Granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
 		for i := range h {
 			h[i] *= g.EmbMul
 		}
@@ -1128,7 +1018,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 			// Planted defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
 			tok := make([]float32, len(tail))
 			m.w.PerLayerTokenEmbed.Row(id, tok)
-			sc := float32(math.Sqrt(float64(m.w.arch.gemma4.HiddenSizePerLayerInput)) / math.Sqrt2)
+			sc := float32(math.Sqrt(float64(m.w.Arch.Gemma4.HiddenSizePerLayerInput)) / math.Sqrt2)
 			for i := range tail {
 				tail[i] -= tok[i] * sc
 			}

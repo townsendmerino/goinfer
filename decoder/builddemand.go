@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -189,7 +190,7 @@ type archFacts struct {
 }
 
 // configFacts is archFacts without covered: what c resolved to says on any backend.
-func configFacts(c *Config, arch *Architecture) archFacts {
+func configFacts(c *Config, arch *darch.Architecture) archFacts {
 	a := archFacts{resolved: true, state: stateBuffers(arch), checkpoint: recurrentCheckpointBuffers(arch)}
 	if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 		a.moeLayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
@@ -205,10 +206,10 @@ func configFacts(c *Config, arch *Architecture) archFacts {
 type fitMemo struct {
 	mu sync.Mutex
 
-	derived  bool          // a config has been resolved into arch and base below
-	arch     *Architecture // the config resolved again; nil when it does not resolve
-	base     archFacts     // configFacts of arch, covered unset
-	archProg *layerProgram // arch's program, for coverage
+	derived  bool                // a config has been resolved into arch and base below
+	arch     *darch.Architecture // the config resolved again; nil when it does not resolve
+	base     archFacts           // configFacts of arch, covered unset
+	archProg *layerProgram       // arch's program, for coverage
 	facts    map[string]archFacts
 
 	prog *layerProgram   // the loaded architecture's program, for admission
@@ -266,10 +267,10 @@ func (m *Model) buildDemand(backend string) BuildDemand {
 // admitProgram is the program of m's architecture that admission checks backend's operation table against: nil for a backend
 // with no table, whose admission reads features, and for a Model with no architecture.
 func (m *Model) admitProgram(backend string) *layerProgram {
-	if residentBackendTables[backend] == nil || m.w == nil || m.w.arch == nil {
+	if residentBackendTables[backend] == nil || m.w == nil || m.w.Arch == nil {
 		return nil
 	}
-	build := func() *layerProgram { return buildProgram(m.w.arch, configExperts(m.w.arch)) }
+	build := func() *layerProgram { return buildProgram(m.w.Arch, configExperts(m.w.Arch)) }
 	memo := m.fitOf
 	if memo == nil {
 		return build()

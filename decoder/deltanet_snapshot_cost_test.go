@@ -103,8 +103,8 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
-	if a.qwen35 == nil {
+	a := m.w.Arch
+	if a.Qwen35 == nil {
 		t.Fatalf("%s is not a qwen3_5 hybrid", a.Name)
 	}
 
@@ -120,13 +120,13 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 
 	// Cross-check the live cache against what the config predicts. The size table in the report
 	// is computed from config; this is what stops it being a paper number.
-	p := *a.qwen35
+	p := *a.Qwen35
 	wantS := p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim
 	wantConvDim := 2*(p.KeyHeadDim*p.NumKeyHeads) + p.ValueHeadDim*p.NumValueHeads
 	nLinear := 0
 	for l, d := range cache.delta {
 		if d == nil {
-			if a.isLinearLayer(l) {
+			if a.IsLinearLayer(l) {
 				t.Errorf("layer %d is linear but has no deltaState", l)
 			}
 			continue

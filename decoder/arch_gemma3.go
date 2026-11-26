@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -12,7 +14,7 @@ import (
 // scale, dual-base RoPE (local/global per layer), √hidden embedding scale, and
 // a tied LM head with no soft-capping. ValidateAssumptions pins the bits this
 // forward pass can't vary (Gemma-2 soft-capping, unsupported activation).
-func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func gemma3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	// transformers ≥5.10 carries the dual RoPE bases in rope_parameters
 	// ({full_attention, sliding_attention}.rope_theta) instead of the flat
 	// rope_theta / rope_local_base_freq that gemma-3-270m uses (and the VL configs
@@ -61,7 +63,7 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateAssumptions(); err != nil {
 		return nil, nil, err
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:              "gemma3",
 		HiddenDim:         cfg.HiddenDim,
 		NumLayers:         cfg.NumLayers,
@@ -70,15 +72,15 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:           cfg.HeadDim,
 		IntermediateDim:   cfg.IntermediateDim,
 		VocabSize:         cfg.VocabSize,
-		Norm:              NormRMS,
+		Norm:              darch.NormRMS,
 		RMSAddOne:         true,
 		NormEps:           cfg.RMSNormEps,
-		NormPlacement:     NormSandwich4,
-		Act:               ActGeluTanh,
+		NormPlacement:     darch.NormSandwich4,
+		Act:               darch.ActGeluTanh,
 		QKNorm:            true,
 		AttnScale:         math.Pow(cfg.QueryPreAttnScalar, -0.5),
 		SlidingWindow:     cfg.SlidingWindow,
-		layerIsGlobal:     cfg.IsGlobalLayer,
+		LayerIsGlobal:     cfg.IsGlobalLayer,
 		RoPELocalBase:     cfg.RoPELocalBase,
 		RoPEGlobalBase:    cfg.RoPEGlobalBase,
 		EmbedScale:        math.Sqrt(float64(cfg.HiddenDim)),

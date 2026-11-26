@@ -102,7 +102,7 @@ func TestPlanAgreesWithAdmission(t *testing.T) {
 
 	// The plant: the arch-only verdict Plan read before (features, then ResidentEligible).
 	old, _, _ := planAgreement(t, func(m *Model, be string) bool {
-		return len(m.MissingResidentFeatures(ResidentBackendFeatures(be))) > 0 || !ResidentEligible(m.w.arch, be)
+		return len(m.MissingResidentFeatures(ResidentBackendFeatures(be))) > 0 || !ResidentEligible(m.w.Arch, be)
 	})
 	if len(old) == 0 {
 		t.Fatal("the old arch-only verdict agrees everywhere: the comparison cannot go red")

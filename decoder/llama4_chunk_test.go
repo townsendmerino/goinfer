@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"encoding/json"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"testing"
 )
 
@@ -14,10 +16,10 @@ import (
 // stated explicitly: if HF chunks differently, this test names exactly what to change.
 func TestLlama4_chunkedAttentionStart(t *testing.T) {
 	const C = 8192
-	arch := &Architecture{
-		llama4: &llama4Params{
-			chunkSize: C,
-			useRope:   []bool{true, false}, // layer 0 chunked, layer 1 NoPE
+	arch := &darch.Architecture{
+		Llama4: &archparts.Llama4Params{
+			ChunkSize: C,
+			UseRope:   []bool{true, false}, // layer 0 chunked, layer 1 NoPE
 		},
 	}
 	for name, tc := range map[string]struct {
@@ -34,7 +36,7 @@ func TestLlama4_chunkedAttentionStart(t *testing.T) {
 		"NoPE layer stays full causal, mid": {1, C + 7, 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := arch.attnChunkStart(tc.layer, tc.pos); got != tc.want {
+			if got := arch.AttnChunkStart(tc.layer, tc.pos); got != tc.want {
 				t.Errorf("layer %d pos %d: start %d, want %d", tc.layer, tc.pos, got, tc.want)
 			}
 		})
@@ -43,20 +45,20 @@ func TestLlama4_chunkedAttentionStart(t *testing.T) {
 	// A checkpoint that does not set the field must be unaffected — 0 means no chunking, and
 	// every non-llama4 family must be untouched by this change.
 	t.Run("chunkSize 0 does not chunk", func(t *testing.T) {
-		a := &Architecture{llama4: &llama4Params{chunkSize: 0, useRope: []bool{true}}}
-		if got := a.attnChunkStart(0, 99999); got != 0 {
+		a := &darch.Architecture{Llama4: &archparts.Llama4Params{ChunkSize: 0, UseRope: []bool{true}}}
+		if got := a.AttnChunkStart(0, 99999); got != 0 {
 			t.Errorf("start %d with no chunk size, want 0", got)
 		}
 	})
 	t.Run("a non-llama4 arch does not chunk", func(t *testing.T) {
-		if got := (&Architecture{}).attnChunkStart(0, 99999); got != 0 {
+		if got := (&darch.Architecture{}).AttnChunkStart(0, 99999); got != 0 {
 			t.Errorf("start %d on a plain arch, want 0", got)
 		}
 	})
 	// Layers past useRope's length must not panic — a config whose no_rope_layers list is
 	// shorter than num_hidden_layers is malformed, but indexing it is still an out-of-range.
 	t.Run("layer past the useRope list", func(t *testing.T) {
-		if got := arch.attnChunkStart(99, C+1); got != 0 {
+		if got := arch.AttnChunkStart(99, C+1); got != 0 {
 			t.Errorf("start %d for an out-of-range layer, want 0", got)
 		}
 	})
@@ -74,10 +76,10 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 		chunk       = 4
 		nLayers     = 1
 	)
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, NumLayers: nLayers,
 		AttnScale: 1,
-		llama4:    &llama4Params{chunkSize: chunk, useRope: []bool{true}},
+		Llama4:    &archparts.Llama4Params{ChunkSize: chunk, UseRope: []bool{true}},
 	}
 	// Positions 0..5. Key 0 is the one the chunk mask must exclude for a query at pos 4/5;
 	// its VALUE is the marker, so if it is attended the context carries it.
@@ -93,7 +95,7 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 	}
 	c.scr = newDecodeScratch(arch, c.knobs)
 
-	attend := func(pos int, a *Architecture) []float32 {
+	attend := func(pos int, a *darch.Architecture) []float32 {
 		ctx := make([]float32, nH*hd)
 		q := []float32{1, 0}
 		attendQuery(q, ctx, c.scr.scoresBuf(nPos), c, 0, pos, true, a)
@@ -109,7 +111,7 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 
 	// The premise: WITHOUT chunking the same query does see it. If this stops holding the test
 	// above passes for the wrong reason — the marker would be invisible either way.
-	plain := &Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, NumLayers: nLayers, AttnScale: 1}
+	plain := &darch.Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, NumLayers: nLayers, AttnScale: 1}
 	if ref := attend(4, plain); ref[0] <= 1 {
 		t.Fatalf("premise broke: an unchunked query at pos 4 does not see position 0 either "+
 			"(ctx=%v), so this fixture cannot detect the mask", ref)
@@ -140,21 +142,21 @@ func TestLlama4_chunkSizeReachesTheArchitecture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if arch.llama4 == nil {
+	if arch.Llama4 == nil {
 		t.Fatal("no llama4 params on the resolved arch")
 	}
-	if arch.llama4.chunkSize != cfg.AttentionChunkSize {
+	if arch.Llama4.ChunkSize != cfg.AttentionChunkSize {
 		t.Errorf("chunkSize %d, config says %d — attention_chunk_size is read from JSON and "+
 			"dropped on the way to the forward, which is M-05 exactly",
-			arch.llama4.chunkSize, cfg.AttentionChunkSize)
+			arch.Llama4.ChunkSize, cfg.AttentionChunkSize)
 	}
 	// And it must bound a query past the chunk on a RoPE layer. Mind the polarity of no_rope_layers, the opposite of
 	// its name: the adapter reads `useRope[i] = NoRopeLayers[i] != 0`, so with {1,1,0,1} layers 0/1/3 USE RoPE and
 	// layer 2 is the NoPE one.
-	if got := arch.attnChunkStart(0, 8192+3); got != 8192 {
+	if got := arch.AttnChunkStart(0, 8192+3); got != 8192 {
 		t.Errorf("resolved arch: start %d at pos 8195 on RoPE layer 0, want 8192", got)
 	}
-	if got := arch.attnChunkStart(2, 8192+3); got != 0 {
+	if got := arch.AttnChunkStart(2, 8192+3); got != 0 {
 		t.Errorf("resolved arch: NoPE layer 2 is chunked (start %d), want full causal", got)
 	}
 }

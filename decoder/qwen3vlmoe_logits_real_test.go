@@ -188,7 +188,7 @@ func TestQwen3VLMoe_goinferLogits(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		hidden := m.w.arch.HiddenDim
+		hidden := m.w.Arch.HiddenDim
 		f, err := os.Create(out + "." + arm + ".f32")
 		if err != nil {
 			t.Fatal(err)

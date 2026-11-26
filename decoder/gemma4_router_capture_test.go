@@ -64,11 +64,11 @@ func TestGemma4RouterCapture(t *testing.T) {
 		"act":     os.Getenv("GOINFER_FAKEQUANT_ACT"),
 		"experts": os.Getenv("GOINFER_FAKEQUANT_EXPERTS"),
 		"nTokens": len(ids),
-		"nLayers": m.w.arch.NumLayers,
+		"nLayers": m.w.Arch.NumLayers,
 		"sel":     sel,
 	})
 	if err := os.WriteFile(out, b, 0644); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("captured %d selections (%d tokens × %d layers) -> %s\n", len(sel), len(ids), m.w.arch.NumLayers, out)
+	fmt.Printf("captured %d selections (%d tokens × %d layers) -> %s\n", len(sel), len(ids), m.w.Arch.NumLayers, out)
 }

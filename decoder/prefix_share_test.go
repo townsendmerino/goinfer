@@ -51,7 +51,7 @@ func TestPromptHiddenMany_matchesSeparate(t *testing.T) {
 			if !m.CanSharePrefix() {
 				t.Fatalf("%s should take the checkpoint path", tc.ckpt)
 			}
-			prompts := sharedPrompts(m.w.arch.VocabSize, 40, []int{1, 3, 8, 20, 2})
+			prompts := sharedPrompts(m.w.Arch.VocabSize, 40, []int{1, 3, 8, 20, 2})
 			before := shared
 			got, err := m.PromptHiddenMany(context.Background(), prompts)
 			if err != nil {
@@ -96,7 +96,7 @@ func TestPromptHiddenMany_int8KV(t *testing.T) {
 // checkpoint that shared memory with the caches resumed from it (the Gated DeltaNet state is updated in place per token) would drift with each resume.
 func TestPrefixCheckpoint_isNotMutatedByResuming(t *testing.T) {
 	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
-	prompts := sharedPrompts(m.w.arch.VocabSize, 24, []int{6, 11})
+	prompts := sharedPrompts(m.w.Arch.VocabSize, 24, []int{6, 11})
 	cp, err := m.checkpointPrefix(context.Background(), prompts[0][:24])
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestPromptHiddenMany_fallsBackWhereItCannotShare(t *testing.T) {
 	if m.CanSharePrefix() {
 		t.Fatal("a dense llama should not take the Qwen3.5 checkpoint path")
 	}
-	prompts := sharedPrompts(m.w.arch.VocabSize, 30, []int{3, 5})
+	prompts := sharedPrompts(m.w.Arch.VocabSize, 30, []int{3, 5})
 	got, err := m.PromptHiddenMany(context.Background(), prompts)
 	if err != nil {
 		t.Fatal(err)
@@ -174,14 +174,14 @@ func TestPromptHiddenMany_cancelled(t *testing.T) {
 	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := m.PromptHiddenMany(ctx, sharedPrompts(m.w.arch.VocabSize, 30, []int{3, 4})); err == nil {
+	if _, err := m.PromptHiddenMany(ctx, sharedPrompts(m.w.Arch.VocabSize, 30, []int{3, 4})); err == nil {
 		t.Error("a cancelled context did not stop PromptHiddenMany")
 	}
 }
 
 func TestPromptLogitsMany_isTheLMHeadOfTheHidden(t *testing.T) {
 	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
-	prompts := sharedPrompts(m.w.arch.VocabSize, 28, []int{5, 9})
+	prompts := sharedPrompts(m.w.Arch.VocabSize, 28, []int{5, 9})
 	lg, err := m.PromptLogitsMany(context.Background(), prompts)
 	if err != nil {
 		t.Fatal(err)
@@ -189,8 +189,8 @@ func TestPromptLogitsMany_isTheLMHeadOfTheHidden(t *testing.T) {
 	hs, _ := m.PromptHiddenMany(context.Background(), prompts)
 	for i := range prompts {
 		want := m.lmHeadN(hs[i], 1)
-		if len(lg[i]) != m.w.arch.VocabSize {
-			t.Fatalf("logits are %d wide, want %d", len(lg[i]), m.w.arch.VocabSize)
+		if len(lg[i]) != m.w.Arch.VocabSize {
+			t.Fatalf("logits are %d wide, want %d", len(lg[i]), m.w.Arch.VocabSize)
 		}
 		for j := range want {
 			if lg[i][j] != want[j] {

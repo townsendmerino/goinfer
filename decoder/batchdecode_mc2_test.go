@@ -94,7 +94,7 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 	if err := m.cpuBatchModelEligible(); err != nil {
 		t.Skipf("%v", err)
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ctx := context.Background()
 	const maxB = 8
 	// maxB caches prefilled to depth once; each arm rewinds them to depth before running (positional KV: truncation

@@ -93,7 +93,7 @@ func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, e
 // norm (its own doc: "post-final-norm hidden states") — this must NOT normalize
 // again, unlike hiddenLastSequential.
 func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(len(ids))
 	hN, err := m.runLayersFromEmbedN(ctx, m.embedN(ids), cache, false) // never fast: exact HF parity is the point
 	if err != nil {
@@ -107,7 +107,7 @@ func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, er
 // token. Kept as the fallback for K==1 and the families canBatchN excludes, and
 // callable directly so a test can compare it against hiddenLastBatched.
 func (m *Model) hiddenLastSequential(ctx context.Context, ids []int) ([]float32, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(len(ids))
 	var h []float32
 	for _, id := range ids {
@@ -128,7 +128,7 @@ func (m *Model) hiddenLastSequential(ctx context.Context, ids []int) ([]float32,
 
 // checkHiddenIDs is HiddenLast's and PromptHidden's input check: a length bound and a vocab bound. who prefixes the error.
 func (m *Model) checkHiddenIDs(who string, ids []int) error {
-	a := m.w.arch
+	a := m.w.Arch
 	// A length bound, not just a vocab one. This preallocates KV for len(ids) positions and runs one sequential forward per
 	// token with no context to cancel it, so an over-long input is a huge allocation (hundreds of GB at 500k positions) plus
 	// attention over up to len(ids) keys per token, holding the caller's mutex until the process is OOM-killed. Positions
@@ -199,7 +199,7 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 	if m.canBatchN(len(prompt)) {
 		return m.hiddenLastBatched(ctx, prompt)
 	}
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(len(prompt))
 	if m.qwen35BatchN(len(prompt), cache) {
 		hN, err := m.runLayersQwen35N(ctx, m.embedN(prompt), cache)

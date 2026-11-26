@@ -19,6 +19,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 const loaderIdentityPath = "../testdata/loader_identity.json"
@@ -75,7 +77,7 @@ func loaderFixtures(t *testing.T) []string {
 }
 
 // loadForIdentity loads p in mode (loaderModes) with that mode's backend flags.
-func loadForIdentity(p, mode string) (*Weights, error) {
+func loadForIdentity(p, mode string) (*darch.Weights, error) {
 	name, suffix, _ := strings.Cut(mode, "/")
 	if suffix != "" {
 		suffix = "/" + suffix
@@ -395,7 +397,7 @@ func TestLoaderIdentity_walkTotal(t *testing.T) {
 			t.Errorf("%+v and %+v have one identity", pair[0], pair[1])
 		}
 	}
-	wt := reflect.TypeFor[Weights]()
+	wt := reflect.TypeFor[darch.Weights]()
 	for name := range loaderSkip {
 		if _, ok := wt.FieldByName(name); !ok {
 			t.Errorf("loaderSkip names %q, which Weights does not have", name)
@@ -407,20 +409,20 @@ func TestLoaderIdentity_walkTotal(t *testing.T) {
 // changing it moves exactly that tensor, and an entry that keys no walked tensor is listed. No committed fixture holds a
 // k-quant tensor (the tiny GGUFs are F32, and Q4_K needs rows of 256), so this is the only check of the path.
 func TestLoaderIdentity_kquant(t *testing.T) {
-	mk := func(src kquantSrc, stray bool) []tensorIdentity {
-		w := &Weights{Embed: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false), LMHead: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false)}
+	mk := func(src archparts.KQuantSrc, stray bool) []tensorIdentity {
+		w := &darch.Weights{Embed: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false), LMHead: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false)}
 		q8, _, _, _ := w.Embed.Int8()
-		w.kquant = map[*int8]kquantSrc{unsafe.SliceData(q8): src}
+		w.KQuant = map[*int8]archparts.KQuantSrc{unsafe.SliceData(q8): src}
 		if stray {
-			w.kquant[new(int8)] = src
+			w.KQuant[new(int8)] = src
 		}
 		return loaderIdentity(w)
 	}
-	base := mk(kquantSrc{tensor: "token_embd.weight", kind: "q5_k"}, false)
-	if d := loaderIdentityDiff(base, mk(kquantSrc{tensor: "token_embd.weight", kind: "q6_k"}, false)); !slices.Equal(d, []string{"Embed"}) {
+	base := mk(archparts.KQuantSrc{Tensor: "token_embd.weight", Kind: "q5_k"}, false)
+	if d := loaderIdentityDiff(base, mk(archparts.KQuantSrc{Tensor: "token_embd.weight", Kind: "q6_k"}, false)); !slices.Equal(d, []string{"Embed"}) {
 		t.Errorf("a changed k-quant source moved %v, want [Embed]", d)
 	}
-	if d := loaderIdentityDiff(base, mk(kquantSrc{tensor: "token_embd.weight", kind: "q5_k"}, true)); !slices.Equal(d, []string{"kquant"}) {
+	if d := loaderIdentityDiff(base, mk(archparts.KQuantSrc{Tensor: "token_embd.weight", Kind: "q5_k"}, true)); !slices.Equal(d, []string{"kquant"}) {
 		t.Errorf("a stray k-quant entry moved %v, want [kquant]", d)
 	}
 }

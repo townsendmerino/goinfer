@@ -111,7 +111,7 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 	}
 	orig := cpuBatchFusedW4A8
 	t.Cleanup(func() { cpuBatchFusedW4A8 = orig })
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	start := time.Now()
 	caches := make([]*KVCache, maxB)
 	for b := range maxB {

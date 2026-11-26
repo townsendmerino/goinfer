@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"testing"
 )
 
@@ -51,7 +52,7 @@ func TestResolveQwen35(t *testing.T) {
 	if arch.HiddenDim != 64 || arch.NumHeads != 4 || arch.NumKVHeads != 2 || arch.HeadDim != 16 {
 		t.Errorf("dims: hidden=%d heads=%d kv=%d hd=%d", arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim)
 	}
-	if !arch.QKNorm || arch.Norm != NormRMS || !arch.RMSAddOne || arch.Act != ActSiLU || arch.NormPlacement != NormPre2 {
+	if !arch.QKNorm || arch.Norm != darch.NormRMS || !arch.RMSAddOne || arch.Act != darch.ActSiLU || arch.NormPlacement != darch.NormPre2 {
 		t.Errorf("wrong norm/act flags (RMSAddOne should be true: Qwen3_5MoeRMSNorm is (1+w))")
 	}
 	// Partial rotary: 0.25 * 16 = 4.
@@ -61,16 +62,16 @@ func TestResolveQwen35(t *testing.T) {
 
 	// Per-layer dispatch: layers 0-2 linear, layer 3 full (softmax).
 	for i := range 3 {
-		if !arch.isLinearLayer(i) || arch.isGlobalLayer(i) {
-			t.Errorf("layer %d: isLinear=%v isGlobal=%v, want linear", i, arch.isLinearLayer(i), arch.isGlobalLayer(i))
+		if !arch.IsLinearLayer(i) || arch.IsGlobalLayer(i) {
+			t.Errorf("layer %d: isLinear=%v isGlobal=%v, want linear", i, arch.IsLinearLayer(i), arch.IsGlobalLayer(i))
 		}
 	}
-	if arch.isLinearLayer(3) || !arch.isGlobalLayer(3) {
-		t.Errorf("layer 3: isLinear=%v isGlobal=%v, want full/softmax", arch.isLinearLayer(3), arch.isGlobalLayer(3))
+	if arch.IsLinearLayer(3) || !arch.IsGlobalLayer(3) {
+		t.Errorf("layer 3: isLinear=%v isGlobal=%v, want full/softmax", arch.IsLinearLayer(3), arch.IsGlobalLayer(3))
 	}
 
 	// Gated DeltaNet geometry.
-	q := arch.qwen35
+	q := arch.Qwen35
 	if q == nil {
 		t.Fatal("qwen35 params nil")
 	}

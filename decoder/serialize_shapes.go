@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // The per-group checks validateShapes runs. Each returns the first mismatch it finds as a *SerializeError naming the layer
@@ -93,10 +95,10 @@ type layerNeeds struct {
 
 // needsAt reads layer i's needs from the ops the forward walks (Architecture.layerOps), so a check cannot drift from the
 // program: each op that dereferences a struct or multiplies by a projection makes it mandatory here.
-func needsAt(w *Weights, arch *Architecture, i int) layerNeeds {
+func needsAt(w *darch.Weights, arch *darch.Architecture, i int) layerNeeds {
 	var n layerNeeds
 	lw := &w.Layers[i]
-	for _, o := range arch.layerOps(i, w.hasExperts(i)) {
+	for _, o := range arch.LayerOps(i, w.HasExperts(i)) {
 		switch o.Kind {
 		case opProjQKV:
 			n.qkv, n.kv, n.v = true, true, !lw.VFromK
@@ -137,11 +139,11 @@ func needsAt(w *Weights, arch *Architecture, i int) layerNeeds {
 }
 
 // validateLayerAttnShapes checks layer i's generic attention projections, gate, biases, norms and sinks.
-func validateLayerAttnShapes(lw *LayerWeights, arch *Architecture, i int, n layerNeeds) *SerializeError {
-	hd := arch.headDimAt(i)
+func validateLayerAttnShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, n layerNeeds) *SerializeError {
+	hd := arch.HeadDimAt(i)
 	// headsAt(i), not NumHeads: some families (Laguna) vary the query head count per layer, so a uniform NumHeads would
 	// reject a correctly written bundle. headDimAt/kvHeadsAt/ffnAt are per-layer here too.
-	qDim, kvDim := arch.headsAt(i)*hd, arch.kvHeadsAt(i)*hd
+	qDim, kvDim := arch.HeadsAt(i)*hd, arch.KVHeadsAt(i)*hd
 	for _, c := range []struct {
 		name       string
 		m          *linalg.WeightMat
@@ -162,9 +164,9 @@ func validateLayerAttnShapes(lw *LayerWeights, arch *Architecture, i int, n laye
 	// not the config (XS.2 declares per-element and ships per-head). So both are accepted and
 	// anything else is rejected, rather than leaving the field unchecked.
 	if g := lw.GProj.Rows(); g > 0 {
-		if g != arch.headsAt(i) && g != qDim {
+		if g != arch.HeadsAt(i) && g != qDim {
 			return &SerializeError{fmt.Sprintf("layer %d GProj: %d rows, arch expects %d (per-head) or %d (per-element)",
-				i, g, arch.headsAt(i), qDim)}
+				i, g, arch.HeadsAt(i), qDim)}
 		}
 		if e := shapeCols(fmt.Sprintf("layer %d GProj", i), lw.GProj.Cols(), arch.HiddenDim); e != nil {
 			return e
@@ -188,7 +190,7 @@ func validateLayerAttnShapes(lw *LayerWeights, arch *Architecture, i int, n laye
 		{"QNorm", len(lw.QNorm), qNormWant}, {"KNorm", len(lw.KNorm), kNormWant},
 		{"PreAttnNorm", len(lw.PreAttnNorm), arch.HiddenDim}, {"PostAttnNorm", len(lw.PostAttnNorm), arch.HiddenDim},
 		{"PreMLPNorm", len(lw.PreMLPNorm), arch.HiddenDim}, {"PostMLPNorm", len(lw.PostMLPNorm), arch.HiddenDim},
-		{"UpBias", len(lw.UpBias), arch.ffnAt(i)}, {"DownBias", len(lw.DownBias), arch.HiddenDim},
+		{"UpBias", len(lw.UpBias), arch.FFNAt(i)}, {"DownBias", len(lw.DownBias), arch.HiddenDim},
 	} {
 		if e := shapeVec(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
 			return e
@@ -197,8 +199,8 @@ func validateLayerAttnShapes(lw *LayerWeights, arch *Architecture, i int, n laye
 	// The v6 completeness tail. forward_gptoss.go and the generic sink attention path index AttnSinks[qh] for every head, so for
 	// these families they are required, not optional; a sidecar written before v6 is sink-free, within giwMinReadV, and judged
 	// fresh by mtime.
-	if arch.hasAttnSinks() {
-		if e := shapeReq(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.headsAt(i)); e != nil {
+	if arch.HasAttnSinks() {
+		if e := shapeReq(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.HeadsAt(i)); e != nil {
 			return e
 		}
 	}
@@ -207,8 +209,8 @@ func validateLayerAttnShapes(lw *LayerWeights, arch *Architecture, i int, n laye
 
 // validateLayerMLPShapes checks layer i's dense FFN, the generic MoE block (router, experts, shared expert) and gemma-4's
 // PLE branch and dense||MoE sub-block.
-func validateLayerMLPShapes(lw *LayerWeights, arch *Architecture, i int, n layerNeeds) *SerializeError {
-	ffn := arch.ffnAt(i)
+func validateLayerMLPShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, n layerNeeds) *SerializeError {
+	ffn := arch.FFNAt(i)
 	for _, c := range []struct {
 		name       string
 		m          *linalg.WeightMat
@@ -274,7 +276,7 @@ func validateLayerMLPShapes(lw *LayerWeights, arch *Architecture, i int, n layer
 		}
 	}
 	// gpt-oss: addBias iterates every expert bias with no nil check, so they are required (the v6 completeness tail).
-	if arch.gptoss != nil {
+	if arch.GPTOSS != nil {
 		for xe := range lw.Experts {
 			ex := &lw.Experts[xe]
 			if ex.Gate.Rows() == 0 {
@@ -301,11 +303,11 @@ func validateLayerMLPShapes(lw *LayerWeights, arch *Architecture, i int, n layer
 // validateLayerPLEShapes checks gemma-4's per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm
 // rmsNorm'd at fixed widths; a wrong-shape blob OOB-panics or silently truncates the PLE activation. required is whether the
 // layer's program runs the branch, which then dereferences all three unconditionally.
-func validateLayerPLEShapes(lw *LayerWeights, arch *Architecture, i int, required bool) *SerializeError {
-	if arch.gemma4 == nil {
+func validateLayerPLEShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, required bool) *SerializeError {
+	if arch.Gemma4 == nil {
 		return nil
 	}
-	if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+	if pleDim := arch.Gemma4.HiddenSizePerLayerInput; pleDim > 0 {
 		if e := shapeMat(fmt.Sprintf("layer %d PLEGate", i), &lw.PLEGate, pleDim, arch.HiddenDim, required); e != nil {
 			return e
 		}
@@ -323,8 +325,8 @@ func validateLayerPLEShapes(lw *LayerWeights, arch *Architecture, i int, require
 // gemma-4, so the arch.MoE block never validates it. The router feeds make([]float32, nE) and each expert index runs to nE:
 // a short router mis-routes silently, a long one or ne != NumExperts panics in the decode goroutine. Cross-check against the
 // arch. required is whether the layer's program runs the sub-block.
-func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, required bool) *SerializeError {
-	mo := lw.gemma4moe
+func validateGemma4MoEShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, required bool) *SerializeError {
+	mo := lw.Gemma4MoE
 	if mo == nil || arch.MoE == nil {
 		if required {
 			return &SerializeError{fmt.Sprintf("layer %d: gemma4 MoE layer has no dense||MoE sub-block", i)}
@@ -332,13 +334,13 @@ func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, requir
 		return nil
 	}
 	nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
-	if e := shapeMat(fmt.Sprintf("layer %d gemma4moe router", i), &mo.routerProj, nE, arch.HiddenDim, true); e != nil {
+	if e := shapeMat(fmt.Sprintf("layer %d gemma4moe router", i), &mo.RouterProj, nE, arch.HiddenDim, true); e != nil {
 		return e
 	}
-	if len(mo.expertsGateUp) != nE || len(mo.expertsDown) != nE {
-		return &SerializeError{fmt.Sprintf("layer %d gemma4moe expert count: gate|up %d / down %d, arch expects %d", i, len(mo.expertsGateUp), len(mo.expertsDown), nE)}
+	if len(mo.ExpertsGateUp) != nE || len(mo.ExpertsDown) != nE {
+		return &SerializeError{fmt.Sprintf("layer %d gemma4moe expert count: gate|up %d / down %d, arch expects %d", i, len(mo.ExpertsGateUp), len(mo.ExpertsDown), nE)}
 	}
-	if e := shapeVec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
+	if e := shapeVec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.PerExpertScale), nE); e != nil {
 		return e
 	}
 	// routerScale scales the [hidden] router input and the five norms rmsNorm at hidden, all unconditionally: an absent or
@@ -347,12 +349,12 @@ func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, requir
 		name string
 		got  int
 	}{
-		{"gemma4moe routerScale", len(mo.routerScale)},
-		{"gemma4moe preFFNNorm", len(mo.preFFNNorm)},
-		{"gemma4moe postFFNNorm1", len(mo.postFFNNorm1)},
-		{"gemma4moe preFFNNorm2", len(mo.preFFNNorm2)},
-		{"gemma4moe postFFNNorm2", len(mo.postFFNNorm2)},
-		{"gemma4moe postFFNNorm", len(mo.postFFNNorm)},
+		{"gemma4moe routerScale", len(mo.RouterScale)},
+		{"gemma4moe preFFNNorm", len(mo.PreFFNNorm)},
+		{"gemma4moe postFFNNorm1", len(mo.PostFFNNorm1)},
+		{"gemma4moe preFFNNorm2", len(mo.PreFFNNorm2)},
+		{"gemma4moe postFFNNorm2", len(mo.PostFFNNorm2)},
+		{"gemma4moe postFFNNorm", len(mo.PostFFNNorm)},
 	} {
 		if e := shapeReq(fmt.Sprintf("layer %d %s", i, c.name), c.got, arch.HiddenDim); e != nil {
 			return e
@@ -364,19 +366,19 @@ func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, requir
 		m          *linalg.WeightMat
 		rows, cols int
 	}{
-		{"gemma4moe mlpGate", &mo.mlpGate, mo.denseInter, arch.HiddenDim},
-		{"gemma4moe mlpUp", &mo.mlpUp, mo.denseInter, arch.HiddenDim},
-		{"gemma4moe mlpDown", &mo.mlpDown, arch.HiddenDim, mo.denseInter},
+		{"gemma4moe mlpGate", &mo.MlpGate, mo.DenseInter, arch.HiddenDim},
+		{"gemma4moe mlpUp", &mo.MlpUp, mo.DenseInter, arch.HiddenDim},
+		{"gemma4moe mlpDown", &mo.MlpDown, arch.HiddenDim, mo.DenseInter},
 	} {
 		if e := shapeMat(fmt.Sprintf("layer %d %s", i, c.name), c.m, c.rows, c.cols, true); e != nil {
 			return e
 		}
 	}
-	for xe := range mo.expertsGateUp {
-		if e := shapeMat(fmt.Sprintf("layer %d gemma4moe expert %d gate|up", i, xe), &mo.expertsGateUp[xe], 2*moeInter, arch.HiddenDim, true); e != nil {
+	for xe := range mo.ExpertsGateUp {
+		if e := shapeMat(fmt.Sprintf("layer %d gemma4moe expert %d gate|up", i, xe), &mo.ExpertsGateUp[xe], 2*moeInter, arch.HiddenDim, true); e != nil {
 			return e
 		}
-		if e := shapeMat(fmt.Sprintf("layer %d gemma4moe expert %d down", i, xe), &mo.expertsDown[xe], arch.HiddenDim, moeInter, true); e != nil {
+		if e := shapeMat(fmt.Sprintf("layer %d gemma4moe expert %d down", i, xe), &mo.ExpertsDown[xe], arch.HiddenDim, moeInter, true); e != nil {
 			return e
 		}
 	}
@@ -386,17 +388,17 @@ func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, requir
 // validateLayerHybridShapes checks layer i's hybrid mixer: the Gated DeltaNet and gated softmax attention of the qwen3.5
 // family, DeepSeek MLA, Bailing's KDA, Mamba-2 and LFM2's short conv. Each struct is flat f32 slices and matrices the forward
 // indexes at arch-derived widths; a mixer the program runs but the bundle lacks is a nil dereference at the first forward.
-func validateLayerHybridShapes(lw *LayerWeights, arch *Architecture, i int, n layerNeeds) *SerializeError {
+func validateLayerHybridShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, n layerNeeds) *SerializeError {
 	for _, c := range []struct {
 		name    string
 		need    bool
 		present bool
 	}{
-		{"Gated DeltaNet", n.delta, lw.delta != nil},
-		{"gated attention", n.qattn, lw.qattn != nil},
-		{"MLA attention", n.mla, lw.mla != nil},
-		{"KDA attention", n.kda, lw.kda != nil},
-		{"Mamba-2 mixer", n.mamba, lw.mamba != nil},
+		{"Gated DeltaNet", n.delta, lw.Delta != nil},
+		{"gated attention", n.qattn, lw.QAttn != nil},
+		{"MLA attention", n.mla, lw.MLA != nil},
+		{"KDA attention", n.kda, lw.KDA != nil},
+		{"Mamba-2 mixer", n.mamba, lw.Mamba != nil},
 	} {
 		if c.need && !c.present {
 			return &SerializeError{fmt.Sprintf("layer %d: the program runs a %s but the bundle has none", i, c.name)}
@@ -405,28 +407,28 @@ func validateLayerHybridShapes(lw *LayerWeights, arch *Architecture, i int, n la
 	if e := validateShortConvShapes(lw, arch, i, n.conv); e != nil {
 		return e
 	}
-	if d := lw.delta; d != nil && arch.qwen35 != nil {
+	if d := lw.Delta; d != nil && arch.Qwen35 != nil {
 		if e := validateDeltaNetShapes(d, arch, i); e != nil {
 			return e
 		}
 	}
-	if q := lw.qattn; q != nil {
+	if q := lw.QAttn; q != nil {
 		if e := validateGatedAttnShapes(q, arch, i); e != nil {
 			return e
 		}
 	}
-	if m := lw.mla; m != nil && arch.mla != nil {
+	if m := lw.MLA; m != nil && arch.MLA != nil {
 		if e := validateMLAShapes(m, arch, i, n.mlaHeadWise); e != nil {
 			return e
 		}
 	}
-	if k := lw.kda; k != nil && arch.kda != nil {
+	if k := lw.KDA; k != nil && arch.KDA != nil {
 		if e := validateKDAShapes(k, arch, i); e != nil {
 			return e
 		}
 	}
-	if m := lw.mamba; m != nil && (arch.granite != nil || arch.nemotron != nil) {
-		if e := validateMamba2Shapes(m, arch.mamba2Shapes(n.mambaNormGroups), i); e != nil {
+	if m := lw.Mamba; m != nil && (arch.Granite != nil || arch.Nemotron != nil) {
+		if e := validateMamba2Shapes(m, arch.Mamba2Shapes(n.mambaNormGroups), i); e != nil {
 			return e
 		}
 	}
@@ -437,34 +439,34 @@ func validateLayerHybridShapes(lw *LayerWeights, arch *Architecture, i int, n la
 // arch-derived widths, so a short one slice-panics in the decode goroutine, as for the bias vectors. The presence check is
 // the load-bearing half: a conv layer whose mixer is absent is what a pre-v8 .giw hands back, and the panic it produces at
 // the first forward is the defect this validation converts into a refusal at load.
-func validateShortConvShapes(lw *LayerWeights, arch *Architecture, i int, required bool) *SerializeError {
-	if arch.lfm2 == nil {
+func validateShortConvShapes(lw *darch.LayerWeights, arch *darch.Architecture, i int, required bool) *SerializeError {
+	if arch.LFM2 == nil {
 		return nil
 	}
-	cd, k := arch.lfm2.ConvDim, arch.lfm2.ConvLCache
+	cd, k := arch.LFM2.ConvDim, arch.LFM2.ConvLCache
 	isConv := required || lw.QProj.Rows() == 0 // a conv layer loads no attention projections
 	switch {
-	case isConv && lw.shortConv == nil:
+	case isConv && lw.ShortConv == nil:
 		return &SerializeError{fmt.Sprintf("layer %d: lfm2 conv layer has no short-conv "+
 			"mixer — the bundle was written before the v8 tail and would nil-deref at the "+
 			"first forward", i)}
-	case lw.shortConv == nil:
+	case lw.ShortConv == nil:
 		return nil
 	}
-	c := lw.shortConv
-	if e := shapeMat(fmt.Sprintf("layer %d shortConv.inProj", i), &c.inProj, 3*cd, arch.HiddenDim, true); e != nil {
+	c := lw.ShortConv
+	if e := shapeMat(fmt.Sprintf("layer %d shortConv.inProj", i), &c.InProj, 3*cd, arch.HiddenDim, true); e != nil {
 		return e
 	}
-	if e := shapeEq(fmt.Sprintf("layer %d shortConv.convW", i), len(c.convW), cd*k); e != nil {
+	if e := shapeEq(fmt.Sprintf("layer %d shortConv.convW", i), len(c.ConvW), cd*k); e != nil {
 		return e
 	}
-	return shapeMat(fmt.Sprintf("layer %d shortConv.outProj", i), &c.outProj, arch.HiddenDim, cd, true)
+	return shapeMat(fmt.Sprintf("layer %d shortConv.outProj", i), &c.OutProj, arch.HiddenDim, cd, true)
 }
 
 // validateDeltaNetShapes checks a Gated DeltaNet layer against the qwen35 geometry: in_proj_qkv emits [q;k;v] (convDim),
 // in_proj_z the valueDim output gate, the b/a gates and the per-value-head vectors one value per value head.
-func validateDeltaNetShapes(d *deltaNetWeights, arch *Architecture, i int) *SerializeError {
-	g, hidden := arch.qwen35, arch.HiddenDim
+func validateDeltaNetShapes(d *archparts.DeltaNetWeights, arch *darch.Architecture, i int) *SerializeError {
+	g, hidden := arch.Qwen35, arch.HiddenDim
 	keyDim, valueDim, numV := g.NumKeyHeads*g.KeyHeadDim, g.NumValueHeads*g.ValueHeadDim, g.NumValueHeads
 	convDim := 2*keyDim + valueDim
 	for _, c := range []struct {
@@ -472,9 +474,9 @@ func validateDeltaNetShapes(d *deltaNetWeights, arch *Architecture, i int) *Seri
 		m          *linalg.WeightMat
 		rows, cols int
 	}{
-		{"inProjQKV", &d.inProjQKV, convDim, hidden},
-		{"inProjZ", &d.inProjZ, valueDim, hidden},
-		{"outProj", &d.outProj, hidden, valueDim},
+		{"inProjQKV", &d.InProjQKV, convDim, hidden},
+		{"inProjZ", &d.InProjZ, valueDim, hidden},
+		{"outProj", &d.OutProj, hidden, valueDim},
 	} {
 		if e := shapeMat(fmt.Sprintf("layer %d delta.%s", i, c.name), c.m, c.rows, c.cols, true); e != nil {
 			return e
@@ -485,9 +487,9 @@ func validateDeltaNetShapes(d *deltaNetWeights, arch *Architecture, i int) *Seri
 		got  int
 		want int
 	}{
-		{"inProjB", len(d.inProjB), numV * hidden}, {"inProjA", len(d.inProjA), numV * hidden},
-		{"convW", len(d.convW), convDim * g.ConvKernel}, {"dtBias", len(d.dtBias), numV},
-		{"negExpA", len(d.negExpA), numV}, {"normW", len(d.normW), g.ValueHeadDim},
+		{"inProjB", len(d.InProjB), numV * hidden}, {"inProjA", len(d.InProjA), numV * hidden},
+		{"convW", len(d.ConvW), convDim * g.ConvKernel}, {"dtBias", len(d.DtBias), numV},
+		{"negExpA", len(d.NegExpA), numV}, {"normW", len(d.NormW), g.ValueHeadDim},
 	} {
 		if e := shapeReq(fmt.Sprintf("layer %d delta.%s", i, c.name), c.got, c.want); e != nil {
 			return e
@@ -497,34 +499,34 @@ func validateDeltaNetShapes(d *deltaNetWeights, arch *Architecture, i int) *Seri
 }
 
 // validateGatedAttnShapes checks a qwen3.5 gated softmax layer: q_proj is double width ([query ‖ gate] per head).
-func validateGatedAttnShapes(q *qwenAttnWeights, arch *Architecture, i int) *SerializeError {
-	hd, hidden := arch.headDimAt(i), arch.HiddenDim
-	qDim, kvDim := arch.headsAt(i)*hd, arch.kvHeadsAt(i)*hd
+func validateGatedAttnShapes(q *archparts.QwenAttnWeights, arch *darch.Architecture, i int) *SerializeError {
+	hd, hidden := arch.HeadDimAt(i), arch.HiddenDim
+	qDim, kvDim := arch.HeadsAt(i)*hd, arch.KVHeadsAt(i)*hd
 	for _, c := range []struct {
 		name       string
 		m          *linalg.WeightMat
 		rows, cols int
 	}{
-		{"qProj", &q.qProj, 2 * qDim, hidden},
-		{"kProj", &q.kProj, kvDim, hidden},
-		{"vProj", &q.vProj, kvDim, hidden},
-		{"oProj", &q.oProj, hidden, qDim},
+		{"qProj", &q.QProj, 2 * qDim, hidden},
+		{"kProj", &q.KProj, kvDim, hidden},
+		{"vProj", &q.VProj, kvDim, hidden},
+		{"oProj", &q.OProj, hidden, qDim},
 	} {
 		if e := shapeMat(fmt.Sprintf("layer %d qattn.%s", i, c.name), c.m, c.rows, c.cols, true); e != nil {
 			return e
 		}
 	}
-	if e := shapeVec(fmt.Sprintf("layer %d qattn.qNorm", i), len(q.qNorm), hd); e != nil {
+	if e := shapeVec(fmt.Sprintf("layer %d qattn.qNorm", i), len(q.QNorm), hd); e != nil {
 		return e
 	}
-	return shapeVec(fmt.Sprintf("layer %d qattn.kNorm", i), len(q.kNorm), hd)
+	return shapeVec(fmt.Sprintf("layer %d qattn.kNorm", i), len(q.KNorm), hd)
 }
 
 // validateMLAShapes checks a DeepSeek MLA layer: the q LoRA bottleneck (or the direct q_proj when QLoRARank is 0), the
 // latent down-projection [KVLoRARank+QKRopeHeadDim], the per-head up-projection and the optional output gate.
-func validateMLAShapes(m *mlaWeights, arch *Architecture, i int, headWise bool) *SerializeError {
-	p, hidden, H := arch.mla, arch.HiddenDim, arch.NumHeads
-	qk, rank := p.qkHeadDim(), p.KVLoRARank
+func validateMLAShapes(m *archparts.MLAWeights, arch *darch.Architecture, i int, headWise bool) *SerializeError {
+	p, hidden, H := arch.MLA, arch.HiddenDim, arch.NumHeads
+	qk, rank := p.QKHeadDim(), p.KVLoRARank
 	type flat struct {
 		name       string
 		f          []float32
@@ -532,32 +534,32 @@ func validateMLAShapes(m *mlaWeights, arch *Architecture, i int, headWise bool) 
 		rows, cols int
 	}
 	checks := []flat{
-		{"kvAProj", m.kvAProj, &m.kvAQ, rank + p.QKRopeHeadDim, hidden},
-		{"kvBProj", m.kvBProj, &linalg.WeightMat{}, H * (p.QKNopeHeadDim + p.VHeadDim), rank},
-		{"oProj", m.oProj, &m.oQ, hidden, H * p.VHeadDim},
+		{"kvAProj", m.KVAProj, &m.KVAQ, rank + p.QKRopeHeadDim, hidden},
+		{"kvBProj", m.KVBProj, &linalg.WeightMat{}, H * (p.QKNopeHeadDim + p.VHeadDim), rank},
+		{"oProj", m.OProj, &m.OQ, hidden, H * p.VHeadDim},
 	}
 	if p.QLoRARank > 0 {
-		checks = append(checks, flat{"qAProj", m.qAProj, &m.qAQ, p.QLoRARank, hidden}, flat{"qBProj", m.qBProj, &m.qBQ, H * qk, p.QLoRARank})
-		if e := shapeReq(fmt.Sprintf("layer %d mla.qALayernorm", i), len(m.qALayernorm), p.QLoRARank); e != nil {
+		checks = append(checks, flat{"qAProj", m.QAProj, &m.QAQ, p.QLoRARank, hidden}, flat{"qBProj", m.QBProj, &m.QBQ, H * qk, p.QLoRARank})
+		if e := shapeReq(fmt.Sprintf("layer %d mla.qALayernorm", i), len(m.QALayernorm), p.QLoRARank); e != nil {
 			return e
 		}
 	} else {
-		checks = append(checks, flat{"qProj", m.qProj, &m.qQ, H * qk, hidden})
+		checks = append(checks, flat{"qProj", m.QProj, &m.QQ, H * qk, hidden})
 	}
 	for _, c := range checks {
 		if e := shapeFlat(fmt.Sprintf("layer %d mla.%s", i, c.name), c.f, c.q, c.rows, c.cols, true); e != nil {
 			return e
 		}
 	}
-	if e := shapeReq(fmt.Sprintf("layer %d mla.kvALayernorm", i), len(m.kvALayernorm), rank); e != nil {
+	if e := shapeReq(fmt.Sprintf("layer %d mla.kvALayernorm", i), len(m.KVALayernorm), rank); e != nil {
 		return e
 	}
-	if m.gProj != nil {
+	if m.GProj != nil {
 		gRows := H * p.VHeadDim
 		if headWise {
 			gRows = H
 		}
-		if e := shapeFlat(fmt.Sprintf("layer %d mla.gProj", i), m.gProj, nil, gRows, hidden, true); e != nil {
+		if e := shapeFlat(fmt.Sprintf("layer %d mla.gProj", i), m.GProj, nil, gRows, hidden, true); e != nil {
 			return e
 		}
 	}
@@ -566,16 +568,16 @@ func validateMLAShapes(m *mlaWeights, arch *Architecture, i int, headWise bool) 
 
 // validateKDAShapes checks a Bailing Hybrid KDA layer: q/k/v and the two gate projections are [numHeads*headDim, hidden],
 // the depthwise convs ConvKernel taps per channel, the decay bias per channel and A_log and beta per head.
-func validateKDAShapes(k *kdaWeights, arch *Architecture, i int) *SerializeError {
-	p, hidden := arch.kda, arch.HiddenDim
+func validateKDAShapes(k *archparts.KDAWeights, arch *darch.Architecture, i int) *SerializeError {
+	p, hidden := arch.KDA, arch.HiddenDim
 	dim := p.NumHeads * p.HeadDim
 	for _, c := range []struct {
 		name       string
 		m          *linalg.WeightMat
 		rows, cols int
 	}{
-		{"qProj", &k.qProj, dim, hidden}, {"kProj", &k.kProj, dim, hidden}, {"vProj", &k.vProj, dim, hidden},
-		{"fProj", &k.fProj, dim, hidden}, {"gProj", &k.gProj, dim, hidden}, {"oProj", &k.oProj, hidden, dim},
+		{"qProj", &k.QProj, dim, hidden}, {"kProj", &k.KProj, dim, hidden}, {"vProj", &k.VProj, dim, hidden},
+		{"fProj", &k.FProj, dim, hidden}, {"gProj", &k.GProj, dim, hidden}, {"oProj", &k.OProj, hidden, dim},
 	} {
 		if e := shapeMat(fmt.Sprintf("layer %d kda.%s", i, c.name), c.m, c.rows, c.cols, true); e != nil {
 			return e
@@ -586,10 +588,10 @@ func validateKDAShapes(k *kdaWeights, arch *Architecture, i int) *SerializeError
 		got  int
 		want int
 	}{
-		{"qConvW", len(k.qConvW), dim * p.ConvKernel}, {"kConvW", len(k.kConvW), dim * p.ConvKernel},
-		{"vConvW", len(k.vConvW), dim * p.ConvKernel}, {"dtBias", len(k.dtBias), dim},
-		{"aLog", len(k.aLog), p.NumHeads}, {"bProj", len(k.bProj), p.NumHeads * hidden},
-		{"oNormW", len(k.oNormW), p.HeadDim},
+		{"qConvW", len(k.QConvW), dim * p.ConvKernel}, {"kConvW", len(k.KConvW), dim * p.ConvKernel},
+		{"vConvW", len(k.VConvW), dim * p.ConvKernel}, {"dtBias", len(k.DtBias), dim},
+		{"aLog", len(k.ALog), p.NumHeads}, {"bProj", len(k.BProj), p.NumHeads * hidden},
+		{"oNormW", len(k.ONormW), p.HeadDim},
 	} {
 		if e := shapeReq(fmt.Sprintf("layer %d kda.%s", i, c.name), c.got, c.want); e != nil {
 			return e
@@ -600,13 +602,13 @@ func validateKDAShapes(k *kdaWeights, arch *Architecture, i int) *SerializeError
 
 // validateMamba2Shapes checks a Mamba-2 mixer against p: in_proj emits [z (dInner) ‖ xBC (convDim) ‖ dt (nHeads)], the
 // conv runs over convDim channels, and the per-head vectors are nHeads long.
-func validateMamba2Shapes(m *mamba2Weights, p mamba2Params, i int) *SerializeError {
-	dInner := p.dInner()
+func validateMamba2Shapes(m *archparts.Mamba2Weights, p archparts.Mamba2Params, i int) *SerializeError {
+	dInner := p.DInner()
 	convDim := dInner + 2*p.NGroups*p.DState
-	if e := shapeFlat(fmt.Sprintf("layer %d mamba.inProj", i), m.inProj, &m.inQ, p.projDim(), p.Hidden, true); e != nil {
+	if e := shapeFlat(fmt.Sprintf("layer %d mamba.inProj", i), m.InProj, &m.InQ, p.ProjDim(), p.Hidden, true); e != nil {
 		return e
 	}
-	if e := shapeFlat(fmt.Sprintf("layer %d mamba.outProj", i), m.outProj, &m.outQ, p.Hidden, dInner, true); e != nil {
+	if e := shapeFlat(fmt.Sprintf("layer %d mamba.outProj", i), m.OutProj, &m.OutQ, p.Hidden, dInner, true); e != nil {
 		return e
 	}
 	for _, c := range []struct {
@@ -614,9 +616,9 @@ func validateMamba2Shapes(m *mamba2Weights, p mamba2Params, i int) *SerializeErr
 		got  int
 		want int
 	}{
-		{"convW", len(m.convW), convDim * p.DConv}, {"convB", len(m.convB), convDim},
-		{"aLog", len(m.aLog), p.NHeads}, {"d", len(m.d), p.NHeads}, {"dtBias", len(m.dtBias), p.NHeads},
-		{"normW", len(m.normW), dInner},
+		{"convW", len(m.ConvW), convDim * p.DConv}, {"convB", len(m.ConvB), convDim},
+		{"aLog", len(m.ALog), p.NHeads}, {"d", len(m.D), p.NHeads}, {"dtBias", len(m.DtBias), p.NHeads},
+		{"normW", len(m.NormW), dInner},
 	} {
 		if e := shapeReq(fmt.Sprintf("layer %d mamba.%s", i, c.name), c.got, c.want); e != nil {
 			return e

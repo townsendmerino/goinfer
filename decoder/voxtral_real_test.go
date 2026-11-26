@@ -76,7 +76,7 @@ func TestVoxtralReal_gate(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	t.Logf("loaded in %.1fs: arch %s, %d layers, hidden %d, %d heads / %d kv, head_dim %d, vocab %d, quant %s, rope base %v, tied head %v",
 		time.Since(t0).Seconds(), a.Name, a.NumLayers, a.HiddenDim, a.NumHeads, a.NumKVHeads, a.HeadDim, a.VocabSize, m.Quant(), a.RoPEGlobalBase, a.TiedLMHead)
 	if a.Name != "voxtral" || a.TiedLMHead || a.HeadDim != 128 {

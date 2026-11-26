@@ -69,12 +69,12 @@ func TestRow4_mmapVsHeapResident(t *testing.T) {
 	var samples []sample
 	rng := rand.New(rand.NewSource(1))
 	for i := range m.w.Layers {
-		gm := m.w.Layers[i].gemma4moe
+		gm := m.w.Layers[i].Gemma4MoE
 		if gm == nil || len(samples) >= wantSamples {
 			continue
 		}
-		for e := 0; e < len(gm.expertsGateUp) && len(samples) < wantSamples; e += 200 { // sparse spread, not every expert
-			wm := &gm.expertsGateUp[e]
+		for e := 0; e < len(gm.ExpertsGateUp) && len(samples) < wantSamples; e += 200 { // sparse spread, not every expert
+			wm := &gm.ExpertsGateUp[e]
 			if _, _, ok := int4Row4F32(wm); !ok {
 				continue
 			}

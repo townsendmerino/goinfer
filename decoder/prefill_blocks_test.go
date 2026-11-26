@@ -109,7 +109,7 @@ func loadWithBlockFake(t *testing.T, set func(*blockFake)) (*Model, *blockFake) 
 }
 
 func blockPrompt(m *Model, n int) []int {
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids := make([]int, n)
 	for i := range ids {
 		ids[i] = (i*37 + 5) % vocab

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -82,7 +83,7 @@ func (c kvMatrixCell) text() string {
 	return c.delivered
 }
 
-func kvMatrixArch(t *testing.T, dir string) *Architecture {
+func kvMatrixArch(t *testing.T, dir string) *darch.Architecture {
 	t.Helper()
 	cfg, err := loadConfig(os.DirFS(filepath.Join("..", "testdata", dir)), "config.json")
 	if err != nil {

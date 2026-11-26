@@ -44,8 +44,8 @@ func TestQwen35_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
-	if m.w.arch.qwen35 == nil {
-		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.arch.Name)
+	if m.w.Arch.Qwen35 == nil {
+		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.Arch.Name)
 	}
 
 	// 1. Prefill the prompt; check the last-position logits vs HF.

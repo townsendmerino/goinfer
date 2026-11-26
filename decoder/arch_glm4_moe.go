@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -13,7 +15,7 @@ import (
 // routed weights are scaled by routed_scaling_factor, and the always-on shared expert is added UNGATED. first_k_dense_replace layers at the
 // top are plain dense MLPs (no router), handled by the loader populating Experts only on i ≥ FirstKDense. The num_nextn_predict_layers MTP
 // head is dropped (only num_hidden_layers load). The tensor schema is glm4moeTensorSchema.
-func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func glm4moeArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateGlm4Moe(); err != nil {
 		return nil, nil, err
 	}
@@ -32,7 +34,7 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "glm4_moe",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -41,11 +43,11 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim, // dense width — used by the first_k_dense_replace prefix layers
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         cfg.AttentionBias, // GLM-4.5/4.6 carry q/k/v bias (o_proj biasless); the tiny synthetic turns it off
 		QKNorm:          cfg.UseQKNorm,     // use_qk_norm: true on the tiny synthetic, FALSE on the real GLM-4.5-Air/4.6
 		FirstKDense:     cfg.FirstKDenseReplace,
@@ -61,10 +63,10 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		AttnScale:      math.Pow(float64(hd), -0.5),
 		SlidingWindow:  0, // full attention
-		layerIsGlobal:  nil,
+		LayerIsGlobal:  nil,
 		RoPELocalBase:  spec.Base,
 		RoPEGlobalBase: spec.Base, // single base (rope_parameters.rope_theta)
-		ropeScaling:    spec.Scaling,
+		RoPEScaling:    spec.Scaling,
 		RotaryDim:      rotaryDim, // partial_rotary_factor · head_dim
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

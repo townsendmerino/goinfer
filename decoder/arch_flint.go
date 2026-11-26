@@ -5,6 +5,8 @@ import (
 	"math"
 	"slices"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -31,7 +33,7 @@ import (
 //     norm_topk_prob=true, no expert bias) at moe_intermediate_size plus an
 //     always-on ungated SwiGLU shared expert at shared_expert_intermediate_size
 //     (SharedUngated: true).
-func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func flintArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "flint"); err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +67,7 @@ func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		return true
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "flint",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -74,11 +76,11 @@ func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         cfg.AttentionBias,
 		QKNorm:          true,
 		AttnSinks:       true,
@@ -95,13 +97,13 @@ func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
-		layerIsGlobal:    isGlobal,
-		layerNoPE:        isGlobal, // full_attention layers are NoPE; sliding_attention layers apply RoPE
+		LayerIsGlobal:    isGlobal,
+		LayerNoPE:        isGlobal, // full_attention layers are NoPE; sliding_attention layers apply RoPE
 		RoPELocalBase:    cfg.RoPEGlobalBase,
 		RoPEGlobalBase:   cfg.RoPEGlobalBase,
 		RotaryDim:        cfg.RotaryDim(),
-		ropeScaling:      scaling,
-		ropeScalingLocal: scaling,
+		RoPEScaling:      scaling,
+		RoPEScalingLocal: scaling,
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &flintTensorSchema, nil

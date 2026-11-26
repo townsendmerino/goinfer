@@ -68,7 +68,7 @@ func qwen35TextParity(t *testing.T, ckpt, golden, wantArch string, wantMoE bool)
 	}
 	defer m.Close()
 
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != wantArch {
 		t.Fatalf("arch = %q, want %q", a.Name, wantArch)
 	}
@@ -77,13 +77,13 @@ func qwen35TextParity(t *testing.T, ckpt, golden, wantArch string, wantMoE bool)
 		// loads and generates — just not this one's numbers.
 		t.Fatalf("arch.MoE != nil is %v, want %v — the wrong adapter ran for %s", a.MoE != nil, wantMoE, ckpt)
 	}
-	if a.qwen35 == nil {
+	if a.Qwen35 == nil {
 		t.Fatal("arch.qwen35 is nil — the DeltaNet geometry must be carried, dense or not")
 	}
 	// Both mixers must be present, or the gate covers half the model.
 	lin, full := 0, 0
 	for i := range a.NumLayers {
-		if a.isLinearLayer(i) {
+		if a.IsLinearLayer(i) {
 			lin++
 		} else {
 			full++

@@ -23,7 +23,7 @@ func TestSession_cancelledSweepOnAWrappedRingGoesCold(t *testing.T) {
 	arch := ringTestArch(1, nKV, hd, W, func(int) bool { return false }) // all local
 
 	cache := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	cache.enableRings(W, arch.isGlobalLayer)
+	cache.enableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(53))
 
 	// Turn 1 completed: startPos positions committed and advanced.
@@ -73,7 +73,7 @@ func TestSession_exactRewindStaysWarm(t *testing.T) {
 	arch := ringTestArch(1, nKV, hd, W, func(int) bool { return false })
 
 	cache := NewKVCache(1, nKV, hd, W, 128, nil)
-	cache.enableRings(W, arch.isGlobalLayer)
+	cache.enableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(59))
 	// Never wraps: count stays <= W, so every rewind is exact.
 	const n = 32

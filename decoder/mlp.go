@@ -10,6 +10,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -35,9 +37,9 @@ var (
 // scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with per-stream scratch instead of allocating
 // them per call. The per-token walker passes its cache's scr; the batched walker's per-row path (ffnBatch) has none in scope and
 // passes nil, allocating per call, amortized over the K-token batch.
-func moeMLP(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
+func moeMLP(h []float32, lw *darch.LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	nE, k := moe.NumExperts, moe.TopK
-	if act != ActSiLU {
+	if act != darch.ActSiLU {
 		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", act)
 	}
 
@@ -344,7 +346,7 @@ func gegluExact(gate, up []float32) {
 // short buffer allocates, so callers with no scratch (the llama4 path) work unchanged. hq, when non-nil, is h already quantized
 // for the CPU W4A8 path (moeMLP quantizes it once for every expert of the layer); with hq nil, gate and up still share one
 // quantization of h.
-func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, gate, up []float32, hq *w4a8Act) {
+func swiGLUExpert(ex *archparts.ExpertWeights, h, dst []float32, inter int, be Backend, gate, up []float32, hq *w4a8Act) {
 	if cap(gate) < inter || cap(up) < inter {
 		gate, up = make([]float32, inter), make([]float32, inter)
 	}
@@ -446,7 +448,7 @@ func topK(xs []float32, k int) ([]int, []float32) {
 //	out = DownProj·mid + DownBias     // [hidden]
 //
 // out[:hidden] is overwritten. mid comes from *midBuf, grown on demand (nil: a fresh one), and is fully rewritten each call.
-func nonGatedMLPWith(h, out []float32, lw *LayerWeights, act ActKind, inter, hidden int, be Backend, midBuf *[]float32) error {
+func nonGatedMLPWith(h, out []float32, lw *darch.LayerWeights, act ActKind, inter, hidden int, be Backend, midBuf *[]float32) error {
 	if midBuf == nil {
 		midBuf = new([]float32)
 	}
@@ -456,15 +458,15 @@ func nonGatedMLPWith(h, out []float32, lw *LayerWeights, act ActKind, inter, hid
 		addBias(mid, lw.UpBias)
 	}
 	switch act {
-	case ActGeluTanh: // GPT-2's "gelu_new" is the tanh approximation
+	case darch.ActGeluTanh: // GPT-2's "gelu_new" is the tanh approximation
 		for i := range mid {
 			mid[i] = normact.GELUTanh(mid[i])
 		}
-	case ActGelu: // HF's "gelu" — the exact erf function, NOT a spelling of gelu_new
+	case darch.ActGelu: // HF's "gelu" — the exact erf function, NOT a spelling of gelu_new
 		for i := range mid {
 			mid[i] = normact.GELUErf(mid[i])
 		}
-	case ActReLU2: // Nemotron-H's mlp blocks
+	case darch.ActReLU2: // Nemotron-H's mlp blocks
 		for i := range mid {
 			mid[i] = normact.ReLU2(mid[i])
 		}
@@ -487,7 +489,7 @@ func nonGatedMLPWith(h, out []float32, lw *LayerWeights, act ActKind, inter, hid
 //	up   = UpProj·h              // [IntermediateDim]
 //	mid  = act(gate) ⊙ up        // [IntermediateDim]
 //	out  = DownProj·mid          // [HiddenDim]
-func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
+func gatedMLPAct(h, out []float32, lw *darch.LayerWeights, act ActKind, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
 	fusedAct := false            // set when the fused path already applied the activation
 	if cpuFusedGateUp && lora == nil {
@@ -541,7 +543,7 @@ func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, sc
 		applyLoRA(lora.up, h, up, scr)
 	}
 	switch act {
-	case ActGeluTanh:
+	case darch.ActGeluTanh:
 		if len(gate) < activationFanoutThreshold {
 			geglu(gate, up)
 		} else {
@@ -549,7 +551,7 @@ func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, sc
 				geglu(gate[lo:hi], up[lo:hi])
 			})
 		}
-	case ActSiLU:
+	case darch.ActSiLU:
 		if len(gate) < activationFanoutThreshold {
 			swiglu(gate, up)
 		} else {
@@ -557,7 +559,7 @@ func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, sc
 				swiglu(gate[lo:hi], up[lo:hi])
 			})
 		}
-	case ActGelu:
+	case darch.ActGelu:
 		if len(gate) < activationFanoutThreshold {
 			gegluExact(gate, up)
 		} else {
@@ -632,11 +634,11 @@ func moeGrow(buf *[]float32, n int, grows *atomic.Int64) []float32 {
 //     Expert-major is likely better for paging, but different is not better until measured.
 //
 // The routing, activation and width are given. s holds its buffers across calls; nil allocates them.
-func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32, s *moeBatchScratch) (bool, error) {
+func moeMLPBatchWith(rows []float32, n int, lw *darch.LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32, s *moeBatchScratch) (bool, error) {
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
 		return false, nil
 	}
-	if act != ActSiLU {
+	if act != darch.ActSiLU {
 		return false, nil
 	}
 	// The shared expert is added after the routed fold in moeMLP. Refuse up front so a fall-back costs nothing: a partial

@@ -46,7 +46,7 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 				t.Fatalf("Load(%s): %v", tc.dir, err)
 			}
 			defer m.Close()
-			nL := m.w.arch.NumLayers
+			nL := m.w.Arch.NumLayers
 			if nL < 2 {
 				t.Fatalf("fixture has %d layers; this gate needs >= 2 to tell layers apart", nL)
 			}
@@ -81,7 +81,7 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 			}
 
 			first, last := cache.captured[0], cache.captured[1]
-			hidden := m.w.arch.HiddenDim
+			hidden := m.w.Arch.HiddenDim
 			for i, c := range [][]float32{first, last} {
 				if len(c) != hidden {
 					t.Fatalf("captured[%d] has length %d, want hidden=%d", i, len(c), hidden)

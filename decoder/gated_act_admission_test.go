@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -12,20 +13,20 @@ import (
 var gatedActBackends = []string{"cuda", "metal", "webgpu"}
 
 // plainGatedArch is a dense gated block that needs no feature beyond its activation's, so a decline is the activation's.
-func plainGatedArch(act ActKind) *Architecture {
-	return &Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: NormPre2, Act: act}
+func plainGatedArch(act ActKind) *darch.Architecture {
+	return &darch.Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: darch.NormPre2, Act: act}
 }
 
 // TestGatedAct_onlyTanhAndSiLUAdmitted pins what GatedAct may hand a resident kernel for a gated MLP: 0 (GELU-tanh) and 1
 // (SiLU), the two ordinals the kernels know. Every other ordinal, including one past the last ActKind, must fail the feature check
 // (or a table backend's operation table) on every backend, and the check each backend's BuildResident runs itself.
 func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
-	for act := ActKind(0); act <= ActGelu+2; act++ {
+	for act := ActKind(0); act <= darch.ActGelu+2; act++ {
 		a := plainGatedArch(act)
 		if !decodeRunnerEligible(a) {
 			t.Fatalf("act %d: the plain gated arch fails the runner shape, so this test would pass for the wrong reason", act)
 		}
-		m := &Model{w: &Weights{arch: a}}
+		m := &Model{w: &darch.Weights{Arch: a}}
 		for _, be := range gatedActBackends {
 			admitted := ResidentEligible(a, be)
 			if residentBackendTables[be] != nil {
@@ -36,15 +37,15 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 			} else if missing := m.MissingResidentFeatures(ResidentBackendFeatures(be)); admitted != (len(missing) == 0) {
 				t.Errorf("act %d on %s: ResidentEligible=%v but MissingResidentFeatures=%v", act, be, admitted, missing)
 			}
-			if kernelKnows := act == ActGeluTanh || act == ActSiLU; admitted != kernelKnows {
+			if kernelKnows := act == darch.ActGeluTanh || act == darch.ActSiLU; admitted != kernelKnows {
 				t.Errorf("act %d (%v) on %s: admitted=%v, want %v (GatedAct=%d reaches a kernel that knows 0 and 1)",
 					act, act, be, admitted, kernelKnows, m.BackendView().GatedAct())
 			}
 		}
 	}
 	for be, set := range residentBackendFeatures {
-		if set[FeatGatedActUnknown] {
-			t.Errorf("%s declares %q, which names no kernel", be, FeatGatedActUnknown)
+		if set[darch.FeatGatedActUnknown] {
+			t.Errorf("%s declares %q, which names no kernel", be, darch.FeatGatedActUnknown)
 		}
 	}
 }
@@ -54,9 +55,9 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 // activation; and Gemma 4's MoE block, whose operation carries no activation, declines an exact-erf or unknown GELU through the
 // features outside the program while GELU-tanh stays admitted.
 func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
-	for act := ActKind(0); act <= ActGelu+2; act++ {
+	for act := ActKind(0); act <= darch.ActGelu+2; act++ {
 		a := plainGatedArch(act)
-		m := &Model{w: &Weights{arch: a}}
+		m := &Model{w: &darch.Weights{Arch: a}}
 		build := program.Metal.Check(m.Program()) == nil && len(m.FeaturesOutsideProgram()) == 0
 		if eligible := ResidentEligible(a, "metal"); build != eligible {
 			t.Errorf("act %d: Metal's build check on the Model admits %v, ResidentEligible %v", act, build, eligible)
@@ -66,16 +67,16 @@ func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if base.gemma4 == nil || base.MoE == nil {
-		t.Fatalf("representativeConfig(gemma4_text) is not Gemma 4's MoE variant (gemma4=%v MoE=%v)", base.gemma4 != nil, base.MoE != nil)
+	if base.Gemma4 == nil || base.MoE == nil {
+		t.Fatalf("representativeConfig(gemma4_text) is not Gemma 4's MoE variant (gemma4=%v MoE=%v)", base.Gemma4 != nil, base.MoE != nil)
 	}
 	for _, c := range []struct {
 		act  ActKind
-		want ResidentFeature // "" when admitted
-	}{{ActGeluTanh, ""}, {ActGelu, FeatGatedGELUErf}, {ActGelu + 1, FeatGatedActUnknown}} {
+		want darch.ResidentFeature // "" when admitted
+	}{{darch.ActGeluTanh, ""}, {darch.ActGelu, darch.FeatGatedGELUErf}, {darch.ActGelu + 1, darch.FeatGatedActUnknown}} {
 		a := *base
 		a.Act = c.act
-		m := &Model{w: &Weights{arch: &a}}
+		m := &Model{w: &darch.Weights{Arch: &a}}
 		out := m.FeaturesOutsideProgram()
 		var reasons []string
 		for _, g := range residentGateReasons(&a, nil, "metal", false) {
@@ -94,15 +95,15 @@ func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
 
 // TestGatedGELUErf_declinesByName: a gated exact-erf GELU arch is refused by every backend, and the reason names the feature.
 func TestGatedGELUErf_declinesByName(t *testing.T) {
-	a := plainGatedArch(ActGelu)
-	if got := a.residentFeatures(); !slices.Equal(got, []ResidentFeature{FeatGatedGELUErf}) {
-		t.Fatalf("gated ActGelu derives %v, want only %q", got, FeatGatedGELUErf)
+	a := plainGatedArch(darch.ActGelu)
+	if got := a.ResidentFeatures(); !slices.Equal(got, []darch.ResidentFeature{darch.FeatGatedGELUErf}) {
+		t.Fatalf("gated ActGelu derives %v, want only %q", got, darch.FeatGatedGELUErf)
 	}
 	for _, be := range gatedActBackends {
 		if ResidentEligible(a, be) {
 			t.Errorf("%s admits a gated exact-erf GELU arch; its gated kernel would run tanh-GELU or SiLU", be)
 		}
-		want := string(FeatGatedGELUErf)
+		want := string(darch.FeatGatedGELUErf)
 		if residentBackendTables[be] != nil {
 			want = tableGatedGELUGap // a table names the operation's parameter
 		}
@@ -122,7 +123,7 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.NonGatedMLP || a.Act != ActGelu {
+	if a.NonGatedMLP || a.Act != darch.ActGelu {
 		t.Fatalf("spark2_5 is no longer a gated exact-GELU arch (NonGatedMLP=%v Act=%v); this test needs another family", a.NonGatedMLP, a.Act)
 	}
 	m, err := Load("testdata/spark2-5-tiny", Options{})
@@ -147,14 +148,14 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 			}
 			continue
 		}
-		for _, f := range []ResidentFeature{FeatGatedGELUErf, FeatAttnOutputGateSigmoid} {
+		for _, f := range []darch.ResidentFeature{darch.FeatGatedGELUErf, darch.FeatAttnOutputGateSigmoid} {
 			if !strings.Contains(why, string(f)) {
 				t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, f)
 			}
 		}
 		missing := m.MissingResidentFeatures(ResidentBackendFeatures(be))
-		if !slices.Contains(missing, FeatGatedGELUErf) {
-			t.Errorf("%s: the loaded spark2-5-tiny is missing %v, want it to include %q", be, missing, FeatGatedGELUErf)
+		if !slices.Contains(missing, darch.FeatGatedGELUErf) {
+			t.Errorf("%s: the loaded spark2-5-tiny is missing %v, want it to include %q", be, missing, darch.FeatGatedGELUErf)
 		}
 	}
 }
@@ -162,9 +163,9 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 // TestGatedGELU_gemmaUnchanged: GELU-tanh keeps FeatGatedGELU and nothing else for its activation, and the Gemma families every
 // backend ran before the exact-GELU split still pass.
 func TestGatedGELU_gemmaUnchanged(t *testing.T) {
-	a := plainGatedArch(ActGeluTanh)
-	if got := a.residentFeatures(); !slices.Equal(got, []ResidentFeature{FeatGatedGELU}) {
-		t.Fatalf("gated ActGeluTanh derives %v, want only %q", got, FeatGatedGELU)
+	a := plainGatedArch(darch.ActGeluTanh)
+	if got := a.ResidentFeatures(); !slices.Equal(got, []darch.ResidentFeature{darch.FeatGatedGELU}) {
+		t.Fatalf("gated ActGeluTanh derives %v, want only %q", got, darch.FeatGatedGELU)
 	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
 	for _, name := range []string{"gemma", "gemma3", "gemma3_text", "gemma4", "gemma4_text", "gemma4_unified_text"} {
@@ -172,9 +173,9 @@ func TestGatedGELU_gemmaUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		feats := g.residentFeatures()
-		if !slices.Contains(feats, FeatGatedGELU) || slices.Contains(feats, FeatGatedGELUErf) || slices.Contains(feats, FeatGatedActUnknown) {
-			t.Errorf("%s derives %v, want %q and neither %q nor %q", name, feats, FeatGatedGELU, FeatGatedGELUErf, FeatGatedActUnknown)
+		feats := g.ResidentFeatures()
+		if !slices.Contains(feats, darch.FeatGatedGELU) || slices.Contains(feats, darch.FeatGatedGELUErf) || slices.Contains(feats, darch.FeatGatedActUnknown) {
+			t.Errorf("%s derives %v, want %q and neither %q nor %q", name, feats, darch.FeatGatedGELU, darch.FeatGatedGELUErf, darch.FeatGatedActUnknown)
 		}
 		for _, be := range gatedActBackends {
 			if !ResidentEligible(g, be) {
@@ -200,14 +201,14 @@ func TestNonGatedGELUErf_declinesByName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !erf.NonGatedMLP || erf.Act != ActGelu {
+	if !erf.NonGatedMLP || erf.Act != darch.ActGelu {
 		t.Fatalf("gpt2 with activation_function \"gelu\" resolved NonGatedMLP=%v Act=%v", erf.NonGatedMLP, erf.Act)
 	}
 	for _, be := range gatedActBackends {
 		if ResidentEligible(erf, be) {
 			t.Errorf("%s admits a non-gated exact-erf GELU arch", be)
 		}
-		want := string(FeatNonGatedGELUErf)
+		want := string(darch.FeatNonGatedGELUErf)
 		if residentBackendTables[be] != nil {
 			want = "no GELU activation in its non-gated block" // a table names the operation's parameter
 		}
