@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the same Gated-DeltaNet / softmax 3:1 hybrid as qwen3_5_moe and
@@ -17,16 +19,16 @@ import (
 //   - The attention output gate is torch.sigmoid(gate) whatever the config's output_gate_type "swish" says: the modeling code does not
 //     consult it.
 //   - m-RoPE: the text config carries mrope_section with mrope_interleaved true. For text it reduces exactly to standard partial RoPE
-//     (position_ids are expanded to three identical components, so apply_interleaved_mrope overwrites with identical values). ropeAt
-//     consults MRopeSection only when a cache carries mropePos, which only GenerateQwenVL sets; parseMRopeFlat sets it for the image path,
+//     (position_ids are expanded to three identical components, so apply_interleaved_mrope overwrites with identical values). rope.At
+//     consults MRopeSection only when a cache carries mropePos, which only GenerateQwenVL sets; rope.ParseMRoPEFlat sets it for the image path,
 //     and TestQwen35_textIdentityHashes pins the text path byte-identical.
 //
-// rope fields are NESTED under rope_parameters on this release, which parseRopeFlat reads.
+// rope fields are NESTED under rope_parameters on this release, which rope.ParseFlat reads.
 func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen35Dense(); err != nil {
 		return nil, nil, err
 	}
-	spec, partialRotary, err := parseRopeFlat(cfg.RopeParameters)
+	spec, partialRotary, err := rope.ParseFlat(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen3_5): %w", err)
 	}
@@ -53,10 +55,10 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
 		layerIsGlobal:    cfg.IsGlobalLayer,
 		layerIsLinear:    cfg.IsLinearLayer,
-		RoPELocalBase:    spec.base,
-		RoPEGlobalBase:   spec.base,
-		ropeScaling:      spec.scaling,
-		ropeScalingLocal: spec.scaling,
+		RoPELocalBase:    spec.Base,
+		RoPEGlobalBase:   spec.Base,
+		ropeScaling:      spec.Scaling,
+		ropeScalingLocal: spec.Scaling,
 		RotaryDim:        rotaryDim,
 		EmbedScale:       0,
 		TiedLMHead:       false,
@@ -69,6 +71,6 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 			AttnGate:      true, // qwen3.5's own double-width [query‖gate] q_proj — the dense sibling shares qwen3_5_moe's attention layer
 		},
 	}
-	arch.MRopeSection, arch.MRopeInterleaved = parseMRopeFlat(cfg.RopeParameters)
+	arch.MRopeSection, arch.MRopeInterleaved = rope.ParseMRoPEFlat(cfg.RopeParameters)
 	return arch, &qwen35DenseTensorSchema, nil
 }

@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // validGemma3Config is a tiny but ValidateAssumptions-clean gemma3 config for
@@ -64,12 +66,12 @@ func TestSilu(t *testing.T) {
 	sigmoid := func(x float64) float64 { return 1 / (1 + math.Exp(-x)) }
 	for _, x := range []float32{-4, -1, -0.3, 0, 0.7, 2, 5} {
 		want := float64(x) * sigmoid(float64(x))
-		if d := math.Abs(float64(silu(x)) - want); d > 1e-6 {
-			t.Errorf("silu(%v) = %v, want %v (Δ%v)", x, silu(x), want, d)
+		if d := math.Abs(float64(normact.SiLU(x)) - want); d > 1e-6 {
+			t.Errorf("silu(%v) = %v, want %v (Δ%v)", x, normact.SiLU(x), want, d)
 		}
 	}
-	if silu(0) != 0 {
-		t.Errorf("silu(0) = %v, want 0", silu(0))
+	if normact.SiLU(0) != 0 {
+		t.Errorf("silu(0) = %v, want 0", normact.SiLU(0))
 	}
 }
 
@@ -80,7 +82,7 @@ func TestRMSNorm_addOne(t *testing.T) {
 	w := []float32{0, 0, 0, 0}
 
 	withOne := mk()
-	rmsNorm(withOne, w, 1, 4, 1e-6, true)
+	normact.RMS(withOne, w, 1, 4, 1e-6, true)
 	var ss float64
 	for _, v := range withOne {
 		ss += float64(v) * float64(v)
@@ -90,7 +92,7 @@ func TestRMSNorm_addOne(t *testing.T) {
 	}
 
 	without := mk()
-	rmsNorm(without, w, 1, 4, 1e-6, false)
+	normact.RMS(without, w, 1, 4, 1e-6, false)
 	for i, v := range without {
 		if v != 0 {
 			t.Errorf("addOne=false with weight 0: out[%d]=%v, want 0", i, v)

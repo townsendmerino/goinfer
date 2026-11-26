@@ -25,6 +25,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -418,7 +419,7 @@ func BenchmarkDFlashTrunk(b *testing.B) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		b.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
-	ddir, err := lookupAsset("GOINFER_DFLASH_F32")
+	ddir, err := testassets.Lookup("GOINFER_DFLASH_F32")
 	if err != nil {
 		b.Skip(err)
 	}

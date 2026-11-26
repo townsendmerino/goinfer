@@ -23,7 +23,7 @@ func (m *Model) qwen35AttentionWith(p *gatedAttnParams, n []float32, lw *LayerWe
 	k := matvecWMPre(m.be, &a.kProj, &cache.scr.hq, n)
 	v := matvecWMPre(m.be, &a.vProj, &cache.scr.hq, n)
 
-	// QK-norm (query half only) then partial RoPE; ropeAt is applyRoPE unless the cache carries m-RoPE positions (an image turn).
+	// QK-norm (query half only) then partial RoPE; rope.At is rope.Apply unless the cache carries m-RoPE positions (an image turn).
 	applyQKNorm(p.QKNorm, q, k, a.qNorm, a.kNorm, nH, nKV, hd)
 	applyRope(&p.Rope, q, k, nH, nKV, hd, pos, cache.mropePos, cache.mropeDelta)
 

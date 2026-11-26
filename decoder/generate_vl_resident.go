@@ -100,7 +100,7 @@ func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imag
 // residentMRoPEPrefillDeep is residentImagePrefill's Qwen twin: builds the same spliced
 // embedding rows prefillLogitsQwenVL's CPU path would have built (embedN + the raw-feature
 // splice at [imgPos,imgPos+imgLen), no embed scale — matching HF's scatter into inputs_embeds)
-// and hands them, together with mropePos (GenerateQwenVL's own mropePositions output, already
+// and hands them, together with mropePos (GenerateQwenVL's own rope.MRoPEPositions output, already
 // computed for its other branches), to the resident backend's MRoPEPrefillAvailable. Any error is
 // a DECLINE, not fatal — the caller falls through to the CPU-prefill+UploadKV bridge.
 //

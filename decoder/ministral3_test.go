@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -68,14 +69,14 @@ func TestMinistral3_forwardParity(t *testing.T) {
 	if got, want := m.w.arch.AttnTempOrigMaxPos, 8.0; got != want {
 		t.Errorf("AttnTempOrigMaxPos = %v, want %v (original_max_position_embeddings)", got, want)
 	}
-	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.kind != ropeScaleYarn {
+	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.Kind != rope.ScaleYarn {
 		t.Fatalf("ropeScaling = %+v, want YaRN", m.w.arch.ropeScaling)
 	}
 	// Proves the DeepSeek-style mscale/mscale_all_dim override actually ran: the DEFAULT
 	// (unhandled) attention_factor for factor=4 would be 0.1*ln(4)+1 ≈ 1.1386 — measurably
 	// different from the ratio this fixture's distinct mscale/mscale_all_dim (0.5/0.8) produces.
-	wantMscale := yarnGetMscale(4.0, 0.5) / yarnGetMscale(4.0, 0.8)
-	if got := m.w.arch.ropeScaling.mscale; math.Abs(got-wantMscale) > 1e-9 {
+	wantMscale := rope.YarnGetMscale(4.0, 0.5) / rope.YarnGetMscale(4.0, 0.8)
+	if got := m.w.arch.ropeScaling.Mscale; math.Abs(got-wantMscale) > 1e-9 {
 		t.Errorf("ropeScaling.mscale = %v, want %v (the mscale/mscale_all_dim ratio, not the generic YaRN default ~1.1386)", got, wantMscale)
 	}
 

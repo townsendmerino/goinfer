@@ -178,7 +178,7 @@ type KVCache struct {
 	window               int      // sliding-window cap for local layers; 0 = unbounded
 	imgBlocks            [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
 	mropePos             [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position.
-	mropeDelta           int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative).
+	mropeDelta           int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+rope.MRoPEDelta (the image compresses positions, so delta is usually negative).
 	// deepstack is Qwen3-VL's DeepStack for the prefill that carries it: after decoder layer l, for l < len(rows), rows[l]
 	// ([n*hidden], one row per image position) is added to the hidden state at the image positions [start, start+n), as HF's
 	// _deepstack_process does. nil for every other prefill; a decode step never touches it.

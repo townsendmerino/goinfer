@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // deepseekArchitecture expresses DeepSeek-V2/V3 (model_type deepseek_v2 / deepseek_v3):
@@ -23,16 +25,16 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// RoPE: the tiny synthetic carries rope_parameters {rope_theta, rope_type}; the real
 	// V2-Lite/V3 carry a top-level rope_theta + a rope_scaling yarn object. Accept both.
 	var base float64
-	var scaling *ropeScaling
+	var scaling *rope.Scaling
 	if len(cfg.RopeParameters) > 0 {
-		spec, _, err := parseRopeFlat(cfg.RopeParameters)
+		spec, _, err := rope.ParseFlat(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(%s): %w", cfg.ModelType, err)
 		}
-		base, scaling = spec.base, spec.scaling
+		base, scaling = spec.Base, spec.Scaling
 	} else {
 		base = cfg.RoPEGlobalBase
-		sc, err := parseRopeScaling(cfg.RopeScaling)
+		sc, err := rope.ParseScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(%s): %w", cfg.ModelType, err)
 		}
@@ -44,8 +46,8 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// mscale == mscale_all_dim (V2-Lite: both 0.707) the ratio is exactly 1.0, so cos/sin
 	// are unscaled. (The attention softmax scale stays qk_head_dim^-0.5 — transformers
 	// 5.12 does NOT fold mscale² into it, unlike the old standalone modeling_deepseek.)
-	// Override the generic yarn mscale parseRopeScaling computed.
-	if scaling != nil && scaling.kind == ropeScaleYarn {
+	// Override the generic yarn mscale rope.ParseScaling computed.
+	if scaling != nil && scaling.Kind == rope.ScaleYarn {
 		raw := cfg.RopeScaling
 		if len(cfg.RopeParameters) > 0 {
 			raw = cfg.RopeParameters
@@ -55,7 +57,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			Mscale       *float64 `json:"mscale"`
 			MscaleAllDim *float64 `json:"mscale_all_dim"`
 		}
-		if err := rereadRope(cfg.ModelType, raw, &y); err != nil {
+		if err := rope.Reread(cfg.ModelType, raw, &y); err != nil {
 			return nil, nil, err
 		}
 		if y.Mscale != nil || y.MscaleAllDim != nil {
@@ -66,7 +68,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			if y.MscaleAllDim != nil {
 				mAll = *y.MscaleAllDim
 			}
-			scaling.mscale = yarnGetMscale(y.Factor, m) / yarnGetMscale(y.Factor, mAll)
+			scaling.Mscale = rope.YarnGetMscale(y.Factor, m) / rope.YarnGetMscale(y.Factor, mAll)
 		}
 	}
 

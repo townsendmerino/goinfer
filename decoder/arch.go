@@ -1,6 +1,9 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/runtime/program"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+)
 
 // Architecture is the resolved, family-agnostic description of a decoder LLM's structure. The generic forward pass
 // (the program walkers, program_cpu.go and program_cpu_n.go) reads it; per-family adapters (registry.go) populate it from that family's
@@ -82,16 +85,16 @@ type Architecture struct {
 	// plain scalar RoPE. For text tokens the three components are equal, so m-RoPE equals scalar RoPE; it diverges only over
 	// image tokens (their 3D grid positions).
 	MRopeSection []int
-	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout (mropeComponentInterleaved) over Qwen2.5-VL's
-	// contiguous-block one (mropeComponent). False for every other m-RoPE family, including Qwen2.5-VL itself.
+	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout (rope.MRoPEComponentInterleaved) over Qwen2.5-VL's
+	// contiguous-block one (rope.MRoPEComponent). False for every other m-RoPE family, including Qwen2.5-VL itself.
 	MRopeInterleaved bool
 	// ropeScaling transforms the GLOBAL (full-attention) inv-freq table (Llama-3
 	// llama3 / linear / yarn); nil = none. ropeScalingLocal does the same for the
 	// LOCAL (sliding) table — usually nil even when the global table is scaled
 	// (Mellum: YaRN on full layers, plain RoPE on sliding layers). Set by the
 	// adapter, consumed when the tables are built.
-	ropeScaling      *ropeScaling
-	ropeScalingLocal *ropeScaling
+	ropeScaling      *rope.Scaling
+	ropeScalingLocal *rope.Scaling
 	// ropeInterleave selects GPT-J pairwise rotation (dims 2d,2d+1) over the NeoX split-half layout (dims d,d+half) in the
 	// generic scalar RoPE path. (DeepSeek's MLA carries its own ropeInterleave on mlaParams.)
 	ropeInterleave bool
@@ -681,8 +684,8 @@ func (a *Architecture) ropeMscale(i int) float64 {
 	if !a.isGlobalLayer(i) {
 		sc = a.ropeScalingLocal
 	}
-	if sc != nil && sc.mscale != 0 {
-		return sc.mscale
+	if sc != nil && sc.Mscale != 0 {
+		return sc.Mscale
 	}
 	return 1
 }
@@ -704,11 +707,11 @@ func (a *Architecture) finalizeRoPE() {
 		return // no RoPE (GPT-2 uses learned positions); tables stay nil
 	}
 	rd := a.rotaryDim()
-	a.ropeInvFreqGlobal = computeInvFreq(a.RoPEGlobalBase, rd, a.ropeScaling)
+	a.ropeInvFreqGlobal = rope.ComputeInvFreq(a.RoPEGlobalBase, rd, a.ropeScaling)
 	// Share the table only when the local layers use the SAME base AND scaling AND
 	// rotated width (single-base, single-scaling families). Gemma differs by base;
 	// Mellum differs by scaling (YaRN global vs plain local) at the same base;
-	// Laguna differs by all three at once. The width matters because applyRoPE reads
+	// Laguna differs by all three at once. The width matters because rope.Apply reads
 	// the rotated half-width as len(invFreq) — a shorter local table IS partial
 	// rotary on the local layers, with no other plumbing.
 	rdLocal := rd
@@ -718,7 +721,7 @@ func (a *Architecture) finalizeRoPE() {
 	if a.RoPELocalBase == a.RoPEGlobalBase && a.ropeScalingLocal == a.ropeScaling && rdLocal == rd {
 		a.ropeInvFreqLocal = a.ropeInvFreqGlobal
 	} else {
-		a.ropeInvFreqLocal = computeInvFreq(a.RoPELocalBase, rdLocal, a.ropeScalingLocal)
+		a.ropeInvFreqLocal = rope.ComputeInvFreq(a.RoPELocalBase, rdLocal, a.ropeScalingLocal)
 	}
 }
 

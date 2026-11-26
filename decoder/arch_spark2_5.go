@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}). Two claims of the survey-level scoping
@@ -42,7 +44,7 @@ func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	default:
 		return nil, nil, fmt.Errorf("decoder(spark2_5): gate_attn_act_mode %q unsupported (have: sigmoid — modeling_spark.py also defines \"silu\" but no released checkpoint uses it)", cfg.GateAttnActMode)
 	}
-	full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+	full, sliding, err := rope.ParseParameters(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(spark2_5): %w", err)
 	}
@@ -59,8 +61,8 @@ func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		return 0 // 0 ⇒ full HeadDim
 	}
-	rotaryGlobal := rotaryOf(full.partial)
-	rotaryLocal := rotaryOf(sliding.partial)
+	rotaryGlobal := rotaryOf(full.Partial)
+	rotaryLocal := rotaryOf(sliding.Partial)
 	if rotaryLocal == rotaryGlobal {
 		rotaryLocal = 0 // 0 ⇒ "same as RotaryDim", the shared-width case
 	} else if rotaryLocal == 0 {
@@ -88,8 +90,8 @@ func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   cfg.SlidingWindow,
 		layerIsGlobal:   cfg.IsGlobalLayer,
-		RoPEGlobalBase:  full.base,
-		RoPELocalBase:   sliding.base,
+		RoPEGlobalBase:  full.Base,
+		RoPELocalBase:   sliding.Base,
 		RotaryDim:       rotaryGlobal,
 		RotaryDimLocal:  rotaryLocal,
 		EmbedScale:      0,

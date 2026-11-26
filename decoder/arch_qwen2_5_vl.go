@@ -41,9 +41,9 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			if section == nil {
 				section = rs.MRopeSection
 			}
-			// m-RoPE is not a parseRopeScaling kind (linear/llama3/yarn) — the
+			// m-RoPE is not a rope.ParseScaling kind (linear/llama3/yarn) — the
 			// per-component split IS the "scaling". Clear it so qwen2Architecture's
-			// parseRopeScaling doesn't reject rope_type "mrope".
+			// rope.ParseScaling doesn't reject rope_type "mrope".
 			cfg.RopeScaling = nil
 		}
 	}

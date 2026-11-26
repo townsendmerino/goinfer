@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -54,7 +55,7 @@ Reproduce the source list exactly:
 // usable — callers here already handle a load failure, and returning a path that does not resolve
 // keeps their error message pointing at a real filename rather than at "".
 func benchGGUFPath() string {
-	if p, err := lookupAsset("GOINFER_PREQUANT_GGUF"); err == nil {
+	if p, err := testassets.Lookup("GOINFER_PREQUANT_GGUF"); err == nil {
 		return p
 	}
 	return "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"

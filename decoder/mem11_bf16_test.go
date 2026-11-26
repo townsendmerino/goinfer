@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // TestMEM11_lfm2ResidentBytes is B16-G0: LFM2.5-2.6B from
@@ -191,7 +192,7 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 			return linalg.WrapF32(f, rows, cols)
 		}
 		d := &blockTrunk{hidden: h, nHeads: nH, nKV: nKV, headDim: hd, inter: inter, normEps: 1e-6,
-			invFreq: computeInvFreq(1e6, hd, nil), fc: mk(h, 2*h), hiddenNorm: ones(h), finalNorm: ones(h)}
+			invFreq: rope.ComputeInvFreq(1e6, hd, nil), fc: mk(h, 2*h), hiddenNorm: ones(h), finalNorm: ones(h)}
 		for range 2 {
 			d.layers = append(d.layers, dflashLayer{q: mk(nH*hd, h), k: mk(nKV*hd, h), v: mk(nKV*hd, h), o: mk(h, nH*hd),
 				gate: mk(inter, h), up: mk(inter, h), down: mk(h, inter), qNorm: ones(hd), kNorm: ones(hd), inputNorm: ones(h), postAttnNorm: ones(h)})

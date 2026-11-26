@@ -1,0 +1,3 @@
+# Non-test Go files over fileLenCeiling lines (TestQualityScan_fileLengthRatchet): `<file> <lines> -- <reason>`.
+# Each is held at its exact length: a shorter file fails until its line is lowered, so the list reads as the tree does.
+# When the list is empty the ceiling drops to 1,200, then 1,000.

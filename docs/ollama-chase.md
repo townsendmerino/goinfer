@@ -1108,7 +1108,7 @@ do not have the heads.
 > [`docs/spec/09-mtp-heads.md`](spec/09-mtp-heads.md).** The text above is left as written: it was
 > true when written, and the record of why we thought it is the useful part.
 >
-> What changed is our own loader. `decoder/gguf.go:ggufGlm4MoeConfig`, `decoder/gguf_qwen35.go:ggufQwen35Config`,
+> What changed is our own loader. `internal/runtime/ggufconfig/glm4moe.go:ggufGlm4MoeConfig`, `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config`,
 > `decoder/weights.go:buildWeightsFromSafetensorsTo` and `decoder/arch_glm4_moe.go:glm4moeArchitecture` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line

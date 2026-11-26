@@ -711,7 +711,7 @@ number is published without provenance.
   (`decoder/registry.go`, aliases Qwen3's dense attention shape: per-head q/k RMSNorm, GQA, no
   q/k/v bias — confirmed from `Qwen3VLTextAttention` source, NOT Qwen2's shape, which
   `qwen2_5_vlArchitecture` aliases) + the interleaved m-RoPE component formula
-  (`mropeComponentInterleaved`, `decoder/rope.go`, pinned directly against the real HF slicing
+  (`MRoPEComponentInterleaved`, `internal/runtime/rope/rope.go`, pinned directly against the real HF slicing
   logic, not a re-derivation of it). Tiny-golden text-only parity: cosine 1.0, exact argmax +
   continuation (`decoder/qwen3vl_test.go`, `scripts/pin_qwen3vl_tiny.py`). Real-checkpoint gate
   written (`decoder/qwen3vl_real_test.go`, `scripts/pin_qwen3vl_real.py`,
@@ -787,7 +787,7 @@ number is published without provenance.
      `vision_start`/`vision_end` are TEXT (type 0) so they take scalar positions; an image group at
      `current_pos` gets `T = arange(t)·1 + cp`, `H = arange(h/2) + cp`, `W = arange(w/2) + cp`, then
      `cp += max(h, w)/merge` (**t is dropped**); `delta = max(pos)+1 − seq_len`; decode positions are
-     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:mropePositions`) scans by
+     `arange + cache_len + delta` on all three rows. `rope.MRoPEPositions` (`internal/runtime/rope/rope.go:MRoPEPositions`) scans by
      image-token runs, gives text `[st,st,st]`, image `[base+tt, base+hh, base+ww]`, resumes at
      `base + max(t, hm, wm)`; `mropeDelta` is `max over any component + 1 − seqLen`. **For an image
      (t = 1 — always, after temporal duplication) the two are identical**: `max(1,hm,wm) == max(hm,wm)`
@@ -815,7 +815,7 @@ number is published without provenance.
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
      (`backend/cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`backend/webgpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
-     (`backend/metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`backend/metal/resident_adapter.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
      `residentUploadPrefill` (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`) copies only layers whose
@@ -1185,7 +1185,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 ## What already exists to build on
 
 *(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/completed/task-code-comments-2026-10.md`);
-before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `decoder/gguf_qwen35.go:ggufQwen35Config` no longer at what they described.)*
+before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` no longer at what they described.)*
 
 - **VL config flattening** — `decoder/config.go:loadConfig` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
@@ -1193,7 +1193,7 @@ before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shard
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,
   `qwen3_5_moe` (the Qwen3.6-VL text side is already loaded, ignoring
   `model.visual.*` / MTP — `decoder/weights.go:shardIndexFile`).
-- **m-RoPE stubs** — `decoder/gguf_qwen35.go:ggufQwen35Config` already notes the image/video mrope
+- **m-RoPE stubs** — `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` already notes the image/video mrope
   sections (currently unused).
 - **Serve content-array parsing** — `contentText`/`responseInputToMessages`
   already walk OpenAI message content parts; extend to extract `image_url`.

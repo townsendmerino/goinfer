@@ -8,6 +8,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // TestQwen3VL_textParity is qwen25vl_test.go's TestQwen25VL_textParity twin for the P8 Phase 0
@@ -32,14 +34,14 @@ func TestQwen3VL_textParity(t *testing.T) {
 	}.run(t)
 }
 
-// TestMropeComponentInterleaved_matchesHF pins mropeComponentInterleaved against ground truth
+// TestMropeComponentInterleaved_matchesHF pins rope.MRoPEComponentInterleaved against ground truth
 // computed directly from the REAL HF slicing logic (Qwen3VLTextRotaryEmbedding.
 // recomposition_frequencies, transformers/models/qwen3_vl/modeling_qwen3_vl.py) — not against a
 // re-derivation of the formula, and not only against TestQwen3VL_textParity's golden above, which
 // cannot exercise this at all: every text position there has equal (t,h,w) components (no image
 // token in the prompt), so the component lookup is unreachable-in-effect regardless of which
 // formula is used. This test is the ONLY thing in Phase 0 that actually proves
-// mropeComponentInterleaved is correct, by construction on genuinely divergent section splits.
+// rope.MRoPEComponentInterleaved is correct, by construction on genuinely divergent section splits.
 //
 // Ground truth reproduced via (run once, not part of the test):
 //
@@ -76,7 +78,7 @@ func TestMropeComponentInterleaved_matchesHF(t *testing.T) {
 			}
 			got := make([]int, half)
 			for d := range half {
-				got[d] = mropeComponentInterleaved(d, tc.section)
+				got[d] = rope.MRoPEComponentInterleaved(d, tc.section)
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("mropeComponentInterleaved(section=%v):\n got  %v\n want %v", tc.section, got, tc.want)
@@ -86,7 +88,7 @@ func TestMropeComponentInterleaved_matchesHF(t *testing.T) {
 }
 
 // TestMropeComponentInterleaved_differsFromChunked is the adversarial half: on a
-// non-trivial section split, the interleaved and chunked (mropeComponent) formulas must
+// non-trivial section split, the interleaved and chunked (rope.MRoPEComponent) formulas must
 // actually disagree somewhere — otherwise a test asserting either one in isolation could
 // pass by accident on a formula that silently fell back to the other.
 func TestMropeComponentInterleaved_differsFromChunked(t *testing.T) {
@@ -94,7 +96,7 @@ func TestMropeComponentInterleaved_differsFromChunked(t *testing.T) {
 	half := 8
 	differs := false
 	for d := range half {
-		if mropeComponentInterleaved(d, section) != mropeComponent(d, section) {
+		if rope.MRoPEComponentInterleaved(d, section) != rope.MRoPEComponent(d, section) {
 			differs = true
 			break
 		}

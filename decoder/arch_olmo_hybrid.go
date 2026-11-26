@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // olmoHybridArchitecture expresses Olmo Hybrid (Ai2, model_type olmo_hybrid): qwen3_5's Gated DeltaNet on 3 of every 4 layers and olmo3's
@@ -35,18 +37,18 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	var ropeFlat struct {
 		RopeTheta *float64 `json:"rope_theta"`
 	}
-	if err := rereadRope("olmo_hybrid", cfg.RopeParameters, &ropeFlat); err != nil {
+	if err := rope.Reread("olmo_hybrid", cfg.RopeParameters, &ropeFlat); err != nil {
 		return nil, nil, err
 	}
 	noRope := ropeFlat.RopeTheta == nil
 	var base float64
-	var scaling *ropeScaling
+	var scaling *rope.Scaling
 	if !noRope {
 		base = *ropeFlat.RopeTheta
 		if base <= 0 {
 			return nil, nil, fmt.Errorf("decoder(olmo_hybrid): rope_theta must be >0, got %v", base)
 		}
-		sc, err := parseRopeScaling(cfg.RopeScaling)
+		sc, err := rope.ParseScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo_hybrid): %w", err)
 		}
