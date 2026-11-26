@@ -11,7 +11,7 @@
     "internal/runtime/families/arch_granitemoehybrid.go",
     "decoder/gguf_build_granite.go"
   ],
-  "deps_hash": "sha256:4e7e4caf9cf08a4b9c1d1e7bfc1c9a8a7ed5d4b9941d3a570daca00024878a7a",
+  "deps_hash": "sha256:be882bd5fc1e7f432932eb7b1cfc94fcb25e01970686bb588fd65536a2b23b5b",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
