@@ -201,7 +201,9 @@ layers:
 
 func TestSeams_gates(t *testing.T) {
 	fx := programFixtures(t)
-	for _, f := range fx {
+	ran := 0
+	eachFixture(t, fx, func(t *testing.T, f programFixture) {
+		ran++
 		ids := programPrompt(f.m)
 		if err := gateH(t, f.m, ids); err != nil {
 			t.Errorf("H %s: %v", f.name, err)
@@ -211,7 +213,7 @@ func TestSeams_gates(t *testing.T) {
 		}
 		if f.m.program().SubCaptureUncovered() {
 			t.Logf("S %s NOT RUN: ForwardSubCapture refuses it (a PLE branch or MoE block; TestSeams_subCaptureRefusedWhereGateSCannotRun)", f.name)
-			continue
+			return
 		}
 		checked, skipped, err := gateS(t, f.m, ids)
 		switch {
@@ -222,8 +224,8 @@ func TestSeams_gates(t *testing.T) {
 		default:
 			t.Logf("S %s: %d layers rebuilt, %d skipped", f.name, checked, skipped)
 		}
-	}
-	t.Logf("H, C, S over %d fixtures", len(fx))
+	})
+	t.Logf("H, C, S over %d of %d fixtures", ran, len(fx))
 }
 
 // TestSeams_subCaptureRefusedWhereGateSCannotRun pins the owner's condition (2026-10-16): ForwardSubCapture, and its bisect hook,
@@ -231,7 +233,7 @@ func TestSeams_gates(t *testing.T) {
 // block), and serve every other one. HiddenLast and ForwardCapture serve all of them (TestSeams_gates).
 func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 	refused, present := map[string]bool{}, map[string]bool{}
-	for _, f := range programFixtures(t) {
+	if !eachFixture(t, programFixtures(t), func(t *testing.T, f programFixture) {
 		present[f.name] = true
 		ids := programPrompt(f.m)
 		cache := f.m.NewCache(len(ids))
@@ -241,7 +243,7 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 				t.Errorf("%s: ForwardSubCapture did not refuse (%v)", f.name, err)
 			}
 			refused[f.name] = true
-			continue
+			return
 		}
 		if err != nil {
 			t.Errorf("%s: ForwardSubCapture refused a fixture gate S covers: %v", f.name, err)
@@ -250,6 +252,8 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 		if checked, _, err := gateS(t, f.m, ids); err != nil || checked == 0 {
 			t.Errorf("%s: served, but gate S rebuilt %d layers (%v)", f.name, checked, err)
 		}
+	}) {
+		return
 	}
 	// The four the owner's condition names; three are gitignored, so a box without them (CI) reports them NOT RUN. gemma4-moe-kv-tiny32 is
 	// gemma4-moe-kv-tiny at CUDA's int4 widths (the windowed-KV expert-cache test's fixture): the same shape, refused for the same reason. gemma4-moe-tiny-k3 is the same MoE at top-3 routing.
@@ -270,38 +274,47 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 	}
 }
 
+// plantedGate runs gate on f with plant set, and clears the plant however the gate returns, a FailNow included.
+func plantedGate(t *testing.T, f programFixture, plant seamPlant, gate func(*testing.T, programFixture, []int) error) error {
+	seamPlantForTest = plant
+	defer func() { seamPlantForTest = plantNone }()
+	return gate(t, f, programPrompt(f.m))
+}
+
 // TestSeams_plantsGoRed: each planted defect turns its gate red on at least one fixture.
 func TestSeams_plantsGoRed(t *testing.T) {
 	fx := programFixtures(t)
 	t.Cleanup(func() { seamPlantForTest = plantNone })
-	for _, pl := range []struct {
+	plants := []struct {
 		name  string
 		plant seamPlant
-		gate  func(f programFixture, ids []int) error
+		gate  func(t *testing.T, f programFixture, ids []int) error
 	}{
-		{"H, the final norm skipped", plantHiddenNoNorm, func(f programFixture, ids []int) error { return gateH(t, f.m, ids) }},
-		{"C, the capture one operation early", plantCaptureEarly, func(f programFixture, ids []int) error { return gateC(t, f.m, ids) }},
-		{"S, the attention contribution before its post-norm", plantSubPrePostNorm, func(f programFixture, ids []int) error {
+		{"H, the final norm skipped", plantHiddenNoNorm, func(t *testing.T, f programFixture, ids []int) error { return gateH(t, f.m, ids) }},
+		{"C, the capture one operation early", plantCaptureEarly, func(t *testing.T, f programFixture, ids []int) error { return gateC(t, f.m, ids) }},
+		{"S, the attention contribution before its post-norm", plantSubPrePostNorm, func(t *testing.T, f programFixture, ids []int) error {
 			_, _, err := gateS(t, f.m, ids)
 			return err
 		}},
-	} {
-		var red []string
-		ran := 0
-		for _, f := range fx {
+	}
+	red := make([][]string, len(plants))
+	ran := make([]int, len(plants))
+	if !eachFixture(t, fx, func(t *testing.T, f programFixture) {
+		for i, pl := range plants {
 			if pl.plant == plantSubPrePostNorm && f.m.program().SubCaptureUncovered() {
 				continue // refused, not run: its error is not the plant being seen
 			}
-			ran++
-			seamPlantForTest = pl.plant
-			err := pl.gate(f, programPrompt(f.m))
-			seamPlantForTest = plantNone
-			if err != nil {
-				red = append(red, f.name)
+			ran[i]++
+			if err := plantedGate(t, f, pl.plant, pl.gate); err != nil {
+				red[i] = append(red[i], f.name)
 			}
 		}
-		t.Logf("plant %q: red on %d of %d fixtures it runs on (%s)", pl.name, len(red), ran, strings.Join(red, " "))
-		if len(red) == 0 {
+	}) {
+		return
+	}
+	for i, pl := range plants {
+		t.Logf("plant %q: red on %d of %d fixtures it runs on (%s)", pl.name, len(red[i]), ran[i], strings.Join(red[i], " "))
+		if len(red[i]) == 0 {
 			t.Errorf("plant %q turned no fixture red: its gate does not see the defect", pl.name)
 		}
 	}

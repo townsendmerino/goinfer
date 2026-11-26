@@ -79,7 +79,7 @@ func TestPanicGuard_startDrainPanicKeepsTheModelMarkedDraining(t *testing.T) {
 var goroutineGuardExempt = map[string]string{
 	"startAdminSocket":    "serves the admin socket's own http.Server, whose handlers net/http recovers",
 	"startHaltSignalLoop": "the SIGUSR1/SIGUSR2 loop: process control, not request work",
-	"Main":                "the shutdown signal handlers: they end the process on purpose",
+	"watchShutdown":       "the shutdown signal handlers: they end the process on purpose",
 }
 
 // Every `go func` literal in the package's non-test files defers a recover as one of its top-level statements: a deferred func

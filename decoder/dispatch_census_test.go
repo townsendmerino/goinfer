@@ -50,17 +50,10 @@ var declaredIdentityDispatch = map[string]string{
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",
 }
 
-// declaredTypeSwitches are type switches over a value whose dynamic type carries an identity. All
-// are GGUF metadata decoding, where the switch IS the parse and there is no property to
-// dispatch on instead.
-var declaredTypeSwitches = map[string]string{
-	"decoder/gguf.go|switch n := e.(type) {":        "GGUF tensor-shape element decode — switching on the wire type is the parse",
-	"decoder/gguf.go|switch v := kvArr[i].(type) {": "GGUF KV array element decode — same",
-	"decoder/gguf.go|switch v := arr[i].(type) {":   "GGUF KV array element decode (nested) — same",
-
-	"decoder/recommended_sampling.go|switch v := g.Metadata[\"general.sampling.top_k\"].(type) {": "GGUF sampling key decode (a signed or unsigned top_k) — same",
-	"decoder/recommended_sampling.go|switch v := g.Metadata[key].(type) {":                        "GGUF sampling key decode (float32 or float64) — same",
-}
+// declaredTypeSwitches are type switches over a value whose dynamic type carries an identity, each with why it is
+// legitimate. None is left in decoder: the GGUF metadata decoding that held them, where the switch is the parse, is
+// internal/runtime/ggufconfig's. A new one here goes red until it is declared.
+var declaredTypeSwitches = map[string]string{}
 
 // The predicate set is DERIVED, not listed: a definition `func isX(... *linalg.WeightMat ...) bool`
 // is a quantization-identity predicate; `func isT3Method(string) bool` is not. Scanning for every

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // batchRowPos is the absolute position of row i of a batched pass that starts at startPos: its tree position in a speculative
@@ -386,7 +387,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 		} else {
 			parallelElementwise(len(gate), func(lo, hi int) {
 				for j := lo; j < hi; j++ {
-					gate[j] = geluTanh(gate[j]) * up[j]
+					gate[j] = normact.GELUTanh(gate[j]) * up[j]
 				}
 			})
 		}
@@ -396,7 +397,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 		} else {
 			parallelElementwise(len(gate), func(lo, hi int) {
 				for j := lo; j < hi; j++ {
-					gate[j] = silu(gate[j]) * up[j]
+					gate[j] = normact.SiLU(gate[j]) * up[j]
 				}
 			})
 		}
@@ -406,7 +407,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 		} else {
 			parallelElementwise(len(gate), func(lo, hi int) {
 				for j := lo; j < hi; j++ {
-					gate[j] = geluErf(gate[j]) * up[j]
+					gate[j] = normact.GELUErf(gate[j]) * up[j]
 				}
 			})
 		}

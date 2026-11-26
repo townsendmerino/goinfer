@@ -425,191 +425,23 @@ func parseStopField(raw json.RawMessage) []string {
 // batchLine runs one batch line through the loaded model and returns its chat.completion body — the same shape serve's batch
 // puts in an output line — or the error that line earns. ctx is the run's (Ctrl-C); a stop string ends only this line.
 func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName string, l batchio.Line) lineResult {
-	var req batchChatReq
-	if err := json.Unmarshal(l.Body, &req); err != nil {
-		return lineErr(400, "invalid_request_error", "body is not a chat completion request: "+err.Error())
+	var t batchTurn
+	if r := t.parse(bd, l); r.status != 0 {
+		return r
 	}
-	if len(req.Messages) == 0 {
-		return lineErr(400, "invalid_request_error", "messages is required and must contain at least one message")
+	if r := s.batchThinking(&t); r.status != 0 {
+		return r
 	}
-	// Refused by name rather than dropped: an unrecognised key is silently ignored by design, so a request for something
-	// this runner cannot do must be an error or the answer would read as if it had been done.
-	if len(req.Tools) > 0 && strings.TrimSpace(string(req.ToolChoice)) != `"none"` {
-		return lineErr(400, "invalid_request_error", "tools are not supported by --batch (text chat only); use goinfer-serve")
+	if r := s.batchConstraint(&t); r.status != 0 {
+		return r
 	}
-	if req.Logprobs || req.TopLogprobs != nil {
-		return lineErr(400, "invalid_request_error", "logprobs are not supported by --batch; use goinfer-serve")
+	if r := t.sampling(bd); r.status != 0 {
+		return r
 	}
-	if req.Confidence {
-		return lineErr(400, "invalid_request_error", "goinfer_confidence is not supported by --batch; use goinfer-serve")
+	if r := s.batchPrompt(&t); r.status != 0 {
+		return r
 	}
-	if req.N != nil && *req.N != 1 {
-		return lineErr(400, "invalid_request_error", fmt.Sprintf("n must be 1 (got %d): one reply per line", *req.N))
-	}
-
-	system := bd.system
-	var turns []chat.Turn
-	for _, m := range req.Messages {
-		text, img := contentText(m.Content)
-		if img {
-			return lineErr(400, "invalid_request_error", "image inputs are not supported by --batch; use goinfer-serve")
-		}
-		switch m.Role {
-		case "system", "developer":
-			system = text
-		case "tool":
-			return lineErr(400, "invalid_request_error", "tool messages are not supported by --batch; use goinfer-serve")
-		case "assistant":
-			if len(m.ToolCalls) > 0 && string(m.ToolCalls) != "null" {
-				return lineErr(400, "invalid_request_error", "assistant tool_calls are not supported by --batch; use goinfer-serve")
-			}
-			r := m.ReasoningContent
-			if r == "" {
-				r = m.Reasoning
-			}
-			turns = append(turns, chat.Turn{Role: "assistant", Content: text, Reasoning: r})
-		default:
-			turns = append(turns, chat.Turn{Role: "user", Content: text})
-		}
-	}
-	system = strings.TrimSpace(system)
-
-	// Thinking: the session's mode (--thinking), moved by the request the way serve moves it (think.go resolveThink) — an
-	// explicit enable_thinking, or reasoning_effort "none" to turn it off (any other effort cannot turn it on).
-	mode, explicitMode := s.think, false
-	if raw, ok := req.ChatTemplateKwargs["enable_thinking"]; ok {
-		var on bool
-		if err := json.Unmarshal(raw, &on); err != nil {
-			return lineErr(400, "invalid_request_error", "chat_template_kwargs.enable_thinking must be a boolean")
-		}
-		mode, explicitMode = chat.ThinkOff, true
-		if on {
-			mode = chat.ThinkOn
-		}
-	} else if strings.EqualFold(strings.TrimSpace(req.ReasoningEffort), "none") {
-		mode, explicitMode = chat.ThinkOff, true
-	}
-	if req.ThinkingTokenBudget != nil && *req.ThinkingTokenBudget < 0 {
-		return lineErr(400, "invalid_request_error", fmt.Sprintf("the thinking token budget must be positive, got %d", *req.ThinkingTokenBudget))
-	}
-	splitReasoning := true
-	switch req.ReasoningFormat {
-	case "", "deepseek":
-	case "none":
-		splitReasoning = false // the reasoning stays in the content, as serve's -reasoning-format none leaves it
-	default:
-		return lineErr(400, "invalid_request_error", fmt.Sprintf("reasoning_format %q is not supported by --batch: want deepseek or none", req.ReasoningFormat))
-	}
-
-	// Output constraint.
-	var masker func([]int, []float32)
-	constrained := false
-	if rf := req.ResponseFormat; rf != nil {
-		switch rf.Type {
-		case "", "text":
-		case "json_object":
-			constrained, masker = true, s.grammarMasker(constrain.JSON())
-		case "json_schema":
-			if rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
-				return lineErr(400, "invalid_request_error", "response_format json_schema requires a schema")
-			}
-			g, err := constrain.JSONSchema(rf.JSONSchema.Schema)
-			if err != nil {
-				return lineErr(400, "invalid_request_error", err.Error())
-			}
-			constrained, masker = true, s.grammarMasker(g)
-		default:
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("unsupported response_format type %q", rf.Type))
-		}
-	}
-
-	// Sampling, validated as serve's prepare validates it, after the model's recommended values fill what is left out.
-	sp := bd.sp
-	bd.fillRecommended(&sp, req)
-	if req.Temperature != nil {
-		if *req.Temperature < 0 {
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("temperature must be >= 0 (got %v); 0 selects greedy/deterministic decoding", *req.Temperature))
-		}
-		sp.Temperature = *req.Temperature
-	}
-	if req.TopP != nil {
-		switch p := *req.TopP; {
-		case p < 0 || p > 1:
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("top_p must be in [0,1] (got %v)", p))
-		case p == 0:
-			sp.Temperature = 0 // the tightest nucleus is the single likeliest token
-		case p < 1:
-			sp.TopP = p
-		default:
-			sp.TopP = 0 // 1 is "no nucleus", even over an explicit --top-p
-		}
-	}
-	if req.TopK != nil {
-		sp.TopK = *req.TopK
-	}
-	if req.FrequencyPenalty != nil {
-		sp.FrequencyPenalty = *req.FrequencyPenalty
-	}
-	if req.PresencePenalty != nil {
-		sp.PresencePenalty = *req.PresencePenalty
-	}
-	switch {
-	case req.Seed != nil:
-		sp.Seed = *req.Seed
-	case !bd.seedSet:
-		sp.Seed = mathrand.Int64() // an omitted seed varies run to run, as in serve; an explicit one (even 0) is honoured
-	}
-	maxTok := bd.maxTok
-	mt := req.MaxTokens
-	if req.MaxCompletionTokens != nil { // OpenAI's newer field wins over max_tokens
-		mt = req.MaxCompletionTokens
-	}
-	if mt != nil {
-		if *mt < 1 {
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("max_tokens must be >= 1 (got %d)", *mt))
-		}
-		if *mt > apiMaxOutputTokens {
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("max_tokens %d exceeds the ceiling of %d", *mt, apiMaxOutputTokens))
-		}
-		maxTok = *mt
-	}
-	stops := parseStopField(req.Stop)
-
-	// The prompt: the model's own template in the request's thinking mode; a grammar governs the first token, so a prompt that
-	// would end inside an open think block is rendered thinking-off.
-	tm := s.batchTemplate(mode, explicitMode, req.ReasoningEffort, constrained)
-	var ids []int
-	var err error
-	if tm != nil {
-		// The codec, not Encode: text in a user message that spells a special token stays text, never a forged turn boundary.
-		ids, err = codec.EncodePrompt(s.tk, tm, system, turns, nil)
-	} else {
-		ids, err = s.tk.Encode(rawPrompt(system, turns), true)
-	}
-	if err != nil {
-		return lineErr(500, "api_error", "encode: "+err.Error())
-	}
-	modelWindow := s.model.Config().MaxPositions
-	window := modelWindow
-	if rc := s.model.ResidentContextCap(); rc > 0 && (window <= 0 || rc < window) {
-		window = rc
-	}
-	if window > 0 {
-		if len(ids) >= window {
-			return lineErr(400, "invalid_request_error", batchContextMessage(len(ids), window, modelWindow))
-		}
-		maxTok = min(maxTok, window-len(ids))
-	}
-
-	sp.StopIDs = s.stopIDs
-	if masker != nil {
-		sp.LogitProcessor = masker
-	}
-	explicitBudget := 0
-	if req.ThinkingTokenBudget != nil {
-		explicitBudget = *req.ThinkingTokenBudget
-	}
-	s.applyBudgetFor(&sp, tm, turns, maxTok, constrained, explicitBudget)
+	turns, splitReasoning, tm, ids, maxTok, sp, stops := t.turns, t.splitReasoning, t.tm, t.ids, t.maxTok, t.sp, t.stops
 
 	gctx, cancel := context.WithCancel(ctx) // a stop string ends this generation only
 	defer cancel()
@@ -692,6 +524,240 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 		"usage":   usage,
 	}
 	return lineResult{body: body, status: 200, nTok: nTok}
+}
+
+// batchTurn is one batch line as its phases read it: the request, then what each phase derives from it for the next.
+type batchTurn struct {
+	req            batchChatReq
+	system         string
+	turns          []chat.Turn
+	mode           chat.ThinkMode
+	explicitMode   bool
+	splitReasoning bool
+	constrained    bool
+	masker         func([]int, []float32)
+	sp             decoder.SamplingParams
+	maxTok         int
+	stops          []string
+	tm             *chat.Template
+	ids            []int
+}
+
+// The phases below return the error a line earns, or a zero lineResult (status 0) to go on.
+
+// parse decodes the line's body, refuses what --batch cannot do by name, and reads the messages into turns.
+func (t *batchTurn) parse(bd batchDefaults, l batchio.Line) lineResult {
+	var req batchChatReq
+	if err := json.Unmarshal(l.Body, &req); err != nil {
+		return lineErr(400, "invalid_request_error", "body is not a chat completion request: "+err.Error())
+	}
+	if len(req.Messages) == 0 {
+		return lineErr(400, "invalid_request_error", "messages is required and must contain at least one message")
+	}
+	// Refused by name rather than dropped: an unrecognised key is silently ignored by design, so a request for something
+	// this runner cannot do must be an error or the answer would read as if it had been done.
+	if len(req.Tools) > 0 && strings.TrimSpace(string(req.ToolChoice)) != `"none"` {
+		return lineErr(400, "invalid_request_error", "tools are not supported by --batch (text chat only); use goinfer-serve")
+	}
+	if req.Logprobs || req.TopLogprobs != nil {
+		return lineErr(400, "invalid_request_error", "logprobs are not supported by --batch; use goinfer-serve")
+	}
+	if req.Confidence {
+		return lineErr(400, "invalid_request_error", "goinfer_confidence is not supported by --batch; use goinfer-serve")
+	}
+	if req.N != nil && *req.N != 1 {
+		return lineErr(400, "invalid_request_error", fmt.Sprintf("n must be 1 (got %d): one reply per line", *req.N))
+	}
+
+	system := bd.system
+	var turns []chat.Turn
+	for _, m := range req.Messages {
+		text, img := contentText(m.Content)
+		if img {
+			return lineErr(400, "invalid_request_error", "image inputs are not supported by --batch; use goinfer-serve")
+		}
+		switch m.Role {
+		case "system", "developer":
+			system = text
+		case "tool":
+			return lineErr(400, "invalid_request_error", "tool messages are not supported by --batch; use goinfer-serve")
+		case "assistant":
+			if len(m.ToolCalls) > 0 && string(m.ToolCalls) != "null" {
+				return lineErr(400, "invalid_request_error", "assistant tool_calls are not supported by --batch; use goinfer-serve")
+			}
+			r := m.ReasoningContent
+			if r == "" {
+				r = m.Reasoning
+			}
+			turns = append(turns, chat.Turn{Role: "assistant", Content: text, Reasoning: r})
+		default:
+			turns = append(turns, chat.Turn{Role: "user", Content: text})
+		}
+	}
+	system = strings.TrimSpace(system)
+	t.req, t.system, t.turns = req, system, turns
+	return lineResult{}
+}
+
+// batchThinking resolves the thinking mode and the reasoning format.
+func (s *session) batchThinking(t *batchTurn) lineResult {
+	req := t.req
+	// Thinking: the session's mode (--thinking), moved by the request the way serve moves it (think.go resolveThink) — an
+	// explicit enable_thinking, or reasoning_effort "none" to turn it off (any other effort cannot turn it on).
+	mode, explicitMode := s.think, false
+	if raw, ok := req.ChatTemplateKwargs["enable_thinking"]; ok {
+		var on bool
+		if err := json.Unmarshal(raw, &on); err != nil {
+			return lineErr(400, "invalid_request_error", "chat_template_kwargs.enable_thinking must be a boolean")
+		}
+		mode, explicitMode = chat.ThinkOff, true
+		if on {
+			mode = chat.ThinkOn
+		}
+	} else if strings.EqualFold(strings.TrimSpace(req.ReasoningEffort), "none") {
+		mode, explicitMode = chat.ThinkOff, true
+	}
+	if req.ThinkingTokenBudget != nil && *req.ThinkingTokenBudget < 0 {
+		return lineErr(400, "invalid_request_error", fmt.Sprintf("the thinking token budget must be positive, got %d", *req.ThinkingTokenBudget))
+	}
+	splitReasoning := true
+	switch req.ReasoningFormat {
+	case "", "deepseek":
+	case "none":
+		splitReasoning = false // the reasoning stays in the content, as serve's -reasoning-format none leaves it
+	default:
+		return lineErr(400, "invalid_request_error", fmt.Sprintf("reasoning_format %q is not supported by --batch: want deepseek or none", req.ReasoningFormat))
+	}
+	t.mode, t.explicitMode, t.splitReasoning = mode, explicitMode, splitReasoning
+	return lineResult{}
+}
+
+// batchConstraint compiles response_format into the logit masker.
+func (s *session) batchConstraint(t *batchTurn) lineResult {
+	req := t.req
+	// Output constraint.
+	var masker func([]int, []float32)
+	constrained := false
+	if rf := req.ResponseFormat; rf != nil {
+		switch rf.Type {
+		case "", "text":
+		case "json_object":
+			constrained, masker = true, s.grammarMasker(constrain.JSON())
+		case "json_schema":
+			if rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
+				return lineErr(400, "invalid_request_error", "response_format json_schema requires a schema")
+			}
+			g, err := constrain.JSONSchema(rf.JSONSchema.Schema)
+			if err != nil {
+				return lineErr(400, "invalid_request_error", err.Error())
+			}
+			constrained, masker = true, s.grammarMasker(g)
+		default:
+			return lineErr(400, "invalid_request_error", fmt.Sprintf("unsupported response_format type %q", rf.Type))
+		}
+	}
+	t.constrained, t.masker = constrained, masker
+	return lineResult{}
+}
+
+// sampling fills the sampling parameters, max_tokens and the stop strings.
+func (t *batchTurn) sampling(bd batchDefaults) lineResult {
+	req := t.req
+	// Sampling, validated as serve's prepare validates it, after the model's recommended values fill what is left out.
+	sp := bd.sp
+	bd.fillRecommended(&sp, req)
+	if req.Temperature != nil {
+		if *req.Temperature < 0 {
+			return lineErr(400, "invalid_request_error", fmt.Sprintf("temperature must be >= 0 (got %v); 0 selects greedy/deterministic decoding", *req.Temperature))
+		}
+		sp.Temperature = *req.Temperature
+	}
+	if req.TopP != nil {
+		switch p := *req.TopP; {
+		case p < 0 || p > 1:
+			return lineErr(400, "invalid_request_error", fmt.Sprintf("top_p must be in [0,1] (got %v)", p))
+		case p == 0:
+			sp.Temperature = 0 // the tightest nucleus is the single likeliest token
+		case p < 1:
+			sp.TopP = p
+		default:
+			sp.TopP = 0 // 1 is "no nucleus", even over an explicit --top-p
+		}
+	}
+	if req.TopK != nil {
+		sp.TopK = *req.TopK
+	}
+	if req.FrequencyPenalty != nil {
+		sp.FrequencyPenalty = *req.FrequencyPenalty
+	}
+	if req.PresencePenalty != nil {
+		sp.PresencePenalty = *req.PresencePenalty
+	}
+	switch {
+	case req.Seed != nil:
+		sp.Seed = *req.Seed
+	case !bd.seedSet:
+		sp.Seed = mathrand.Int64() // an omitted seed varies run to run, as in serve; an explicit one (even 0) is honoured
+	}
+	maxTok := bd.maxTok
+	mt := req.MaxTokens
+	if req.MaxCompletionTokens != nil { // OpenAI's newer field wins over max_tokens
+		mt = req.MaxCompletionTokens
+	}
+	if mt != nil {
+		if *mt < 1 {
+			return lineErr(400, "invalid_request_error", fmt.Sprintf("max_tokens must be >= 1 (got %d)", *mt))
+		}
+		if *mt > apiMaxOutputTokens {
+			return lineErr(400, "invalid_request_error", fmt.Sprintf("max_tokens %d exceeds the ceiling of %d", *mt, apiMaxOutputTokens))
+		}
+		maxTok = *mt
+	}
+	stops := parseStopField(req.Stop)
+	t.sp, t.maxTok, t.stops = sp, maxTok, stops
+	return lineResult{}
+}
+
+// batchPrompt renders and encodes the prompt, bounds max_tokens by the context window and completes the sampling parameters.
+func (s *session) batchPrompt(t *batchTurn) lineResult {
+	req, system, turns, mode, explicitMode, constrained, masker, maxTok, sp := t.req, t.system, t.turns, t.mode, t.explicitMode, t.constrained, t.masker, t.maxTok, t.sp
+	// The prompt: the model's own template in the request's thinking mode; a grammar governs the first token, so a prompt that
+	// would end inside an open think block is rendered thinking-off.
+	tm := s.batchTemplate(mode, explicitMode, req.ReasoningEffort, constrained)
+	var ids []int
+	var err error
+	if tm != nil {
+		// The codec, not Encode: text in a user message that spells a special token stays text, never a forged turn boundary.
+		ids, err = codec.EncodePrompt(s.tk, tm, system, turns, nil)
+	} else {
+		ids, err = s.tk.Encode(rawPrompt(system, turns), true)
+	}
+	if err != nil {
+		return lineErr(500, "api_error", "encode: "+err.Error())
+	}
+	modelWindow := s.model.Config().MaxPositions
+	window := modelWindow
+	if rc := s.model.ResidentContextCap(); rc > 0 && (window <= 0 || rc < window) {
+		window = rc
+	}
+	if window > 0 {
+		if len(ids) >= window {
+			return lineErr(400, "invalid_request_error", batchContextMessage(len(ids), window, modelWindow))
+		}
+		maxTok = min(maxTok, window-len(ids))
+	}
+
+	sp.StopIDs = s.stopIDs
+	if masker != nil {
+		sp.LogitProcessor = masker
+	}
+	explicitBudget := 0
+	if req.ThinkingTokenBudget != nil {
+		explicitBudget = *req.ThinkingTokenBudget
+	}
+	s.applyBudgetFor(&sp, tm, turns, maxTok, constrained, explicitBudget)
+	t.tm, t.ids, t.maxTok, t.sp = tm, ids, maxTok, sp
+	return lineResult{}
 }
 
 // modelNameOf is the name a batch response reports for the model: the file's base name without .gguf, as serve names a model it
