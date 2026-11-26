@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -934,4 +935,123 @@ func (p *prefillPass) mapKV() error {
 		return e
 	}
 	return nil
+}
+
+// prefillRun is cudaResident's per-pass prefill state: the pass and its staging block, the learned and default pass widths, the
+// prompt lengths the fast-prefill floor reads, the exact-kernel switches, and the launch counters a test reads.
+type prefillRun struct {
+	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
+	xhostBuf []float32
+	// pass is the batched prefill pass in progress (prefillPass), reset by each pass and cleared at its end. Executor goroutine only.
+	pass prefillPass
+	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a row-count knob to
+	// shrink: prefillChunked (retries the SAME pass smaller and stores whatever width worked) and PrefillImageLast
+	// (cannot retry a bidirectional image block smaller, since an image OOM is a function of that block's own M, but
+	// halves and stores the budget on OOM so the NEXT image call is caught by its cheap pre-check). 0 until a pass
+	// OOMs, then the width that worked (for the image path, the width to try next). A card that cannot hold the
+	// default chunk is thereby discovered ONCE, not on every prompt, which matters beyond waste: a context taken to
+	// refusal and kept in use can afterwards launch kernels that "return SUCCESS and execute NOTHING"
+	// (docs/code-notes/cuda.md#cudaResident.prefillChunkCap). Atomic because both callers run on their own
+	// CALLER's goroutine (only the per-pass job is serialized through the executor).
+	prefillChunkCap atomic.Int64
+	// prefillWidth is the default pass width the build chose (prefillWidthFor; 0 before the choice, which reads as
+	// prefillDefaultChunk). GOINFER_PREFILL_CHUNK overrides it and prefillChunkCap lowers it (prefillBaseRows).
+	prefillWidth int
+	prof         *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
+	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once at the top of
+	// prefillCore. The fast-prefill floor is a property of the PROMPT, not of the chunk: prefillChunked splits a long
+	// prompt into passes of <=512 rows, so gating on M alone would judge a 3900-token prompt by its 512-row chunk.
+	// Per-pass mutable state on the resident, the same shape as prof above.
+	//
+	// It is NOT cleared after prefillCore returns: residentDrafter.DraftBlock (cuda/drafter.go) reads it too, via
+	// aboveFastPrefillFloor/bGemvB, and inherits whatever the TARGET's last prefill set. DraftBlock's doc says why
+	// that costs acceptance rate at worst, never correctness.
+	passPromptLen int
+	// forceExactKernels disables useAttnFused/useGemmMMA (the L2/L3 fast levers) for the DURATION of one prefillCore
+	// pass: per-pass mutable state like passPromptLen, set and cleared at prefillCore's own r.do(...) boundary. Those
+	// levers are chosen purely on shape, never on WHO is asking, and they are cosine-close to
+	// gemv_w4a8_rn/attn_batched, not bit-identical: HiddenLast's bit-identity contract and speculative verify's
+	// tailAllLogits/tailAllArgmax tails need decode-identical numerics. So it is true for every prefillCore tail
+	// except tailLastLogits (ordinary single-row-output prefill, where the cosine-gated tolerance applies). The
+	// drafter's own forward (cuda/drafter.go) never touches it: a proposal need not be bit-identical to anything,
+	// only the target's verify of it.
+	forceExactKernels bool
+	// stepChunk is a ragged step's prefill chunk for the duration of its pass (StepRagged); zero otherwise. Executor thread.
+	stepChunk raggedChunk
+	// chunkOrdinary is set by prefillChunked for the duration of a multi-chunk prefill whose FINAL tail is the ordinary tailLastLogits: its non-final passes (tailKVOnly) are part of that
+	// same prompt prefill and must get the same kernels as the final pass. Without it forceExactKernels (tail != tailLastLogits) demoted EVERY non-final chunk to the slow exact path
+	// (docs/measurements/prefill-chunk-demotion-2026-09-21.md). A HiddenLast prefill (tailHiddenLast) leaves it false, so every one of its chunks stays exact.
+	chunkOrdinary bool
+	// chunkPromptLen is the WHOLE prompt's length (startPos + all rows), set by prefillChunked for the duration of a multi-chunk prefill so the fast-prefill floor is judged on the prompt and not on
+	// the prompt-so-far: passPromptLen is startPos+M of THIS pass, so a first chunk narrower than the floor (the OOM-halving path, or GOINFER_PREFILL_CHUNK) would run the exact kernels and
+	// its later chunks the fast ones, mixing numerics inside one prompt (TestPrefillChunked_bitIdentical, chunk=300). Zero outside a chunked prefill.
+	chunkPromptLen int
+	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
+	fastAttnLaunches, fastGemmLaunches int
+	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch; headRows counts the
+	// rows batchedHeadFull heads, so it can prove a prefill chunk's unread rows took none.
+	raggedAttnLaunches, headRows int
+	// raggedFALaunches and raggedSKLaunches count fa_partial_ragged and splitkv_scores_ragged launches, so a test can prove a step's
+	// flash-lane and split-KV rows took one launch.
+	raggedFALaunches, raggedSKLaunches int
+	exactAttnLaunches                  int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
+	tile128Launches                    int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
+}
+
+// prefillKernels is cudaResident's batched prefill: the row-batched kernels and whether they loaded, the exact attention past
+// attn_batched's bound, the fast levers (L2's fused attention with its tile arms, L3's tensor-core GEMM) and the ragged twins.
+type prefillKernels struct {
+	// qTempRowsB is rope_kv_batched's per-row query-scale table (attnTempRows), sized to the largest batched pass seen; qTempRowsKey is the (startPos, M) it currently holds.
+	qTempRowsB   Buffer
+	qTempRowsCap int
+	qTempRowsKey [2]int
+	// Batched (M=len) prefill pipelines (prefill_batched.ptx), the weight-stationary path. bGemv is the batched W4A8
+	// GEMV; the rest are the M=1 glue kernels with an M dimension, each bit-identical per row. Loaded once at build
+	// (small module).
+	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
+	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
+	// The per-32 rows GEMVs (prefill_g32.cu), bound with the per-32 quantizers into bRms/bQuant/bSw under actG32;
+	// prefillG32Ready says all of them loaded, and without it a per-32 load's prefill declines.
+	bQ4KRows, bQ5KRows, bQ6KRows, bW8G32Rows Pipeline
+	prefillG32Ready                          bool
+	bQKN                                     Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
+	bNormF32                                 Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
+	bLN                                      Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
+	zeroBias                                 Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
+	psScores, psSoftmax, psVsum              Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
+	psLaunches                               int      // launch groups of it, for tests
+	// L2: the fused prefill attention, one instantiation per supported head
+	// dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module loaded; every selection site
+	// treats the zero Pipeline as "use attn_batched".
+	bAttnFused64, bAttnFused128 Pipeline
+	// Tile-shape arms of attn_fused (attn_fused_bm.cu): 32x64 and 32x32 (query rows x keys), per head dim.
+	// attnTile: 0 = default (128x64 for hd128 layers without a window, else 64x64), -1 = 64x64 everywhere (GOINFER_CUDA_ATTN_FUSED_TILE=64x64), 1/2/3 = force 32x64 / 32x32 / 128x64 (experiment arms).
+	bAttnBM32x64hd64, bAttnBM32x64hd128, bAttnBM32x32hd64, bAttnBM32x32hd128 Pipeline
+	bAttnBM128hd64, bAttnBM128hd128                                          Pipeline
+	attnTile                                                                 int
+	// L3: the tensor-core int4 GEMM. Zero-valued unless selected AND loaded; bGemvB
+	// treats the zero Pipeline as "use gemv_w4a8_rn", which is the exact path.
+	bGemmMMA Pipeline
+	// Per-lever selection: fastAttn drives L2, fastGemm drives L3.
+	fastAttn, fastGemm bool
+	prefillReady       bool // batched kernels loaded; PrefillLast usable
+	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
+	// loaded, when a step's rows take decode's own gap.
+	bRopeKVRagged, bAttnRagged Pipeline
+}
+
+// visionPrefill is cudaResident's image-block, span and m-RoPE batched prefill: their kernels, whether each loaded, the m-RoPE
+// layout, and the DeepStack sets of the call in progress.
+type visionPrefill struct {
+	bAttnImg             Pipeline      // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
+	imgPrefillReady      bool          // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	bAttnSpan            Pipeline      // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
+	spanPrefillReady     bool          // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
+	spanPass             bool          // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
+	bRopeKVMRoPE         Pipeline      // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
+	mropePrefillReady    bool          // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	mropeTakesMode       bool          // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
+	mropeMode            int32         // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
+	mropeSec0, mropeSec1 int32         // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
+	deepPlan             *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 }
