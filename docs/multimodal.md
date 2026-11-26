@@ -815,7 +815,7 @@ number is published without provenance.
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
      (`backend/cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`backend/webgpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
-     (`backend/metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`backend/metal/resident_adapter.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
      `residentUploadPrefill` (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`) copies only layers whose
