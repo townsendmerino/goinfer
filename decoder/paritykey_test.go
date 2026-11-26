@@ -64,7 +64,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 
 // isBuilder is the decoder's own statement of which files build programs (paritykey.BuilderFile's list, written again so
 // P1 and W1 compare two computations): the program builder, the block spec, the architecture and config types, the registry,
-// every architecture adapter (gemma12.go holds gemma's and gemma2's), and the program's types.
+// every architecture adapter (gemma12.go holds gemma's and gemma2's), config.go's per-family files, and the program's types.
 func isBuilder(p string) bool {
 	switch p {
 	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/gemma12.go",
@@ -72,7 +72,10 @@ func isBuilder(p string) bool {
 		return true
 	}
 	base := filepath.Base(p)
-	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") && !strings.HasSuffix(base, "_test.go")
+	if strings.HasSuffix(base, "_test.go") {
+		return false
+	}
+	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") || filepath.Dir(p) == "decoder/config" && strings.HasPrefix(base, "config_")
 }
 
 // TestParityKey_shadowMatchesDecoder is VK5 week 2's W1: the shadow key
