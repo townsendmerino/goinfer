@@ -372,3 +372,66 @@ type dbgState struct {
 	// layer. A field for the same reason dbgProbe is.
 	routeRecord func(layer int, ids []uint32)
 }
+
+// expertStream is cudaResident's C′ expert streaming: the per-layer device slots the routed experts are copied into, the
+// overlapped copy stream and its events, the pending admissions, and the routing round trip's profiling counters. Zero unless
+// the experts are cached.
+type expertStream struct {
+	cacheExperts bool // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	// unpinnedExperts (MoEExpertsUnpinned) packs each expert stack into an unlinked, read-only file mapping under unpinnedDir instead of pinned
+	// host memory, so the slots upload from pageable pages; pageableStacks counts the stacks it built that way.
+	unpinnedExperts bool
+	unpinnedDir     string
+	pageableStacks  int
+	// overlap (GOINFER_MOE_DMA_OVERLAP, default on with C′; off under graphs): the C′ round trip no longer drains the
+	// stream. The host waits on evRoute (recorded right after the router), the misses are copied on dmaQ, a second
+	// stream, while the kernels issued after the router keep running, and segC's rank loop waits device-side only
+	// before a rank that missed. Everything keeps its launch order and arithmetic, so the output is bit-identical to
+	// the draining path; only the idle time moves. Ceiling and decision rule:
+	// docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md.
+	overlap     bool
+	dmaQ        Queue
+	evRoute     gpu.Event
+	evMiss      []gpu.Event        // per miss of one call (≤ topK): recorded on dmaQ after that miss's two copies
+	missEv      []int              // per rank: index into evMiss, or -1 for a hit
+	slotIdxHost *HostBuffer[uint8] // pinned source of the per-token slot-id upload (UploadAsync needs pinned)
+	cacheProf   bool               // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
+	profStall   time.Duration
+	profHost    time.Duration
+	profDMA     time.Duration
+	// The expert DMA is split into the BIG weight copy and the TINY scale copy, with bytes and call counts for each:
+	// if a small scale upload costs about as much as a large weight upload, the path is per-call-overhead bound and
+	// the fix is batching. Zero cost when cacheProf is off.
+	profWBytes, profSBytes uint64
+	profWCalls, profSCalls uint64
+	// expBatch queues one layer's host-to-device copies, issued together by one gpu.UploadBatch (appendExpertSlot).
+	// profWCalls/profSCalls count logical COPIES, so the per-token copy count stays comparable across the batching;
+	// profSyncCalls counts the SYNCHRONIZES, which is what batching moves. There is no per-kind timing: the copies
+	// are appended here and issued together later, so a "weight upload took Xµs" figure would name something that no
+	// longer happens.
+	expBatch []gpu.HostCopy
+	// pendingAdmits are the slot claims loadRoutedExperts made before its DMA, rolled back if the upload fails so the
+	// cache cannot assert residency for bytes never copied.
+	pendingAdmits []pendingAdmit
+	profBatchTime time.Duration
+	profSyncCalls uint64
+	profCalls     uint64
+	// Per-class decode timing for a g4moe token, sync-bounded (profMark), same cacheProf gate. It
+	// exists to size the compute/DMA overlap ceiling: only dense (independent of the routing) and
+	// the hit-expert prefix of segC can run under a miss DMA, so those two are the classes that
+	// bound any overlap design. Sync-to-sync, so each class includes its own launch latency and
+	// the token is slower with the profiler on; the numbers are upper bounds on class cost.
+	profT0                                                                 time.Time
+	profAttn, profDense, profRouter, profClear, profRT, profSegC, profHead time.Duration
+
+	cacheSlots int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
+	slotIdx    Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
+	hostIdx    []uint32 // C′: scratch for the per-layer rIdx device→host readback
+	hostSlot   []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
+	// cacheSlotsAsked is the slot count the load asked for, before allocSlots capped it to free VRAM: the ceiling a resize grows to.
+	cacheSlotsAsked int
+	cacheSlotsReq   int   // slots REQUESTED (pre-cap), so errors can name both
+	dbgAllocSizes   []int // every requested slot-buffer size, recording only
+	// planSlotGeom is the expert-cache geometry the memory plan supplies from the planned stacks (expertSlotGeom); nil in a build.
+	planSlotGeom *slotGeom
+}
