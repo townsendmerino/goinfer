@@ -3,6 +3,9 @@
 package cuda
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,16 +32,7 @@ import (
 func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 	src := packageSources(t)
 
-	// Pipeline-typed fields of cudaResident: "a, b, c Pipeline" possibly followed by a comment.
-	fieldDecl := regexp.MustCompile(`(?m)^\s+([A-Za-z0-9_, \t]+?)\s+Pipeline\b`)
-	fields := map[string]bool{}
-	for _, m := range fieldDecl.FindAllStringSubmatch(src["resident.go"], -1) {
-		for name := range strings.SplitSeq(m[1], ",") {
-			if name = strings.TrimSpace(name); name != "" {
-				fields[name] = true
-			}
-		}
-	}
+	fields := residentPipelineFields(t, src)
 	if len(fields) < 20 {
 		// Guard the guard: if the field regex stops matching (a struct reformat, a type rename),
 		// every field silently drops out and the lint passes having checked nothing — the same
@@ -80,6 +74,49 @@ func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 			dead)
 	}
 	t.Logf("pipeline lint: %d Pipeline fields, %d bound-and-dead, %d launched-but-unbound", len(names), len(dead), len(unbound))
+}
+
+// residentPipelineFields returns the names of cudaResident's Pipeline-typed fields, its own and those of the structs it embeds
+// (a subsystem's fields sit in an embedded struct declared in that subsystem's file).
+func residentPipelineFields(t *testing.T, src map[string]string) map[string]bool {
+	t.Helper()
+	structs := map[string]*ast.StructType{}
+	fset := token.NewFileSet()
+	for name, body := range src {
+		f, err := parser.ParseFile(fset, name, body, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if ts, ok := n.(*ast.TypeSpec); ok {
+				if st, ok := ts.Type.(*ast.StructType); ok {
+					structs[ts.Name.Name] = st
+				}
+			}
+			return true
+		})
+	}
+	fields := map[string]bool{}
+	var walk func(typ string)
+	walk = func(typ string) {
+		st := structs[typ]
+		if st == nil {
+			t.Fatalf("struct %s not found in the package sources", typ)
+		}
+		for _, f := range st.Fields.List {
+			id, ok := f.Type.(*ast.Ident)
+			switch {
+			case ok && len(f.Names) == 0 && structs[id.Name] != nil:
+				walk(id.Name)
+			case ok && id.Name == "Pipeline":
+				for _, n := range f.Names {
+					fields[n.Name] = true
+				}
+			}
+		}
+	}
+	walk("cudaResident")
+	return fields
 }
 
 // packageSources reads the package's non-test .go sources, keyed by base name.
