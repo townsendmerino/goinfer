@@ -204,6 +204,11 @@ jobs:
       - name: vet (realckpt — the release sweep's build)
         run: go vet -tags 'realckpt goinfer_testhooks' ./...
 
+      # internal/vision/rope_simd.go is gated on goexperiment.simd; compile-check it here so a signature or API drift
+      # fails on the PR rather than silently breaking SIMD builds.
+      - name: compile internal/vision (GOEXPERIMENT=simd)
+        run: GOEXPERIMENT=simd go test -c -o /dev/null ./internal/vision
+
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
       # Built from source again since the move to Go 1.27.2 (2026-10-08): no staticcheck release reads its export data,
@@ -841,6 +846,13 @@ jobs:
       # while CI stayed green — audit M-18). Covered by ./gpu/... above, but kept explicit.
       - name: build -tags gpu (wired serve + demo entrypoints)
         run: go build -tags 'gpu goinfer_testhooks' ./backend/webgpu/cmd/serve ./backend/webgpu/cmd/chat
+
+      # Compile the remaining -tags gpu files outside ./backend/webgpu: demo/agent/cmd/agent-web/gpu.go (wired WebGPU
+      # vision tower) and decoder/granite_resident_test.go.
+      - name: build -tags gpu (agent-web and decoder gpu tests)
+        run: |
+          go build -o /dev/null -tags gpu ./demo/agent/cmd/agent-web
+          go test -c -o /dev/null -tags 'gpu goinfer_testhooks' ./decoder
 
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
