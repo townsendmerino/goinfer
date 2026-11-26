@@ -6,4 +6,3 @@ backend/cuda/resident_build.go 1702 -- over the ceiling before the ratchet; spli
 backend/cuda/resident.go 2222 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/batch.go 1702 -- over the ceiling before the ratchet; split it when next changed
 cmd/gate/quick_select.go 1600 -- over the ceiling before the ratchet; split it when next changed
-decoder/model.go 1728 -- over the ceiling before the ratchet; split it when next changed
