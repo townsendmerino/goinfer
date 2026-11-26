@@ -16,6 +16,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -228,12 +229,17 @@ func FileLengths(files []*File, ceiling int) map[string]int {
 // lists each line that no longer matches: a site under its ceiling or gone, or a line with no ceiling. The scan fails on
 // both, so the line moves down in the change that shrinks the site.
 func CompareExact(found map[string]int, allow map[string]Entry) (grown, stale []string) {
-	grown, shrunk := Compare(found, allow)
+	held, unheld := map[string]Entry{}, maps.Clone(found)
 	for k, e := range allow {
 		if e.Ceiling == 0 {
-			shrunk = append(shrunk, k+" (no ceiling)")
+			stale = append(stale, k+" (no ceiling)") // once, whether or not the site is found
+			delete(unheld, k)
+			continue
 		}
+		held[k] = e
 	}
-	slices.Sort(shrunk)
-	return grown, shrunk
+	grown, shrunk := Compare(unheld, held)
+	stale = append(stale, shrunk...)
+	slices.Sort(stale)
+	return grown, stale
 }

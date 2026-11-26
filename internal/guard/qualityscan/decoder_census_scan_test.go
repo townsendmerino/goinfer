@@ -57,38 +57,32 @@ func ceilingFailures(c decoderCensus, allow map[string]Entry) []string {
 // censusNode is one package-level declaration: a function, a method (named Recv.Name), a type, a var or a const.
 type censusNode struct {
 	kind  string
-	test  bool // every declaration of the name is in a test file
 	lines int
 	refs  map[string]bool
 }
 
-// censusOf reads the files directly in dir (not its subdirectories) that belong to the package named after it. An edge is
-// "this declaration's text names that package-level name", resolved by the parser's scopes; a type and its methods are tied
-// both ways. The knot is computed with each method folded into its type, over non-test declarations only.
+// censusOf reads the non-test files directly in dir (not its subdirectories) that belong to the package named after it. An
+// edge is "this declaration's text names that package-level name", resolved by the parser's scopes; a type and its methods
+// are tied both ways. The knot is computed with each method folded into its type.
 func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 	var c decoderCensus
 	nodes := map[string]*censusNode{}
 	methodsOf := map[string][]string{}
 	span := func(from, to token.Pos) int { return fset.Position(to).Line - fset.Position(from).Line + 1 }
-	get := func(name, kind string, test bool) *censusNode {
+	get := func(name, kind string) *censusNode {
 		n := nodes[name]
 		if n == nil {
-			n = &censusNode{kind: kind, test: test, refs: map[string]bool{}}
+			n = &censusNode{kind: kind, refs: map[string]bool{}}
 			nodes[name] = n
-		}
-		if !test {
-			n.test = false
 		}
 		return n
 	}
 	for _, f := range files {
-		if path.Dir(f.Path) != dir || f.AST.Name.Name != path.Base(dir) {
+		if f.Test || path.Dir(f.Path) != dir || f.AST.Name.Name != path.Base(dir) {
 			continue
 		}
 		base := path.Base(f.Path)
-		if !f.Test {
-			c.Lines += FileLines(f.Src)
-		}
+		c.Lines += FileLines(f.Src)
 		collect := censusCollector(f.AST)
 		for _, d := range f.AST.Decls {
 			switch d := d.(type) {
@@ -100,10 +94,10 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 				var n *censusNode
 				if d.Recv != nil && len(d.Recv.List) > 0 {
 					rb := recvBase(d.Recv.List[0].Type)
-					n = get(rb+"."+d.Name.Name, "method", f.Test)
+					n = get(rb+"."+d.Name.Name, "method")
 					n.refs[rb] = true
 					methodsOf[rb] = append(methodsOf[rb], rb+"."+d.Name.Name)
-					if rb == "Model" && d.Body != nil && !f.Test {
+					if rb == "Model" && d.Body != nil {
 						c.ModelMethods++
 					}
 				} else {
@@ -111,7 +105,7 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 					if name == "init" {
 						name = "init@" + base
 					}
-					n = get(name, "func", f.Test)
+					n = get(name, "func")
 				}
 				n.lines += span(from, d.End())
 				collect(d, n.refs)
@@ -130,7 +124,7 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 						if s.Doc != nil && d.Lparen.IsValid() {
 							from = s.Doc.Pos()
 						}
-						n := get(s.Name.Name, "type", f.Test)
+						n := get(s.Name.Name, "type")
 						n.lines += span(from, to)
 						collect(s, n.refs)
 					case *ast.ValueSpec:
@@ -138,7 +132,12 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 							from = s.Doc.Pos()
 						}
 						refs := map[string]bool{}
-						collect(s, refs)
+						if s.Type != nil {
+							collect(s.Type, refs)
+						}
+						for _, v := range s.Values {
+							collect(v, refs)
+						}
 						if d.Tok == token.CONST && s.Type == nil && len(s.Values) == 0 && prevRefs != nil {
 							for k := range prevRefs {
 								refs[k] = true // an implicit repetition of the const spec above names what it names
@@ -150,7 +149,7 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 							if name == "_" {
 								name = fmt.Sprintf("_@%s#%d.%d.%d", base, fset.Position(d.Pos()).Line, i, j)
 							}
-							n := get(name, d.Tok.String(), f.Test)
+							n := get(name, d.Tok.String())
 							if j == 0 {
 								n.lines += span(from, to)
 							}
@@ -189,13 +188,10 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 	fwd, rev := map[string]map[string]bool{}, map[string]map[string]bool{}
 	glines := map[string]int{}
 	for name, n := range nodes {
-		if n.test {
-			continue
-		}
 		g := group(name)
 		glines[g] += n.lines
 		for r := range n.refs {
-			if rn := nodes[r]; rn != nil && !rn.test {
+			if nodes[r] != nil {
 				if rg := group(r); rg != g {
 					if fwd[g] == nil {
 						fwd[g] = map[string]bool{}
@@ -222,6 +218,8 @@ func censusOf(fset *token.FileSet, files []*File, dir string) decoderCensus {
 
 // censusCollector returns a function that adds to into every package-level name a node's text names: an identifier the
 // parser resolved to the file's scope, or one it left unresolved that is not an import (a name declared in another file).
+// A bare key in a composite literal is never one: the parser resolves it only when the name is declared in the same file,
+// so counting it would let a move between files change the census.
 func censusCollector(f *ast.File) func(ast.Node, map[string]bool) {
 	imports := map[string]bool{}
 	for _, is := range f.Imports {
@@ -237,9 +235,22 @@ func censusCollector(f *ast.File) func(ast.Node, map[string]bool) {
 		unres[id] = true
 	}
 	return func(n ast.Node, into map[string]bool) {
+		keys := map[*ast.Ident]bool{}
+		ast.Inspect(n, func(x ast.Node) bool {
+			if cl, ok := x.(*ast.CompositeLit); ok {
+				for _, e := range cl.Elts {
+					if kv, ok := e.(*ast.KeyValueExpr); ok {
+						if id, ok := kv.Key.(*ast.Ident); ok {
+							keys[id] = true
+						}
+					}
+				}
+			}
+			return true
+		})
 		ast.Inspect(n, func(x ast.Node) bool {
 			id, ok := x.(*ast.Ident)
-			if !ok || id.Name == "_" {
+			if !ok || id.Name == "_" || keys[id] {
 				return true
 			}
 			if id.Obj != nil {
@@ -293,7 +304,8 @@ func closureOf(start string, edges map[string]map[string]bool) map[string]bool {
 
 // The decoder ceilings' plants: on a small package, a new method on Model, a new declaration in Model's knot and a longer
 // file each raise their number and fail the check against the base counts; a declaration below the knot raises only the
-// line count; and a lowered count fails until its line is lowered.
+// line count; a declaration that comes to name Model on the line it had raises only the knot; and a lowered count fails
+// until its line is lowered. A test file's method on Model counts nowhere.
 func TestQualityScan_decoderCeilingsPlantsGoRed(t *testing.T) {
 	const base = `package pkg
 
@@ -341,6 +353,14 @@ type Weights struct{ n int }
 		if len(ceilingFailures(c, allow)) == 0 {
 			t.Errorf("plant %s: the check passed against the base ceilings", p.name)
 		}
+	}
+	// Only the knot grows: Weights names Model on the line it had, so it joins the knot and nothing else changes.
+	tied := census(t, strings.Replace(base, "type Weights struct{ n int }", "type Weights struct{ m *Model }", 1))
+	if want := (decoderCensus{Lines: 9, ModelMethods: 1, KnotLines: 4}); tied != want {
+		t.Errorf("plant knot-only: census %+v, want %+v", tied, want)
+	}
+	if f := ceilingFailures(tied, allow); len(f) != 1 || !strings.Contains(f[0], "model_knot_lines (4, ceiling 3)") {
+		t.Errorf("plant knot-only: failures %q, want one naming model_knot_lines alone", f)
 	}
 	lowered := got
 	lowered.KnotLines--
