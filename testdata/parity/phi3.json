@@ -10,7 +10,7 @@
   "programs": [
     "testdata/phi3-tiny"
   ],
-  "deps_hash": "sha256:e620abf406ed69f579f54c8f5034b8e1b87b168736f53ded4c76a2a1619848ff",
+  "deps_hash": "sha256:1695c51cec26bc0b5454549fb985aa9921ebf8df95d221601f167ef45c8c9c97",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
