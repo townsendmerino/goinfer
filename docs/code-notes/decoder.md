@@ -1822,7 +1822,7 @@ config.json-only value (EOSIDs() is its only consumer anywhere in the tree), so
 overwriting it here is safe.
 resolveEOSIDs looks for generation_config.json via os.DirFS(eosDir) — a real DIRECTORY.
 For a .gguf load, dir is the FILE path, so os.DirFS(dir) can never open anything inside it
-(the fallback decoder/gguf.go:ggufEOS's own comment claims); generation_config.json for a
+(the fallback internal/runtime/ggufconfig/metadata.go:ggufEOS's own comment claims); generation_config.json for a
 GGUF conversion lives beside the file, in its parent directory, same as M-04 found.
 ```
 
