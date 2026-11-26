@@ -348,3 +348,27 @@ func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 	copy(mb.Bytes(), src)
 	return mb
 }
+
+// dbgState is cudaResident's measurement instruments: VRAM readings around the slot allocation and the first launches, the
+// per-launch probe and the routing hook. Each is zero or off unless a test sets it.
+type dbgState struct {
+	// Instrument fields, RECORDING ONLY, never read by production logic: free device VRAM immediately before and after
+	// allocSlots in the SAME process, so a test measures consumption without a cross-run assumption.
+	dbgFreeBefore, dbgFreeAfter uint64
+	dbgPredInline               int64  // consumption predicted by the arithmetic production executes
+	dbgPredCapSlots             int64  // consumption predicted from capSlots' chosen count
+	dbgSlotsInline              int    // slot count the INLINE copy at allocSlots chose
+	dbgSlotsCapSlots            int    // slot count capSlots would choose from the same free
+	dbgFreeBeforeLaunch         uint64 // free VRAM immediately before the first forward's launches
+	dbgFreePreLaunch            uint64 // free VRAM immediately before the MOST RECENT launch
+	dbgLaunchTrace              []string
+	// dbgProbe enables the per-launch pre-launch probe. A FIELD, not a package var read from the environment: a
+	// package var is initialised before t.Setenv can run, so it would silently record nothing; the test sets the field
+	// on the resident it already holds. Off by default: the probe costs a MemInfo round-trip and a reflection scan on
+	// EVERY launch.
+	dbgProbe bool
+	// routeRecord, when non-nil, is called once per loadRoutedExperts call with the layer index and that call's routed
+	// expert ids (r.hostIdx[:topK]): a measurement hook for how many DISTINCT experts a whole M-row chunk touches per
+	// layer. A field for the same reason dbgProbe is.
+	routeRecord func(layer int, ids []uint32)
+}

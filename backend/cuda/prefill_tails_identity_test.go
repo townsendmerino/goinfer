@@ -538,9 +538,19 @@ func newLaunchTrace(r *cudaResident) *launchTrace {
 			}
 		}
 	}
-	for i := range v.NumField() {
-		walk(v.Type().Field(i).Name, v.Field(i))
+	// A subsystem's fields sit in an embedded struct: descend into it, so each pipeline keeps its promoted name.
+	var fields func(v reflect.Value)
+	fields = func(v reflect.Value) {
+		for i := range v.NumField() {
+			sf := v.Type().Field(i)
+			if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
+				fields(v.Field(i))
+				continue
+			}
+			walk(sf.Name, v.Field(i))
+		}
 	}
+	fields(v)
 	return t
 }
 
