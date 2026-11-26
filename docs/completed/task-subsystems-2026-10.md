@@ -97,7 +97,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
-| AX7 | moved | to a scheduled re-count on 2026-11-26 (coordinator), informing, not gating (Francis 2026-11-07 07:34). Method: after AX4, re-count aikit bumps, tags and pin-only commits 30 days later, as §7.4's AX7 row names; S | §7.4 |
+| AX7 | moved | to a scheduled re-count on 2026-11-26 (coordinator), informing, not gating (Francis 2026-11-07 07:34). Method: after AX4, re-count aikit bumps, tags and pin-only commits 30 days later, as §7.4's AX7 row names; S. Re-counted 2026-11-26: against §2.4's 30 days, aikit root tags 35 to 4 and `gpu/*` tags 8 to 0, root aikit bumps 37 to 4 (no tower or GPU bump), pin-only commits 34 to 9 (aikit pins 23 to 2), aikit-caused parity re-stales 36 to 3; v1.80.0 (#1347) is 1 tag, 1 bump and 1 re-stale of these | §7.4, §2.4.1 |
 | SB1 | moved | the test-only batches are done; the op-level interface is RF5 and OP4 in `docs/tasks/task-forward-and-memory-2026-11.md` | §8 SB1 |
 | SB2 | done | CUDA steps 1-3 and WebGPU step 4 (#564, #566); Metal's slot census dropped (B-metal feeds `metalLiveAvailable` from the profiles and MM7 holds Metal) | `docs/measurements/sb2-dcensus-2026-10-30/README.md` |
 | SB2-cov | done | The memory census reaches the raise (`llama-tiny@window32768`, G-DC7 passes, 2026-10-30) and the slot cap (`glm-tiny@experts16384`, 16384-wide experts whose slot buffers cross the 2 MiB quantum: four `@halfcache` lines hold 4 of 8 slots, and the slots plant changes exactly those, G-DC7 and G-DC8 pass, 2026-10-31; `docs/measurements/sb2-cov-2026-10-30/README.md`). | §8 SB2 |
@@ -128,7 +128,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | done | retired 2026-10-27 (Francis: option A): `touched.py` passes `-count=1` everywhere again, and the test-cache scanner, its data and wiring are removed; the saving was about 9 s on a 133 s re-run and three review rounds each found a new hole | §12.3; `docs/measurements/pw5-2026-10.md` |
-| PW6 | moved | to a scheduled re-count on 2026-11-26 (coordinator), informing, not gating (Francis 2026-11-07 07:34). Method: after the first VK, MM and PW items, re-run §1's census 30 days after they land; S | §12 |
+| PW6 | moved | to a scheduled re-count on 2026-11-26 (coordinator), informing, not gating (Francis 2026-11-07 07:34). Method: after the first VK, MM and PW items, re-run §1's census 30 days after they land; S. Re-counted 2026-11-26 on another box's transcripts: waiting on CI after a push 16.9% of wall clock to 2.2%, `gh pr checks --watch` 34 calls to 0, all waiting 41 to 52% a week to 17 to 31%; CI itself slower (median 8.6 to 19.6 min over the last 60 runs, runner queueing and longer decoder shards); the hot shared files cold | §12, §1.7 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
 | SD2, SD3, SD5–SD8 | done | decided 2026-10-26, one at a time (§14) | §14 |
@@ -252,6 +252,62 @@ touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parit
 - Call time (§1.2) overlaps; only §1.1 adds up to wall clock.
 - Classes and causes are regexes over commands and logs; the record lists them.
 
+### 1.7 The re-count, 2026-11-26 (PW6)
+
+§1's census re-run for the 30 days 2026-10-27 to 11-26 (goinfer main `0401e99a0`), informing, not gating. Nothing was
+timed. **The transcripts are a different box's:** the original read the Apple-silicon MacBook's; this read an Intel
+MacBook Pro (Core i5-8257U, 8 threads) running Linux, whose sessions ran several at a time, so hours do not compare
+box for box; shares and per-call figures do. That box keeps no night queue, so §1.3 has no re-count.
+
+| measure | §1 (2026-10-12/13 to 10-26) | 2026-10-27 to 11-26 |
+|---|---|---|
+| active hours (§1.1) | 120 | 430 |
+| model thinking and writing | 49.4% | 61.3% |
+| **waiting on CI after a push** | **16.9%** | **2.2%** |
+| waiting on local tests and gates | 10.9% | 13.4% |
+| tool work (read, edit, git) | 5.9% | 15.5% |
+| build, vet, lint | 4.1% | 5.2% |
+| waiting on benchmarks, on the CUDA box and night jobs, other polling | 12.7% | 2.2% |
+| tests, gates and CI, by week | 37.5%, 22.5% | 16.2%, 11.0%, 15.7%, 18.9%, 14.8% |
+| all waiting, by week | 51.7%, 40.9% | 18.6%, 17.0%, 22.3%, 30.9%, 22.1% |
+| `go test` calls (§1.2) | 1,641, 13.9 h; 1,485 with `-count=1` | 2,552, 23.6 h; 2,010 with `-count=1` |
+| `touched.py` runs | 334; median 0.4, p90 4.8, p99 12.7 min; 29 at 5 min or more | 985; median 0.2, p90 3.6, p99 13.1 min; 67 at 5 min or more |
+| `gh pr checks --watch` | 34 calls, 5.6 h | 0 |
+| polls of CI (`gh pr checks`, `gh run`) | 87 calls, 10.9 h | 80 calls, 13.9 h (call time, nearly all background) |
+| polls of the CUDA box | 47 calls, 15.4 h | 48 calls, 6.0 h |
+| parity refreshes | 159 calls, 1.7 h | 253 calls, 6.7 h (median 0.5 min; one 133-min outlier) |
+| staticcheck | 215 calls, 2.5 h | 195 calls, 1.0 h |
+| CI, last 60 `ci` runs (§1.4) | median 8.6, p90 12.3, max 44.7 min | median 19.6, p90 39.4, max 50.0 min |
+| non-merge commits on main (§1.5) | 3,261 | 3,060 |
+| `testdata/parity_manifest.json` / `testdata/parity/` | 225 commits to one file | 140 commits to the directory, about 100 to 127 per family file |
+| `docs/citation-index.md`, `CHANGELOG.md`, `docs/README.md` | 241, 229, 106 | 3, 5 (178 to `changelog.d/`), 18 |
+| `decoder/model.go`, `decoder/registry.go` | 86, 20 | 98, 9 |
+
+- **What moved:** waiting on CI fell from a sixth of wall clock to 2%, and nobody watches PR checks: the auto-merge rule
+  (PW1) took the wait out of the session. The hot shared files went cold (PW3's CHANGELOG fragments and README counts,
+  VK3's per-family parity records). `-count=1` stays on every `touched.py` test, as PW5's retirement decided.
+- **What did not:** CI itself is slower. The 60 runs (2026-11-26, 10:10 to 13:48 UTC) are a busy morning: 29 took over
+  20 minutes, the macOS jobs started 20 to 39 minutes into the slowest PR runs (runner queueing), and the four decoder
+  shards ran 13 to 20 minutes each where §1.4's tail shard ran 4. Under auto-merge that costs merge latency, not session
+  time.
+- **Method notes:** `repo_census.py` stops at its parity-manifest section (the manifest is now `testdata/parity/`), after
+  the rate and most-touched sections this table uses; per-file counts here use `git log --since=<day>T00:00`, the
+  script a time-of-day `--since`, so the rate is 2,996 by the script and 3,060 from midnight (3,260 and 3,261 at §1's
+  run).
+
+Commands, from a worktree of `origin/main` (transcript paths are the box's own):
+
+```sh
+D=docs/measurements/subsystems-2026-10
+python3 docs/measurements/test-wait-2026-10/session_wall.py collect $TMPDIR/sw.json ~/.claude/projects/*goinfer*/*.jsonl ~/.claude/projects/*aikit*/*.jsonl
+python3 docs/measurements/test-wait-2026-10/session_wall.py report --since 2026-10-27 $TMPDIR/sw.json
+python3 docs/measurements/test-efficiency-2026-09/transcript_miner.py --since 2026-10-27 --top 40
+python3 $D/breakdown.py --since 2026-10-27
+python3 $D/repo_census.py --since 2026-10-27 --aikit ~/tmcode/aikit   # stops at the manifest section
+python3 $D/ci_anatomy.py --limit 60 --slow 20
+git log --since=2026-10-27T00:00 --no-merges --format=%h -- <file> | wc -l
+```
+
 ## 2. Why: five structural causes
 
 ### 2.1 Validations keyed on source files and a version string
@@ -314,6 +370,49 @@ touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parit
 - One bump pinned a pre-release pseudo-version rather than wait for a tag (2026-10-24, KS-O1).
 - aikit's own line puts the towers on goinfer's side: kernels in aikit, model semantics in goinfer (the premise of
   aikit's goinfer-kernel-moves task doc). SigLIP, Qwen2.5-VL, Pixtral and Gemma 4's conformer are model semantics.
+
+#### 2.4.1 The re-count, 2026-11-26 (AX7)
+
+The 30 days after AX4 (2026-10-27 to 11-26, goinfer main `0401e99a0`, aikit `origin/main`) against the 30 days above
+(2026-09-26 to goinfer `c4cfb4cb`, 2026-10-26). Both windows are 30 days, so the counts are the rate. AX4's own bump to
+v1.76.0 (tagged 2026-10-26 21:25 PDT) falls between them and is in neither. Informing, not gating.
+
+| measure | 2026-09-26 to 10-26 | 2026-10-27 to 11-26 |
+|---|---:|---:|
+| aikit root tags | 35 (v1.48.0 to v1.75.0) | 4 (v1.77.0 to v1.80.0) |
+| aikit `gpu/*` tags | 8 | 0 |
+| aikit's `gpu/*` modules: commits each | 39 to 41 | 0 or 1 (a `go fix` rewrite, or the retired modules' deletion) |
+| goinfer commits changing the root aikit requirement | 37 | 4 |
+| of them, a pre-release pseudo-version | 1 | 1 |
+| by subject: towers / GPU module / linalg and kernels / embed and formats / other | 14 / 1 / 16 / 5 / 1 | 0 / 0 / 4 / 0 / 0 (read; the script's regex puts two under other) |
+| pin-only commits (every file a `go.mod` or `go.sum`) | 34 | 9 |
+| of them, moving an aikit pin (root or `gpu`) | 23 | 2 |
+| parity re-stales caused by aikit (deps_hash refresh commits naming an aikit version) | 36 | 3 |
+
+- **The release train stopped being the inner loop.** The towers and the GPU module took 15 of the 37 bumps; they took
+  none. The four bumps are kernel releases goinfer asked for: v1.78.0's native Q5_K/Q6_K kinds (#1170, pinned first at a
+  pseudo-version of the aikit branch, then at the tag), v1.79.0's f16 attention kernels (#1297), and v1.80.0's linalg
+  surface rework (#1347). v1.77.0 was never pinned. The other seven pin-only commits are goinfer's own release steps and
+  one WebGPU binding bump.
+- **A bump no longer re-stales on its own.** The parity key reads the kernel fingerprint table
+  (`testdata/kernel_fingerprints.json`, VK1), not the aikit pin. Each of the three re-stales came from goinfer code that
+  adopted the release in the same PR (new fingerprint entries in #1170 and #1297, the API rewrite in #1347), and each
+  refresh kept `validated_at` on green forward goldens. In the baseline every bump re-staled every family.
+- **v1.80.0 (the breaking release, 2026-11-25) and #1347 account for** 1 of the 4 tags, 1 of the 4 bumps, none of the
+  pin-only commits (its bump commit also edited three tool files) and 1 of the 3 re-stales; #1347 carried a second
+  refresh, after deleting two decoder helpers the rewrite left uncalled, whose message does not name aikit (4 of 4
+  counting it).
+
+Commands (window `W` is `c4cfb4cb --since=2026-09-26T00:00` or `0401e99a0 --since=2026-10-27T00:00`):
+
+```sh
+git -C ~/tmcode/aikit for-each-ref --sort=creatordate --format='%(creatordate:iso) %(refname:short)' refs/tags
+git log $W --no-merges --full-history -G 'townsendmerino/aikit v' --format='%h %s' -- go.mod
+for c in $(git log $W --no-merges --format=%h); do fs=$(git diff-tree --no-commit-id --name-only -r $c)
+  [ -n "$fs" ] && ! grep -qvE '(^|/)go\.(mod|sum)$' <<<"$fs" && git log -1 --format='%h %s' $c; done   # pin-only
+for c in $(git log $W --no-merges --full-history -G deps_hash --format=%h -- testdata/parity_manifest.json testdata/parity/); do
+  git log -1 --format=%B $c | grep -qiE 'aikit (v[0-9]|pin|bump)' && git log -1 --format='%h %s' $c; done   # re-stales
+```
 
 ### 2.5 Shared hot files and waiting
 
