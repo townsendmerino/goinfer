@@ -2,8 +2,9 @@
 
 package vision
 
-// applyRotaryVision (default build) — byte-for-byte the body this function had
-// before rope_simd.go existed. In-place pairwise: each (vec[d], vec[d+half])
+// applyRotaryVision (default build) — the body this function had before
+// rope_simd.go existed, with the tail loop's rounding made explicit. In-place
+// pairwise: each (vec[d], vec[d+half])
 // rotates into itself, so no per-call scratch is needed — this was ~8M tiny
 // allocs on a realistic image (~8k patches x 16 heads x 32 blocks). Reads x,y
 // before overwriting either, and is bit-identical to the tmp version
@@ -33,9 +34,12 @@ func applyRotaryVision(vec, cos, sin []float32) {
 		vec[d+3] = x3*cos[d+3] - y3*sin[d+3]
 		vec[d+3+half] = y3*cos[d+3+half] + x3*sin[d+3+half]
 	}
+	// float32() rounds the cos product, so a target that fuses multiply-adds fuses the sin product in every build: Go may
+	// fuse either product of a*b + c*d, and the choice otherwise follows code generation, which -race changes on arm64.
+	// internal/diag/towerid's TestTowerGolden_cpu holds the result (gemma4-vision's head size reaches this loop).
 	for ; d < half; d++ {
 		x, y := vec[d], vec[d+half]
-		vec[d] = x*cos[d] - y*sin[d]
-		vec[d+half] = y*cos[d+half] + x*sin[d+half]
+		vec[d] = float32(x*cos[d]) - y*sin[d]
+		vec[d+half] = float32(y*cos[d+half]) + x*sin[d+half]
 	}
 }

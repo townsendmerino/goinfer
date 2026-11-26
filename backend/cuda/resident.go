@@ -296,9 +296,7 @@ type cudaResident struct {
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
-	faSoftcap      bool    // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
-	faHD96         bool    // a head-dim-96 layer may take the flash-decode lane (fa_partial_96); off, it decodes on the exact path
-	faHD96Default  bool    // faHD96 is the caller's default: it applies only while ctxCap is at most flashDecodeHD96DefaultMaxCtx
+	flashDecodeState
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
@@ -372,28 +370,10 @@ type cudaResident struct {
 	bNormF32                                 Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
 	bLN                                      Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
 	zeroBias                                 Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
-	skScores, skSoftmax, skVsum              Pipeline // split-KV decode attention (high-occupancy, bit-identical)
-	skScoreBuf, skInvBuf                     Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
-	psScores, psSoftmax, psVsum              Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
-	psLaunches                               int      // launch groups of it, for tests
-	skVsumPartial, skVsumCombine             Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
-	skPartialBuf                             Buffer   // [nH·maxHd·nSplit] partial folds for the spike
-	skVsumSplit                              int      // vsumSplitForTest at build; 0 = off (the shipped path)
-	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
-	faPartial     [faHDs]Pipeline // fa_partial_<hd> for each of faHDList
-	kv8Store      Pipeline        // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
-	faCombine     Pipeline
-	faSplit       int                // S key splits per kv head; 0 = lane off (the exact path)
-	faMinKeys     int                // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
-	faBuf         Buffer             // partials [nH][S*8][hd+4]
-	faLaunches    int                // launches of fa_partial, so a test can prove the lane ran
-	faModule      string             // the build of decode_fa the lane was compiled from (decode_fa, _kv16 or _kv8), so a test can prove the precision's twin ran
-	skLaunches    int                // split-KV decode attention passes, so a test can prove that path ran
-	faExactScope  atomic.Int32       // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
-	faRows        [faHDs][9]Pipeline // fa_partial_rows_<hd>_g{1..8} (multi-row verify variant) for each of faHDList; zero when not loaded
-	faCombineRows Pipeline
-	faVerify      bool // the multi-row lane serves speculative verify rows (loaded, and not disabled by GOINFER_CUDA_FLASH_DECODE_VERIFY=0)
-	faRowLaunches int  // launches of fa_partial_rows, so a test can prove verify rows ran on the multi-row lane
+	splitKVState
+	psScores, psSoftmax, psVsum Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
+	psLaunches                  int      // launch groups of it, for tests
+	kv8Store                    Pipeline // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
 
 	// L2: the fused prefill attention, one instantiation per supported head
 	// dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module loaded; every selection site
@@ -415,27 +395,10 @@ type cudaResident struct {
 	planning bool
 	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
 	openedForPlan bool
-	// Gated-DeltaNet mixer (deltanet.ptx, its own module). Loaded only for that family; every other model leaves
-	// these zero and never dispatches them.
-	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
-	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
-	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
-	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
-	// The speculative verify's twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
-	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
-	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
-	dnSpec                                            *dnSpecArena
-	dnSpecOn                                          bool
-	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
-	dnet                                              *dnetParams
-	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
-	mamba                                     *mambaParams
-	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
-	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
+	dnetState
+	mambaState
 
 	gptOssState
-	splitkvAttn     bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the single-block attn_batched(M=1))
-	skMinKeys       int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady    bool     // batched kernels loaded; PrefillLast usable
 	bAttnImg        Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
 	imgPrefillReady bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
@@ -499,45 +462,22 @@ type cudaResident struct {
 	// raggedFALaunches and raggedSKLaunches count fa_partial_ragged and splitkv_scores_ragged launches, so a test can prove a step's
 	// flash-lane and split-KV rows took one launch.
 	raggedFALaunches, raggedSKLaunches int
-	// skScoresRagged, skSoftmaxRagged and skVsumRagged are split-KV's ragged twins (decode_splitkv.cu); zero when not loaded.
-	skScoresRagged, skSoftmaxRagged, skVsumRagged Pipeline
-	// faRagged and faCombineRagged are the flash-decode lane's ragged twins (decode_fa.cu); zero when not loaded.
-	faRagged        [faHDs]Pipeline
-	faCombineRagged Pipeline
 	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
 	// loaded, when a step's rows take decode's own gap.
-	bRopeKVRagged, bAttnRagged                 Pipeline
-	exactAttnLaunches                          int      // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
-	tile128Launches                            int      // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
-	fMlaStore, fMlaHeadMV, fMlaQRope, fMlaAttn Pipeline // MLA (mla module, FeatMLA)
-
-	// MLA (DeepSeek / Kimi, FeatMLA) geometry & params
-	isMLA         bool
-	mlaRank       int // kv_lora_rank
-	mlaLatDim     int // kv_lora_rank + qk_rope_head_dim
-	mlaQKHead     int // qk_nope + qk_rope
-	mlaQKNope     int // qk_nope_head_dim
-	mlaQKRope     int // qk_rope_head_dim
-	mlaVHead      int // v_head_dim
-	mlaQLoRA      int // q_lora_rank (0 if direct q_proj)
-	mlaInterleave bool
-	mlaRopeScale  float32
+	bRopeKVRagged, bAttnRagged Pipeline
+	exactAttnLaunches          int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
+	tile128Launches            int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
+	mlaState
 
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
 	launchErr   error // sticky first launch error within a launchToken call (reset per token)
 	layers      []cudaLayer
 	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
 	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
-	// The recurrent checkpoint (recurrent_checkpoint.go): its device bytes (0: none kept), the copies that save and restore it, and
-	// why a load kept none.
-	ckptBytes             int64
-	ckptSave, ckptRestore []gpu.DeviceCopy
-	ckptDeclined          string
-	ckptCopies            []ckptCopy
-	ckptSaves             uint64
-	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
-	lmW                   cudaWQ
-	finalNorm             Buffer
+	ckptState
+	extraBytes int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
+	lmW        cudaWQ
+	finalNorm  Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
@@ -602,18 +542,6 @@ type cudaResident struct {
 	kvWindow int
 	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
 	kvBases  []int
-
-	// Gated-DeltaNet per-token scratch (allocated only when any layer isDeltaNet). Sized from
-	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
-	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
-	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP, dnBt, dnAt, dnZOut, dnCore, dnGated Buffer
-	dnGq, dnGSc                                                                  Buffer // int8 activation + scale for the gated output's out_proj GEMV
-	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
-	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
-
-	// MLA per-token scratch (allocated only when isMLA).
-	mlaQAOut, mlaQAQ, mlaQASc Buffer
-	mlaKVDown, qAbs, wsum     Buffer
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
 	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an

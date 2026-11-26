@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
@@ -279,4 +280,28 @@ func (r *cudaResident) flashVerifyAttn(l, startPos, from, m int, q, ctx Buffer) 
 		}
 	}
 	return nil
+}
+
+// flashDecodeState is the flash-decode lane (decode_fa.cu): its per-head-dim kernels and their multi-row and ragged twins, the
+// split and floor it runs at, its partials, and the counters a test reads to prove it ran.
+type flashDecodeState struct {
+	faSoftcap     bool // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
+	faHD96        bool // a head-dim-96 layer may take the flash-decode lane (fa_partial_96); off, it decodes on the exact path
+	faHD96Default bool // faHD96 is the caller's default: it applies only while ctxCap is at most flashDecodeHD96DefaultMaxCtx
+	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
+	faPartial     [faHDs]Pipeline // fa_partial_<hd> for each of faHDList
+	faCombine     Pipeline
+	faSplit       int                // S key splits per kv head; 0 = lane off (the exact path)
+	faMinKeys     int                // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
+	faBuf         Buffer             // partials [nH][S*8][hd+4]
+	faLaunches    int                // launches of fa_partial, so a test can prove the lane ran
+	faModule      string             // the build of decode_fa the lane was compiled from (decode_fa, _kv16 or _kv8), so a test can prove the precision's twin ran
+	faExactScope  atomic.Int32       // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
+	faRows        [faHDs][9]Pipeline // fa_partial_rows_<hd>_g{1..8} (multi-row verify variant) for each of faHDList; zero when not loaded
+	faCombineRows Pipeline
+	faVerify      bool // the multi-row lane serves speculative verify rows (loaded, and not disabled by GOINFER_CUDA_FLASH_DECODE_VERIFY=0)
+	faRowLaunches int  // launches of fa_partial_rows, so a test can prove verify rows ran on the multi-row lane
+	// faRagged and faCombineRagged are the flash-decode lane's ragged twins (decode_fa.cu); zero when not loaded.
+	faRagged        [faHDs]Pipeline
+	faCombineRagged Pipeline
 }

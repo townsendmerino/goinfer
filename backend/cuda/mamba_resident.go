@@ -251,3 +251,11 @@ func (r *cudaResident) recurrent() bool { return r.dnet != nil || r.mamba != nil
 // batchedVerifyOK reports whether ForwardN may run its rows as one weight-stationary pass: batched kernels exist and no recurrent state would have to
 // advance token by token. VerifyPath reports the same answer.
 func (r *cudaResident) batchedVerifyOK() bool { return r.prefillReady && !r.recurrent() }
+
+// mambaState is cudaResident's Mamba-2 mixer and non-gated MLP: parameters, kernels and per-token scratch.
+type mambaState struct {
+	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
+	mamba                                     *mambaParams
+	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
+}
