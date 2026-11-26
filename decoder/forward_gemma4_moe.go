@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // Gemma 4 26B-A4B parallel dense-MLP + MoE FFN sub-block (enable_moe_block). The two branches run on the same post-attention
@@ -137,17 +138,17 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	// buffers, disjoint from what the fill goroutine touches, so it is safe without a lock of its own.
 	xd := scratchF32(&sc.xd, len(h))
 	copy(xd, h)
-	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
+	normact.RMS(xd, w.preFFNNorm, 1, hidden, eps, addOne)
 	gate := scratchF32(&sc.gate, w.denseInter)
 	up := scratchF32(&sc.up, w.denseInter)
 	matmul(be, &w.mlpGate, xd, gate, 1)
 	matmul(be, &w.mlpUp, xd, up, 1)
 	for i := range gate {
-		gate[i] = geluTanh(gate[i]) * up[i]
+		gate[i] = normact.GELUTanh(gate[i]) * up[i]
 	}
 	x1 := scratchF32(&sc.x1, hidden)
 	matmul(be, &w.mlpDown, gate, x1, 1)
-	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
+	normact.RMS(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
 	if routerCapture {
 		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, slices.Clone(x1)) })
 	}
@@ -160,7 +161,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
 	xe := scratchF32(&sc.xe, len(h))
 	copy(xe, h)
-	rmsNorm(xe, w.preFFNNorm2, 1, hidden, eps, addOne)
+	normact.RMS(xe, w.preFFNNorm2, 1, hidden, eps, addOne)
 	x2 := scratchF32(&sc.x2, hidden)
 	clear(x2)
 	gu := scratchF32(&sc.gu, 2*w.moeInter)
@@ -169,7 +170,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	for j, e := range idx {
 		matmul(be, &w.expertsGateUp[e], xe, gu, 1)
 		for i := 0; i < w.moeInter; i++ {
-			mid[i] = geluTanh(gu[i]) * gu[w.moeInter+i]
+			mid[i] = normact.GELUTanh(gu[i]) * gu[w.moeInter+i]
 		}
 		matmul(be, &w.expertsDown[e], mid, edown, 1)
 		wj := wts[j]
@@ -177,7 +178,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 			x2[i] += wj * edown[i]
 		}
 	}
-	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
+	normact.RMS(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
 	if routerCapture {
 		routerCaptureDo(func() { routerX2Buf = append(routerX2Buf, slices.Clone(x2)) })
 	}
@@ -187,7 +188,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	for i := range comb {
 		comb[i] = x1[i] + x2[i]
 	}
-	rmsNorm(comb, w.postFFNNorm, 1, hidden, eps, addOne)
+	normact.RMS(comb, w.postFFNNorm, 1, hidden, eps, addOne)
 	out := scratchF32(&sc.out, hidden)
 	for i := range out {
 		out[i] = (h[i] + comb[i]) * w.layerScalar
