@@ -143,3 +143,13 @@ func (r *cudaResident) floatActExpert(Ly *cudaLayer, j int) error {
 		gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
 		Arg(r.g4x2))
 }
+
+// floatActState is the float-activation decode of a Gemma 4 MoE step (floatActDecline): its switch, kernels and f32 scratch.
+type floatActState struct {
+	// floatAct: a Gemma 4 MoE decode step reads every int4 projection's activation as f32 (gemv_w4f32.cu), not int8; set at
+	// build by floatActDecline. xF holds the normed f32 input (attention, then the dense branch, then the experts), dF the
+	// dense GLU output, moeGLUF an expert's.
+	floatAct                                  bool
+	fW4F32, fMoEGemvF32, fMoEWaccF32, fGluF32 Pipeline
+	xF, dF, moeGLUF                           Buffer
+}
