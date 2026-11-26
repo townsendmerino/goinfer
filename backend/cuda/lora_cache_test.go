@@ -170,13 +170,13 @@ func TestLoRAUploadOOM_returnsEveryBuffer(t *testing.T) {
 		t.Fatalf("releasing the cached adapter left %d allocations, want %d", got, before)
 	}
 
-	defer func() { loraAllocFailAfterForTest = 0 }()
+	defer func() { cr.loraAllocFailAfterForTest = 0 }()
 	for n := 1; n <= total; n++ {
-		loraAllocFailAfterForTest = n
+		cr.loraAllocFailAfterForTest = n
 		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err == nil {
 			t.Fatalf("failing allocation %d of %d: SetAdapter returned no error", n, total)
 		}
-		loraAllocFailAfterForTest = 0
+		cr.loraAllocFailAfterForTest = 0
 		if got := ledger(); got != before {
 			t.Errorf("failing allocation %d of %d: %d device allocations remain, want %d (leaked %d)", n, total, got, before, got-before)
 		}
@@ -227,7 +227,7 @@ func TestLoRAUploadOOM_afterAnAdapterIsBound(t *testing.T) {
 	if total < 4 {
 		t.Fatalf("a bind allocates %d buffers", total)
 	}
-	defer func() { loraAllocFailAfterForTest = 0 }()
+	defer func() { cr.loraAllocFailAfterForTest = 0 }()
 	for n := 1; n <= total; n++ {
 		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil { // A is bound again and cached
 			t.Fatalf("rebind a: %v", err)
@@ -235,11 +235,11 @@ func TestLoRAUploadOOM_afterAnAdapterIsBound(t *testing.T) {
 		if cr.loraLayers == nil {
 			t.Fatal("a is not bound before the switch")
 		}
-		loraAllocFailAfterForTest = n
+		cr.loraAllocFailAfterForTest = n
 		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("b")); err == nil {
 			t.Fatalf("switch to b failing at allocation %d of %d: no error", n, total)
 		}
-		loraAllocFailAfterForTest = 0
+		cr.loraAllocFailAfterForTest = 0
 		if cr.loraLayers != nil || cr.lora.cache != nil {
 			t.Errorf("switch to b failing at %d of %d: an adapter or cache is still bound (loraLayers nil: %v)", n, total, cr.loraLayers == nil)
 		}
@@ -254,11 +254,11 @@ func TestLoRAUploadOOM_afterAnAdapterIsBound(t *testing.T) {
 func TestLoRAUploadOOM_anyPanicReturnsTheBuffers(t *testing.T) {
 	m, cr, ledger := loraOOMRig(t)
 	before := ledger()
-	defer func() { loraPanicAfterForTest = 0 }()
+	defer func() { cr.loraPanicAfterForTest = 0 }()
 	for _, n := range []int{2, 5, 20} {
-		loraPanicAfterForTest = n
+		cr.loraPanicAfterForTest = n
 		err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a"))
-		loraPanicAfterForTest = 0
+		cr.loraPanicAfterForTest = 0
 		if err == nil || !strings.Contains(err.Error(), "test seam panic") {
 			t.Fatalf("panic at allocation %d: err = %v, want the job's error naming the panic", n, err)
 		}

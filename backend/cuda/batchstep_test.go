@@ -422,15 +422,15 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 					t.Fatalf("step %d: no splitkv_scores_ragged launch; the split-KV rows took decode's own launches one by one", n)
 				}
 			}
-			t.Cleanup(func() { raggedPlantForTest = 0 })
+			t.Cleanup(func() { r.raggedPlantForTest = 0 })
 			plants := []int{1, 2}
 			if ragged {
 				plants = append(plants, 4)
 			}
 			for _, plant := range plants {
-				raggedPlantForTest = plant
+				r.raggedPlantForTest = plant
 				d := step(10 + plant)
-				raggedPlantForTest = 0
+				r.raggedPlantForTest = 0
 				if d == 0 {
 					t.Fatalf("plant %d: every row still matched its shape; the gate cannot see that defect", plant)
 				}
@@ -623,10 +623,10 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 				t.Logf("identity only: the stepped passes made %d fast launches; no fused attention at this head dim", stepFast)
 				return
 			}
-			t.Cleanup(func() { raggedPlantForTest = 0 })
-			raggedPlantForTest = 3
+			t.Cleanup(func() { r.raggedPlantForTest = 0 })
+			r.raggedPlantForTest = 3
 			got, _, plantFast := run(1)
-			raggedPlantForTest = 0
+			r.raggedPlantForTest = 0
 			if plantFast != 0 {
 				t.Fatalf("plant 3: the chunk on the exact kernels still made %d fast launches; the plant does not reach them", plantFast)
 			}

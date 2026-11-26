@@ -1265,8 +1265,8 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	}
 
 	// The plants (G-SB11-9).
-	defer func() { costPlantForTest = 0 }()
-	costPlantForTest, r.costNamed = 1, 0
+	defer func() { r.costPlantForTest = 0 }()
+	r.costPlantForTest, r.costNamed = 1, 0
 	rep, _ := countedDecode(t, m, r, 10, 5)
 	planted := sb11Counts(rep)
 	diff := 0
@@ -1280,7 +1280,7 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	if _, other := planted["launch_other"]; diff != 1 || other {
 		t.Errorf("the extra-launch plant moved %d kernels by one (want 1), launch_other %v", diff, planted["launch_other"])
 	}
-	costPlantForTest = 2
+	r.costPlantForTest = 2
 	rep, _ = countedDecode(t, m, r, 11, 6)
 	if got := sb11Counts(rep)["sync"][1]; got != want["sync"][1]+1 {
 		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][1]+1)

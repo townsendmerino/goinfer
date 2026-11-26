@@ -52,7 +52,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK)), gpu.ArgValue(int32(M))}
 	if r.dnSpecOn {
 		pMix, pConvM := pend.mix, pM
-		if pM == 0 || dnSpecPlantForTest == dnSpecPlantFoldSkipsConv {
+		if pM == 0 || r.dnSpecPlantForTest == dnSpecPlantFoldSkipsConv {
 			pMix, pConvM = b.mix, 0
 		}
 		if e := r.launch(r.dnConvRowsSpec, convCfg, append(convArgs, Arg(pMix), gpu.ArgValue(int32(pConvM)))...); e != nil {

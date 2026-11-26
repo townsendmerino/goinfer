@@ -222,8 +222,8 @@ func TestS896_gateDump(t *testing.T) {
 			}
 			arm := func(defect int) [][]float32 {
 				r.Reset()
-				deepDefectForTest = defect
-				defer func() { deepDefectForTest = 0 }()
+				r.deepDefectForTest = defect
+				defer func() { r.deepDefectForTest = 0 }()
 				last, _, err := m.ResidentMRoPEDeepstackPrefillForTest(ctx, r, ids, feats, start, nImg, mrope, deep)
 				if err != nil {
 					t.Fatalf("%s: resident DeepStack prefill: %v", utag, err)

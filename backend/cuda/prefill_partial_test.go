@@ -11,11 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-func withPrefillDeclinePass(t *testing.T, pass int) {
+func withPrefillDeclinePass(t *testing.T, r *cudaResident, pass int) {
 	t.Helper()
-	old := prefillDeclinePassForTest
-	prefillDeclinePassForTest = pass
-	t.Cleanup(func() { prefillDeclinePassForTest = old })
+	old := r.prefillDeclinePassForTest
+	r.prefillDeclinePassForTest = pass
+	t.Cleanup(func() { r.prefillDeclinePassForTest = old })
 }
 
 // TestPrefillPartial_windowedResumesAfterTheCommittedPasses: a chunked prefill whose third pass declines returns a decoder.PrefillPartial at
@@ -48,9 +48,9 @@ func windowedPrefillPartial(t *testing.T, fx string) {
 		if _, err := r.PrefillLast(ctx, emb(0, start), 0); err != nil {
 			t.Fatalf("the first %d rows: %v", start, err)
 		}
-		withPrefillDeclinePass(t, 3)
+		withPrefillDeclinePass(t, r, 3)
 		_, err := r.PrefillLast(ctx, emb(start, end), start)
-		prefillDeclinePassForTest = 0
+		r.prefillDeclinePassForTest = 0
 		p, ok := errors.AsType[*decoder.PrefillPartial](err)
 		if !ok {
 			t.Fatalf("windowed=%v: a third-pass decline returned %v, want a decoder.PrefillPartial", r.kvWin, err)
@@ -114,8 +114,9 @@ func windowedGenerationAfterDecline(t *testing.T, fx string) {
 		for i := range 4 * chunk {
 			b = append(b, (i*13+11)%vocab)
 		}
-		withPrefillDeclinePass(t, 3)
-		defer func() { prefillDeclinePassForTest = 0 }()
+		pr := m.ResidentForwardForTest().(*cudaResident)
+		withPrefillDeclinePass(t, pr, 3)
+		defer func() { pr.prefillDeclinePassForTest = 0 }()
 		return gen(m, b)
 	}
 	want, wantReused := play(mf)

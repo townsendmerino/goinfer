@@ -255,7 +255,7 @@ func TestSP2_identity(t *testing.T) {
 		plant int
 	}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
 		caught := 0
-		withSpecPlant(pl.plant, func() {
+		withSpecPlant(g.r, pl.plant, func() {
 			for i := range 12 {
 				got, _, err := g.spec.Generate(prompts[i].ids, decoder.BlockSpecOptions{VerifyWidth: 4, MaxTokens: maxNew})
 				if err != nil {

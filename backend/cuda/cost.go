@@ -19,10 +19,6 @@ var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cos
 // noLedgerUnmeasured is the alloc operation's, on a device without a ledger.
 var noLedgerUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
-// costPlantForTest plants defects for the cost counters' checks to catch: 1 launches one kernel a token twice, 2 adds a host
-// wait after the token.
-var costPlantForTest int
-
 // countLaunch records one launch of kernel f. Executor goroutine only, while a token is counted.
 func (r *cudaResident) countLaunch(f Pipeline) {
 	name, ok := r.costNames[f]
@@ -54,7 +50,7 @@ func (r *cudaResident) CostSpan(c *cost.Counter, p cost.Phase, work func() (int,
 	n0, b0, leased := r.ledgerTotals()
 	t0 := time.Now()
 	tokens, err := work()
-	if costPlantForTest == 2 {
+	if r.costPlantForTest == 2 {
 		_ = r.do(func() error { return r.stream.Sync() })
 	}
 	wall := time.Since(t0)
