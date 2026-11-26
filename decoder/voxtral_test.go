@@ -62,8 +62,8 @@ func loadTinyVoxtral(t *testing.T, dir string) *Model {
 		t.Fatalf("Load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if m.w.arch.Name != "voxtral" {
-		t.Fatalf("architecture %q, want voxtral", m.w.arch.Name)
+	if m.w.Arch.Name != "voxtral" {
+		t.Fatalf("architecture %q, want voxtral", m.w.Arch.Name)
 	}
 	return m
 }
@@ -73,7 +73,7 @@ func tinyVoxtralDir() string { return filepath.Join("..", "testdata", voxtralTin
 func TestVoxtral_tinyTextParity(t *testing.T) {
 	files := vxGolden(t)
 	m := loadTinyVoxtral(t, tinyVoxtralDir())
-	a := m.w.arch
+	a := m.w.Arch
 	if a.HeadDim != 16 || a.HiddenDim/a.NumHeads == a.HeadDim {
 		t.Fatalf("head dim %d with hidden %d / %d heads: this fixture must have a head_dim that is not hidden/heads", a.HeadDim, a.HiddenDim, a.NumHeads)
 	}
@@ -111,7 +111,7 @@ func voxtralCompose(t *testing.T, m *Model, va *audio.VoxtralAudio, files map[st
 		t.Fatal(err)
 	}
 	ids := q3aInts(t, files[clip+".prompt.json"])
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	n := len(emb) / hidden
 	pos := slices.Index(ids, 24) // [AUDIO]
 	if pos < 0 {
@@ -174,7 +174,7 @@ func TestVoxtral_tinyCompositionParity(t *testing.T) {
 	if va.Stack != 4 || va.Rows() != 375 {
 		t.Fatalf("stack %d, rows %d per window; want 4 and 375", va.Stack, va.Rows())
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	for _, clip := range []string{"clip6s", "clip35s"} {
 		r := voxtralCompose(t, m, va, files, clip, 0)
 		refEmb := q3aF32(files[clip+".embeds.f32"])
@@ -223,7 +223,7 @@ func variantDir(t *testing.T, edit func(map[string]any)) string {
 func TestVoxtral_tinyPlantedDefectsAreRed(t *testing.T) {
 	files := vxGolden(t)
 	m := loadTinyVoxtral(t, tinyVoxtralDir())
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	newVA := func() *audio.VoxtralAudio {
 		va, err := audio.LoadVoxtralAudio(tinyVoxtralDir())
 		if err != nil {

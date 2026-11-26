@@ -56,8 +56,8 @@ func TestGemma12Real_gate(t *testing.T) {
 					t.Fatalf("%s: Load(%s): %v", label, path, err)
 				}
 				defer m.Close()
-				if m.w.arch.Name != gm.ModelType {
-					t.Fatalf("%s: arch %q, want %q", label, m.w.arch.Name, gm.ModelType)
+				if m.w.Arch.Name != gm.ModelType {
+					t.Fatalf("%s: arch %q, want %q", label, m.w.Arch.Name, gm.ModelType)
 				}
 				cache := m.NewCache(len(gm.PromptIDs) + gm.NNew)
 				var logits []float32

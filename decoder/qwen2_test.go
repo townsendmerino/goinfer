@@ -61,13 +61,13 @@ func TestQwen2_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen2" {
-		t.Fatalf("resolved arch %q, want qwen2", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen2" {
+		t.Fatalf("resolved arch %q, want qwen2", m.w.Arch.Name)
 	}
-	if !m.w.arch.QKVBias {
+	if !m.w.Arch.QKVBias {
 		t.Errorf("expected QKVBias=true for Qwen2")
 	}
-	if m.w.arch.QKNorm {
+	if m.w.Arch.QKNorm {
 		t.Errorf("Qwen2 must not use QK-norm (that's Qwen3)")
 	}
 	// Sanity: the biases actually loaded.

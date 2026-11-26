@@ -14,7 +14,7 @@ import (
 // (prefillLogitsGemma4VLBidirectionalSpans), and a row's image membership is read at its absolute position. ids[row] is the row's
 // real token id, used only for PLE's token-identity lookup (an image row takes arch.gemma4.PadTokenID, as the per-token path does).
 func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	K := len(ids)
 	if len(h) != K*hidden {
 		return nil, fmt.Errorf("decoder: runLayersGemma4FromEmbedN: h len %d, want %d (%d rows x %d hidden)", len(h), K*hidden, K, hidden)

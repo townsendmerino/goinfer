@@ -10,6 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
@@ -112,16 +113,16 @@ func pagedExpertSpan(wm *linalg.WeightMat, base, end uintptr) []byte {
 // forEachRoutedExpert calls fn once per routed expert of w with its identity key (the value the forward touches) and its
 // projections: a Mixtral-style expert's gate, up and down, or a Gemma 4 expert's fused gate‖up and down (keyed by the
 // gate‖up element, gemma4MoEFFN's identity). The always-on shared expert is not a routed expert.
-func forEachRoutedExpert(w *Weights, fn func(key unsafe.Pointer, wms ...*linalg.WeightMat)) {
+func forEachRoutedExpert(w *darch.Weights, fn func(key unsafe.Pointer, wms ...*linalg.WeightMat)) {
 	for li := range w.Layers {
 		exps := w.Layers[li].Experts
 		for ei := range exps {
 			ex := &exps[ei]
 			fn(unsafe.Pointer(ex), &ex.Gate, &ex.Up, &ex.Down)
 		}
-		if gm := w.Layers[li].gemma4moe; gm != nil {
-			for ei := range gm.expertsGateUp {
-				fn(unsafe.Pointer(&gm.expertsGateUp[ei]), &gm.expertsGateUp[ei], &gm.expertsDown[ei])
+		if gm := w.Layers[li].Gemma4MoE; gm != nil {
+			for ei := range gm.ExpertsGateUp {
+				fn(unsafe.Pointer(&gm.ExpertsGateUp[ei]), &gm.ExpertsGateUp[ei], &gm.ExpertsDown[ei])
 			}
 		}
 	}
@@ -129,8 +130,8 @@ func forEachRoutedExpert(w *Weights, fn func(key unsafe.Pointer, wms ...*linalg.
 
 // mappedExpertBytes is a pager's expert accounting without building one: the routed-expert bytes mapping backs (the spans
 // pagedExpertSpan picks), the largest expert, and how many experts it backs.
-func mappedExpertBytes(w *Weights, mapping []byte) (total, maxExpert int64, n int) {
-	if w == nil || w.arch == nil || w.arch.MoE == nil || len(mapping) == 0 {
+func mappedExpertBytes(w *darch.Weights, mapping []byte) (total, maxExpert int64, n int) {
+	if w == nil || w.Arch == nil || w.Arch.MoE == nil || len(mapping) == 0 {
 		return 0, 0, 0
 	}
 	base := uintptr(unsafe.Pointer(&mapping[0]))
@@ -163,8 +164,8 @@ func pagerBudget(budget, total, maxExpert int64) int64 {
 // of available RAM); it is clamped to [one expert, total expert bytes]. giwPath is the .giw file the mapping was built
 // from (Model.GiwPath), used only when pool mode is requested, to open an independent fd for pread (the mmap's own fd is
 // closed right after mapping).
-func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, pool bool) *expertPager {
-	if w.arch.MoE == nil || len(mapping) == 0 {
+func newExpertPager(w *darch.Weights, mapping []byte, budget int64, giwPath string, pool bool) *expertPager {
+	if w.Arch.MoE == nil || len(mapping) == 0 {
 		return nil
 	}
 	base := uintptr(unsafe.Pointer(&mapping[0]))
@@ -223,7 +224,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, po
 	budget = pagerBudget(budget, total, maxExpert)
 	minfltBase, majfltBase, faultsOK := processFaultCounts()
 	if pool && giwPath != "" && len(poolMembers) == len(members) {
-		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
+		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.Arch.MoE.TopK)
 		if err != nil {
 			logs.Warnf("decoder: MoE pread pool init failed (%v), falling back to mmap paging", err)
 		} else {

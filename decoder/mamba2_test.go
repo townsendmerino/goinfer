@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"io/fs"
 	"math"
 	"os"
@@ -52,15 +53,15 @@ func TestMamba2_parity(t *testing.T) {
 		t.Fatalf("parse golden: %v", err)
 	}
 
-	p := mamba2Params{
+	p := archparts.Mamba2Params{
 		NHeads: g.Dims.NHeads, HeadDim: g.Dims.HeadDim, DState: g.Dims.DState,
 		NGroups: g.Dims.NGroups, DConv: g.Dims.DConv, Hidden: g.Dims.Hidden,
 		NormGroups: 1, // GraniteMoeHybrid mixer uses a FULL gated norm
 	}
-	w := &mamba2Weights{
-		inProj: g.Weights.InProj, convW: g.Weights.ConvW, convB: g.Weights.ConvB,
-		aLog: g.Weights.ALog, d: g.Weights.D, dtBias: g.Weights.DtBias,
-		normW: g.Weights.Norm, outProj: g.Weights.OutProj,
+	w := &archparts.Mamba2Weights{
+		InProj: g.Weights.InProj, ConvW: g.Weights.ConvW, ConvB: g.Weights.ConvB,
+		ALog: g.Weights.ALog, D: g.Weights.D, DtBias: g.Weights.DtBias,
+		NormW: g.Weights.Norm, OutProj: g.Weights.OutProj,
 	}
 
 	hidden, seq := g.Dims.Hidden, g.Dims.Seq

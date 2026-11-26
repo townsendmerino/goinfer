@@ -89,7 +89,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	n := len(cpuF) / hidden
 	fmt.Fprintf(os.Stderr, "[g3] %s on %s: decode path %s; %d soft tokens\n", filepath.Base(dir), backend, m.DecodePath(), n)
 

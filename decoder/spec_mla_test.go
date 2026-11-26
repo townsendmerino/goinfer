@@ -26,8 +26,8 @@ func TestNgramSpecMLA_parity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", gguf, err)
 	}
 	defer m.Close()
-	if m.w.arch.mla == nil {
-		t.Fatalf("arch %q has no MLA", m.w.arch.Name)
+	if m.w.Arch.MLA == nil {
+		t.Fatalf("arch %q has no MLA", m.w.Arch.Name)
 	}
 	if !m.specRollbackSafe() {
 		t.Fatal("MLA must be spec-rollback-safe (latent KV is truncatable)")

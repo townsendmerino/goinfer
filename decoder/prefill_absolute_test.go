@@ -42,7 +42,7 @@ func TestPrefillAbsoluteTable(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "%-8s %12s %12s %12s %10s\n", "tokens", "recorded", "measured", "tok/s", "speedup")
 
 	recorded := map[int]float64{170: 3.3, 620: 19.7, 1520: 93.2, 3020: 334.9}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	for _, L := range []int{170, 620, 1520, 3020} {
 		prompt := make([]int, L)
 		for i := range prompt {

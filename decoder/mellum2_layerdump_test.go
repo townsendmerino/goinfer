@@ -54,11 +54,11 @@ func TestMellum2_layerDump(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "mellum" {
-		t.Fatalf("arch = %q, want mellum", m.w.arch.Name)
+	if m.w.Arch.Name != "mellum" {
+		t.Fatalf("arch = %q, want mellum", m.w.Arch.Name)
 	}
 	n := len(g.IDs)
-	L := m.w.arch.NumLayers
+	L := m.w.Arch.NumLayers
 	layers := make([]int, L)
 	for i := range layers {
 		layers[i] = i
@@ -136,7 +136,7 @@ func TestMellum2_layerDump(t *testing.T) {
 	}
 	zw := gzip.NewWriter(f)
 	rec := map[string]any{
-		"positions": layerDumpPositions, "n_ids": n, "layers": L, "hidden": m.w.arch.HiddenDim,
+		"positions": layerDumpPositions, "n_ids": n, "layers": L, "hidden": m.w.Arch.HiddenDim,
 		"quant": map[bool]string{true: "f32", false: quant}[quant == ""], "argmax": got, "golden_argmax": g.Argmax, "sample256_logit_cosine": cos,
 		"resid": resid, // [layer][position index][hidden]
 	}

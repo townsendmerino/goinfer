@@ -25,11 +25,11 @@ func TestGranite_descriptor(t *testing.T) {
 	if schema != &graniteTensorSchema {
 		t.Fatalf("schema mismatch")
 	}
-	if !arch.isMambaLayer(0) || arch.isMambaLayer(1) || !arch.isMambaLayer(2) {
-		t.Errorf("layer kinds wrong: L0=%v L1=%v L2=%v", arch.isMambaLayer(0), arch.isMambaLayer(1), arch.isMambaLayer(2))
+	if !arch.IsMambaLayer(0) || arch.IsMambaLayer(1) || !arch.IsMambaLayer(2) {
+		t.Errorf("layer kinds wrong: L0=%v L1=%v L2=%v", arch.IsMambaLayer(0), arch.IsMambaLayer(1), arch.IsMambaLayer(2))
 	}
-	if arch.granite.EmbMul != 12 || arch.granite.ResidMul != 0.22 {
-		t.Errorf("multipliers EmbMul=%v ResidMul=%v", arch.granite.EmbMul, arch.granite.ResidMul)
+	if arch.Granite.EmbMul != 12 || arch.Granite.ResidMul != 0.22 {
+		t.Errorf("multipliers EmbMul=%v ResidMul=%v", arch.Granite.EmbMul, arch.Granite.ResidMul)
 	}
 	if arch.AttnScale != 0.5 {
 		t.Errorf("AttnScale=%v, want 0.5 (attention_multiplier)", arch.AttnScale)

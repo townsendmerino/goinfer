@@ -15,15 +15,15 @@ func webgpuKVRateOracle(m *Model, f16, i8 bool) int64 {
 		perElem = 2
 	}
 	bv := m.BackendView()
-	arch := m.w.arch
+	arch := m.w.Arch
 	nLayers := bv.NumLayers()
 	var perPos float64
 	for l := range nLayers {
-		if arch.gemma4KVSrcAt(l) != l {
+		if arch.Gemma4KVSrcAt(l) != l {
 			continue
 		}
-		kvDim := arch.kvDimAt(l)
-		if arch.mla != nil {
+		kvDim := arch.KVDimAt(l)
+		if arch.MLA != nil {
 			perPos += 4 * float64(kvDim)
 			continue
 		}
@@ -39,7 +39,7 @@ func webgpuKVRateOracle(m *Model, f16, i8 bool) int64 {
 // webgpuKVBuffersOracle is layer i's cache buffers as webgpuLayerCaches listed them from the architecture alone: K and V (then, at
 // int8, their scale buffers) on an attention layer that owns its cache, the one f32 latent on an MLA layer, nothing else.
 func webgpuKVBuffersOracle(m *Model, i, ctx int, kvF16, kvI8 bool) []int64 {
-	arch := m.w.arch
+	arch := m.w.Arch
 	mixer, _ := m.BackendView().Layer(i).Ops()
 	perElem := 4.0
 	switch {
@@ -50,10 +50,10 @@ func webgpuKVBuffersOracle(m *Model, i, ctx int, kvF16, kvI8 bool) []int64 {
 	}
 	switch mixer {
 	case MixerAttention:
-		if arch.gemma4KVSrcAt(i) != i {
+		if arch.Gemma4KVSrcAt(i) != i {
 			return nil
 		}
-		kvDim := arch.kvDimAt(i)
+		kvDim := arch.KVDimAt(i)
 		if kvDim == 0 || ctx <= 0 {
 			return nil
 		}
@@ -67,7 +67,7 @@ func webgpuKVBuffersOracle(m *Model, i, ctx int, kvF16, kvI8 bool) []int64 {
 		if ctx <= 0 {
 			return nil
 		}
-		if d := arch.kvDimAt(i); d > 0 {
+		if d := arch.KVDimAt(i); d > 0 {
 			return []int64{int64(ctx) * int64(d) * 4}
 		}
 	}

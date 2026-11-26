@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,11 +16,11 @@ import (
 // f1Arms share m's Architecture, so the setting reaches either.
 func rowPadArms[T any](t *testing.T, m *Model, on bool, align int, fn func() T) T {
 	t.Helper()
-	m.w.arch.kvRowPadAlign = 0
+	m.w.Arch.KVRowPadAlign = 0
 	if on {
-		m.w.arch.kvRowPadAlign = align
+		m.w.Arch.KVRowPadAlign = align
 	}
-	defer func() { m.w.arch.kvRowPadAlign = kvRowPadAlignDefault }()
+	defer func() { m.w.Arch.KVRowPadAlign = kvRowPadAlignDefault }()
 	return fn()
 }
 
@@ -35,7 +36,7 @@ func TestKVRowPad_padOnlyAtAnAlignedRow(t *testing.T) {
 		{128, 4, 0},   // Qwen2.5-0.5B f32: 512 B
 		{1000, 4, 0},
 	} {
-		if got := kvRowPadElems(c.elems, c.elemBytes, kvRowPadAlignDefault); got != c.want {
+		if got := archparts.KVRowPadElems(c.elems, c.elemBytes, kvRowPadAlignDefault); got != c.want {
 			t.Errorf("kvRowPadElems(%d, %d) = %d, want %d", c.elems, c.elemBytes, got, c.want)
 		}
 	}
@@ -249,7 +250,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 			m    *Model
 			f16  bool
 		}{{"f32", f32, false}, {"f16", f16, true}} {
-			unpadded := rowPadArms(t, arm.m, false, 0, func() int64 { return kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false) })
+			unpadded := rowPadArms(t, arm.m, false, 0, func() int64 { return kvBytesForCtx(arm.m.w.Arch, ctx, arm.f16, false) })
 			rowPadArms(t, arm.m, true, rowPadTestAlign, func() int {
 				c := arm.m.NewCache(ctx)
 				for _, id := range ids {
@@ -257,7 +258,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				priced := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
+				priced := kvBytesForCtx(arm.m.w.Arch, ctx, arm.f16, false)
 				switch {
 				case c.rowPad == 0 && priced != unpadded:
 					t.Errorf("%s %s: unpadded cache, but the plan prices %d against the unpadded %d", fx.dir, arm.name, priced, unpadded)

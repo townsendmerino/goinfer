@@ -53,13 +53,13 @@ func TestGlm4MoeAir_gate(t *testing.T) {
 	defer m.Close()
 
 	// --- GLM seams on the real model ---
-	if m.w.arch.Name != "glm4_moe" {
-		t.Fatalf("arch = %q, want glm4_moe", m.w.arch.Name)
+	if m.w.Arch.Name != "glm4_moe" {
+		t.Fatalf("arch = %q, want glm4_moe", m.w.Arch.Name)
 	}
 	if got := len(m.w.Layers); got != 46 {
 		t.Fatalf("loaded %d layers, want 46 (block_count 47 minus the NextN block)", got)
 	}
-	if !m.w.arch.QKVBias {
+	if !m.w.Arch.QKVBias {
 		t.Errorf("QKVBias false; GLM-4.5-Air carries q/k/v bias")
 	}
 	if m.w.Layers[0].Experts != nil {

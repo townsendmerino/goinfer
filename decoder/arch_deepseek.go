@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -18,7 +20,7 @@ import (
 // V3 scores experts with sigmoid + an e_score_correction_bias and limits selection to
 // topk_group of n_group groups (noaux_tc), while V2/V2-Lite use softmax + plain greedy
 // top-k. first_k_dense_replace dense-MLP prefix, ungated shared expert (the GLM path).
-func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func deepseekArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateDeepseek(); err != nil {
 		return nil, nil, err
 	}
@@ -93,7 +95,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.RopeInterleave != nil {
 		ropeInterleave = *cfg.RopeInterleave
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            cfg.ModelType,
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -102,11 +104,11 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         qk,           // q·k dot-product width (≠ v_head_dim); forward_deepseek uses mlaParams
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKVBias:         false,
 		QKNorm:          false,
 		FirstKDense:     cfg.FirstKDenseReplace,
@@ -129,14 +131,14 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:      math.Pow(float64(qk), -0.5),
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		RotaryDim:      cfg.QKRopeHeadDim, // RoPE rotates only the rope-carrying dims
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
-		mla: &mlaParams{
+		MLA: &archparts.MLAParams{
 			QLoRARank: cfg.QLoRARank, KVLoRARank: cfg.KVLoRARank,
 			QKNopeHeadDim: cfg.QKNopeHeadDim, QKRopeHeadDim: cfg.QKRopeHeadDim,
-			VHeadDim: cfg.VHeadDim, ropeInterleave: ropeInterleave,
+			VHeadDim: cfg.VHeadDim, RoPEInterleave: ropeInterleave,
 		},
 	}, &deepseekTensorSchema, nil
 }

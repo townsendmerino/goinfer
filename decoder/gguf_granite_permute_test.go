@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // C-05 (docs/audit-2026-09-10.md): llama.cpp converts dense Granite (GraniteForCausalLM) through GraniteModel(LlamaModel),
@@ -127,7 +128,7 @@ func tinyNormRopeGGUF(arch string) (raw []byte, q, k, v []float32) {
 	return buildGGUFData(kvs, ts), q, k, v
 }
 
-func loadTinyGGUFWeights(t *testing.T, raw []byte, wantArch string) *Weights {
+func loadTinyGGUFWeights(t *testing.T, raw []byte, wantArch string) *darch.Weights {
 	t.Helper()
 	g, err := embed.OpenGGUFBytes(raw)
 	if err != nil {

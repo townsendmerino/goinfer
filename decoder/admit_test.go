@@ -1,12 +1,13 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"strings"
 	"testing"
 )
 
 // admitArch resolves a representative arch for model type mt, or the config of the tiny fixture dir when mt is a path.
-func admitArch(t *testing.T, mt string) *Architecture {
+func admitArch(t *testing.T, mt string) *darch.Architecture {
 	t.Helper()
 	var cfg *Config
 	if strings.Contains(mt, "/") {

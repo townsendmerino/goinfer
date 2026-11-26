@@ -20,7 +20,7 @@ func TestMellum2SliceShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	a := m.w.arch
+	a := m.w.Arch
 	t.Logf("arch=%s layers=%d MoE=%v", a.Name, len(m.w.Layers), a.MoE != nil)
 	if a.MoE != nil {
 		t.Logf("MoE: experts=%d topk=%d interDim=%d sharedInterDim=%d",

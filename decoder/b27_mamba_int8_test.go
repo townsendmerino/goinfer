@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -40,7 +41,7 @@ func b27MambaLayers(t *testing.T, m *Model) []int {
 	t.Helper()
 	var ls []int
 	for i := range m.w.Layers {
-		if m.w.Layers[i].mamba != nil {
+		if m.w.Layers[i].Mamba != nil {
 			ls = append(ls, i)
 		}
 	}
@@ -58,7 +59,7 @@ func b27Dims(t *testing.T, m *Model) (d struct{ in, out [2]int }) {
 	if !ok {
 		t.Fatal("not a Nemotron-H model")
 	}
-	hidden, dInner := m.w.arch.HiddenDim, nh*hd
+	hidden, dInner := m.w.Arch.HiddenDim, nh*hd
 	d.in = [2]int{2*dInner + 2*ng*ds + nh, hidden}
 	d.out = [2]int{hidden, dInner}
 	return d
@@ -66,7 +67,7 @@ func b27Dims(t *testing.T, m *Model) (d struct{ in, out [2]int }) {
 
 // b27ProjBytes is what a bundle spends on the Mamba projections: its size less the size of the same weights with the
 // projections emptied.
-func b27ProjBytes(t *testing.T, w *Weights) int {
+func b27ProjBytes(t *testing.T, w *darch.Weights) int {
 	t.Helper()
 	full, err := SerializeWeights(w, "b27")
 	if err != nil {
@@ -75,10 +76,10 @@ func b27ProjBytes(t *testing.T, w *Weights) int {
 	cp := *w
 	cp.Layers = slices.Clone(w.Layers)
 	for i := range cp.Layers {
-		if mw := cp.Layers[i].mamba; mw != nil {
+		if mw := cp.Layers[i].Mamba; mw != nil {
 			e := *mw
-			e.inProj, e.outProj, e.inQ, e.outQ = nil, nil, linalg.WeightMat{}, linalg.WeightMat{}
-			cp.Layers[i].mamba = &e
+			e.InProj, e.OutProj, e.InQ, e.OutQ = nil, nil, linalg.WeightMat{}, linalg.WeightMat{}
+			cp.Layers[i].Mamba = &e
 		}
 	}
 	empty, err := SerializeWeights(&cp, "b27")
@@ -93,15 +94,15 @@ func b27ProjBytes(t *testing.T, w *Weights) int {
 func b27SizeCheck(t *testing.T, m *Model) (got, lo, hi int, ok bool) {
 	t.Helper()
 	for _, l := range b27MambaLayers(t, m) {
-		mw := m.w.Layers[l].mamba
-		for _, d := range [][2]int{{mw.inQ.Rows(), mw.inQ.Cols()}, {mw.outQ.Rows(), mw.outQ.Cols()}} {
+		mw := m.w.Layers[l].Mamba
+		for _, d := range [][2]int{{mw.InQ.Rows(), mw.InQ.Cols()}, {mw.OutQ.Rows(), mw.OutQ.Cols()}} {
 			if d[0] == 0 { // an f32 projection: its int8 size is still the bound
 				continue
 			}
 			lo += d[0] * d[1]
 			hi += d[0]*d[1] + 4*d[0] + 64
 		}
-		if mw.inQ.Rows() == 0 {
+		if mw.InQ.Rows() == 0 {
 			np := b27Dims(t, m)
 			lo += np.in[0]*np.in[1] + np.out[0]*np.out[1]
 			hi += np.in[0]*np.in[1] + 4*np.in[0] + 64 + np.out[0]*np.out[1] + 4*np.out[0] + 64
@@ -117,9 +118,9 @@ func b27SizeCheck(t *testing.T, m *Model) (got, lo, hi int, ok bool) {
 func TestB27_bundleHoldsInt8MambaProjections(t *testing.T) {
 	m := b27Load(t, "int4", false)
 	for _, l := range b27MambaLayers(t, m) {
-		mw := m.w.Layers[l].mamba
-		if _, _, _, ok := mw.inQ.Int8(); !ok || mw.inProj != nil || mw.outProj != nil {
-			t.Fatalf("layer %d: int8 in_proj %v, f32 copies %d and %d values", l, ok, len(mw.inProj), len(mw.outProj))
+		mw := m.w.Layers[l].Mamba
+		if _, _, _, ok := mw.InQ.Int8(); !ok || mw.InProj != nil || mw.OutProj != nil {
+			t.Fatalf("layer %d: int8 in_proj %v, f32 copies %d and %d values", l, ok, len(mw.InProj), len(mw.OutProj))
 		}
 	}
 	blob, err := SerializeWeights(m.w, "b27")
@@ -131,11 +132,11 @@ func TestB27_bundleHoldsInt8MambaProjections(t *testing.T) {
 		t.Fatalf("load the bundle: %v", err)
 	}
 	for _, l := range b27MambaLayers(t, m) {
-		a, b := m.w.Layers[l].mamba, w2.Layers[l].mamba
-		for _, p := range [][2]*linalg.WeightMat{{&a.inQ, &b.inQ}, {&a.outQ, &b.outQ}} {
+		a, b := m.w.Layers[l].Mamba, w2.Layers[l].Mamba
+		for _, p := range [][2]*linalg.WeightMat{{&a.InQ, &b.InQ}, {&a.OutQ, &b.OutQ}} {
 			qa, sa, _, _ := p[0].Int8()
 			qb, sb, _, ok := p[1].Int8()
-			if !ok || !slices.Equal(qa, qb) || !slices.Equal(sa, sb) || b.inProj != nil {
+			if !ok || !slices.Equal(qa, qb) || !slices.Equal(sa, sb) || b.InProj != nil {
 				t.Errorf("layer %d: the bundle's projection is not the load's int8 (int8 %v)", l, ok)
 			}
 		}
@@ -168,8 +169,8 @@ func TestB27_int8MatchesTheUploadBefore(t *testing.T) {
 	}
 	np := b27Dims(t, f)
 	for _, l := range b27MambaLayers(t, f) {
-		fw := f.w.Layers[l].mamba
-		if fw.inQ.Rows() != 0 || fw.inProj == nil {
+		fw := f.w.Layers[l].Mamba
+		if fw.InQ.Rows() != 0 || fw.InProj == nil {
 			t.Fatalf("layer %d: an f32 load holds int8 projections", l)
 		}
 		for _, c := range []struct {
@@ -179,8 +180,8 @@ func TestB27_int8MatchesTheUploadBefore(t *testing.T) {
 			cols int
 			got  [2]*linalg.WeightMat
 		}{
-			{"in_proj", fw.inProj, np.in[0], np.in[1], [2]*linalg.WeightMat{&q.w.Layers[l].mamba.inQ, &w2.Layers[l].mamba.inQ}},
-			{"out_proj", fw.outProj, np.out[0], np.out[1], [2]*linalg.WeightMat{&q.w.Layers[l].mamba.outQ, &w2.Layers[l].mamba.outQ}},
+			{"in_proj", fw.InProj, np.in[0], np.in[1], [2]*linalg.WeightMat{&q.w.Layers[l].Mamba.InQ, &w2.Layers[l].Mamba.InQ}},
+			{"out_proj", fw.OutProj, np.out[0], np.out[1], [2]*linalg.WeightMat{&q.w.Layers[l].Mamba.OutQ, &w2.Layers[l].Mamba.OutQ}},
 		} {
 			wantQ, wantS := linalg.QuantizeRowsInt8(c.f32, c.rows, c.cols)
 			for i, wm := range c.got {

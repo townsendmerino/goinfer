@@ -4,6 +4,7 @@ import (
 	"math"
 	"unsafe"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
@@ -20,12 +21,12 @@ import (
 // SwiGLU (nonlinear), input-scaling ≠ output-scaling, so it gets its own path. The score is
 // sigmoid(logit) of the top-k experts (top-1 by default); the always-on shared expert runs
 // on the unscaled h and is added ungated. out = shared(h) + Σ_topk expert_e(sigmoid(logit_e)·h).
-func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture) {
+func (m *Model) llama4MoE(h, out []float32, lw *darch.LayerWeights, arch *darch.Architecture) {
 	m.llama4MoEWith(h, out, lw, arch.MoE, arch.HiddenDim)
 }
 
 // llama4MoEWith is llama4MoE with the routing and width given: the program walker's form.
-func (m *Model) llama4MoEWith(h, out []float32, lw *LayerWeights, moe *MoEConfig, hidden int) {
+func (m *Model) llama4MoEWith(h, out []float32, lw *darch.LayerWeights, moe *MoEConfig, hidden int) {
 	logits := make([]float32, moe.NumExperts)
 	matmul(m.be, &lw.Router, h, logits, 1)
 	idx, _ := topK(logits, moe.TopK) // top-k by raw logit (== top-k by sigmoid, monotonic)

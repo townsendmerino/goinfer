@@ -50,7 +50,7 @@ func TestMistralReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "mistral" {
 		t.Fatalf("arch = %q, want mistral", a.Name)
 	}

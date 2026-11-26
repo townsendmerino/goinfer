@@ -28,7 +28,7 @@ func TestQwen3Next_descriptor(t *testing.T) {
 	if schema != &qwen35TensorSchema {
 		t.Errorf("schema = %p, want &qwen35TensorSchema (rides the existing qwen3_5_moe loader, no new schema)", schema)
 	}
-	if arch.qwen35 == nil {
+	if arch.Qwen35 == nil {
 		t.Fatal("arch.qwen35 is nil — DeltaNet params not populated")
 	}
 	if arch.MoE == nil {
@@ -43,15 +43,15 @@ func TestQwen3Next_descriptor(t *testing.T) {
 	}
 	wantFull := map[int]bool{3: true, 7: true, 11: true, 47: true}
 	for i, want := range wantFull {
-		if got := arch.layerIsGlobal(i); got != want {
+		if got := arch.LayerIsGlobal(i); got != want {
 			t.Errorf("layerIsGlobal(%d) = %v, want %v", i, got, want)
 		}
 	}
 	for _, i := range []int{0, 1, 2, 4, 5, 6} {
-		if arch.layerIsGlobal(i) {
+		if arch.LayerIsGlobal(i) {
 			t.Errorf("layerIsGlobal(%d) = true, want false (linear_attention)", i)
 		}
-		if !arch.layerIsLinear(i) {
+		if !arch.LayerIsLinear(i) {
 			t.Errorf("layerIsLinear(%d) = false, want true", i)
 		}
 	}
@@ -81,7 +81,7 @@ func TestQwen3Next_descriptor(t *testing.T) {
 	if !arch.RMSAddOne {
 		t.Error("RMSAddOne=false, want true (Qwen3NextRMSNorm(Gemma3RMSNorm): pass — inherits Gemma's (1+w))")
 	}
-	dn := arch.qwen35
+	dn := arch.Qwen35
 	switch {
 	case dn.ConvKernel != 4:
 		t.Errorf("ConvKernel=%d, want 4", dn.ConvKernel)

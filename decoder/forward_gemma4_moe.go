@@ -1,12 +1,14 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+
 	"math"
 	"slices"
 	"sync"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -17,28 +19,6 @@ import (
 // The router and experts are Gemma-4-specific (a weightless-norm + learned-scale pre-projection, an unconditional renorm, a
 // per-expert scale, and gelu-tanh GeGLU experts), so this does not reuse the SiLU moeMLP/swiGLUExpert.
 
-// gemma4MoEWeights is one layer's FFN sub-block, as WeightMats (matmul path) + f32
-// norm/scale vectors. Built by the loader (production) or a golden (the op-test).
-type gemma4MoEWeights struct {
-	preFFNNorm   []float32 // pre_feedforward_layernorm   (dense branch pre-norm)
-	postFFNNorm1 []float32 // post_feedforward_layernorm_1 (dense branch post-norm)
-	preFFNNorm2  []float32 // pre_feedforward_layernorm_2  (moe branch pre-norm)
-	postFFNNorm2 []float32 // post_feedforward_layernorm_2 (moe branch post-norm)
-	postFFNNorm  []float32 // post_feedforward_layernorm   (joint post-norm on x1+x2)
-
-	mlpGate, mlpUp, mlpDown linalg.WeightMat // dense MLP at denseInter
-
-	routerProj     linalg.WeightMat // [nE, hidden]
-	routerScale    []float32        // [hidden] learned pre-projection scale
-	perExpertScale []float32        // [nE] learned scale on the renormalized top-k weights
-
-	expertsGateUp []linalg.WeightMat // per expert [2*moeInter, hidden] (gate‖up, contiguous)
-	expertsDown   []linalg.WeightMat // per expert [hidden, moeInter]
-
-	layerScalar                    float32
-	denseInter, moeInter, nE, topK int
-}
-
 // gemma4MoEFFN applies the sub-block to one token's post-attention residual h ([hidden]) and returns the layer output ([hidden]).
 // It is position-independent, so the decode loop calls it per token.
 //
@@ -48,7 +28,7 @@ type gemma4MoEWeights struct {
 // The result is bit-identical either way: the branches touch disjoint memory
 // and are summed order-independently at the join (TestGemma4MoEFFN_overlapBitIdentical), and the fill goroutine never touches
 // `be`, only the pager.
-func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
+func gemma4MoEFFN(be Backend, arch *darch.Architecture, h []float32, w *archparts.Gemma4MoEWeights, pager *expertPager) []float32 {
 	return gemma4MoEFFNWith(be, arch.HiddenDim, arch.NormEps, arch.RMSAddOne, h, w, pager, nil)
 }
 
@@ -61,7 +41,7 @@ type gemma4MoEScratch struct {
 // gemma4MoEFFNWith is gemma4MoEFFN with the norms' epsilon and (1+w) given: the program walker's form (opGemma4MoE). The weighted
 // norms follow addOne exactly like the dense layer's norms; the router's norm (rmsNormNoWeight below) is genuinely weightless. Its
 // buffers come from sc (nil: fresh ones), so the returned slice is sc's and valid until the next call with it.
-func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []float32, w *gemma4MoEWeights, pager *expertPager, sc *gemma4MoEScratch) []float32 {
+func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []float32, w *archparts.Gemma4MoEWeights, pager *expertPager, sc *gemma4MoEScratch) []float32 {
 	if sc == nil {
 		sc = &gemma4MoEScratch{}
 	}
@@ -75,12 +55,12 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	rmsNormNoWeight(rn, 1, hidden, eps)
 	root := float32(math.Pow(float64(hidden), -0.5))
 	for i := range rn {
-		rn[i] = rn[i] * w.routerScale[i] * root
+		rn[i] = rn[i] * w.RouterScale[i] * root
 	}
-	scores := scratchF32(&sc.scores, w.nE)
-	matmul(be, &w.routerProj, rn, scores, 1)
+	scores := scratchF32(&sc.scores, w.NE)
+	matmul(be, &w.RouterProj, rn, scores, 1)
 	probs := softmaxF32(scores)
-	idx, topv := topK(probs, w.topK)
+	idx, topv := topK(probs, w.TopK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
 		routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, slices.Clone(idx)) })
 		// rn is the FINALIZED router input (weightless-norm · routerScale · hidden^-0.5) that feeds
@@ -117,7 +97,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 		defer pager.Unlock()
 		fillWG.Go(func() {
 			for _, e := range idx {
-				pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
+				pager.touch(unsafe.Pointer(&w.ExpertsGateUp[e]))
 			}
 		})
 	}
@@ -127,7 +107,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	}
 	wts := scratchF32(&sc.wts, len(idx))
 	for j, e := range idx {
-		wts[j] = (topv[j] / sum) * w.perExpertScale[e]
+		wts[j] = (topv[j] / sum) * w.PerExpertScale[e]
 	}
 	if routerCapture {
 		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, slices.Clone(wts)) })
@@ -138,17 +118,17 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	// buffers, disjoint from what the fill goroutine touches, so it is safe without a lock of its own.
 	xd := scratchF32(&sc.xd, len(h))
 	copy(xd, h)
-	normact.RMS(xd, w.preFFNNorm, 1, hidden, eps, addOne)
-	gate := scratchF32(&sc.gate, w.denseInter)
-	up := scratchF32(&sc.up, w.denseInter)
-	matmul(be, &w.mlpGate, xd, gate, 1)
-	matmul(be, &w.mlpUp, xd, up, 1)
+	normact.RMS(xd, w.PreFFNNorm, 1, hidden, eps, addOne)
+	gate := scratchF32(&sc.gate, w.DenseInter)
+	up := scratchF32(&sc.up, w.DenseInter)
+	matmul(be, &w.MlpGate, xd, gate, 1)
+	matmul(be, &w.MlpUp, xd, up, 1)
 	for i := range gate {
 		gate[i] = normact.GELUTanh(gate[i]) * up[i]
 	}
 	x1 := scratchF32(&sc.x1, hidden)
-	matmul(be, &w.mlpDown, gate, x1, 1)
-	normact.RMS(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
+	matmul(be, &w.MlpDown, gate, x1, 1)
+	normact.RMS(x1, w.PostFFNNorm1, 1, hidden, eps, addOne)
 	if routerCapture {
 		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, slices.Clone(x1)) })
 	}
@@ -161,24 +141,24 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
 	xe := scratchF32(&sc.xe, len(h))
 	copy(xe, h)
-	normact.RMS(xe, w.preFFNNorm2, 1, hidden, eps, addOne)
+	normact.RMS(xe, w.PreFFNNorm2, 1, hidden, eps, addOne)
 	x2 := scratchF32(&sc.x2, hidden)
 	clear(x2)
-	gu := scratchF32(&sc.gu, 2*w.moeInter)
-	mid := scratchF32(&sc.mid, w.moeInter)
+	gu := scratchF32(&sc.gu, 2*w.MoeInter)
+	mid := scratchF32(&sc.mid, w.MoeInter)
 	edown := scratchF32(&sc.edown, hidden)
 	for j, e := range idx {
-		matmul(be, &w.expertsGateUp[e], xe, gu, 1)
-		for i := 0; i < w.moeInter; i++ {
-			mid[i] = normact.GELUTanh(gu[i]) * gu[w.moeInter+i]
+		matmul(be, &w.ExpertsGateUp[e], xe, gu, 1)
+		for i := 0; i < w.MoeInter; i++ {
+			mid[i] = normact.GELUTanh(gu[i]) * gu[w.MoeInter+i]
 		}
-		matmul(be, &w.expertsDown[e], mid, edown, 1)
+		matmul(be, &w.ExpertsDown[e], mid, edown, 1)
 		wj := wts[j]
 		for i := range x2 {
 			x2[i] += wj * edown[i]
 		}
 	}
-	normact.RMS(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
+	normact.RMS(x2, w.PostFFNNorm2, 1, hidden, eps, addOne)
 	if routerCapture {
 		routerCaptureDo(func() { routerX2Buf = append(routerX2Buf, slices.Clone(x2)) })
 	}
@@ -188,10 +168,10 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	for i := range comb {
 		comb[i] = x1[i] + x2[i]
 	}
-	normact.RMS(comb, w.postFFNNorm, 1, hidden, eps, addOne)
+	normact.RMS(comb, w.PostFFNNorm, 1, hidden, eps, addOne)
 	out := scratchF32(&sc.out, hidden)
 	for i := range out {
-		out[i] = (h[i] + comb[i]) * w.layerScalar
+		out[i] = (h[i] + comb[i]) * w.LayerScalar
 	}
 	return out
 }

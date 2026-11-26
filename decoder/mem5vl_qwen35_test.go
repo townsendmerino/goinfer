@@ -72,7 +72,7 @@ func TestMEM5VL_qwen35Bytes(t *testing.T) {
 	}
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
-	arch := m.w.arch
+	arch := m.w.Arch
 	hidden := arch.HiddenDim
 	const n, chunk = 200, 16
 	ids := make([]int, n)

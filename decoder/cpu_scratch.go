@@ -17,7 +17,7 @@ func (m *Model) CPUDecodeScratch() []CPUScratchTerm {
 		return nil
 	}
 	var terms []CPUScratchTerm
-	for _, r := range decodeScratchRows(m.w.arch) {
+	for _, r := range decodeScratchRows(m.w.Arch) {
 		terms = append(terms, CPUScratchTerm{r.name, 4 * int64(r.elems)})
 	}
 	return terms

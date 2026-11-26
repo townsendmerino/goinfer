@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
@@ -224,7 +225,7 @@ func TestFitGuard_fakeProbeReachesEveryOutcome(t *testing.T) {
 			t.Fatal(err)
 		}
 		// An MoE of small expert matrices, which the Linux policy covers.
-		arch := &Architecture{NumLayers: 2, MoE: &MoEConfig{NumExperts: 8}}
+		arch := &darch.Architecture{NumLayers: 2, MoE: &MoEConfig{NumExperts: 8}}
 		mapping := make([]byte, 1<<20)
 		for _, c := range []struct {
 			name       string

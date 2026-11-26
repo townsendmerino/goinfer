@@ -43,7 +43,7 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "phi3" {
 		t.Fatalf("arch = %q, want phi3", a.Name)
 	}
@@ -119,8 +119,8 @@ func TestPhi3GGUFReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", gguf, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "phi3" {
-		t.Fatalf("arch = %q, want phi3", m.w.arch.Name)
+	if m.w.Arch.Name != "phi3" {
+		t.Fatalf("arch = %q, want phi3", m.w.Arch.Name)
 	}
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
 	var logits []float32

@@ -62,7 +62,7 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	V := m.w.arch.VocabSize
+	V := m.w.Arch.VocabSize
 	buf := make([]byte, 4*V)
 	read := func(f *os.File) []float32 {
 		if _, err := io.ReadFull(f, buf); err != nil {

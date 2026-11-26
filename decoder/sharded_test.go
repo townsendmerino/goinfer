@@ -27,8 +27,8 @@ func TestLoadWeights_shardedChecksums(t *testing.T) {
 		t.Fatalf("LoadWeights(sharded): %v", err)
 	}
 	defer func() {
-		if w.st != nil { // nil when P13 released the mapping at end of load
-			w.st.Close() // munmaps every shard
+		if w.ST != nil { // nil when P13 released the mapping at end of load
+			w.ST.Close() // munmaps every shard
 		}
 	}()
 

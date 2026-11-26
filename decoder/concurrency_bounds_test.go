@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -202,8 +203,8 @@ func TestCheckGlobalPair_rejectsAsymmetricKV(t *testing.T) {
 
 func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 	m := &Model{
-		w: &Weights{
-			arch: &Architecture{
+		w: &darch.Weights{
+			Arch: &darch.Architecture{
 				NumLayers:  1,
 				NumKVHeads: 2,
 				HeadDim:    4,

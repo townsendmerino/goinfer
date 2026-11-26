@@ -15,7 +15,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/ggufconfig"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/config"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // GGUF loading: read a quantized llama.cpp checkpoint and run it through the generic forward. The GGUF file carries both
@@ -56,9 +58,9 @@ const (
 // (direct), attn_kv_a_mqa, attn_kv_a_norm, attn_kv_b, attn_output. GGUF stores each matrix
 // as dims [in, out] with the data row-major [out, in] — exactly the layout mlaWeights
 // expects (and what g.Tensor dequantizes to).
-func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Architecture) error {
-	pa := arch.mla
-	qkHeadDim := pa.qkHeadDim()
+func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *darch.LayerWeights, arch *darch.Architecture) error {
+	pa := arch.MLA
+	qkHeadDim := pa.QKHeadDim()
 	f32 := func(name string, out, in int) ([]float32, error) {
 		dims, data, err := g.Tensor(name)
 		if err != nil {
@@ -79,53 +81,53 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Ar
 		}
 		return data, nil
 	}
-	w := &mlaWeights{}
+	w := &archparts.MLAWeights{}
 	var err error
 	if pa.QLoRARank > 0 { // q-LoRA bottleneck (V3 671B); V2-Lite/Moonlight are direct-q
-		if w.qAProj, err = f32(p+"attn_q_a.weight", pa.QLoRARank, arch.HiddenDim); err != nil {
+		if w.QAProj, err = f32(p+"attn_q_a.weight", pa.QLoRARank, arch.HiddenDim); err != nil {
 			return err
 		}
-		if w.qALayernorm, err = flat(p+"attn_q_a_norm.weight", pa.QLoRARank); err != nil {
+		if w.QALayernorm, err = flat(p+"attn_q_a_norm.weight", pa.QLoRARank); err != nil {
 			return err
 		}
-		if w.qBProj, err = f32(p+"attn_q_b.weight", arch.NumHeads*qkHeadDim, pa.QLoRARank); err != nil {
+		if w.QBProj, err = f32(p+"attn_q_b.weight", arch.NumHeads*qkHeadDim, pa.QLoRARank); err != nil {
 			return err
 		}
 	} else {
-		if w.qProj, err = f32(p+"attn_q.weight", arch.NumHeads*qkHeadDim, arch.HiddenDim); err != nil {
+		if w.QProj, err = f32(p+"attn_q.weight", arch.NumHeads*qkHeadDim, arch.HiddenDim); err != nil {
 			return err
 		}
 	}
-	if w.kvAProj, err = f32(p+"attn_kv_a_mqa.weight", pa.KVLoRARank+pa.QKRopeHeadDim, arch.HiddenDim); err != nil {
+	if w.KVAProj, err = f32(p+"attn_kv_a_mqa.weight", pa.KVLoRARank+pa.QKRopeHeadDim, arch.HiddenDim); err != nil {
 		return err
 	}
-	if w.kvALayernorm, err = flat(p+"attn_kv_a_norm.weight", pa.KVLoRARank); err != nil {
+	if w.KVALayernorm, err = flat(p+"attn_kv_a_norm.weight", pa.KVLoRARank); err != nil {
 		return err
 	}
-	if w.kvBProj, err = f32(p+"attn_kv_b.weight", arch.NumHeads*(pa.QKNopeHeadDim+pa.VHeadDim), pa.KVLoRARank); err != nil {
+	if w.KVBProj, err = f32(p+"attn_kv_b.weight", arch.NumHeads*(pa.QKNopeHeadDim+pa.VHeadDim), pa.KVLoRARank); err != nil {
 		return err
 	}
-	if w.oProj, err = f32(p+"attn_output.weight", arch.HiddenDim, arch.NumHeads*pa.VHeadDim); err != nil {
+	if w.OProj, err = f32(p+"attn_output.weight", arch.HiddenDim, arch.NumHeads*pa.VHeadDim); err != nil {
 		return err
 	}
-	l.mla = w
+	l.MLA = w
 	return nil
 }
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
 // llama.cpp tensor names to the descriptor and un-permuting q/k.
-func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*Weights, error) {
+func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*darch.Weights, error) {
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
-	prof := &LoadProfile{}
+	prof := &darch.LoadProfile{}
 	if n, ok := GGUFFileBytes(path); ok {
-		prof.setBytes(n)
+		prof.SetBytes(n)
 	}
 	var g *embed.GGUFFile
 	// `map` is the storage-bound phase: open + mmap + header/metadata parse. Separated from
 	// `build` because a slow disk and a slow repack want different remedies.
-	if err := prof.timed("map", func() (e error) { g, e = OpenGGUFMmap(path); return e }); err != nil {
+	if err := prof.Timed("map", func() (e error) { g, e = OpenGGUFMmap(path); return e }); err != nil {
 		return nil, err
 	}
 	keep := false // a q4k load with Q5_K/Q6_K tensors hands the mapping to Weights for the resident build (KQuantReader)
@@ -134,18 +136,18 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 			g.Close()
 		}
 	}()
-	var w *Weights
+	var w *darch.Weights
 	// `build` is the CPU-bound phase: dequantize every tensor and re-quantize/repack it into the
 	// resident precision. On a large model this dominates, which is the fact the banner surfaces.
-	if err := prof.timed("build", func() (e error) {
+	if err := prof.Timed("build", func() (e error) {
 		w, e = buildGGUFWeights(g, quant, embedInt4, needCanonical, skipRow4, abort)
 		return e
 	}); err != nil {
 		return nil, err
 	}
-	w.prof = prof
-	if len(w.kquant) > 0 {
-		w.kquantFile, w.ggufPath, keep = g, path, true
+	w.Prof = prof
+	if len(w.KQuant) > 0 {
+		w.KQuantFile, w.GGUFPath, keep = g, path, true
 	}
 	return w, nil
 }
@@ -154,7 +156,7 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 // memory-mapped (loadGGUFWeights) or backed by an in-memory slice
 // (LoadGGUFBytes). It resolves the config + architecture from the GGUF's own
 // metadata, so both entry points produce an identical model.
-func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*Weights, error) {
+func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*darch.Weights, error) {
 	cfg, err := ggufConfig(g)
 	if err != nil {
 		return nil, err
@@ -384,9 +386,9 @@ var q4kWiden56ForTest = false
 // CRC. Every family's branch streams. A branch that returns without driving the sink would write a header declaring N
 // layers and then none, so any new family branch must stream too; decoder/gguf_streaming_shape_test.go checks its
 // closure reads only per-layer tensors, and TestGemma4GGUF_streamedMatchesResident-style byte identity is the gate.
-func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
-	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	skipRow4 = skipRow4 || !repackForDecode(sink) // every closure and family branch below takes it from here
 	native56 := q4kNative56(needCanonical, sink)
 
@@ -415,7 +417,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// non-batched, non-embedding layer tensor), so skipRow4 applies here as in quantizeWMSkipRow4.
 		wm, err := streamQuantizedLayer(out, in, mode, needCanonical, skipRow4, rowInto)
 		if q4k && err == nil && sink == nil {
-			w.noteKQuant(g, name, wm, in, rowSrc)
+			w.NoteKQuant(g, name, wm, in, rowSrc)
 		}
 		return wm, err
 	}
@@ -441,7 +443,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return ggufRowFiltered(name, into, rowSrc(r), dst)
 		})
 		if q4k && err == nil && sink == nil {
-			w.noteKQuant(g, name, wm, in, rowSrc)
+			w.NoteKQuant(g, name, wm, in, rowSrc)
 		}
 		return wm, err
 	}
@@ -613,7 +615,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			wm, err = streamQuantized(rows, in, mode, rowInto)
 		}
 		if q4k && err == nil && sink == nil {
-			w.noteKQuant(g, name, wm, in, rowSrc)
+			w.NoteKQuant(g, name, wm, in, rowSrc)
 		}
 		return wm, err
 	}
@@ -632,7 +634,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil, err
 		}
 		if quant == quantQ4K && sink == nil {
-			w.noteKQuant(g, "output.weight", w.LMHead, hidden, func(r int) int { return r * hidden })
+			w.NoteKQuant(g, "output.weight", w.LMHead, hidden, func(r int) int { return r * hidden })
 		}
 		arch.TiedLMHead = false
 	}
@@ -646,7 +648,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		sink.arch = arch
 		// gemma4's head carries its model-level PLE inputs, which load in its own branch below — so
 		// it writes the head there, once they exist. Every other family's head is complete here.
-		if arch.gemma4 == nil {
+		if arch.Gemma4 == nil {
 			if err := sink.writeHeadGlobals(w, id); err != nil {
 				return nil, err
 			}
@@ -656,31 +658,31 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	b := &ggufBuild{arch: arch, g: g, w: w, quant: quant, needCanonical: needCanonical, skipRow4: skipRow4, sink: sink, abort: abort,
 		hidden: hidden, streamMat: streamMat, mat: mat, vec: vec, vnorm: vnorm, stackedExperts: stackedExperts, hd: hd, permMat: permMat, cfg: cfg, embInto: embInto, id: id, fusedSplit: fusedSplit}
 
-	if q := arch.qwen35; q != nil {
+	if q := arch.Qwen35; q != nil {
 		return b.loadQwen35(q)
 	}
 
-	if arch.gptoss != nil {
+	if arch.GPTOSS != nil {
 		return b.loadGptOss()
 	}
 
-	if arch.laguna != nil {
+	if arch.Laguna != nil {
 		return b.loadLaguna()
 	}
 
-	if gp := arch.granite; gp != nil {
+	if gp := arch.Granite; gp != nil {
 		return b.loadGranite(gp)
 	}
 
-	if npar := arch.nemotron; npar != nil {
+	if npar := arch.Nemotron; npar != nil {
 		return b.loadNemotron(npar)
 	}
 
-	if g4 := arch.gemma4; g4 != nil {
+	if g4 := arch.Gemma4; g4 != nil {
 		return b.loadGemma4(g4)
 	}
 
-	if lp := arch.llama4; lp != nil {
+	if lp := arch.Llama4; lp != nil {
 		return b.loadLlama4(lp)
 	}
 

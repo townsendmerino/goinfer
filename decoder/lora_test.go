@@ -3,6 +3,8 @@ package decoder
 import (
 	"encoding/binary"
 	"encoding/json"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 	"os"
 	"path/filepath"
@@ -337,7 +339,7 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 // The rejection happens before any file I/O (loadLoRA is only called after the switch), so a bogus dir is enough
 // to isolate the check.
 func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
-	schema := &tensorSchema{}
+	schema := &archparts.TensorSchema{}
 	rejected := map[string]bool{}
 	for _, mt := range modelTypes(t) {
 		cfg := representativeConfig(mt)
@@ -345,11 +347,11 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveArchitecture(%s): %v", mt, err)
 		}
-		if arch.genericKindsOnly() {
+		if arch.GenericKindsOnly() {
 			continue
 		}
 		t.Run(mt, func(t *testing.T) {
-			m := &Model{w: &Weights{schema: schema, arch: arch}}
+			m := &Model{w: &darch.Weights{Schema: schema, Arch: arch}}
 			err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
 			if err == nil {
 				t.Fatalf("LoadAdapter accepted %s, whose layers are not all generic operations — the adapter would "+
@@ -370,8 +372,8 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 // own-forward rejection — it should fall through to loadLoRA and fail there instead
 // (a different error), or this test would be trivially satisfied by rejecting everything.
 func TestLoadAdapter_denseFamilyDoesNotHitOwnForwardRejection(t *testing.T) {
-	arch := &Architecture{Name: "qwen2"}
-	m := &Model{w: &Weights{schema: &tensorSchema{}, arch: arch}}
+	arch := &darch.Architecture{Name: "qwen2"}
+	m := &Model{w: &darch.Weights{Schema: &archparts.TensorSchema{}, Arch: arch}}
 	err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
 	if err == nil {
 		t.Fatal("LoadAdapter accepted a nonexistent adapter dir")

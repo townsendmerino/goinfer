@@ -31,7 +31,7 @@ func TestKVF16_F3InProcessAB(t *testing.T) {
 	} {
 		t.Run(mc.name, func(t *testing.T) {
 			h := newCPUDecodeAB(t, mc.env, mc.def, mc.depth)
-			if !h.m.w.arch.kvF16OK() {
+			if !h.m.w.Arch.KVF16OK() {
 				t.Fatalf("%s: family does not take an f16 cache", mc.name)
 			}
 			set := func(f16 bool) {

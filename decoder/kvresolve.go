@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -41,21 +42,11 @@ func cpuKVRequested(o Options) string {
 	return o.KVQuant
 }
 
-// keepsNoKV reports whether no layer of the model keeps attention K/V (a Mamba-only family).
-func (a *Architecture) keepsNoKV() bool {
-	for i := 0; i < a.NumLayers; i++ {
-		if !a.hasNoAttentionKVAt(i) {
-			return false
-		}
-	}
-	return a.NumLayers > 0
-}
-
 // ResolveKV is the precision of the KV cache backend builds for arch under opts: "f32", "f16", "i8", "n/a" for a model that keeps no
 // KV, or "" when nothing can be built as asked. reason says why whenever delivered is not what was requested: the backend's pick
 // under auto, or why an explicit request cannot be met (which Load refuses, KVRefusal). backend "cpu" is the CPU (host) cache, which a
 // load uses when no resident runner is active, whatever Options.Backend names.
-func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, reason string) {
+func ResolveKV(backend string, arch *darch.Architecture, opts Options) (delivered, reason string) {
 	if resolveKVHook != nil {
 		if got, why, ok := resolveKVHook(backend, opts); ok {
 			return got, why
@@ -68,15 +59,15 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
 		Drafter: o.Drafter, HasArch: arch != nil}
 	if arch != nil {
-		q.NoKV, q.MLA, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.ownLoopFamily()
-		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
+		q.NoKV, q.MLA, q.OwnLoop = arch.KeepsNoKV(), arch.MLA != nil, arch.OwnLoopFamily()
+		q.CPUF16OK, q.CPUI8OK = arch.KVF16OK(), arch.KVInt8OK()
 		p := kvPolicies["cuda"]
-		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.kvFacts(), o) }, Auto: p.Auto}
+		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.KVFacts(), o) }, Auto: p.Auto}
 		if p.AutoDecline != nil {
-			q.CUDAPolicy.AutoDecline = func() string { return p.AutoDecline(arch.kvFacts(), o) }
+			q.CUDAPolicy.AutoDecline = func() string { return p.AutoDecline(arch.KVFacts(), o) }
 		}
 		if p.DeclineI8 != nil {
-			q.CUDAPolicy.DeclineI8 = func() string { return p.DeclineI8(arch.kvFacts(), o) }
+			q.CUDAPolicy.DeclineI8 = func() string { return p.DeclineI8(arch.KVFacts(), o) }
 		}
 	}
 	return mem.ResolveKV(q)
@@ -95,7 +86,7 @@ func (e *KVRefusal) Error() string {
 }
 
 // kvRefusal is the refusal of opts's explicit request on path, or nil when it is delivered or not explicit.
-func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
+func kvRefusal(path string, arch *darch.Architecture, opts Options) *KVRefusal {
 	req := gpuKVRequested(opts)
 	if path == "" || path == "cpu" {
 		path, req = "cpu", cpuKVRequested(opts)
@@ -113,7 +104,7 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 // cudaKVF16Delivered lists the families whose every KV-touching CUDA path has an f16 kernel: `--kv f16` is delivered for them whatever
 // the quality reads (the precision doc's contract, item 4). A family group joins with its exact-input identity and delivered-bytes gates
 // (docs/measurements/kv4-cuda-2026-10-21.md § "f16 pools, per family group"), never by compiling.
-func cudaKVF16Delivered(f KVFacts) bool {
+func cudaKVF16Delivered(f darch.KVFacts) bool {
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
 		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2",
@@ -127,7 +118,7 @@ func cudaKVF16Delivered(f KVFacts) bool {
 // becomes the default for each family group as it clears its quality gate against f32, docs/measurements/kv4-cuda-2026-10-21.md
 // § "f16 pools, per family group"). A
 // model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
-func cudaKVF16AutoCleared(f KVFacts) bool {
+func cudaKVF16AutoCleared(f darch.KVFacts) bool {
 	if f.SlidingWindow || f.PairwiseRoPE || f.Hybrid || f.MLA {
 		return false
 	}
@@ -142,7 +133,7 @@ func cudaKVF16AutoCleared(f KVFacts) bool {
 // cudaKVF16Delivered. Every kernel that reads or writes the cache, MLA's latent included, has an f16 twin; a family joins the list
 // with its group's gates, so one whose paths were never checked stays f32. It lives here so ResolveKV answers for CUDA without the
 // cuda package; the cuda package registers it as its policy.
-func CUDAKVF16Decline(f KVFacts, _ Options) string {
+func CUDAKVF16Decline(f darch.KVFacts, _ Options) string {
 	if !cudaKVF16Delivered(f) {
 		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
 			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; " +
@@ -153,7 +144,7 @@ func CUDAKVF16Decline(f KVFacts, _ Options) string {
 
 // CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
 // A group whose quality read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, Readings).
-func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
+func CUDAKVF16AutoDecline(f darch.KVFacts, o Options) string {
 	switch {
 	case cudaKVF16AutoCleared(f):
 		return ""
@@ -179,7 +170,7 @@ var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
 // CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
 // it is waiting for. Several KV slots, their shared blocks and copy on write, host snapshots and demotion carry the scale pools (cuda's
 // kvCopyBlockRows and kvsnap.go).
-func CUDAKVI8Decline(f KVFacts, o Options) string {
+func CUDAKVI8Decline(f darch.KVFacts, o Options) string {
 	if !slices.Contains(cudaKVI8Families, f.Family) {
 		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + "); " + f.Family + " is not among them (widening to other families is parked)"
 	}
@@ -208,11 +199,11 @@ func (m *Model) kvDeliveredOrRefuse() error {
 	if m.w == nil {
 		return nil
 	}
-	if r := kvRefusal(m.kvPath(), m.w.arch, m.opts); r != nil {
+	if r := kvRefusal(m.kvPath(), m.w.Arch, m.opts); r != nil {
 		return r
 	}
 	if m.kvPath() != "cpu" && m.opts.LoRA != "" {
-		if r := kvRefusal("cpu", m.w.arch, m.opts); r != nil {
+		if r := kvRefusal("cpu", m.w.Arch, m.opts); r != nil {
 			return r
 		}
 	}
@@ -235,13 +226,13 @@ func (m *Model) KVPrecisionReports() []KVPrecisionReport {
 	}
 	var out []KVPrecisionReport
 	if path := m.kvPath(); path != "cpu" {
-		got, why := ResolveKV(path, m.w.arch, m.opts)
+		got, why := ResolveKV(path, m.w.Arch, m.opts)
 		out = append(out, KVPrecisionReport{Cache: "resident", Requested: gpuKVRequested(m.opts), Delivered: got, Reason: why})
 		if m.opts.LoRA == "" {
 			return out
 		}
 	}
-	got, why := ResolveKV("cpu", m.w.arch, m.opts)
+	got, why := ResolveKV("cpu", m.w.Arch, m.opts)
 	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.opts), Delivered: got, Reason: why})
 }
 
@@ -254,7 +245,7 @@ func (m *Model) KVDeliveredFor(backend string) string {
 	if m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(backend, m.w.arch, m.opts)
+	got, _ := ResolveKV(backend, m.w.Arch, m.opts)
 	return got
 }
 
@@ -263,6 +254,6 @@ func (m *Model) KVDelivered() string {
 	if m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(m.kvPath(), m.w.arch, m.opts)
+	got, _ := ResolveKV(m.kvPath(), m.w.Arch, m.opts)
 	return got
 }

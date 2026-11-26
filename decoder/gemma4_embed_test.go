@@ -26,8 +26,8 @@ func TestGemma4RunLayersFromEmbed_matchesTokenPath(t *testing.T) {
 	}
 	defer m.Close()
 
-	arch := m.w.arch
-	if arch.gemma4 == nil || arch.gemma4.HiddenSizePerLayerInput == 0 {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil || arch.Gemma4.HiddenSizePerLayerInput == 0 {
 		t.Fatal("fixture has no PLE (hidden_size_per_layer_input=0) — this test needs a PLE checkpoint")
 	}
 

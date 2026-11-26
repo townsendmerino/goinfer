@@ -125,7 +125,7 @@ admission runs.
 
 The runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no
 GPU runner reproduces. **Local and global RoPE tables differ in length** is
-`decoder/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a
+`decoder/arch/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a
 different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity bring-up, described in the notes above.
 
 **Phi-3 / Phi-4: the table reads one configuration, and a default load picks another.** The activation

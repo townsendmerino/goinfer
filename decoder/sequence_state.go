@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -13,12 +14,12 @@ var (
 )
 
 // SequenceState returns the session's live KV sequence view under kvmgr.SequenceState.
-func (s *Session) SequenceState() KVSequenceState {
+func (s *Session) SequenceState() darch.KVSequenceState {
 	return cpuSequenceState{s: s}
 }
 
 // ResidentSequenceState returns slot's live KV sequence view under kvmgr.SequenceState.
-func (m *Model) ResidentSequenceState(slot int) KVSequenceState {
+func (m *Model) ResidentSequenceState(slot int) darch.KVSequenceState {
 	return residentSequenceState{m: m, slot: slot}
 }
 
@@ -94,8 +95,8 @@ func (c cpuSequenceState) Truncate(target int) bool {
 // sequenceRoot returns the kvmgr.Root describing s's CPU cache under lora.
 func (s *Session) sequenceRoot(lora *loraRuntime) kvmgr.Root {
 	r := kvmgr.Root{Adapter: kvAdapterID(lora), Precision: s.cachePrecision()}
-	if s.m != nil && s.m.w != nil && s.m.w.arch != nil {
-		a := s.m.w.arch
+	if s.m != nil && s.m.w != nil && s.m.w.Arch != nil {
+		a := s.m.w.Arch
 		r.Model = fmt.Sprintf("%s/%dx%d/%d@cpu", a.Name, a.NumLayers, a.HiddenDim, a.VocabSize)
 	}
 	return r

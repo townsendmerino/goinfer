@@ -44,13 +44,13 @@ func TestA3MoETokenLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.MoE == nil {
+	if m.w.Arch.MoE == nil {
 		t.Fatalf("%s is not a MoE", path)
 	}
 	if !m.canBatchN(K) {
 		t.Fatalf("canBatchN(%d) = false", K)
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	prompt := make([]int, K)
 	for i := range prompt {
 		prompt[i] = (i*131 + 7) % vocab

@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"strings"
 	"testing"
 )
@@ -66,7 +67,7 @@ func TestBlockSpec_setVerifyWidthReachesGenerateStream(t *testing.T) {
 
 // TestBlockSpec_setVerifyWidthRefuses: a width under 2, and on a recurrent target a width past its fold path's rows.
 func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
-	dense := &BlockSpec{m: &Model{w: &Weights{arch: &Architecture{}}}, dw: blockspecStubWeights{blockSize: 16}}
+	dense := &BlockSpec{m: &Model{w: &darch.Weights{Arch: &darch.Architecture{}}}, dw: blockspecStubWeights{blockSize: 16}}
 	for _, c := range []struct {
 		w, inUse int // inUse 0: refused
 	}{{0, 8}, {1, 0}, {-3, 0}, {2, 2}, {16, 16}, {64, 16}} { // the default is 8; past the block is capped by it
@@ -79,7 +80,7 @@ func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
 			t.Errorf("dense, width %d: VerifyWidthInUse %d, want %d", c.w, dense.VerifyWidthInUse(), c.inUse)
 		}
 	}
-	rec := &BlockSpec{m: &Model{w: &Weights{arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: 8}, &blockspecWriteHost{}, new(int)},
+	rec := &BlockSpec{m: &Model{w: &darch.Weights{Arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: 8}, &blockspecWriteHost{}, new(int)},
 		dw: blockspecStubWeights{blockSize: 16}}
 	if err := rec.SetVerifyWidth(4); err != nil {
 		t.Errorf("recurrent, width 4 of the fold's 8 rows: %v", err)
@@ -95,7 +96,7 @@ func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
 		t.Errorf("recurrent, the default width: VerifyWidthInUse %d, want 8", got)
 	}
 	// a fold of 4 rows refuses the default, 8, even with 4 set before
-	rec4 := &BlockSpec{m: &Model{w: &Weights{arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: 4}, &blockspecWriteHost{}, new(int)},
+	rec4 := &BlockSpec{m: &Model{w: &darch.Weights{Arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: 4}, &blockspecWriteHost{}, new(int)},
 		dw: blockspecStubWeights{blockSize: 16}}
 	if err := rec4.SetVerifyWidth(4); err != nil {
 		t.Errorf("recurrent, width 4 of the fold's 4 rows: %v", err)
@@ -107,7 +108,7 @@ func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
 		t.Errorf("recurrent, after a refused width: VerifyWidthInUse %d, want the 4 set before", got)
 	}
 	// the real fold's 16 rows and a 32-position block: 32 must be refused, not clamped to 16 by verifyWidth's row cap
-	rec16 := &BlockSpec{m: &Model{w: &Weights{arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: RecurrentSpecMaxRows}, &blockspecWriteHost{}, new(int)},
+	rec16 := &BlockSpec{m: &Model{w: &darch.Weights{Arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: RecurrentSpecMaxRows}, &blockspecWriteHost{}, new(int)},
 		dw: blockspecStubWeights{blockSize: 2 * RecurrentSpecMaxRows}}
 	if err := rec16.SetVerifyWidth(2 * RecurrentSpecMaxRows); err == nil {
 		t.Errorf("recurrent, width %d past the fold's %d rows: accepted", 2*RecurrentSpecMaxRows, RecurrentSpecMaxRows)

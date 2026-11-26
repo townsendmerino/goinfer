@@ -36,6 +36,7 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -73,7 +74,7 @@ func TestQwen35GGUF_locateDivergence(t *testing.T) {
 
 	// captureAll runs the prompt through `path` and returns the residual stream after every layer
 	// at the LAST prompt position, plus the final logits.
-	captureAll := func(label, path string) ([][]float32, []float32, *Architecture) {
+	captureAll := func(label, path string) ([][]float32, []float32, *darch.Architecture) {
 		prev := runtime.GOMAXPROCS(2)
 		m, err := Load(path, Options{Quant: "int8int8"})
 		runtime.GOMAXPROCS(prev)
@@ -84,7 +85,7 @@ func TestQwen35GGUF_locateDivergence(t *testing.T) {
 			m.Close()
 			debug.FreeOSMemory() // return the ~39 GB before the next model loads
 		}()
-		nL := m.w.arch.NumLayers
+		nL := m.w.Arch.NumLayers
 		layers := make([]int, nL)
 		for i := range layers {
 			layers[i] = i
@@ -105,7 +106,7 @@ func TestQwen35GGUF_locateDivergence(t *testing.T) {
 		}
 		// The descriptor outlives the model here only to LABEL the curve (layer kinds); it holds
 		// no weights, so keeping it after Close is a read of config, not of freed memory.
-		return out, slices.Clone(lg), m.w.arch
+		return out, slices.Clone(lg), m.w.Arch
 	}
 
 	refH, refL, arch := captureAll("safetensors", dir)

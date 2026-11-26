@@ -48,18 +48,18 @@ func TestNewCache_hybridRealFixtureSkipsRecurrentLayerAllocation(t *testing.T) {
 		t.Fatalf("load ../testdata/nemotron-tiny: %v", err)
 	}
 	defer m.Close()
-	arch := m.w.arch
-	if arch.nemotron == nil {
+	arch := m.w.Arch
+	if arch.Nemotron == nil {
 		t.Fatal("test bug: nemotron-tiny did not resolve as a Nemotron architecture")
 	}
 	const capHint = 4096
 	c := m.NewCache(capHint)
 	for l := 0; l < arch.NumLayers; l++ {
-		wantZero := arch.hasNoAttentionKVAt(l)
+		wantZero := arch.HasNoAttentionKVAt(l)
 		gotZero := cap(c.keys[l]) == 0 && cap(c.vals[l]) == 0
 		if wantZero != gotZero {
 			t.Errorf("layer %d (blockKind=%d): cap(keys)=%d cap(vals)=%d, want zero=%v",
-				l, arch.nemotron.blockKind[l], cap(c.keys[l]), cap(c.vals[l]), wantZero)
+				l, arch.Nemotron.BlockKind[l], cap(c.keys[l]), cap(c.vals[l]), wantZero)
 		}
 	}
 }

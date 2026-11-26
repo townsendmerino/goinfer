@@ -46,7 +46,7 @@ func TestMinistral3Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "mistral3" {
 		t.Fatalf("arch = %q, want mistral3", a.Name)
 	}
@@ -59,8 +59,8 @@ func TestMinistral3Real_gate(t *testing.T) {
 	if got, want := a.AttnTempOrigMaxPos, 16384.0; got != want {
 		t.Errorf("AttnTempOrigMaxPos = %v, want %v (original_max_position_embeddings)", got, want)
 	}
-	if a.ropeScaling == nil || a.ropeScaling.Kind != rope.ScaleYarn {
-		t.Fatalf("ropeScaling = %+v, want YaRN", a.ropeScaling)
+	if a.RoPEScaling == nil || a.RoPEScaling.Kind != rope.ScaleYarn {
+		t.Fatalf("ropeScaling = %+v, want YaRN", a.RoPEScaling)
 	}
 	t.Logf("ministral3-3b: %d layers, H=%d kv=%d headDim=%d attnTempBeta=%v origMaxPos=%v",
 		a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.AttnTempBeta, a.AttnTempOrigMaxPos)

@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "testing"
 
 // TestNewCache_mlaSkipsKeysValsReservation is P-02 (audit-2026-09-10): an MLA family
@@ -12,9 +17,9 @@ import "testing"
 func TestNewCache_mlaSkipsKeysValsReservation(t *testing.T) {
 	const numLayers, numKVHeads, headDim, capHint = 3, 4, 8, 4096
 
-	mlaModel := &Model{w: &Weights{arch: &Architecture{
+	mlaModel := &Model{w: &darch.Weights{Arch: &darch.Architecture{
 		NumLayers: numLayers, NumKVHeads: numKVHeads, HeadDim: headDim,
-		mla: &mlaParams{KVLoRARank: 16},
+		MLA: &archparts.MLAParams{KVLoRARank: 16},
 	}}}
 	mc := mlaModel.NewCache(capHint)
 	for l := range numLayers {
@@ -26,7 +31,7 @@ func TestNewCache_mlaSkipsKeysValsReservation(t *testing.T) {
 		}
 	}
 
-	denseModel := &Model{w: &Weights{arch: &Architecture{
+	denseModel := &Model{w: &darch.Weights{Arch: &darch.Architecture{
 		NumLayers: numLayers, NumKVHeads: numKVHeads, HeadDim: headDim,
 	}}}
 	dc := denseModel.NewCache(capHint)

@@ -34,24 +34,24 @@ func TestGiwRecordsResolvedQuant(t *testing.T) {
 	defer g.Close()
 
 	// Path 1 — field PRESENT: the buffer bake recorded the resolved label and the reader read it.
-	if g.w.bakedQuant != "int4" {
-		t.Fatalf("v5 buffer bundle should record bakedQuant=int4, got %q", g.w.bakedQuant)
+	if g.w.BakedQuant != "int4" {
+		t.Fatalf("v5 buffer bundle should record bakedQuant=int4, got %q", g.w.BakedQuant)
 	}
 	if got := g.Quant(); got != "int4" {
 		t.Errorf("Quant() = %q, want int4", got)
 	}
 	// Prefer the field over inference: force a value inference would NOT produce and confirm Quant()
 	// returns the recorded field, proving it is read, not re-derived.
-	g.w.bakedQuant = "int8int8"
+	g.w.BakedQuant = "int8int8"
 	if got := g.Quant(); got != "int8int8" {
 		t.Errorf("Quant() = %q — must PREFER the recorded field (int8int8) over inference (int4)", got)
 	}
 
 	// Path 2 — field ABSENT (empty, as a pre-v5 or streamed bundle): fall back to inference, which
 	// (post-T1-6) correctly yields int4 for this all-int4-body bundle.
-	g.w.bakedQuant = ""
-	if got := g.Quant(); got != g.w.quantLabel() || got != "int4" {
-		t.Errorf("field absent must fall back to inference: Quant()=%q quantLabel()=%q, want int4", got, g.w.quantLabel())
+	g.w.BakedQuant = ""
+	if got := g.Quant(); got != g.w.QuantLabel() || got != "int4" {
+		t.Errorf("field absent must fall back to inference: Quant()=%q quantLabel()=%q, want int4", got, g.w.QuantLabel())
 	}
 }
 
@@ -112,7 +112,7 @@ func moeInt4Tiny(t *testing.T) *Model {
 	}
 	t.Cleanup(func() { m.Close() })
 	kinds := map[string]int{}
-	for _, wm := range m.w.bodyMatmulWeights() {
+	for _, wm := range m.w.BodyMatmulWeights() {
 		if wm.Rows() > 0 {
 			kinds[wm.Kind().String()]++
 		}
@@ -146,12 +146,12 @@ func bakeAndLoad(t *testing.T, m *Model, name string) *Model {
 // int4, not int4mix, and an explicit --quant int4 is accepted against the .giw baked from it (a sidecar is one).
 func TestQuantLabel_float32BesideInt4IsNotAMix(t *testing.T) {
 	m := moeInt4Tiny(t)
-	if got := m.w.quantLabel(); got != "int4" {
+	if got := m.w.QuantLabel(); got != "int4" {
 		t.Errorf("quantLabel() = %q, want int4", got)
 	}
 	g := bakeAndLoad(t, m, "moe.int4.giw")
-	if g.w.bakedQuant != "int4" || g.Quant() != "int4" {
-		t.Errorf("baked bundle: header %q, Quant() %q, want int4 for both", g.w.bakedQuant, g.Quant())
+	if g.w.BakedQuant != "int4" || g.Quant() != "int4" {
+		t.Errorf("baked bundle: header %q, Quant() %q, want int4 for both", g.w.BakedQuant, g.Quant())
 	}
 	if err := g.CheckGiwQuantMatch("int4"); err != nil {
 		t.Errorf("an explicit int4 against the int4 bundle was refused: %v", err)
@@ -172,7 +172,7 @@ func TestQuantLabel_int8BesideInt4IsAMix(t *testing.T) {
 		f[i] = float32(i%7) * 0.01
 	}
 	l.QProj = quantizeWM(linalg.WrapF32(f, rows, cols), quantInt8I8)
-	if got := m.w.quantLabel(); got != "int4mix" {
+	if got := m.w.QuantLabel(); got != "int4mix" {
 		t.Fatalf("quantLabel() = %q with an int8 projection beside int4, want int4mix", got)
 	}
 	g := bakeAndLoad(t, m, "moe.mix.giw")

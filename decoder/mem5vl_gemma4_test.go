@@ -105,7 +105,7 @@ func TestMEM5VL_gemma4BidirBytes(t *testing.T) {
 	}
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
-	arch := m.w.arch
+	arch := m.w.Arch
 	hidden := arch.HiddenDim
 	const n, chunk, block = 200, 16, 20
 	ids := make([]int, n)
@@ -141,7 +141,7 @@ func TestMEM5VL_gemma4BidirBytes(t *testing.T) {
 	}
 	whole := run(1 << 20)
 	passes := run(chunk)
-	maxHd := max(arch.gemma4.GlobalHeadDim, arch.HeadDim)
+	maxHd := max(arch.Gemma4.GlobalHeadDim, arch.HeadDim)
 	keyScratch := uint64(4 * (2*n*maxHd + arch.NumHeads*n))
 	var largest uint64
 	for _, a := range passes {

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"strings"
 	"testing"
 	"time"
@@ -9,9 +10,9 @@ import (
 // The profile has to be safe to use unconditionally: paths that do not instrument (safetensors,
 // .giw) hand back nil, and the banner calls Summary() on whatever it gets.
 func TestLoadProfile_nilIsUsable(t *testing.T) {
-	var p *LoadProfile
-	p.record("x", time.Second) // must not panic
-	p.setBytes(1 << 30)
+	var p *darch.LoadProfile
+	p.Record("x", time.Second) // must not panic
+	p.SetBytes(1 << 30)
 	if got := p.Phases(); got != nil {
 		t.Errorf("nil profile returned %v phases", got)
 	}
@@ -33,16 +34,16 @@ func TestLoadProfile_nilIsUsable(t *testing.T) {
 // An EMPTY profile must also print nothing. A load path that recorded no phase should be silent,
 // not report "load 0s — 0% " — a zero that looks like a measurement is worse than no line.
 func TestLoadProfile_emptyPrintsNothing(t *testing.T) {
-	if got := (&LoadProfile{}).Summary(); got != "" {
+	if got := (&darch.LoadProfile{}).Summary(); got != "" {
 		t.Errorf("empty profile summary = %q, want empty", got)
 	}
 }
 
 func TestLoadProfile_dominantAndSummary(t *testing.T) {
-	p := &LoadProfile{}
-	p.record("map", 50*time.Millisecond)
-	p.record("build", 4950*time.Millisecond)
-	p.setBytes(2 * (1 << 30))
+	p := &darch.LoadProfile{}
+	p.Record("map", 50*time.Millisecond)
+	p.Record("build", 4950*time.Millisecond)
+	p.SetBytes(2 * (1 << 30))
 
 	if got, want := p.Total(), 5*time.Second; got != want {
 		t.Errorf("Total = %v, want %v", got, want)
@@ -66,10 +67,10 @@ func TestLoadProfile_dominantAndSummary(t *testing.T) {
 // between phases must show up as the phases failing to add to the caller's own timing, rather than
 // being silently folded into whichever phase happened to be adjacent.
 func TestLoadProfile_totalIsTheSumNotASpan(t *testing.T) {
-	p := &LoadProfile{}
-	p.record("a", time.Second)
+	p := &darch.LoadProfile{}
+	p.Record("a", time.Second)
 	time.Sleep(20 * time.Millisecond) // an unattributed gap
-	p.record("b", time.Second)
+	p.Record("b", time.Second)
 	if got := p.Total(); got != 2*time.Second {
 		t.Errorf("Total = %v, want exactly 2s — the gap must not be absorbed into a phase", got)
 	}

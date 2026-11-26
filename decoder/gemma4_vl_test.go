@@ -47,10 +47,10 @@ func TestGemma4VL_textParity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.gemma4 == nil {
-		t.Fatalf("loaded model is not gemma4 (arch=%s)", m.w.arch.Name)
+	if m.w.Arch.Gemma4 == nil {
+		t.Fatalf("loaded model is not gemma4 (arch=%s)", m.w.Arch.Name)
 	}
-	if got := m.w.arch.gemma4.SharedKVLayers; got != 2 {
+	if got := m.w.Arch.Gemma4.SharedKVLayers; got != 2 {
 		t.Fatalf("SharedKVLayers = %d, want 2 (fixture didn't load the shape this test exists to cover)", got)
 	}
 

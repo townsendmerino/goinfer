@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // decodeScratch holds the per-stream float buffers the single-token forward reuses across decode steps, so steady-state decode
@@ -91,7 +92,7 @@ func (s *decodeScratch) loraBuf(r int) []float32 {
 	return s.loraTmp[:r]
 }
 
-func newDecodeScratch(a *Architecture, knobs *knobSet) *decodeScratch {
+func newDecodeScratch(a *darch.Architecture, knobs *knobSet) *decodeScratch {
 	// aikit's opt-in worker pool (Workspace.SetWorkers) is deliberately not used: it measured neutral-to-slightly-slower than the
 	// spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
 	//
@@ -118,8 +119,8 @@ type scratchRow struct {
 // Model.CPUDecodeScratch prices, so the two cannot disagree. maxHeads, not NumHeads, sizes q and ctx (a family with per-layer query
 // heads reuses one buffer across layers); the MoE rows exist only for a mixture-of-experts architecture. Buffers grown on demand
 // (scores, the batched logits, the per-head pool, the local window, the quantization scratch) are not here.
-func decodeScratchRows(a *Architecture) []scratchRow {
-	H, qDim, kvDim := a.HiddenDim, a.maxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
+func decodeScratchRows(a *darch.Architecture) []scratchRow {
+	H, qDim, kvDim := a.HiddenDim, a.MaxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
 	rows := []scratchRow{{"h", H}, {"norm", H}, {"sub", H}, {"sub2", H}, {"q", qDim}, {"k", kvDim}, {"v", kvDim}, {"ctx", qDim},
 		{"gate", a.IntermediateDim}, {"up", a.IntermediateDim}, {"logits", a.VocabSize}}
 	if a.MoE != nil {

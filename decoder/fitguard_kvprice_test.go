@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func hostKVFixtures(t *testing.T) []hostKVFixture {
 }
 
 // hostKVContexts is the contexts a host KV price is checked at for a, each side of a sliding window included.
-func hostKVContexts(a *Architecture) []int {
+func hostKVContexts(a *darch.Architecture) []int {
 	ctxs := []int{1, 4096, 32768}
 	if w := a.SlidingWindow; w > 1 {
 		ctxs = append(ctxs, w-1, w, w+1)
@@ -51,7 +52,7 @@ func hostKVContexts(a *Architecture) []int {
 func TestHostFitKV_isTheCPUCachesPrice(t *testing.T) {
 	var checked, moved int
 	for _, fx := range hostKVFixtures(t) {
-		for _, ctx := range hostKVContexts(fx.m.w.arch) {
+		for _, ctx := range hostKVContexts(fx.m.w.Arch) {
 			for _, kv := range []string{"", "f16", "i8"} {
 				o := Options{Backend: "cpu", ResidentContext: ctx, KVQuant: kv}
 				qm, _ := parseQuant("f32")

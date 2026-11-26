@@ -114,13 +114,13 @@ func TestLagunaDFlash_acceptance(t *testing.T) {
 	}
 	defer d.Close()
 
-	if g := d.DrafterGeometry(); g.Hidden != m.w.arch.HiddenDim {
+	if g := d.DrafterGeometry(); g.Hidden != m.w.Arch.HiddenDim {
 		t.Fatalf("drafter hidden %d != target hidden %d — the trunk consumes the target's "+
-			"hidden states directly, with no projection between them", g.Hidden, m.w.arch.HiddenDim)
+			"hidden states directly, with no projection between them", g.Hidden, m.w.Arch.HiddenDim)
 	}
 	for _, l := range d.TargetLayerIDs() {
-		if l < 0 || l >= m.w.arch.NumLayers {
-			t.Fatalf("tap layer %d outside the target's %d layers", l, m.w.arch.NumLayers)
+		if l < 0 || l >= m.w.Arch.NumLayers {
+			t.Fatalf("tap layer %d outside the target's %d layers", l, m.w.Arch.NumLayers)
 		}
 	}
 

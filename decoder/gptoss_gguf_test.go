@@ -46,20 +46,20 @@ func TestGptOssGGUF_parity(t *testing.T) {
 	}
 	defer m.Close()
 
-	if m.w.arch.Name != "gpt-oss" {
-		t.Fatalf("arch = %q, want gpt-oss", m.w.arch.Name)
+	if m.w.Arch.Name != "gpt-oss" {
+		t.Fatalf("arch = %q, want gpt-oss", m.w.Arch.Name)
 	}
-	if m.w.arch.gptoss == nil {
+	if m.w.Arch.GPTOSS == nil {
 		t.Fatalf("gptoss params not set")
 	}
 	// The loader must populate the gpt-oss-specific weights on every layer.
 	for i := range m.w.Layers {
 		lw := &m.w.Layers[i]
-		if len(lw.AttnSinks) != m.w.arch.NumHeads {
-			t.Fatalf("layer %d AttnSinks len = %d, want %d", i, len(lw.AttnSinks), m.w.arch.NumHeads)
+		if len(lw.AttnSinks) != m.w.Arch.NumHeads {
+			t.Fatalf("layer %d AttnSinks len = %d, want %d", i, len(lw.AttnSinks), m.w.Arch.NumHeads)
 		}
-		if len(lw.RouterBias) != m.w.arch.MoE.NumExperts {
-			t.Fatalf("layer %d RouterBias len = %d, want %d", i, len(lw.RouterBias), m.w.arch.MoE.NumExperts)
+		if len(lw.RouterBias) != m.w.Arch.MoE.NumExperts {
+			t.Fatalf("layer %d RouterBias len = %d, want %d", i, len(lw.RouterBias), m.w.Arch.MoE.NumExperts)
 		}
 		if lw.Experts == nil {
 			t.Fatalf("layer %d has no experts", i)

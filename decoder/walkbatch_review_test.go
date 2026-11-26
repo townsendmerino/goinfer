@@ -22,7 +22,7 @@ func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 	const n = 24
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+		ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
 	run := func(fast bool, ps *prefillPassScratch) []float32 {
 		h, err := m.walkBatch(context.Background(), m.program(), m.embedN(ids), m.NewCache(n), fast, fastAttnMinPrompt, ps, nil)
@@ -58,7 +58,7 @@ func TestWalkBatch_gemma4PassTakesNoGenericAttentionScratch(t *testing.T) {
 	const n = 12
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+		ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
 	ps := &prefillPassScratch{}
 	if _, err := m.walkBatch(context.Background(), m.program(), m.embedN(ids), m.NewCache(n), false, n, ps, &batchRows{ids: ids}); err != nil {

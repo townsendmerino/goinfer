@@ -12,18 +12,19 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // streamLayersProbe drives streamLayers over n fake layers and reports the order layers were built in and the most that
 // were in flight at once. Every layer writes the same number of bytes.
-func streamLayersProbe(t *testing.T, n int, arch *Architecture, budget func(layerBytes int64) int64, fail int) (order []int, maxInFlight int, err error) {
+func streamLayersProbe(t *testing.T, n int, arch *darch.Architecture, budget func(layerBytes int64) int64, fail int) (order []int, maxInFlight int, err error) {
 	t.Helper()
-	mk := func(l *LayerWeights) { l.QProj = linalg.WrapF32(make([]float32, 64), 8, 8) }
+	mk := func(l *darch.LayerWeights) { l.QProj = linalg.WrapF32(make([]float32, 64), 8, 8) }
 	probe := &giwWriter{sink: io.Discard, arch: arch}
-	var one LayerWeights
+	var one darch.LayerWeights
 	mk(&one)
 	probe.layer(&one)
-	w := &Weights{arch: arch, Layers: make([]LayerWeights, n)}
+	w := &darch.Weights{Arch: arch, Layers: make([]darch.LayerWeights, n)}
 	sink := &giwWriter{sink: io.Discard, arch: arch, layerBudget: budget(probe.n)}
 	var mu sync.Mutex
 	var inFlight, peak atomic.Int64
@@ -54,10 +55,10 @@ func streamLayersProbe(t *testing.T, n int, arch *Architecture, budget func(laye
 // builds one at a time; and a failed load is returned.
 func TestStreamLayers_window(t *testing.T) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(4))
-	dense, moe := &Architecture{}, &Architecture{MoE: &MoEConfig{NumExperts: 2, TopK: 1}}
+	dense, moe := &darch.Architecture{}, &darch.Architecture{MoE: &MoEConfig{NumExperts: 2, TopK: 1}}
 	for _, c := range []struct {
 		name   string
-		arch   *Architecture
+		arch   *darch.Architecture
 		budget func(int64) int64
 		want   int // the most layers in flight
 	}{

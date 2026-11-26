@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -12,7 +14,7 @@ import (
 // layers are NoPE GQA (no RoPE — the SSM layers carry position); the mlp layers are
 // non-gated relu². Plain RMSNorm, no multipliers. Dedicated loader + forward
 // (buildNemotronWeights; its program is Architecture.nemotronLayerOps).
-func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func nemotronhArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	// Released checkpoints spell the layer sequence as hybrid_override_pattern; only
 	// transformers-instantiated configs carry layers_block_type. Normalize to the latter
 	// before anything reads it.
@@ -41,14 +43,14 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			// back ["linear_attention","moe","full_attention",...] from ["mamba","moe","attention",...]). The real NVIDIA release ships
 			// hybrid_override_pattern (parsed independently by NormalizeNemotronBlocks) and is unaffected, but any checkpoint re-saved through
 			// transformers hits this, so it is a real alias, not a fixture-only workaround.
-			kind[i] = nemoAttn
+			kind[i] = archparts.NemoAttn
 		case "mlp":
-			kind[i] = nemoMLP
+			kind[i] = archparts.NemoMLP
 		case "moe":
-			kind[i] = nemoMoE
+			kind[i] = archparts.NemoMoE
 			hasMoE = true
 		case "mamba", "linear_attention": // "linear_attention" is the same canonicalization, for Mamba-2 blocks
-			kind[i] = nemoMamba
+			kind[i] = archparts.NemoMamba
 		default:
 			return nil, nil, fmt.Errorf("decoder(nemotron_h): layers_block_type[%d] = %q unrecognized (want mamba/linear_attention, attention/full_attention, mlp, or moe)", i, t)
 		}
@@ -78,7 +80,7 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			TopkGroup:             cfg.TopkGroup,
 		}
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "nemotron_h",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -87,10 +89,10 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim, // mlp-block width
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.LayerNormEpsilon,
-		Act:             ActReLU2,
+		Act:             darch.ActReLU2,
 		NonGatedMLP:     true,
 		QKVBias:         false,
 		QKNorm:          false,
@@ -99,9 +101,9 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:      0,
 		TiedLMHead:      false,
 		MoE:             moe, // nil for plain Nemotron-H; set only when the pattern has an "moe" block
-		nemotron: &nemotronParams{
+		Nemotron: &archparts.NemotronParams{
 			NHeads: cfg.MambaNumHeads, HeadDim: cfg.MambaHeadDim, DState: cfg.SSMStateSize,
-			NGroups: cfg.NGroups, DConv: cfg.ConvKernel, blockKind: kind,
+			NGroups: cfg.NGroups, DConv: cfg.ConvKernel, BlockKind: kind,
 		},
 	}, &nemotronTensorSchema, nil
 }

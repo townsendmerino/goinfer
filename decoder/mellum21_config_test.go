@@ -24,7 +24,7 @@ func TestMellum21_configResolves(t *testing.T) {
 	}
 	global := 0
 	for l := 0; l < arch.NumLayers; l++ {
-		if arch.layerIsGlobal(l) {
+		if arch.LayerIsGlobal(l) {
 			global++
 		}
 	}

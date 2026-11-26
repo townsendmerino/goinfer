@@ -3,6 +3,7 @@ package decoder
 import (
 	"time"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -53,10 +54,10 @@ func (c *KVCache) kvRowBytes() int64 {
 
 // countOp records one per-token operation o of layer l: one call, its bytes (see the file comment) and its time since t0. A
 // tree-masked token reads only its ancestors' rows, which is not priced yet (attention's bytes unmeasured, as in causalRows).
-func (m *Model) countOp(cache *KVCache, o *op, lw *LayerWeights, l int, t0 time.Time) {
+func (m *Model) countOp(cache *KVCache, o *op, lw *darch.LayerWeights, l int, t0 time.Time) {
 	rows := int64(-1)
 	if cache.treeMask == nil {
-		rows = int64(cache.storedRows(l, m.w.arch.NumKVHeads*m.w.arch.HeadDim))
+		rows = int64(cache.storedRows(l, m.w.Arch.NumKVHeads*m.w.Arch.HeadDim))
 	}
 	m.countOpN(cache, o, lw, l, 1, rows, t0)
 }
@@ -64,16 +65,16 @@ func (m *Model) countOp(cache *KVCache, o *op, lw *LayerWeights, l int, t0 time.
 // countOpN records one pass of operation o over K rows: one call; its weights read once and its activations K times; for
 // attention, kvRows stored K and V rows read in all (the decode row's stored rows, or a prefill pass's causal triangle) and K rows
 // written. kvRows < 0 leaves attention's bytes unmeasured.
-func (m *Model) countOpN(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvRows int64, t0 time.Time) {
+func (m *Model) countOpN(cache *KVCache, o *op, lw *darch.LayerWeights, l, K int, kvRows int64, t0 time.Time) {
 	if seamPlantForTest == plantCostDoubleCount && o.Kind == opProjO {
 		m.countOpN1(cache, o, lw, l, K, kvRows, t0)
 	}
 	m.countOpN1(cache, o, lw, l, K, kvRows, t0)
 }
 
-func (m *Model) countOpN1(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvRows int64, t0 time.Time) {
-	arch := m.w.arch
-	nH, hd, kvDim := arch.headsAt(l), arch.HeadDim, arch.NumKVHeads*arch.HeadDim
+func (m *Model) countOpN1(cache *KVCache, o *op, lw *darch.LayerWeights, l, K int, kvRows int64, t0 time.Time) {
+	arch := m.w.Arch
+	nH, hd, kvDim := arch.HeadsAt(l), arch.HeadDim, arch.NumKVHeads*arch.HeadDim
 	H := arch.HiddenDim
 	d := cost.Counts{Calls: 1, TimeNs: int64(time.Since(t0)), Unmeasured: cpuUnmeasured}
 	k := int64(K)
@@ -83,7 +84,7 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvR
 	}
 	switch o.Kind {
 	case opNorm:
-		w, b := lw.normWeights(o.Norm)
+		w, b := lw.NormWeights(o.Norm)
 		rw(costF32(len(w)+len(b)), costF32(H), costF32(H))
 	case opProjQKV:
 		wb := wmBytes(&lw.QProj) + wmBytes(&lw.KProj) + wmBytes(&lw.VProj)
@@ -149,12 +150,12 @@ func (m *Model) countEmbed(cache *KVCache, n int, pos bool, t0 time.Time) {
 	if pos {
 		read += wmBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
 	}
-	countStage(cache, costEmbed, int64(n)*read, int64(n)*costF32(m.w.arch.HiddenDim), t0)
+	countStage(cache, costEmbed, int64(n)*read, int64(n)*costF32(m.w.Arch.HiddenDim), t0)
 }
 
 // countFinalNorm records the head's norm over n rows since t0: its weights once, each row read and written.
 func (m *Model) countFinalNorm(cache *KVCache, n int, bias []float32, t0 time.Time) {
-	rows := int64(n) * costF32(m.w.arch.HiddenDim)
+	rows := int64(n) * costF32(m.w.Arch.HiddenDim)
 	countStage(cache, costFinalNorm, costF32(len(m.w.FinalNorm)+len(bias))+rows, rows, t0)
 }
 
@@ -165,7 +166,7 @@ func (m *Model) countHead(cache *KVCache, n int, t0 time.Time) {
 	if m.program().Head.Tied {
 		head = &m.w.Embed
 	}
-	countStage(cache, costLMHead, wmBytes(head)+int64(n)*costF32(m.w.arch.HiddenDim), int64(n)*costF32(m.w.arch.VocabSize), t0)
+	countStage(cache, costLMHead, wmBytes(head)+int64(n)*costF32(m.w.Arch.HiddenDim), int64(n)*costF32(m.w.Arch.VocabSize), t0)
 }
 
 // causalRows is the stored K (or V) rows a prefill pass of K rows from startPos reads in layer l: Σ (startPos+i+1) for i < K. A

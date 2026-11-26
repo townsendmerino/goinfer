@@ -22,12 +22,12 @@ func TestKVQuant_reservesNoF32(t *testing.T) {
 	}
 	for _, dir := range []string{"llama-tiny", "gemma2-tiny"} {
 		base := f1Load(t, filepath.Join("..", "testdata", dir))
-		a := base.w.arch
+		a := base.w.Arch
 		for _, arm := range []struct {
 			name string
 			q    kvQuant
 			ok   bool
-		}{{"f32", kvqF32, true}, {"f16", kvqF16, a.kvF16OK()}, {"int8", kvI8, a.kvInt8OK()}} {
+		}{{"f32", kvqF32, true}, {"f16", kvqF16, a.KVF16OK()}, {"int8", kvI8, a.KVInt8OK()}} {
 			if !arm.ok {
 				continue
 			}

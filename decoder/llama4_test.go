@@ -27,17 +27,17 @@ func TestLlama4_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &llama4TensorSchema || arch.llama4 == nil {
+	if schema != &llama4TensorSchema || arch.Llama4 == nil {
 		t.Fatalf("schema/llama4 mismatch")
 	}
-	lp := arch.llama4
-	if got := []bool{lp.useRope[0], lp.useRope[1], lp.useRope[2], lp.useRope[3]}; got[2] != false || !got[0] || !got[1] || !got[3] {
+	lp := arch.Llama4
+	if got := []bool{lp.UseRope[0], lp.UseRope[1], lp.UseRope[2], lp.UseRope[3]}; got[2] != false || !got[0] || !got[1] || !got[3] {
 		t.Errorf("useRope = %v, want layer 2 NoPE", got)
 	}
-	if !lp.isMoE[1] || !lp.isMoE[3] || lp.isMoE[0] || lp.isMoE[2] {
-		t.Errorf("isMoE = %v, want layers 1,3", lp.isMoE)
+	if !lp.IsMoE[1] || !lp.IsMoE[3] || lp.IsMoE[0] || lp.IsMoE[2] {
+		t.Errorf("isMoE = %v, want layers 1,3", lp.IsMoE)
 	}
-	if !lp.useQKNorm || !lp.attnTemp || lp.floorScale != 4 || lp.attnScale != 0.1 {
+	if !lp.UseQKNorm || !lp.AttnTemp || lp.FloorScale != 4 || lp.AttnScale != 0.1 {
 		t.Errorf("iRoPE params wrong: %+v", lp)
 	}
 	if !arch.MoE.RouterSigmoid || arch.MoE.NormTopKProb || !arch.MoE.SharedUngated || arch.MoE.RoutedScale != 1 {
@@ -82,8 +82,8 @@ func TestLlama4_textParity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "llama4_text" || m.w.arch.llama4 == nil {
-		t.Fatalf("arch = %q (llama4=%v), want llama4_text", m.w.arch.Name, m.w.arch.llama4 != nil)
+	if m.w.Arch.Name != "llama4_text" || m.w.Arch.Llama4 == nil {
+		t.Fatalf("arch = %q (llama4=%v), want llama4_text", m.w.Arch.Name, m.w.Arch.Llama4 != nil)
 	}
 
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)

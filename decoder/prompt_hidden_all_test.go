@@ -90,11 +90,11 @@ func TestPromptHiddenAll_matchesHF(t *testing.T) {
 	}
 	for _, fx := range g.Fixtures {
 		m := loadFixtureModel(t, fx.Checkpoint, "")
-		if m.w.arch.qwen35 == nil {
+		if m.w.Arch.Qwen35 == nil {
 			t.Fatalf("%s is expected to be a Qwen3.5-family model; the test would not cover the Qwen3.5 path", fx.Checkpoint)
 		}
-		if m.w.arch.HiddenDim != fx.HiddenSize {
-			t.Fatalf("%s: hidden %d, golden %d", fx.Checkpoint, m.w.arch.HiddenDim, fx.HiddenSize)
+		if m.w.Arch.HiddenDim != fx.HiddenSize {
+			t.Fatalf("%s: hidden %d, golden %d", fx.Checkpoint, m.w.Arch.HiddenDim, fx.HiddenSize)
 		}
 		for _, p := range paths {
 			t.Run(fx.Checkpoint+"/"+p.name, func(t *testing.T) {
@@ -176,7 +176,7 @@ func TestPromptHiddenAll_batchedMatchesSequential(t *testing.T) {
 			for _, n := range []int{2, 5, 13, 32, 64} {
 				ids := make([]int, n)
 				for i := range ids {
-					ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+					ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 				}
 				if !m.qwen35BatchN(n, m.NewCache(n)) {
 					t.Fatalf("%d tokens: the batched Qwen3.5 path does not apply, so this would compare a path with itself", n)
@@ -230,7 +230,7 @@ func TestPromptHiddenAll_refusesBadInput(t *testing.T) {
 	if _, err := m.PromptHiddenAll(ctx, nil); err == nil {
 		t.Error("an empty prompt was accepted")
 	}
-	if _, err := m.PromptHiddenAll(ctx, []int{1, m.w.arch.VocabSize}); err == nil {
+	if _, err := m.PromptHiddenAll(ctx, []int{1, m.w.Arch.VocabSize}); err == nil {
 		t.Error("a token id past the vocabulary was accepted")
 	}
 	if _, err := m.PromptHiddenAll(ctx, []int{1, -2}); err == nil {
@@ -277,7 +277,7 @@ func medianOf(v []float64) float64 {
 // fails if the table is the wrong one; this pins the accessor itself, against the checkpoint's own tensors.
 func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
 	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
-	if m.w.arch.TiedLMHead {
+	if m.w.Arch.TiedLMHead {
 		t.Fatal("the fixture is expected to have a separate lm_head")
 	}
 	st, err := embed.OpenSafetensors(filepath.Join("testdata", "qwen3_5-tiny-normw", "model.safetensors"))
@@ -286,17 +286,17 @@ func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
 	}
 	defer st.Close()
 	hs := m.HiddenSize()
-	lm, err := st.TensorF32("lm_head.weight", m.w.arch.VocabSize, hs)
+	lm, err := st.TensorF32("lm_head.weight", m.w.Arch.VocabSize, hs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	emb, err := st.TensorF32("model.embed_tokens.weight", m.w.arch.VocabSize, hs)
+	emb, err := st.TensorF32("model.embed_tokens.weight", m.w.Arch.VocabSize, hs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	differ := false
 	row := make([]float32, hs)
-	for _, id := range []int{0, 1, 17, 128, m.w.arch.VocabSize - 1} {
+	for _, id := range []int{0, 1, 17, 128, m.w.Arch.VocabSize - 1} {
 		if err := m.OutputEmbeddingRow(id, row); err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +310,7 @@ func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
 	if !differ {
 		t.Fatal("the lm_head and the embedding are identical on every probed row, so this test cannot tell them apart")
 	}
-	if m.OutputEmbeddingRow(m.w.arch.VocabSize, row) == nil || m.OutputEmbeddingRow(-1, row) == nil {
+	if m.OutputEmbeddingRow(m.w.Arch.VocabSize, row) == nil || m.OutputEmbeddingRow(-1, row) == nil {
 		t.Error("an id outside the vocabulary was accepted")
 	}
 	if m.OutputEmbeddingRow(0, row[:hs-1]) == nil {
@@ -344,7 +344,7 @@ func (s *stubResidualAll) ResidualAll(_ context.Context, embeddings [][]float32,
 // malformed answer falls back to the CPU rows; a cancellation returns. (The device kernels' numerics are the backend modules' tests'; this pins the decoder's side.)
 func TestPromptHiddenAll_residentRowsGetTheHostFinalNorm(t *testing.T) {
 	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
-	a := m.w.arch
+	a := m.w.Arch
 	ids := []int{3, 9, 27, 81, 5}
 	cpu, err := m.PromptHiddenAll(context.Background(), ids)
 	if err != nil {

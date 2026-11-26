@@ -34,13 +34,13 @@ func TestW4A8Pre_decodeBitIdenticalAndTaken(t *testing.T) {
 				c0 := w4a8PreCalls.Load()
 				var out [][]float32
 				for i := range steps {
-					lg, err := m.forward((i*7919+3)%m.w.arch.VocabSize, cache)
+					lg, err := m.forward((i*7919+3)%m.w.Arch.VocabSize, cache)
 					if err != nil {
 						t.Fatalf("%s step %d: %v", fx, i, err)
 					}
 					out = append(out, slices.Clone(lg))
 				}
-				return out, w4a8PreCalls.Load() - c0, m.w.arch.NumLayers
+				return out, w4a8PreCalls.Load() - c0, m.w.Arch.NumLayers
 			}
 			off, offCalls, _ := run(true)
 			on, onCalls, layers := run(false)
@@ -87,7 +87,7 @@ func TestW4A8Pre_prefillBitIdenticalAndTaken(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				return out, w4a8PreCalls.Load() - c0, m.w.arch.NumLayers
+				return out, w4a8PreCalls.Load() - c0, m.w.Arch.NumLayers
 			}
 			off, offCalls, _ := run(true)
 			on, onCalls, layers := run(false)

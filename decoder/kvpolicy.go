@@ -1,33 +1,25 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 // The f16 KV cache is a backend's capability, so the policy for it lives with the backend: a backend registers a KVF16Policy (cuda/kvpolicy.go does), and the decoder asks it.
 // Which families a backend covers, which build options it declines for, and whether "auto" means f16 there are all the backend's to change without touching this
 // package. What the decoder owns is the resolution order and the facts a policy may look at.
 
-// KVFacts is what a backend's KV policy may look at: the architecture's properties that decide whether a KV cache kernel path applies, without the Architecture itself.
-type KVFacts struct {
-	Family        string // Architecture.Name ("qwen2", "llama", …)
-	MLA           bool   // a latent KV cache (DeepSeek, Kimi)
-	MoE           bool
-	SlidingWindow bool // any sliding-window layer
-	PairwiseRoPE  bool // adjacent-pair rotation (Cohere)
-	MRoPE         bool // multi-section rotary (the VL families)
-	Hybrid        bool // a recurrent or per-layer-geometry mixer: Qwen3.5 DeltaNet, Gemma 4, Laguna, Granite, LFM2
-	KVRowNotWords int  // the first K/V row width (elements a position) that is not a multiple of 4, 0 when every layer's is
-}
-
 // KVF16Policy is one backend's rule for an f16 KV cache.
 type KVF16Policy struct {
 	// Decline returns why the backend cannot hold this model's KV cache as f16 under these options, or "" when it can.
-	Decline func(f KVFacts, o Options) string
+	Decline func(f darch.KVFacts, o Options) string
 	// Auto reports whether "auto" (and the zero KVPrecision) means f16 for a model Decline lets through.
 	Auto func() bool
 	// AutoDecline, when set, returns why "auto" keeps a model Decline lets through at f32 (its quality gate has not passed), "" when auto
 	// may pick f16. An explicit f16 request does not read it.
-	AutoDecline func(f KVFacts, o Options) string
+	AutoDecline func(f darch.KVFacts, o Options) string
 	// DeclineI8, when set, returns why the backend cannot hold this model's KV cache as int8 under these options, "" when it can. nil: the
 	// backend has no int8 cache, and an explicit int8 request is refused.
-	DeclineI8 func(f KVFacts, o Options) string
+	DeclineI8 func(f darch.KVFacts, o Options) string
 }
 
 // kvPolicies holds each backend's KV precision policy. The CUDA default lets ResolveKV answer when the
@@ -45,37 +37,13 @@ var kvPolicies = map[string]KVF16Policy{
 // RegisterKVF16Policy installs a backend's f16 KV policy under its name. Call it from the backend package's init.
 func RegisterKVF16Policy(backend string, p KVF16Policy) { kvPolicies[backend] = p }
 
-func (a *Architecture) kvFacts() KVFacts {
-	return KVFacts{
-		Family:        a.Name,
-		MLA:           a.mla != nil,
-		MoE:           a.MoE != nil,
-		SlidingWindow: a.SlidingWindow > 0,
-		PairwiseRoPE:  a.pairwiseRoPE(),
-		MRoPE:         len(a.MRopeSection) > 0,
-		Hybrid:        a.qwen35 != nil || a.gemma4 != nil || a.laguna != nil || a.granite != nil || a.lfm2 != nil,
-		KVRowNotWords: a.kvRowNotWords(),
-	}
-}
-
-// kvRowNotWords is the first layer's K/V row width that is not a multiple of 4 elements, 0 when none: an int8 row of such a width is not
-// whole 4-byte words, which the CUDA cache's block and host copies move.
-func (a *Architecture) kvRowNotWords() int {
-	for l := range a.NumLayers {
-		if d := a.kvDimAt(l); d%4 != 0 {
-			return d
-		}
-	}
-	return 0
-}
-
 // kvF16Decline is the named backend's reason for holding this model's KV cache at f32, "" when it can be f16 or the backend has no policy.
-func kvF16Decline(backend string, a *Architecture, o Options) string {
+func kvF16Decline(backend string, a *darch.Architecture, o Options) string {
 	p, ok := kvPolicies[backend]
 	if !ok || a == nil {
 		return ""
 	}
-	return p.Decline(a.kvFacts(), o)
+	return p.Decline(a.KVFacts(), o)
 }
 
 // KVF16DeclineReason is the reason a load asked for f16 KV is held at f32 by its backend's policy, "" when it is not held back or the backend has none. serve's

@@ -80,7 +80,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
 	}
-	if dv, tv := draft.w.arch.VocabSize, target.w.arch.VocabSize; dv != tv {
+	if dv, tv := draft.w.Arch.VocabSize, target.w.Arch.VocabSize; dv != tv {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: draft/target vocab mismatch (%d vs %d) — they must share a tokenizer", dv, tv)
 	}
 	if len(prompt) == 0 {

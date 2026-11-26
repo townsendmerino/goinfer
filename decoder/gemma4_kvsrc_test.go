@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 import "testing"
 
 // TestGemma4KVSrcAt_handDerived pins gemma4KVSrcAt (decoder/arch.go) — the shared cross-layer-KV
@@ -36,7 +40,7 @@ func TestGemma4KVSrcAt_handDerived(t *testing.T) {
 	}
 	want := []int{0, 1, 0, 1}
 	for i, w := range want {
-		if got := arch.gemma4KVSrcAt(i); got != w {
+		if got := arch.Gemma4KVSrcAt(i); got != w {
 			t.Errorf("gemma4KVSrcAt(%d) = %d, want %d", i, got, w)
 		}
 	}
@@ -69,7 +73,7 @@ func TestGemma4KVSrcAt_noSharing(t *testing.T) {
 		t.Fatalf("gemma4Architecture: %v", err)
 	}
 	for i := range 4 {
-		if got := arch.gemma4KVSrcAt(i); got != i {
+		if got := arch.Gemma4KVSrcAt(i); got != i {
 			t.Errorf("gemma4KVSrcAt(%d) = %d, want %d (no sharing)", i, got, i)
 		}
 	}
@@ -78,10 +82,10 @@ func TestGemma4KVSrcAt_noSharing(t *testing.T) {
 // TestGemma4KVSrcAt_nonGemma4 confirms a non-gemma4 architecture returns identity unconditionally
 // (a.gemma4 == nil short-circuit) — KVSrcAtResident must be a safe no-op for every other family.
 func TestGemma4KVSrcAt_nonGemma4(t *testing.T) {
-	var a Architecture
+	var a darch.Architecture
 	a.NumLayers = 4
 	for i := range 4 {
-		if got := a.gemma4KVSrcAt(i); got != i {
+		if got := a.Gemma4KVSrcAt(i); got != i {
 			t.Errorf("gemma4KVSrcAt(%d) = %d, want %d (non-gemma4 arch)", i, got, i)
 		}
 	}

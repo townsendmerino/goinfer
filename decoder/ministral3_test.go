@@ -57,26 +57,26 @@ func TestMinistral3_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "mistral3" {
-		t.Fatalf("resolved arch %q, want mistral3", m.w.arch.Name)
+	if m.w.Arch.Name != "mistral3" {
+		t.Fatalf("resolved arch %q, want mistral3", m.w.Arch.Name)
 	}
-	if m.w.arch.SlidingWindow != 0 {
-		t.Errorf("SlidingWindow = %d, want 0 (the real releases ship sliding_window: null)", m.w.arch.SlidingWindow)
+	if m.w.Arch.SlidingWindow != 0 {
+		t.Errorf("SlidingWindow = %d, want 0 (the real releases ship sliding_window: null)", m.w.Arch.SlidingWindow)
 	}
-	if got, want := m.w.arch.AttnTempBeta, 0.2; got != want {
+	if got, want := m.w.Arch.AttnTempBeta, 0.2; got != want {
 		t.Errorf("AttnTempBeta = %v, want %v (llama_4_scaling_beta)", got, want)
 	}
-	if got, want := m.w.arch.AttnTempOrigMaxPos, 8.0; got != want {
+	if got, want := m.w.Arch.AttnTempOrigMaxPos, 8.0; got != want {
 		t.Errorf("AttnTempOrigMaxPos = %v, want %v (original_max_position_embeddings)", got, want)
 	}
-	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.Kind != rope.ScaleYarn {
-		t.Fatalf("ropeScaling = %+v, want YaRN", m.w.arch.ropeScaling)
+	if m.w.Arch.RoPEScaling == nil || m.w.Arch.RoPEScaling.Kind != rope.ScaleYarn {
+		t.Fatalf("ropeScaling = %+v, want YaRN", m.w.Arch.RoPEScaling)
 	}
 	// Proves the DeepSeek-style mscale/mscale_all_dim override actually ran: the DEFAULT
 	// (unhandled) attention_factor for factor=4 would be 0.1*ln(4)+1 ≈ 1.1386 — measurably
 	// different from the ratio this fixture's distinct mscale/mscale_all_dim (0.5/0.8) produces.
 	wantMscale := rope.YarnGetMscale(4.0, 0.5) / rope.YarnGetMscale(4.0, 0.8)
-	if got := m.w.arch.ropeScaling.Mscale; math.Abs(got-wantMscale) > 1e-9 {
+	if got := m.w.Arch.RoPEScaling.Mscale; math.Abs(got-wantMscale) > 1e-9 {
 		t.Errorf("ropeScaling.mscale = %v, want %v (the mscale/mscale_all_dim ratio, not the generic YaRN default ~1.1386)", got, wantMscale)
 	}
 
@@ -201,21 +201,21 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.AttnTempBeta == 0 {
+	if m.w.Arch.AttnTempBeta == 0 {
 		t.Fatalf("fixture has AttnTempBeta==0 — this gate is only meaningful if the fixture " +
 			"exercises FeatAttnTemp; if the fixture changed, this test no longer gates what it claims")
 	}
 
 	beta, origMaxPos := m.BackendView().AttnTempParams()
-	if beta != m.w.arch.AttnTempBeta || origMaxPos != m.w.arch.AttnTempOrigMaxPos {
-		t.Fatalf("AttnTempParams() = (%v, %v), want (%v, %v)", beta, origMaxPos, m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos)
+	if beta != m.w.Arch.AttnTempBeta || origMaxPos != m.w.Arch.AttnTempOrigMaxPos {
+		t.Fatalf("AttnTempParams() = (%v, %v), want (%v, %v)", beta, origMaxPos, m.w.Arch.AttnTempBeta, m.w.Arch.AttnTempOrigMaxPos)
 	}
 
 	// origMaxPos=8 on the fixture: positions 0-7 give floor=0 (scale==1, the identity a SHORT
 	// test would only ever see — the exact "minimal repro hides the bug" trap AttnTempBeta's own
 	// comment warns about), 8-15 give floor=1, 16-23 give floor=2. Covers both.
 	for pos := range 24 {
-		want := float32(1 + m.w.arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/m.w.arch.AttnTempOrigMaxPos)))
+		want := float32(1 + m.w.Arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/m.w.Arch.AttnTempOrigMaxPos)))
 		got := m.BackendView().AttnTempScale(pos)
 		if got != want {
 			t.Errorf("AttnTempScale(%d) = %v, want %v (sequential formula)", pos, got, want)

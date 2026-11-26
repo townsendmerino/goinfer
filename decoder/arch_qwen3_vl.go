@@ -3,6 +3,8 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // qwen3_vlArchitecture expresses Qwen3-VL's TEXT decoder only: a Qwen3 dense decoder (per-head q/k RMSNorm, GQA, no q/k/v bias, derived
@@ -12,7 +14,7 @@ import (
 // formula, unlike Qwen2.5-VL's contiguous blocks (rope.MRoPEComponentInterleaved vs rope.MRoPEComponent, internal/runtime/rope): irrelevant for a degenerate
 // text position, load-bearing once an image path runs, so it is wired here. vision_config/deepstack_visual_indexes are ignored: no vision
 // tower and no DeepStack injection in this adapter.
-func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen3_vlArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	section, err := qwen3VLMRopeSection(cfg, "qwen3_vl")
 	if err != nil {
 		return nil, nil, err

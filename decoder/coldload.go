@@ -3,6 +3,7 @@ package decoder
 import (
 	"path/filepath"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
@@ -51,7 +52,7 @@ var (
 
 // qualifies reports whether the policy reads a bundle of fileBytes for arch first when it is cold, in a load whose
 // backend is the CPU (onCPU) or another.
-func (p coldLoadPolicy) qualifies(arch *Architecture, fileBytes int64, onCPU bool) bool {
+func (p coldLoadPolicy) qualifies(arch *darch.Architecture, fileBytes int64, onCPU bool) bool {
 	return p.supported && (onCPU || !p.cpuOnly) && (p.anyBundle || expertMatricesAreSmall(arch, fileBytes))
 }
 
@@ -97,7 +98,7 @@ const coldSmallMatrixBytes = 4 << 20
 // expertMatricesAreSmall reports whether a bundle of fileBytes for arch stores its experts as separate matrices that
 // average at most coldSmallMatrixBytes. A dense model, and an MoE with a few large experts, walk cheaply and are left
 // alone.
-func expertMatricesAreSmall(arch *Architecture, fileBytes int64) bool {
+func expertMatricesAreSmall(arch *darch.Architecture, fileBytes int64) bool {
 	if arch == nil || arch.MoE == nil || arch.MoE.NumExperts <= 0 || arch.NumLayers <= 0 {
 		return false
 	}
@@ -120,7 +121,7 @@ var (
 // backend be. It is called once the header is read and before any matrix is. The returned function undoes what must be undone after the walk.
 // A bundle the policy does not cover, and one already in the page cache, cost a residency sample at most: the memory
 // probes run only for a cold bundle.
-func prepareColdLoad(path string, mapping []byte, arch *Architecture, opts Options, be Backend) (after func()) {
+func prepareColdLoad(path string, mapping []byte, arch *darch.Architecture, opts Options, be Backend) (after func()) {
 	after = func() {}
 	if !coldPolicy.qualifies(arch, int64(len(mapping)), be.Name() == "cpu") {
 		return after

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // D8A-G: under Backend "cpu" the int4 layer
@@ -38,21 +39,21 @@ func d8aFixtures(t *testing.T) []string {
 }
 
 // d8aInt4 is every int4 matrix of a loaded model the CPU reads: Weights.matmulWeights and Gemma 4's expert stacks.
-func d8aInt4(w *Weights) []*linalg.WeightMat {
+func d8aInt4(w *darch.Weights) []*linalg.WeightMat {
 	var out []*linalg.WeightMat
 	add := func(m *linalg.WeightMat) {
 		if m.IsInt4() {
 			out = append(out, m)
 		}
 	}
-	for _, m := range w.matmulWeights() {
+	for _, m := range w.MatmulWeights() {
 		add(m)
 	}
 	for i := range w.Layers {
-		if g := w.Layers[i].gemma4moe; g != nil {
-			for e := range g.expertsGateUp {
-				add(&g.expertsGateUp[e])
-				add(&g.expertsDown[e])
+		if g := w.Layers[i].Gemma4MoE; g != nil {
+			for e := range g.ExpertsGateUp {
+				add(&g.ExpertsGateUp[e])
+				add(&g.ExpertsDown[e])
 			}
 		}
 	}
@@ -85,7 +86,7 @@ func d8aLoad(t *testing.T) []d8aPair {
 		t.Cleanup(func() { ref.Close(); cpu.Close() })
 		moe := false
 		for i := range cpu.w.Layers {
-			moe = moe || len(cpu.w.Layers[i].Experts) > 0 || cpu.w.Layers[i].gemma4moe != nil
+			moe = moe || len(cpu.w.Layers[i].Experts) > 0 || cpu.w.Layers[i].Gemma4MoE != nil
 		}
 		out = append(out, d8aPair{dir: d, cpu: cpu, ref: ref, moe: moe})
 	}

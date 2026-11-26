@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // TestP19FusedAttention measures whether the FUSED (FlashAttention-style) schedule beats the materialized
@@ -613,7 +614,7 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 		kvDim = nKV * hd
 		qDim  = nH * hd
 	)
-	arch := &Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 0.25}
+	arch := &darch.Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 0.25}
 	for _, tc := range []struct {
 		name     string
 		K, nKeys int

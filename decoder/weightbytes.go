@@ -5,6 +5,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -154,7 +156,7 @@ func (m *Model) cudaDerivedTableBytes() int64 {
 				n += 4 * int64(len(m.BackendView().Layer(l).RopeInvFreq()))
 			}
 		}
-		if lw := &m.w.Layers[l]; isMoE && (len(lw.Experts) > 0 || lw.gemma4moe != nil) && len(lw.RouterBias) == 0 {
+		if lw := &m.w.Layers[l]; isMoE && (len(lw.Experts) > 0 || lw.Gemma4MoE != nil) && len(lw.RouterBias) == 0 {
 			n += 4 * int64(nE)
 		}
 	}
@@ -174,14 +176,14 @@ func (m *Model) denseVectorBytes() int64 {
 		n += f32SliceBytes(l.QBias, l.KBias, l.VBias, l.OBias, l.QNorm, l.KNorm, l.PreAttnNorm, l.PreAttnNormBias, l.PostAttnNorm,
 			l.UpBias, l.DownBias, l.PreMLPNorm, l.PreMLPNormBias, l.PostMLPNorm, l.RouterBias, l.AttnSinks, l.PostPLENorm,
 			l.SharedExpert.GateBias, l.SharedExpert.UpBias, l.SharedExpert.DownBias)
-		if q := l.qattn; q != nil {
-			n += f32SliceBytes(q.qNorm, q.kNorm)
+		if q := l.QAttn; q != nil {
+			n += f32SliceBytes(q.QNorm, q.KNorm)
 		}
-		if mla := l.mla; mla != nil {
-			n += f32SliceBytes(mla.qALayernorm, mla.kvALayernorm)
+		if mla := l.MLA; mla != nil {
+			n += f32SliceBytes(mla.QALayernorm, mla.KVALayernorm)
 		}
-		if mb := l.mamba; mb != nil {
-			n += f32SliceBytes(mb.convB, mb.aLog, mb.d, mb.dtBias, mb.normW)
+		if mb := l.Mamba; mb != nil {
+			n += f32SliceBytes(mb.ConvB, mb.ALog, mb.D, mb.DtBias, mb.NormW)
 		}
 	}
 	return n + m.gemma4MoEVectorBytes()
@@ -194,8 +196,8 @@ func (m *Model) gemma4MoEVectorBytes() int64 {
 	}
 	var n int64
 	for i := range m.w.Layers {
-		if mo := m.w.Layers[i].gemma4moe; mo != nil {
-			n += f32SliceBytes(mo.postFFNNorm1, mo.preFFNNorm2, mo.postFFNNorm2, mo.routerScale, mo.perExpertScale)
+		if mo := m.w.Layers[i].Gemma4MoE; mo != nil {
+			n += f32SliceBytes(mo.PostFFNNorm1, mo.PreFFNNorm2, mo.PostFFNNorm2, mo.RouterScale, mo.PerExpertScale)
 		}
 	}
 	return n
@@ -225,14 +227,14 @@ func (m *Model) cpuStructBytes() (dense, experts int64) {
 		return 0, 0
 	}
 	w := m.w
-	dense = int64(unsafe.Sizeof(*w)) + int64(cap(w.Layers))*int64(unsafe.Sizeof(LayerWeights{})) +
-		int64(len(w.kquant))*int64(unsafe.Sizeof((*int8)(nil))+unsafe.Sizeof(kquantSrc{}))
+	dense = int64(unsafe.Sizeof(*w)) + int64(cap(w.Layers))*int64(unsafe.Sizeof(darch.LayerWeights{})) +
+		int64(len(w.KQuant))*int64(unsafe.Sizeof((*int8)(nil))+unsafe.Sizeof(archparts.KQuantSrc{}))
 	for i := range w.Layers {
 		l := &w.Layers[i]
-		dense += ptrSize(l.delta) + ptrSize(l.qattn) + ptrSize(l.shortConv) + ptrSize(l.mamba) + ptrSize(l.mla) + ptrSize(l.kda) + ptrSize(l.gemma4moe)
-		experts += int64(cap(l.Experts)) * int64(unsafe.Sizeof(expertWeights{}))
-		if mo := l.gemma4moe; mo != nil {
-			experts += int64(cap(mo.expertsGateUp)+cap(mo.expertsDown)) * int64(unsafe.Sizeof(linalg.WeightMat{}))
+		dense += ptrSize(l.Delta) + ptrSize(l.QAttn) + ptrSize(l.ShortConv) + ptrSize(l.Mamba) + ptrSize(l.MLA) + ptrSize(l.KDA) + ptrSize(l.Gemma4MoE)
+		experts += int64(cap(l.Experts)) * int64(unsafe.Sizeof(archparts.ExpertWeights{}))
+		if mo := l.Gemma4MoE; mo != nil {
+			experts += int64(cap(mo.ExpertsGateUp)+cap(mo.ExpertsDown)) * int64(unsafe.Sizeof(linalg.WeightMat{}))
 		}
 	}
 	return dense, experts
@@ -256,8 +258,8 @@ func (m *Model) mambaProjSavings(backend string) int64 {
 	hidden := m.w.Cfg.HiddenDim
 	var n int64
 	for i := range m.w.Layers {
-		if mb := m.w.Layers[i].mamba; mb != nil && mb.inQ.Rows() == 0 {
-			n += saved(len(mb.inProj), len(mb.inProj)/hidden) + saved(len(mb.outProj), hidden)
+		if mb := m.w.Layers[i].Mamba; mb != nil && mb.InQ.Rows() == 0 {
+			n += saved(len(mb.InProj), len(mb.InProj)/hidden) + saved(len(mb.OutProj), hidden)
 		}
 	}
 	return n
@@ -345,55 +347,55 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 
 		// qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention): the three dominant projections are WeightMats, and the
 		// rest are f32. At most one of these is non-nil.
-		if d := l.delta; d != nil {
-			count(&d.inProjQKV)
-			count(&d.inProjZ)
-			count(&d.outProj)
-			dense += f32SliceBytes(d.inProjB, d.inProjA, d.convW, d.dtBias, d.negExpA, d.normW)
+		if d := l.Delta; d != nil {
+			count(&d.InProjQKV)
+			count(&d.InProjZ)
+			count(&d.OutProj)
+			dense += f32SliceBytes(d.InProjB, d.InProjA, d.ConvW, d.DtBias, d.NegExpA, d.NormW)
 		}
-		if q := l.qattn; q != nil {
-			count(&q.qProj)
-			count(&q.kProj)
-			count(&q.vProj)
-			count(&q.oProj)
+		if q := l.QAttn; q != nil {
+			count(&q.QProj)
+			count(&q.KProj)
+			count(&q.VProj)
+			count(&q.OProj)
 		}
 		// MLA (DeepSeek, Kimi) projections are kept as f32 slices. f32 slices are never mmap-aliased (LoadSerializedWeights
 		// copies float arrays), so there is no mmap counterpart.
-		if mla := l.mla; mla != nil {
-			dense += f32SliceBytes(mla.qAProj, mla.qBProj, mla.qProj, mla.kvAProj, mla.kvBProj, mla.oProj, mla.gProj) +
-				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ)
+		if mla := l.MLA; mla != nil {
+			dense += f32SliceBytes(mla.QAProj, mla.QBProj, mla.QProj, mla.KVAProj, mla.KVBProj, mla.OProj, mla.GProj) +
+				wmBytes(&mla.QAQ) + wmBytes(&mla.QBQ) + wmBytes(&mla.QQ) + wmBytes(&mla.KVAQ) + wmBytes(&mla.OQ)
 		}
 		// Kimi Delta Attention (Bailing Hybrid's linear layers): six quantized projections, the three depthwise conv kernels and
 		// the small f32 gates.
-		if k := l.kda; k != nil {
-			for _, w := range []*linalg.WeightMat{&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj} {
+		if k := l.KDA; k != nil {
+			for _, w := range []*linalg.WeightMat{&k.QProj, &k.KProj, &k.VProj, &k.FProj, &k.GProj, &k.OProj} {
 				count(w)
 			}
-			dense += f32SliceBytes(k.qConvW, k.kConvW, k.vConvW, k.bProj, k.dtBias, k.aLog, k.oNormW)
+			dense += f32SliceBytes(k.QConvW, k.KConvW, k.VConvW, k.BProj, k.DtBias, k.ALog, k.ONormW)
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
-		if mb := l.mamba; mb != nil {
-			dense += f32SliceBytes(mb.inProj, mb.convW, mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
+		if mb := l.Mamba; mb != nil {
+			dense += f32SliceBytes(mb.InProj, mb.ConvW, mb.OutProj) + wmBytes(&mb.InQ) + wmBytes(&mb.OutQ)
 		}
 		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
-		if sc := l.shortConv; sc != nil {
-			count(&sc.inProj)
-			count(&sc.outProj)
-			dense += f32SliceBytes(sc.convW)
+		if sc := l.ShortConv; sc != nil {
+			count(&sc.InProj)
+			count(&sc.OutProj)
+			dense += f32SliceBytes(sc.ConvW)
 		}
 		// Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown alias l.GateProj/UpProj/DownProj (the gemma4Layer comment in
 		// serialize.go), and preFFNNorm/postFFNNorm alias l.PreMLPNorm/PostMLPNorm, all counted above. The fused experts page the
 		// same way as l.Experts.
-		if mo := l.gemma4moe; mo != nil {
-			count(&mo.routerProj)
+		if mo := l.Gemma4MoE; mo != nil {
+			count(&mo.RouterProj)
 			var fusedBytes, mmapFusedBytes int64
-			for e := range mo.expertsGateUp {
-				fusedBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
-				mmapFusedBytes += mmapAliasedBytes(m, &mo.expertsGateUp[e]) + mmapAliasedBytes(m, &mo.expertsDown[e])
+			for e := range mo.ExpertsGateUp {
+				fusedBytes += wmBytes(&mo.ExpertsGateUp[e]) + wmBytes(&mo.ExpertsDown[e])
+				mmapFusedBytes += mmapAliasedBytes(m, &mo.ExpertsGateUp[e]) + mmapAliasedBytes(m, &mo.ExpertsDown[e])
 			}
 			fullExpertBytes = append(fullExpertBytes, fusedBytes)
 			mmapExpertBytes = append(mmapExpertBytes, mmapFusedBytes)
-			expertCounts = append(expertCounts, len(mo.expertsGateUp))
+			expertCounts = append(expertCounts, len(mo.ExpertsGateUp))
 		}
 	}
 	// capAt caps a per-expert-kind full byte sum at `slots` experts when paging applies. It serves both expertBytesAt and

@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -41,8 +42,8 @@ type gemma4Token struct {
 // newGemma4Token makes position pos's state in t, reusing its buffers (a nil t is a fresh one). The PLE inputs are computed from h,
 // the embedding, so it is made before layer 0.
 func (m *Model) newGemma4Token(prog *layerProgram, h []float32, pleID, pos int, t *gemma4Token) *gemma4Token {
-	arch := m.w.arch
-	g := arch.gemma4
+	arch := m.w.Arch
+	g := arch.Gemma4
 	nH := arch.NumHeads
 	maxHd := max(g.GlobalHeadDim, arch.HeadDim)
 	nkMax := pos + 1
@@ -68,9 +69,9 @@ func (t *gemma4Token) ple(l int) []float32 { return t.perLayer[l*t.pleDim : (l+1
 // gemma4AttnToken is one Gemma 4 attention sublayer (opGemma4Attn) for position pos, x → out: q (normed, roped); on a layer that
 // owns its KV, k (normed, roped) and v (from k when the checkpoint ties them, then normed without a weight), appended; then
 // attention over p.KVSrc's keys from the window's start, and o_proj.
-func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *LayerWeights, cache *KVCache, l, pos int, t *gemma4Token) {
-	arch, be := m.w.arch, m.be
-	nH, hd, nKV := arch.NumHeads, arch.headDimAt(l), arch.kvHeadsAt(l)
+func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *darch.LayerWeights, cache *KVCache, l, pos int, t *gemma4Token) {
+	arch, be := m.w.Arch, m.be
+	nH, hd, nKV := arch.NumHeads, arch.HeadDimAt(l), arch.KVHeadsAt(l)
 	q := scratchF32(&t.q, nH*hd)
 	t.hq.prepare(be, &lw.QProj, x, 1)
 	matmulPre(be, &lw.QProj, &t.hq, x, q, 1)
@@ -109,7 +110,7 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 	gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, p.Scale, &t.sc)
 	if cache.subCapture && !(seamPlantForTest == plantCtxBeforeAttend && l == 1) { // the pre-o-proj context
 		c := ctx
-		if seamPlantForTest == plantCtxNarrow && arch.isGlobalLayer(l) {
+		if seamPlantForTest == plantCtxNarrow && arch.IsGlobalLayer(l) {
 			c = ctx[:min(len(ctx), nH*arch.HeadDim)]
 		}
 		cache.subCtx[l] = append(cache.subCtx[l][:0], c...)
@@ -118,8 +119,8 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 }
 
 // gemma4DenseFFN is a dense Gemma 4 layer's GeGLU at its own width, x → out, sharing the position's quantized activation.
-func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, width int, t *gemma4Token) error {
-	if act != ActGeluTanh {
+func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *darch.LayerWeights, width int, t *gemma4Token) error {
+	if act != darch.ActGeluTanh {
 		return fmt.Errorf("decoder: Gemma 4's dense FFN is GELU-tanh, not activation %d", act)
 	}
 	be, hq := m.be, &t.hq
@@ -141,7 +142,7 @@ func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, 
 
 // gemma4PLEBranch adds layer l's per-layer-embedding branch to h: gate → gelu × the layer's PLE input → proj → norm → +residual.
 // sub is scratch of the hidden width.
-func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *LayerWeights, ne *normEpsParams, sub []float32) {
+func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *darch.LayerWeights, ne *normEpsParams, sub []float32) {
 	pl := t.ple(l)
 	px := scratchF32(&t.px, len(pl))
 	matmul(m.be, &lw.PLEGate, h, px, 1)
@@ -153,22 +154,6 @@ func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *LayerWei
 	matmul(m.be, &lw.PLEProj, px, sub, 1)
 	normact.RMSInto(sub, sub, lw.PostPLENorm, 1, len(h), ne.Eps, ne.AddOne)
 	addResidual(h, sub)
-}
-
-// gemma4InvFreq builds the RoPE inverse-frequency table. For full rotary,
-// rotaryDim == headDim and the result is headDim/2 entries. For proportional
-// (partial) rotary, rotaryDim < headDim: the first rotaryDim/2 entries are the
-// real frequencies (spaced by 1/headDim, NOT 1/rotaryDim) and the rest are zero,
-// so rope.Apply (which rotates len(invFreq) pairs split at headDim/2) leaves the
-// trailing dims unrotated — matching HF's "proportional" RoPE.
-func gemma4InvFreq(headDim, rotaryDim int, base float64) []float64 {
-	half := headDim / 2
-	inv := make([]float64, half)
-	angles := rotaryDim / 2
-	for i := range angles {
-		inv[i] = 1.0 / math.Pow(base, float64(2*i)/float64(headDim))
-	}
-	return inv // entries [angles:half] stay 0 → no rotation there
 }
 
 // rmsNormNoWeight applies a scale-less RMSNorm per head (Gemma 4's v_norm:
@@ -270,8 +255,8 @@ func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
 // gemma4PLEInputsScratch is gemma4PLEInputs with its [NumLayers·pleDim] context-aware buffer taken from scratch when it is that
 // long (a prefill embedding row after row), else allocated.
 func (m *Model) gemma4PLEInputsScratch(h []float32, pleTokenID int, dst, scratch []float32) {
-	arch := m.w.arch
-	pleDim := arch.gemma4.HiddenSizePerLayerInput
+	arch := m.w.Arch
+	pleDim := arch.Gemma4.HiddenSizePerLayerInput
 	m.w.PerLayerTokenEmbed.Row(pleTokenID, dst)
 	tScale := float32(math.Sqrt(float64(pleDim)))
 	for i := range dst {

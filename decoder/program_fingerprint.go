@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"hash"
 	"math"
 	"os"
@@ -81,9 +82,9 @@ func writeValue(h hash.Hash, v reflect.Value) {
 // configExperts is the experts predicate a config alone gives: Llama 4's per-layer MoE flags, else the layers from
 // FirstKDense on of an architecture with MoE. It matches what the loaders build (Weights.hasExperts); TestProgramFingerprint_configMatchesWeights
 // holds that on every fixture present.
-func configExperts(a *Architecture) func(int) bool {
-	if a.llama4 != nil {
-		return func(l int) bool { return l < len(a.llama4.isMoE) && a.llama4.isMoE[l] }
+func configExperts(a *darch.Architecture) func(int) bool {
+	if a.Llama4 != nil {
+		return func(l int) bool { return l < len(a.Llama4.IsMoE) && a.Llama4.IsMoE[l] }
 	}
 	return func(l int) bool { return a.MoE != nil && l >= a.FirstKDense }
 }

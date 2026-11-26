@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -18,7 +19,7 @@ import (
 // the quantized (W4A8/W8A8) forward re-rounds activations to int8 at every projection and a perturbation far below one int8
 // step still flips rounding decisions that compound per layer. Measurement and the case it explained:
 // docs/code-notes/decoder.md#applyNormULPNoiseDiag.
-func applyNormULPNoiseDiag(w *Weights) {
+func applyNormULPNoiseDiag(w *darch.Weights) {
 	v := os.Getenv("GOINFER_NORM_ULP_NOISE")
 	if v == "" || w == nil {
 		return

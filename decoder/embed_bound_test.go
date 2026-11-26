@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"strings"
 	"testing"
 )
@@ -12,15 +13,15 @@ import (
 // words. The bound is asserted HERE, where the cost is incurred, so a caller other than the serving embedder cannot
 // reintroduce it.
 func TestHiddenLast_refusesMoreTokensThanTheContextWindow(t *testing.T) {
-	m := &Model{w: &Weights{
+	m := &Model{w: &darch.Weights{
 		Cfg:  Config{MaxPositions: 8},
-		arch: &Architecture{Name: "test", NumLayers: 1, HiddenDim: 4, VocabSize: 16},
+		Arch: &darch.Architecture{Name: "test", NumLayers: 1, HiddenDim: 4, VocabSize: 16},
 	}}
 	// THE FIELD MATTERS. The Architecture's own MaxPositions is the GPT-2 learned-position table
 	// size and is 0 for every RoPE family; keying the guard on it would make this test pass while
 	// the guard never fired in production. Pinned so a "simplification" back to a.MaxPositions
 	// fails here.
-	if m.w.arch.MaxPositions != 0 {
+	if m.w.Arch.MaxPositions != 0 {
 		t.Fatal("premise broke: this fixture's Architecture.MaxPositions must be 0, which is what " +
 			"every RoPE family has — that is the field the guard must NOT use")
 	}
@@ -45,9 +46,9 @@ func TestHiddenLast_refusesMoreTokensThanTheContextWindow(t *testing.T) {
 
 // A model that declares no window (0) must not be bounded to zero — that would refuse everything.
 func TestHiddenLast_unknownWindowDoesNotRefuseEverything(t *testing.T) {
-	m := &Model{w: &Weights{
+	m := &Model{w: &darch.Weights{
 		Cfg:  Config{MaxPositions: 0},
-		arch: &Architecture{Name: "test", NumLayers: 1, HiddenDim: 4, VocabSize: 16},
+		Arch: &darch.Architecture{Name: "test", NumLayers: 1, HiddenDim: 4, VocabSize: 16},
 	}}
 	if _, err := m.HiddenLast(make([]int, 32)); err != nil && strings.Contains(err.Error(), "context_length_exceeded") {
 		t.Errorf("an unknown context window rejected a 32-token input: %v", err)

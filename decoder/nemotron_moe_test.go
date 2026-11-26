@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -37,13 +39,13 @@ func TestNemotron3NanoMoE_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &nemotronTensorSchema || arch.nemotron == nil {
+	if schema != &nemotronTensorSchema || arch.Nemotron == nil {
 		t.Fatalf("schema/nemotron mismatch")
 	}
-	want := []uint8{nemoMamba, nemoAttn, nemoMoE}
+	want := []uint8{archparts.NemoMamba, archparts.NemoAttn, archparts.NemoMoE}
 	for i, k := range want {
-		if arch.nemotron.blockKind[i] != k {
-			t.Errorf("blockKind[%d]=%d, want %d", i, arch.nemotron.blockKind[i], k)
+		if arch.Nemotron.BlockKind[i] != k {
+			t.Errorf("blockKind[%d]=%d, want %d", i, arch.Nemotron.BlockKind[i], k)
 		}
 	}
 	if arch.MoE == nil {
@@ -100,17 +102,17 @@ func TestNemotron3NanoMoE_descriptor(t *testing.T) {
 //	want = [2*w0+4*w1+4, 2*w0+4*w1+4]
 func TestNemotron3NanoMoE_forward(t *testing.T) {
 	hidden, inter := 2, 2
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		HiddenDim: hidden,
 		MoE: &MoEConfig{
 			NumExperts: 2, TopK: 2, NormTopKProb: true, IntermediateDim: inter,
 			SharedIntermediateDim: inter, RouterSigmoid: true, RoutedScale: 1.0, SharedUngated: true,
 		},
 	}
-	lw := &LayerWeights{
+	lw := &darch.LayerWeights{
 		Router:     linalg.WrapF32([]float32{2, 0, 0, 1}, 2, hidden), // logits = [2n0, n1]
 		RouterBias: []float32{0, 0},
-		Experts: []expertWeights{
+		Experts: []archparts.ExpertWeights{
 			{
 				Up:   linalg.WrapF32([]float32{1, 0, 0, 1}, inter, hidden), // identity
 				Down: linalg.WrapF32([]float32{1, 1, 1, 1}, hidden, inter), // row-sum
@@ -120,7 +122,7 @@ func TestNemotron3NanoMoE_forward(t *testing.T) {
 				Down: linalg.WrapF32([]float32{1, 0, 0, 1}, hidden, inter), // identity
 			},
 		},
-		SharedExpert: expertWeights{
+		SharedExpert: archparts.ExpertWeights{
 			Up:   linalg.WrapF32([]float32{1, 1, 1, 1}, inter, hidden), // row-sum
 			Down: linalg.WrapF32([]float32{1, 0, 0, 1}, hidden, inter), // identity
 		},

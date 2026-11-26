@@ -38,7 +38,7 @@ func TestGraniteResidentBridge(t *testing.T) {
 	t.Logf("multipliers: emb=%.4g resid=%.4g logitScale=%.4g attnScale=%.4g", embMul, residMul, logitScale, attnScale)
 
 	hidden, _, _, _, _, _, _ := m.Dims()
-	nLayers := m.w.arch.NumLayers
+	nLayers := m.w.Arch.NumLayers
 	mamba, attn := 0, 0
 	want := map[string]int{"inProj": projDim * hidden, "convW": convDim * dConv, "convB": convDim,
 		"aLog": nHeads, "d": nHeads, "dtBias": nHeads, "normW": dInner, "outProj": hidden * dInner}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -26,7 +28,7 @@ import (
 //   - No QK-norm, embed scale, logit softcap or attention sink; rotate_half is the standard NeoX half-split (ropeInterleave false).
 //   - inv_freq is recomputed per forward in the reference (not a cached persistent=False buffer), so there is no internlm2-class
 //     fast-init corruption risk on this family.
-func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func spark25Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	hd := cfg.EffectiveHeadDim()
 	if hd != 256 {
 		// Not a hard architectural requirement — but every released Spark-X2.5 config sets it,
@@ -69,7 +71,7 @@ func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		rotaryLocal = hd // sliding rotates FULL width while global is partial — must be explicit (see lagunaArchitecture's identical guard)
 	}
 
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "spark2_5",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -78,18 +80,18 @@ func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2, // sequential, NOT NormParallel — see the doc comment's first correction
-		Act:             ActGelu,  // exact erf GELU, inside a GATED (SwiGLU-shaped) MLP — see the doc comment's second correction
-		QKVBias:         false,    // guarded above: attention_bias=true rejected, buildSpark25Weights loads no bias tensors
+		NormPlacement:   darch.NormPre2, // sequential, NOT NormParallel — see the doc comment's first correction
+		Act:             darch.ActGelu,  // exact erf GELU, inside a GATED (SwiGLU-shaped) MLP — see the doc comment's second correction
+		QKVBias:         false,          // guarded above: attention_bias=true rejected, buildSpark25Weights loads no bias tensors
 		OutBias:         false,
 		QKNorm:          false,
-		AttnGate:        GateSigmoid,
+		AttnGate:        darch.GateSigmoid,
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   cfg.SlidingWindow,
-		layerIsGlobal:   cfg.IsGlobalLayer,
+		LayerIsGlobal:   cfg.IsGlobalLayer,
 		RoPEGlobalBase:  full.Base,
 		RoPELocalBase:   sliding.Base,
 		RotaryDim:       rotaryGlobal,

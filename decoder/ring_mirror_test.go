@@ -134,7 +134,7 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 			defer m.Close()
 			prev := ringDirectDecode
 			defer func() { ringDirectDecode = prev }()
-			vocab := m.w.arch.VocabSize
+			vocab := m.w.Arch.VocabSize
 			if vocab <= 8 {
 				t.Fatalf("vocab %d", vocab)
 			}
@@ -199,11 +199,11 @@ func TestKvBytesForCtx_countsTheRingMirror(t *testing.T) {
 	const nLayers, nH, nKV, hd, W = 2, 4, 2, 8, 16
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // layer 0 local, layer 1 global
 	arch.NumLayers = nLayers
-	dim := arch.kvDimAt(0)
+	dim := arch.KVDimAt(0)
 	if dim != nKV*hd {
 		t.Fatalf("kvDimAt = %d, want %d: the test arch does not price layers the way the model does", dim, nKV*hd)
 	}
-	if !arch.ringLayerAt(0) || arch.ringLayerAt(1) {
+	if !arch.RingLayerAt(0) || arch.RingLayerAt(1) {
 		t.Fatal("VOID: the test arch's local layer is not a ring, or its global layer is")
 	}
 	f32Row, i8Row := 4*dim, dim+4*nKV // one position's K (or V) row

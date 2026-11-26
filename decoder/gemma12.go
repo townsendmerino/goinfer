@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -41,7 +43,7 @@ func gemma12Rope(cfg *Config, arch string) (float64, error) {
 }
 
 // gemmaTensorSchema: Gemma 1's names are Llama's, with the head tied to the embedding.
-var gemmaTensorSchema = tensorSchema{
+var gemmaTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "", // tied
 	FinalNorm:   "model.norm.weight",
@@ -57,7 +59,7 @@ var gemmaTensorSchema = tensorSchema{
 }
 
 // gemma2TensorSchema: gemma3's sandwich names without q_norm / k_norm.
-var gemma2TensorSchema = tensorSchema{
+var gemma2TensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "", // tied
 	FinalNorm:    "model.norm.weight",
@@ -74,7 +76,7 @@ var gemma2TensorSchema = tensorSchema{
 	PostMLPNorm:  "post_feedforward_layernorm.weight",
 }
 
-func gemmaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func gemmaArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if cfg.HeadDim == 0 {
 		cfg.HeadDim = 256 // GemmaConfig's default; both releases set it
 	}
@@ -88,17 +90,17 @@ func gemmaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name: "gemma", HiddenDim: cfg.HiddenDim, NumLayers: cfg.NumLayers, NumHeads: cfg.NumHeads, NumKVHeads: cfg.NumKVHeads,
 		HeadDim: cfg.HeadDim, IntermediateDim: cfg.IntermediateDim, VocabSize: cfg.VocabSize,
-		Norm: NormRMS, RMSAddOne: true, NormEps: cfg.RMSNormEps, NormPlacement: NormPre2, Act: ActGeluTanh,
+		Norm: darch.NormRMS, RMSAddOne: true, NormEps: cfg.RMSNormEps, NormPlacement: darch.NormPre2, Act: darch.ActGeluTanh,
 		AttnScale:     1 / math.Sqrt(float64(cfg.HeadDim)),
 		RoPELocalBase: base, RoPEGlobalBase: base,
 		EmbedScale: math.Sqrt(float64(cfg.HiddenDim)), TiedLMHead: true,
 	}, &gemmaTensorSchema, nil
 }
 
-func gemma2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func gemma2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if cfg.HeadDim == 0 {
 		cfg.HeadDim = 256
 	}
@@ -126,12 +128,12 @@ func gemma2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name: "gemma2", HiddenDim: cfg.HiddenDim, NumLayers: cfg.NumLayers, NumHeads: cfg.NumHeads, NumKVHeads: cfg.NumKVHeads,
 		HeadDim: cfg.HeadDim, IntermediateDim: cfg.IntermediateDim, VocabSize: cfg.VocabSize,
-		Norm: NormRMS, RMSAddOne: true, NormEps: cfg.RMSNormEps, NormPlacement: NormSandwich4, Act: ActGeluTanh,
+		Norm: darch.NormRMS, RMSAddOne: true, NormEps: cfg.RMSNormEps, NormPlacement: darch.NormSandwich4, Act: darch.ActGeluTanh,
 		AttnScale:     math.Pow(cfg.QueryPreAttnScalar, -0.5),
-		SlidingWindow: cfg.SlidingWindow, layerIsGlobal: cfg.IsGlobalLayer,
+		SlidingWindow: cfg.SlidingWindow, LayerIsGlobal: cfg.IsGlobalLayer,
 		RoPELocalBase: base, RoPEGlobalBase: base,
 		EmbedScale: math.Sqrt(float64(cfg.HiddenDim)), TiedLMHead: true,
 		FinalLogitSoftcap: cfg.FinalLogitSoftcap, AttnLogitSoftcap: cfg.AttnLogitSoftcap,

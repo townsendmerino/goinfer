@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // The batched Qwen3.5 forward is the batched walker over the family's program, for PromptHidden (Route B's hidden state), prefix sharing and the image prefill. The per-token forward reads every weight once
@@ -21,15 +22,15 @@ func (m *Model) qwen35BatchN(K int, cache *KVCache) bool {
 // over a cache that carries m-RoPE positions, which runLayersQwen35N rotates the full-attention layers' q and k by. qwen35BatchN
 // keeps the exclusion for its other callers (prefix sharing documents "no m-RoPE" as a precondition).
 func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
-	a := m.w.arch
-	return K > 1 && a.qwen35 != nil && !a.qwen35.PlainFullAttn && a.NormPlacementLinear == nil &&
-		a.NormPlacement == NormPre2 && m.layerPager == nil && cache.captureLayers == nil && cache.treeMask == nil &&
+	a := m.w.Arch
+	return K > 1 && a.Qwen35 != nil && !a.Qwen35.PlainFullAttn && a.NormPlacementLinear == nil &&
+		a.NormPlacement == darch.NormPre2 && m.layerPager == nil && cache.captureLayers == nil && cache.treeMask == nil &&
 		!cache.localAny && m.w.Embed.Rows() != 0 &&
-		(a.MoE != nil || a.Act == ActSiLU)
+		(a.MoE != nil || a.Act == darch.ActSiLU)
 }
 
 // runLayersQwen35N runs K embedded rows h [K*HiddenDim] through every layer on the batched walker, advances cache by K, and
 // returns the post-final-norm hidden states [K*HiddenDim]. h is consumed. The caller checks qwen35BatchN first.
 func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
-	return m.walkBatch(reqCtx, m.program(), h, cache, false, len(h)/m.w.arch.HiddenDim, nil, nil)
+	return m.walkBatch(reqCtx, m.program(), h, cache, false, len(h)/m.w.Arch.HiddenDim, nil, nil)
 }

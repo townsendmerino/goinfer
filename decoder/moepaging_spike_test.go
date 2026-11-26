@@ -42,7 +42,7 @@ func TestMoEPagingSpike(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.MoE == nil {
 		t.Fatalf("not a MoE model")
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/fidelity"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -249,7 +250,7 @@ func ksO4Load(t *testing.T, model, quant string, say func(string, ...any)) *Mode
 	if err != nil {
 		t.Fatalf("load %s at %s: %v", model, quant, err)
 	}
-	if m.w.arch.gptoss == nil {
+	if m.w.Arch.GPTOSS == nil {
 		t.Fatalf("%s is not gpt-oss", model)
 	}
 	say("loaded %s at %s in %.0fs", filepath.Base(model), quant, time.Since(t0).Seconds())
@@ -257,7 +258,7 @@ func ksO4Load(t *testing.T, model, quant string, say func(string, ...any)) *Mode
 }
 
 // ksO4SetOrder sets the attention order of every layer of m's program: attnSinksF64 is today's gpt-oss path, attnBatchedAcc64 KS-O4's.
-func ksO4SetOrder(m *Model, o attnOrder) {
+func ksO4SetOrder(m *Model, o program.AttnOrder) {
 	for _, ops := range m.program().Layers {
 		for i := range ops {
 			if ops[i].Kind == opAttention {
@@ -269,8 +270,8 @@ func ksO4SetOrder(m *Model, o attnOrder) {
 
 // ksO4AppendForever is the cache attnSinksF64 reads: every layer append-forever, no ring (attendSinksToken reads Keys/Vals).
 func ksO4AppendForever(m *Model, capHint int) *KVCache {
-	a := m.w.arch
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint, a.hasNoAttentionKVAt)
+	a := m.w.Arch
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint, a.HasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a, c.knobs)
 	return c
 }

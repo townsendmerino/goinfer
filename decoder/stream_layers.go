@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"runtime"
 	"sync/atomic"
 )
@@ -49,7 +50,7 @@ func streamLayerBudget() int64 {
 // multiply the transients of the largest layers there are. Any other model builds and writes layer 0 alone, and from then
 // on the window is the smaller of GOMAXPROCS and sink.layerBudget divided by the largest layer written so far, never
 // under one. A writer with no budget set therefore builds one layer at a time.
-func streamLayers(w *Weights, arch *Architecture, sink *giwWriter, load func(i int) error) error {
+func streamLayers(w *darch.Weights, arch *darch.Architecture, sink *giwWriter, load func(i int) error) error {
 	n := len(w.Layers)
 	var largest int64 // bytes of the largest layer written so far, as the sink counted them
 	for p := 0; p < n; {
@@ -73,7 +74,7 @@ func streamLayers(w *Weights, arch *Architecture, sink *giwWriter, load func(i i
 				return sink.err
 			}
 			largest = max(largest, sink.n-before)
-			w.Layers[i] = LayerWeights{} // release before the next window is built
+			w.Layers[i] = darch.LayerWeights{} // release before the next window is built
 		}
 		p += k
 	}

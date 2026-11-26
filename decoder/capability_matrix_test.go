@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"os"
 	"slices"
 	"strings"
@@ -518,15 +519,15 @@ func representativeConfig(modelType string) *Config {
 
 // coverageAxis classifies a resolved Architecture by its sequence mixer — the
 // primary organizing axis of the matrix.
-func coverageAxis(a *Architecture) string {
+func coverageAxis(a *darch.Architecture) string {
 	switch {
-	case a.mla != nil:
+	case a.MLA != nil:
 		return "latent-KV (MLA)"
-	case a.granite != nil:
+	case a.Granite != nil:
 		return "state-space hybrid (Mamba-2)"
-	case a.nemotron != nil:
+	case a.Nemotron != nil:
 		return "state-space hybrid (Mamba-2, single-op)"
-	case a.qwen35 != nil:
+	case a.Qwen35 != nil:
 		return "gated-linear hybrid (Gated DeltaNet)"
 	default:
 		return "softmax-GQA"
@@ -894,7 +895,7 @@ func mergeColumn(existing, add string) string {
 	return existing + " ‖ " + add
 }
 
-func moeColumn(a *Architecture) string {
+func moeColumn(a *darch.Architecture) string {
 	if a.MoE == nil {
 		return "dense"
 	}
@@ -908,13 +909,13 @@ func moeColumn(a *Architecture) string {
 // is distinguished by probing the resolved descriptor's per-layer global/local
 // classification across [0, NumLayers): all-local = all-layer sliding (mistral),
 // a global/local mix = interleave (gemma/gemma4/mellum/qwen3_5).
-func slidingWindowColumn(a *Architecture) string {
+func slidingWindowColumn(a *darch.Architecture) string {
 	if a.SlidingWindow == 0 {
 		return "none"
 	}
 	nGlobal := 0
 	for i := 0; i < a.NumLayers; i++ {
-		if a.isGlobalLayer(i) {
+		if a.IsGlobalLayer(i) {
 			nGlobal++
 		}
 	}
@@ -929,7 +930,7 @@ func slidingWindowColumn(a *Architecture) string {
 }
 
 // ropeStyleColumn derives the RoPE style from the descriptor.
-func ropeStyleColumn(a *Architecture) string {
+func ropeStyleColumn(a *darch.Architecture) string {
 	switch {
 	case a.LearnedPosEmbed:
 		return "learned/none"
@@ -948,15 +949,15 @@ func ropeStyleColumn(a *Architecture) string {
 }
 
 // activationColumn renders the activation, marking the gated vs non-gated split.
-func activationColumn(a *Architecture) string {
+func activationColumn(a *darch.Architecture) string {
 	if a.NonGatedMLP {
 		return a.Act.String() + " (non-gated)"
 	}
 	// Gated: SiLU→SwiGLU, GELU-tanh→GeGLU (the conventional names).
 	switch a.Act {
-	case ActSiLU:
+	case darch.ActSiLU:
 		return "SwiGLU"
-	case ActGeluTanh:
+	case darch.ActGeluTanh:
 		return "GeGLU"
 	default:
 		return a.Act.String() + " (gated)"
@@ -964,7 +965,7 @@ func activationColumn(a *Architecture) string {
 }
 
 // normColumn renders norm kind + placement.
-func normColumn(a *Architecture) string {
+func normColumn(a *darch.Architecture) string {
 	return a.Norm.String() + ", " + a.NormPlacement.String()
 }
 
@@ -972,7 +973,7 @@ func normColumn(a *Architecture) string {
 // this arch (features.go's ResidentEligible, the same gate hardware_matrix_test.go's rows use, so the two generated
 // docs cannot disagree about a family). decodeRunnerEligible() alone only answers "is the shape representable" and
 // would let a family that no backend can run (through undeclared features, not shape) read "GPU-resident: yes".
-func gpuResidentEligible(arch *Architecture) bool {
+func gpuResidentEligible(arch *darch.Architecture) bool {
 	for _, be := range residentBackends {
 		if ResidentEligible(arch, be) {
 			return true

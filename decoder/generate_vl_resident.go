@@ -22,8 +22,8 @@ import (
 // every resident backend takes.
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 	floor := 0
-	for l := 0; l < m.w.arch.NumLayers; l++ {
-		if r := cache.rings[l]; r != nil && m.w.arch.gemma4KVSrcAt(l) == l {
+	for l := 0; l < m.w.Arch.NumLayers; l++ {
+		if r := cache.rings[l]; r != nil && m.w.Arch.Gemma4KVSrcAt(l) == l {
 			if _, _, base := cache.LayerKV(l); base > 0 {
 				floor = max(floor, base+r.w-1)
 			}
@@ -49,8 +49,8 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 			}
 		}()
 	}
-	for l := 0; l < m.w.arch.NumLayers; l++ {
-		if m.w.arch.gemma4KVSrcAt(l) != l {
+	for l := 0; l < m.w.Arch.NumLayers; l++ {
+		if m.w.Arch.Gemma4KVSrcAt(l) != l {
 			continue // a Gemma 4 E-model KV-shared layer owns no KV: the resident reads its source's
 		}
 		k, v, base := cache.LayerKV(l)
@@ -71,7 +71,7 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 // ImageBlocksPrefillAvailable. Any error is a DECLINE, not fatal — the caller falls through to the
 // CPU-prefill+UploadKV bridge (gap 0, docs/multimodal.md).
 func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, 0, err
 	}
@@ -107,7 +107,7 @@ func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imag
 // With Qwen3-VL's DeepStack sets, deep is non-nil and the resident must implement MRoPEDeepstackPrefillAvailable, or
 // the call declines (and the caller falls through to the CPU prefill); nil is Qwen2.5-VL's plain m-RoPE prefill.
 func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, r any, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, deep [][]float32) (logits []float32, gpuPos int, err error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
 		return nil, 0, err
 	}
@@ -145,7 +145,7 @@ func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, r any, ids []int, 
 // through the backend's plain batched pass (Prefiller.PrefillLast), which is exactly a causal prefill. The resident's
 // recorded ids are forgotten first: the pass overwrites its cache from position 0 even when it then declines.
 func (m *Model) residentCausalImagePrefill(ctx context.Context, r any, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, 0, err
 	}

@@ -6,6 +6,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // conv1DTransposed loads a GPT-2 Conv1D weight and returns it transposed to the
@@ -33,9 +35,9 @@ func conv1DTransposed(st *embed.SafetensorsFile, name string, in, out int) ([]fl
 // projection weights use the Conv1D [in, out] layout (transposed on load), and
 // it carries a learned position table (wpe) plus LayerNorm biases. Tensor names
 // are the flat h.N.* / wte / wpe / ln_f scheme.
-func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildGPT2Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*darch.Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 
 	// maybeQuant streams a matmul weight to the resident precision, freeing its f32 (see loadWeights). The Conv1D projections
@@ -140,10 +142,10 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // [E, hidden, inter] = down) are exactly the loadFusedExperts layout, so the routed
 // FFN reuses moeMLP unchanged once split; the ungated shared_mlp loads into
 // SharedExpert. Embeddings/experts/attention quantize; the Mamba-2 mixer stays f32.
-func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildGraniteWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
-	g := arch.granite
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	g := arch.Granite
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// q is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for every layer projection below. Embed/LMHead stay on plain
 	// quantizeWM: they are read via .Row() on the host on every backend.
@@ -179,33 +181,33 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 			return e
 		}
 		// Sequence mixer: Mamba-2 (f32) or GQA attention (quantized).
-		if arch.isMambaLayer(l) {
-			mw := &mamba2Weights{}
-			if mw.inProj, e = st.TensorF32(tn("mamba.in_proj.weight"), projDim, hidden); e != nil {
+		if arch.IsMambaLayer(l) {
+			mw := &archparts.Mamba2Weights{}
+			if mw.InProj, e = st.TensorF32(tn("mamba.in_proj.weight"), projDim, hidden); e != nil {
 				return e
 			}
-			if mw.convW, e = st.TensorF32(tn("mamba.conv1d.weight"), convDim, 1, g.DConv); e != nil {
+			if mw.ConvW, e = st.TensorF32(tn("mamba.conv1d.weight"), convDim, 1, g.DConv); e != nil {
 				return e
 			}
-			if mw.convB, e = st.TensorF32(tn("mamba.conv1d.bias"), convDim); e != nil {
+			if mw.ConvB, e = st.TensorF32(tn("mamba.conv1d.bias"), convDim); e != nil {
 				return e
 			}
-			if mw.aLog, e = st.TensorF32(tn("mamba.A_log"), g.NHeads); e != nil {
+			if mw.ALog, e = st.TensorF32(tn("mamba.A_log"), g.NHeads); e != nil {
 				return e
 			}
-			if mw.d, e = st.TensorF32(tn("mamba.D"), g.NHeads); e != nil {
+			if mw.D, e = st.TensorF32(tn("mamba.D"), g.NHeads); e != nil {
 				return e
 			}
-			if mw.dtBias, e = st.TensorF32(tn("mamba.dt_bias"), g.NHeads); e != nil {
+			if mw.DtBias, e = st.TensorF32(tn("mamba.dt_bias"), g.NHeads); e != nil {
 				return e
 			}
-			if mw.normW, e = st.TensorF32(tn("mamba.norm.weight"), dInner); e != nil {
+			if mw.NormW, e = st.TensorF32(tn("mamba.norm.weight"), dInner); e != nil {
 				return e
 			}
-			if mw.outProj, e = st.TensorF32(tn("mamba.out_proj.weight"), hidden, dInner); e != nil {
+			if mw.OutProj, e = st.TensorF32(tn("mamba.out_proj.weight"), hidden, dInner); e != nil {
 				return e
 			}
-			lw.mamba = mw
+			lw.Mamba = mw
 		} else {
 			if lw.QProj, e = loadMat(st, tn("self_attn.q_proj.weight"), qDim, hidden); e != nil {
 				return e
@@ -251,10 +253,10 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 // block stack where each layer (under a "mixer" prefix) is a Mamba-2 mixer (f32,
 // parity-first, reusing the Granite conventions), a NoPE GQA attention, or a
 // non-gated relu² MLP — keyed by arch.nemotron.blockKind. Plain RMSNorm per layer.
-func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildNemotronWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
-	np := arch.nemotron
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	np := arch.Nemotron
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// q is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for every layer projection below. Embed/LMHead stay on plain
 	// quantizeWM: they are read via .Row() on the host on every backend.
@@ -293,38 +295,38 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 		if lw.PreAttnNorm, e = st.TensorF32(tn("norm.weight"), hidden); e != nil {
 			return e
 		}
-		switch np.blockKind[l] {
-		case nemoMamba:
-			mw := &mamba2Weights{}
-			if mw.inProj, e = st.TensorF32(tn("mixer.in_proj.weight"), projDim, hidden); e != nil {
+		switch np.BlockKind[l] {
+		case archparts.NemoMamba:
+			mw := &archparts.Mamba2Weights{}
+			if mw.InProj, e = st.TensorF32(tn("mixer.in_proj.weight"), projDim, hidden); e != nil {
 				return e
 			}
-			if mw.convW, e = st.TensorF32(tn("mixer.conv1d.weight"), convDim, 1, np.DConv); e != nil {
+			if mw.ConvW, e = st.TensorF32(tn("mixer.conv1d.weight"), convDim, 1, np.DConv); e != nil {
 				return e
 			}
-			if mw.convB, e = st.TensorF32(tn("mixer.conv1d.bias"), convDim); e != nil {
+			if mw.ConvB, e = st.TensorF32(tn("mixer.conv1d.bias"), convDim); e != nil {
 				return e
 			}
-			if mw.aLog, e = st.TensorF32(tn("mixer.A_log"), np.NHeads); e != nil {
+			if mw.ALog, e = st.TensorF32(tn("mixer.A_log"), np.NHeads); e != nil {
 				return e
 			}
-			if mw.d, e = st.TensorF32(tn("mixer.D"), np.NHeads); e != nil {
+			if mw.D, e = st.TensorF32(tn("mixer.D"), np.NHeads); e != nil {
 				return e
 			}
-			if mw.dtBias, e = st.TensorF32(tn("mixer.dt_bias"), np.NHeads); e != nil {
+			if mw.DtBias, e = st.TensorF32(tn("mixer.dt_bias"), np.NHeads); e != nil {
 				return e
 			}
-			if mw.normW, e = st.TensorF32(tn("mixer.norm.weight"), dInner); e != nil {
+			if mw.NormW, e = st.TensorF32(tn("mixer.norm.weight"), dInner); e != nil {
 				return e
 			}
-			if mw.outProj, e = st.TensorF32(tn("mixer.out_proj.weight"), hidden, dInner); e != nil {
+			if mw.OutProj, e = st.TensorF32(tn("mixer.out_proj.weight"), hidden, dInner); e != nil {
 				return e
 			}
 			if mambaProjInt8(quant) {
-				mw.quantizeProjections(projDim, hidden, dInner)
+				mw.QuantizeProjections(projDim, hidden, dInner)
 			}
-			lw.mamba = mw
-		case nemoAttn:
+			lw.Mamba = mw
+		case archparts.NemoAttn:
 			if lw.QProj, e = loadMat(st, tn("mixer.q_proj.weight"), qDim, hidden); e != nil {
 				return e
 			}
@@ -339,7 +341,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 			}
 			lw.QProj, lw.KProj = q(lw.QProj), q(lw.KProj)
 			lw.VProj, lw.OProj = q(lw.VProj), q(lw.OProj)
-		case nemoMLP:
+		case archparts.NemoMLP:
 			if lw.UpProj, e = loadMat(st, tn("mixer.up_proj.weight"), inter, hidden); e != nil {
 				return e
 			}
@@ -347,7 +349,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 				return e
 			}
 			lw.UpProj, lw.DownProj = q(lw.UpProj), q(lw.DownProj)
-		case nemoMoE:
+		case archparts.NemoMoE:
 			// Nemotron 3 Nano's MoE FFN. Tensor names verified against the real safetensors
 			// index (nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16), not assumed from the
 			// generic MoE schema: "mixer.gate.weight" (router), "mixer.gate.
@@ -364,7 +366,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 			if lw.RouterBias, e = st.TensorF32(tn("mixer.gate.e_score_correction_bias"), moe.NumExperts); e != nil {
 				return e
 			}
-			lw.Experts = make([]expertWeights, moe.NumExperts)
+			lw.Experts = make([]archparts.ExpertWeights, moe.NumExperts)
 			if e = forExperts(moe.NumExperts, sink, func(ei int) error {
 				ex := &lw.Experts[ei]
 				var e error
@@ -402,11 +404,11 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 // output rows (split at NumHeads*HeadDim, then +NumKVHeads*HeadDim), and mlp.gate_up_proj
 // is gate‖up (split in half). The fused tensors load to f32, slice by rows, and quantize
 // per the resident mode (the GPT-2 fused-QKV precedent).
-func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildPhi3Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// q is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for every layer projection below. Embed/LMHead stay on plain
 	// quantizeWM: they are read via .Row() on the host on every backend.
@@ -475,12 +477,12 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // NumLayers, so it is skipped by construction; the vision tower (model.visual.*) is never requested
 // either. The head is untied on the real checkpoint but finalized from lm_head.weight presence, like
 // phi3, so a tied re-save would still load.
-func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildGlmOcrWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	s := &glmOcrTensorSchema
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	q := func(m linalg.WeightMat) linalg.WeightMat {
 		return quantizeLayerWM(m, quant, needCanonical, skipRow4)
@@ -556,11 +558,11 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 // as Laguna's own GProj (see the generic loader's own comment on why: deliberately excluded from
 // quantization). No bias tensors: spark25Architecture rejects attention_bias=true before this
 // runs, so every released config's shape is the only one this function needs to handle.
-func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildSpark25Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd, nH := arch.HeadDim, arch.NumHeads
 	qDim, kvDim := nH*hd, arch.NumKVHeads*hd
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	q := func(m linalg.WeightMat) linalg.WeightMat {
 		return quantizeLayerWM(m, quant, needCanonical, skipRow4)
@@ -630,15 +632,15 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 // FUSED and TRANSPOSED for a bmm — gate_up_proj is [nE, hidden, 2*inter] and down_proj is
 // [nE, inter, hidden] ([in, out] per expert) — so each expert is transposed to goinfer's
 // [out, in] WeightMat and the gate‖up halves split out.
-func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
+func buildLlama4Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	denseInter := arch.IntermediateDim   // intermediate_size_mlp
 	expInter := arch.MoE.IntermediateDim // intermediate_size (routed + shared)
 	nE := arch.MoE.NumExperts
-	lp := arch.llama4
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	lp := arch.Llama4
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, ST: st, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	var err error
 	// q is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for every layer projection below. Embed/LMHead stay on plain
 	// quantizeWM: they are read via .Row() on the host on every backend.
@@ -682,7 +684,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		l.QProj, l.KProj = q(l.QProj), q(l.KProj)
 		l.VProj, l.OProj = q(l.VProj), q(l.OProj)
-		if !lp.isMoE[i] {
+		if !lp.IsMoE[i] {
 			// Dense FFN at intermediate_size_mlp.
 			if l.GateProj, e = loadMat(st, p+"feed_forward.gate_proj.weight", denseInter, hidden); e != nil {
 				return e
@@ -722,7 +724,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		if derr != nil {
 			return derr
 		}
-		l.Experts = make([]expertWeights, nE)
+		l.Experts = make([]archparts.ExpertWeights, nE)
 		if err := forExperts(nE, sink, func(ex int) error {
 			guBase, dnBase := ex*hidden*2*expInter, ex*expInter*hidden
 			gate := make([]float32, expInter*hidden)
@@ -739,7 +741,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 					down[h*expInter+ii] = dn[dnBase+ii*hidden+h]
 				}
 			}
-			l.Experts[ex] = expertWeights{
+			l.Experts[ex] = archparts.ExpertWeights{
 				Gate: q(linalg.WrapF32(gate, expInter, hidden)),
 				Up:   q(linalg.WrapF32(up, expInter, hidden)),
 				Down: q(linalg.WrapF32(down, hidden, expInter)),

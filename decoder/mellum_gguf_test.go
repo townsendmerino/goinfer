@@ -34,7 +34,7 @@ func TestMellumGGUF_runs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "mellum" {
 		t.Fatalf("arch = %q, want mellum", a.Name)
 	}
@@ -45,10 +45,10 @@ func TestMellumGGUF_runs(t *testing.T) {
 		t.Fatal("QKNorm should be true for Mellum")
 	}
 	// The full-attention layers must carry the YaRN mscale; sliding layers 1.0.
-	if !a.isGlobalLayer(3) || a.ropeMscale(3) <= 1.0 {
-		t.Errorf("layer 3 should be global with YaRN mscale, got global=%v mscale=%v", a.isGlobalLayer(3), a.ropeMscale(3))
+	if !a.IsGlobalLayer(3) || a.RoPEMscale(3) <= 1.0 {
+		t.Errorf("layer 3 should be global with YaRN mscale, got global=%v mscale=%v", a.IsGlobalLayer(3), a.RoPEMscale(3))
 	}
-	if a.isGlobalLayer(0) || a.ropeMscale(0) != 1.0 {
+	if a.IsGlobalLayer(0) || a.RoPEMscale(0) != 1.0 {
 		t.Errorf("layer 0 should be sliding with mscale 1.0")
 	}
 

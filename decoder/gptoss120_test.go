@@ -41,9 +41,9 @@ func TestGptOss120_sliceLoads(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "gpt-oss" || a.gptoss == nil {
-		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.gptoss != nil)
+	a := m.w.Arch
+	if a.Name != "gpt-oss" || a.GPTOSS == nil {
+		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.GPTOSS != nil)
 	}
 	if a.HiddenDim != 2880 || a.NumHeads != 64 || a.NumKVHeads != 8 {
 		t.Errorf("geometry = %dh/%dq/%dkv, want 2880/64/8", a.HiddenDim, a.NumHeads, a.NumKVHeads)

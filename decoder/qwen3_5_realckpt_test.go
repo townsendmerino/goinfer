@@ -52,9 +52,9 @@ func TestQwen38Real_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "qwen3_5" || a.qwen35 == nil {
-		t.Fatalf("arch = %q (qwen35=%v), want qwen3_5", a.Name, a.qwen35 != nil)
+	a := m.w.Arch
+	if a.Name != "qwen3_5" || a.Qwen35 == nil {
+		t.Fatalf("arch = %q (qwen35=%v), want qwen3_5", a.Name, a.Qwen35 != nil)
 	}
 	if a.MoE != nil {
 		t.Fatal("arch.MoE != nil — Qwen3.8 is the DENSE member of this family")
@@ -81,7 +81,7 @@ func TestQwen38Real_gate(t *testing.T) {
 	// 3:1 interleave: 48 DeltaNet + 16 softmax, softmax on every 4th layer.
 	lin, full := 0, 0
 	for i := range a.NumLayers {
-		if a.isLinearLayer(i) {
+		if a.IsLinearLayer(i) {
 			lin++
 			continue
 		}
@@ -95,7 +95,7 @@ func TestQwen38Real_gate(t *testing.T) {
 	}
 
 	// DeltaNet geometry, on real weights. GVA: 48 value heads over 16 key heads (rep 3).
-	g := a.qwen35
+	g := a.Qwen35
 	if g.NumKeyHeads != 16 || g.NumValueHeads != 48 || g.KeyHeadDim != 128 || g.ValueHeadDim != 128 {
 		t.Errorf("DeltaNet = %dk×%d / %dv×%d, want 16×128 / 48×128",
 			g.NumKeyHeads, g.KeyHeadDim, g.NumValueHeads, g.ValueHeadDim)
@@ -117,26 +117,26 @@ func TestQwen38Real_gate(t *testing.T) {
 	// shape assertion: st.TensorF32 is given the expected dims and errors on a mismatch.
 	// Restating the lengths keeps that implicit contract visible at the gate.
 	l3 := m.w.Layers[3] // first full_attention layer
-	if l3.qattn == nil || l3.delta != nil {
-		t.Fatalf("layer 3 mixer = (qattn=%v, delta=%v), want the softmax set", l3.qattn != nil, l3.delta != nil)
+	if l3.QAttn == nil || l3.Delta != nil {
+		t.Fatalf("layer 3 mixer = (qattn=%v, delta=%v), want the softmax set", l3.QAttn != nil, l3.Delta != nil)
 	}
-	if got, want := l3.qattn.qProj.Rows(), 2*a.NumHeads*a.HeadDim; got != want {
+	if got, want := l3.QAttn.QProj.Rows(), 2*a.NumHeads*a.HeadDim; got != want {
 		t.Errorf("layer 3 q_proj = %d rows, want %d (query ‖ gate: 2·24·256)", got, want)
 	}
-	if got, want := l3.qattn.kProj.Rows(), a.NumKVHeads*a.HeadDim; got != want {
+	if got, want := l3.QAttn.KProj.Rows(), a.NumKVHeads*a.HeadDim; got != want {
 		t.Errorf("layer 3 k_proj = %d rows, want %d", got, want)
 	}
 	// Layer 0 is the other mixer, and its projections carry the DeltaNet's own geometry:
 	// in_proj_qkv is [2·keyDim + valueDim, hidden] — one FUSED tensor, unlike in_proj_z.
 	l0 := m.w.Layers[0]
-	if l0.delta == nil || l0.qattn != nil {
-		t.Fatalf("layer 0 mixer = (qattn=%v, delta=%v), want the DeltaNet set", l0.qattn != nil, l0.delta != nil)
+	if l0.Delta == nil || l0.QAttn != nil {
+		t.Fatalf("layer 0 mixer = (qattn=%v, delta=%v), want the DeltaNet set", l0.QAttn != nil, l0.Delta != nil)
 	}
 	keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
-	if got, want := l0.delta.inProjQKV.Rows(), 2*keyDim+valueDim; got != want {
+	if got, want := l0.Delta.InProjQKV.Rows(), 2*keyDim+valueDim; got != want {
 		t.Errorf("layer 0 in_proj_qkv = %d rows, want %d (q‖k‖v fused)", got, want)
 	}
-	if got, want := l0.delta.inProjZ.Rows(), valueDim; got != want {
+	if got, want := l0.Delta.InProjZ.Rows(), valueDim; got != want {
 		t.Errorf("layer 0 in_proj_z = %d rows, want %d (SEPARATE from qkv on this family)", got, want)
 	}
 	// Dense FFN everywhere, including on the DeltaNet layers.

@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"io/fs"
 	"math"
 	"os"
@@ -81,8 +82,8 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 				t.Fatalf("LoadWeights: %v", err)
 			}
 			defer func() {
-				if w.st != nil { // nil under P13's default: already closed at end of load
-					w.st.Close()
+				if w.ST != nil { // nil under P13's default: already closed at end of load
+					w.ST.Close()
 				}
 			}()
 
@@ -92,7 +93,7 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 			assertConfigInt(t, g, "hidden_size", w.Cfg.HiddenDim)
 			assertConfigInt(t, g, "vocab_size", w.Cfg.VocabSize)
 
-			if tc.p13Off && w.st == nil {
+			if tc.p13Off && w.ST == nil {
 				t.Fatal("GOINFER_P13_OFF=1 but the source mapping was released anyway — this arm exists to keep the dtype assertion running, and it just stopped running")
 			}
 			checkSampledChecksums(t, w, g)
@@ -103,7 +104,7 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 // checkSampledChecksums verifies the loaded weights reproduce the golden's
 // sampled-tensor shape/dtype/checksums. Shared by the single-file (M1) and
 // sharded (G1) loader tests so both go through the identical bar.
-func checkSampledChecksums(t *testing.T, w *Weights, g *gemmaGolden) {
+func checkSampledChecksums(t *testing.T, w *darch.Weights, g *gemmaGolden) {
 	t.Helper()
 	loaded := map[string][]float32{
 		"model.embed_tokens.weight":              tF32(&w.Embed),
@@ -128,9 +129,9 @@ func checkSampledChecksums(t *testing.T, w *Weights, g *gemmaGolden) {
 		// releases at end of load, so it can only run on the retained arm. Logged
 		// rather than silently passed over: an assertion that stops running looks
 		// exactly like an assertion that passes.
-		if w.st == nil {
+		if w.ST == nil {
 			t.Logf("%s: dtype check skipped — source mapping released (P13); the p13_off arm covers it", name)
-		} else if tn, err := w.st.Tensor(name); err == nil && tn.DType != want.DType {
+		} else if tn, err := w.ST.Tensor(name); err == nil && tn.DType != want.DType {
 			t.Errorf("%s: dtype %q, golden %q", name, tn.DType, want.DType)
 		}
 

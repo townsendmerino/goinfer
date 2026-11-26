@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 import "github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 
 // walkBatchPlantForTest plants one defect in the batched walker's qwen3.5 or Gemma 4 operations, so the bounds that cover them
@@ -34,9 +38,9 @@ func (ps *prefillPassScratch) q35() *qwen35PassScratch {
 // deltaNetBatch is opDeltaNet over K rows of x ([K*hidden]) into out: in_proj_qkv and in_proj_z at M=K, the gate projections
 // per row, then the conv, the recurrence and the gated norm over st, and out_proj at M=K. The core runs over all K rows at once
 // when deltaNetCoreNOK, else row by row through deltaNetCore; the two are bit-identical (deltanet_n.go).
-func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *LayerWeights, st *deltaState, K int, hq *w4a8Act, s *qwen35PassScratch) {
-	arch, be := m.w.arch, m.be
-	g := *arch.qwen35
+func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *darch.LayerWeights, st *deltaState, K int, hq *w4a8Act, s *qwen35PassScratch) {
+	arch, be := m.w.Arch, m.be
+	g := *arch.Qwen35
 	g.ONormEps, g.NegEigval = p.ONormEps, p.NegEigval
 	hidden := arch.HiddenDim
 	nv := g.NumValueHeads
@@ -44,35 +48,35 @@ func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *LayerWei
 	convDim := 2*keyDim + valueDim
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
-	d := lw.delta
+	d := lw.Delta
 	if walkBatchPlantForTest == plantBatchDropConvWindow {
 		st.convWin = nil
 	}
 	mixed := make([]float32, K*convDim)
 	s.dnZ, s.dnCore = sizedF32(s.dnZ, K*valueDim), sizedF32(s.dnCore, K*valueDim)
-	hq.prepare(be, &d.inProjQKV, x, K)
-	matmulPre(be, &d.inProjQKV, hq, x, mixed, K)
-	matmulPre(be, &d.inProjZ, hq, x, s.dnZ, K)
+	hq.prepare(be, &d.InProjQKV, x, K)
+	matmulPre(be, &d.InProjQKV, hq, x, mixed, K)
+	matmulPre(be, &d.InProjZ, hq, x, s.dnZ, K)
 	if deltaNetCoreNOK(K) {
 		s.bts, s.ats = sizedF32(s.bts, K*nv), sizedF32(s.ats, K*nv)
 		bts, ats := s.bts, s.ats
 		fanOut(K, deltaNetWorkers(K), func(lo, hi int) {
 			for i := lo; i < hi; i++ {
 				n := row(x, i, hidden)
-				copy(bts[i*nv:(i+1)*nv], hybridattn.Matvec(d.inProjB, nv, hidden, n))
-				copy(ats[i*nv:(i+1)*nv], hybridattn.Matvec(d.inProjA, nv, hidden, n))
+				copy(bts[i*nv:(i+1)*nv], hybridattn.Matvec(d.InProjB, nv, hidden, n))
+				copy(ats[i*nv:(i+1)*nv], hybridattn.Matvec(d.InProjA, nv, hidden, n))
 			}
 		})
 		deltaNetCoreN(s.dnCore, mixed, bts, ats, s.dnZ, K, d, g, p.Eps, st)
 	} else {
 		for i := range K {
 			n := row(x, i, hidden)
-			bt := hybridattn.Matvec(d.inProjB, nv, hidden, n)
-			at := hybridattn.Matvec(d.inProjA, nv, hidden, n)
+			bt := hybridattn.Matvec(d.InProjB, nv, hidden, n)
+			at := hybridattn.Matvec(d.InProjA, nv, hidden, n)
 			deltaNetCore(row(s.dnCore, i, valueDim), row(mixed, i, convDim), bt, at, row(s.dnZ, i, valueDim), d, g, p.Eps, st)
 		}
 	}
-	matmul(be, &d.outProj, s.dnCore, out, K)
+	matmul(be, &d.OutProj, s.dnCore, out, K)
 }
 
 // gatedAttnBatch is opGatedAttn over K rows of x into out: the double-width q_proj and k/v at M=K, then per row the [query ‖
@@ -80,24 +84,24 @@ func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *LayerWei
 // f64 accumulation (attendBatchedHeads, bit-identical to the per-token attendQueryP); the sigmoid gate; o_proj at M=K.
 // q, k, v and ctx are the walker's [K*qDim], [K*kvDim], [K*kvDim] and [K*qDim] buffers; alk/alv its dequantised-keys buffers
 // for a widened cache.
-func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *LayerWeights, cache *KVCache, l, startPos, K int,
+func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *darch.LayerWeights, cache *KVCache, l, startPos, K int,
 	q, k, v, ctx, alk, alv []float32, pool []headWorkerScratch, hq *w4a8Act, s *qwen35PassScratch) {
-	arch, be := m.w.arch, m.be
+	arch, be := m.w.Arch, m.be
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	qDim, kvDim := nH*hd, nKV*hd
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
-	a := lw.qattn
+	a := lw.QAttn
 	s.qg, s.gate = sizedF32(s.qg, K*2*qDim), sizedF32(s.gate, K*qDim)
-	hq.prepare(be, &a.qProj, x, K)
-	matmulPre(be, &a.qProj, hq, x, s.qg, K)
-	matmulPre(be, &a.kProj, hq, x, k, K)
-	matmulPre(be, &a.vProj, hq, x, v, K)
+	hq.prepare(be, &a.QProj, x, K)
+	matmulPre(be, &a.QProj, hq, x, s.qg, K)
+	matmulPre(be, &a.KProj, hq, x, k, K)
+	matmulPre(be, &a.VProj, hq, x, v, K)
 	for i := range K {
 		qi, gi := row(q, i, qDim), row(s.gate, i, qDim)
 		hybridattn.SplitQGate(row(s.qg, i, 2*qDim), qi, gi, nH, hd) // q_proj emits [query ‖ gate] per head
 		ki, vi := row(k, i, kvDim), row(v, i, kvDim)
-		applyQKNorm(p.QKNorm, qi, ki, a.qNorm, a.kNorm, nH, nKV, hd)
+		applyQKNorm(p.QKNorm, qi, ki, a.QNorm, a.KNorm, nH, nKV, hd)
 		applyRope(&p.Rope, qi, ki, nH, nKV, hd, startPos+i, cache.mropePos, cache.mropeDelta)
 		cache.Append(l, ki, vi)
 	}
@@ -110,13 +114,13 @@ func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *LayerWe
 	if walkBatchPlantForTest != plantBatchNoAttnGate || l != firstNonLinearLayer(arch) {
 		hybridattn.QGateContext(ctx, s.gate)
 	}
-	matmul(be, &a.oProj, ctx, out, K)
+	matmul(be, &a.OProj, ctx, out, K)
 }
 
 // firstNonLinearLayer is the first layer of a that is not a linear (DeltaNet) layer, or -1; plantBatchNoAttnGate's target.
-func firstNonLinearLayer(a *Architecture) int {
+func firstNonLinearLayer(a *darch.Architecture) int {
 	for l := range a.NumLayers {
-		if !a.isLinearLayer(l) {
+		if !a.IsLinearLayer(l) {
 			return l
 		}
 	}

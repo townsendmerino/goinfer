@@ -44,7 +44,7 @@ func TestGraniteDenseReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "granite" {
 		t.Fatalf("arch = %q, want granite (NOT granitemoehybrid)", a.Name)
 	}

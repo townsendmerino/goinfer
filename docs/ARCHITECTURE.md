@@ -142,7 +142,7 @@ Olmo Hybrid (on Metal at int4 only; on WebGPU read only on the M1 Pro's adapter)
 - Cached per layer: one low-rank latent (`KVCache.mlaLatent`). Per-head K/V are rebuilt from it at
   each step, with RoPE on a separate slice.
 - Code: `decoder/forward_deepseek.go`. Ling 3.0 (`bailing_hybrid`) alternates MLA with Kimi Delta
-  Attention (`decoder/kda.go`, `kdaState`); its layer program is `decoder/program.go:Architecture.layerOps`.
+  Attention (`decoder/kda.go`, `kdaState`); its layer program is `decoder/arch/program.go:Architecture.LayerOps`.
 
 **Mamba-2 hybrid** — Granite-4.0-H (`granitemoehybrid`) and Nemotron-H (`nemotron_h`).
 - Cached per layer: K/V on the attention layers, and a conv window plus SSM state (`mamba2State`) on
@@ -1171,7 +1171,8 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `cmd/testcmdtags` | `internal/guard/testcmdtags` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `decoder/quant`, `decoder/resident`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/ggufconfig`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/normact`, `internal/runtime/program`, `internal/runtime/rope`, `internal/runtime/sampling`, `internal/testassets`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/testgate`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/arch`, `decoder/config`, `decoder/fit`, `decoder/quant`, `decoder/resident`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/archparts`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/ggufconfig`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/normact`, `internal/runtime/program`, `internal/runtime/rope`, `internal/runtime/sampling`, `internal/testassets`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/testgate`, `internal/vision`, `multimodal` |
+| `decoder/arch` | `decoder/config`, `internal/runtime/archparts`, `internal/runtime/kvmgr`, `internal/runtime/program`, `internal/runtime/rope` |  |
 | `decoder/fit` | `internal/runtime/mem` |  |
 | `decoder/resident` | `internal/cost`, `internal/runtime/adapter` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
@@ -1200,6 +1201,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/guard/memgate` | `decoder`, `decoder/fit`, `internal/runtime/mem` | `internal/diag/sb2census` |
 | `internal/guard/servecheck` | `decoder`, `internal/diag/hwreport` |  |
 | `internal/guard/swapguard` | `decoder`, `internal/runtime/logs`, `internal/runtime/mem/probe` |  |
+| `internal/runtime/archparts` | `internal/runtime/hybridattn`, `internal/runtime/mamba2` |  |
 | `internal/runtime/ggufconfig` | `decoder/config` |  |
 | `internal/runtime/mamba2` | `internal/runtime/hybridattn` |  |
 | `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` | `internal/testpath` |
@@ -1225,6 +1227,8 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | rope-leaf | `internal/runtime/rope`, tests included | any goinfer package; (`internal/runtime/rope` may import `internal/testpath`) | internal/runtime/rope holds the rotary embedding kernels (NeoX, interleaved, m-RoPE) and the rope_scaling/rope_parameters parsers with their inverse-frequency tables, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package (its tests, internal/testpath). |
 | testassets-leaf | `internal/testassets`, tests included | any goinfer package | internal/testassets resolves heavy test assets through testdata/assets.json, the one predicate for whether an asset is present. It imports no goinfer package and not testing, so a backend's tests can reach it without importing decoder. |
 | normact-leaf | `internal/runtime/normact`, tests included | any goinfer package | internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package. |
+| arch-leaf | `decoder/arch`, tests included | any goinfer package; (`decoder/arch` may import `decoder/config`, `internal/runtime/archparts`, `internal/runtime/kvmgr`, `internal/runtime/program`, `internal/runtime/rope`) | decoder/arch holds the resolved Architecture descriptor, Weights, LayerWeights and LoadProfile below decoder (SZ12 option (b)), aliased back from decoder/zz_arch_alias.go. It never imports decoder. |
+| archparts-leaf | `internal/runtime/archparts`, tests included | any goinfer package; (`internal/runtime/archparts` may import `internal/runtime/hybridattn`, `internal/runtime/mamba2`) | internal/runtime/archparts holds per-family parameter and weight structs and small internal helpers below decoder/arch (SZ12 option (b)). It imports only internal/runtime/hybridattn and internal/runtime/mamba2 and never decoder or decoder/arch. |
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
 | gpudev-standalone | `backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
 | kernels-free-of-decoder | `backend/cuda/kernels`, `backend/metal/kernels`, `backend/webgpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |

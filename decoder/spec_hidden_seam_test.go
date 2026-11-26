@@ -15,7 +15,7 @@ func TestForwardCaptureSeam(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
-	L, hidden := m.w.arch.NumLayers, m.w.arch.HiddenDim
+	L, hidden := m.w.Arch.NumLayers, m.w.Arch.HiddenDim
 	layers := []int{1, L / 2, L - 1} // EAGLE-3-style low / mid / high
 	prompt := specPrompts[0]
 

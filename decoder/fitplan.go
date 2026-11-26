@@ -29,7 +29,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	bv := m.BackendView()
 	nLayers := bv.NumLayers()
 	var perPos float64
-	if m.w.arch != nil {
+	if m.w.Arch != nil {
 		for l := range nLayers {
 			for _, b := range m.LayerBuffers(l) {
 				if b.Unit != program.PerPosition {

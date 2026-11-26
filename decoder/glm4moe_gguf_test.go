@@ -16,8 +16,8 @@ func TestGlm4MoeGGUF_parity(t *testing.T) {
 		pin:   "scripts/pin_glm_tiny.py and scripts/pin_glm_tiny_gguf.py",
 		label: "glm4_moe GGUF parity",
 		check: func(t *testing.T, m *Model) {
-			if m.w.arch.Name != "glm4_moe" {
-				t.Fatalf("arch = %q, want glm4_moe", m.w.arch.Name)
+			if m.w.Arch.Name != "glm4_moe" {
+				t.Fatalf("arch = %q, want glm4_moe", m.w.Arch.Name)
 			}
 			// The first_k_dense_replace prefix must load as dense (no experts); the MoE
 			// layers must carry experts + the e_score_correction_bias.

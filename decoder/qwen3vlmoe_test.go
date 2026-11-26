@@ -61,8 +61,8 @@ func loadQwen3VLMoeTiny(t *testing.T) (*Model, qwen3vlmoeGolden) {
 		t.Fatalf("Load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if m.w.arch.Name != "qwen3_vl_moe" || m.w.arch.MoE == nil || !m.w.arch.MRopeInterleaved {
-		t.Fatalf("resolved %q (MoE %v, interleaved m-RoPE %v), want qwen3_vl_moe with both", m.w.arch.Name, m.w.arch.MoE != nil, m.w.arch.MRopeInterleaved)
+	if m.w.Arch.Name != "qwen3_vl_moe" || m.w.Arch.MoE == nil || !m.w.Arch.MRopeInterleaved {
+		t.Fatalf("resolved %q (MoE %v, interleaved m-RoPE %v), want qwen3_vl_moe with both", m.w.Arch.Name, m.w.Arch.MoE != nil, m.w.Arch.MRopeInterleaved)
 	}
 	return m, g
 }
@@ -101,7 +101,7 @@ func qwen3vlmoeText(t *testing.T, m *Model, ids []int) []float32 {
 // DeepStack rows the caller's.
 func qwen3vlmoeImage(t *testing.T, m *Model, g qwen3vlmoeGolden, mp [][3]int, deep [][]float32) []float32 {
 	ids := g.Image.IDs
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	pos, n := -1, 0
 	for i, id := range ids {
 		if id == g.ImageToken {
@@ -187,17 +187,17 @@ func TestQwen3VLMoe_tinyPlantedDefects(t *testing.T) {
 	bad.Close()
 
 	// 2. The router not renormalised over the top k.
-	m.w.arch.MoE.NormTopKProb = false
+	m.w.Arch.MoE.NormTopKProb = false
 	m.rebuildProgramForTest()
 	red("router not renormalised", worstPositionCosine(qwen3vlmoeText(t, m, g.Text.IDs), g.Text.Logits, len(g.Text.IDs)))
-	m.w.arch.MoE.NormTopKProb = true
+	m.w.Arch.MoE.NormTopKProb = true
 	m.rebuildProgramForTest()
 
 	// 3. The m-RoPE not interleaved (Qwen2.5-VL's chunked layout): visible only where t, h and w differ, so on the image.
-	m.w.arch.MRopeInterleaved = false
+	m.w.Arch.MRopeInterleaved = false
 	m.rebuildProgramForTest()
 	red("m-RoPE chunked, not interleaved", worstPositionCosine(qwen3vlmoeImage(t, m, g, mp, g.Image.Deepstack), g.Image.Logits, len(g.Image.IDs)))
-	m.w.arch.MRopeInterleaved = true
+	m.w.Arch.MRopeInterleaved = true
 	m.rebuildProgramForTest()
 
 	// 4. Each DeepStack set one layer late: an empty set first, so set l lands after layer l+1.

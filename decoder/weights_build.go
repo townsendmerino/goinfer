@@ -5,14 +5,16 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // stBuild is the state buildWeightsFromSafetensorsTo hands the per-layer loader: the load's inputs, the weight bundle it fills, the
 // tensor-name resolution (prefixes, have, tn) and the readers that merge a LoRA delta and quantize on the way in.
 type stBuild struct {
 	cfg              *Config
-	arch             *Architecture
-	s                *tensorSchema
+	arch             *darch.Architecture
+	s                *archparts.TensorSchema
 	st               *embed.SafetensorsFile
 	quant            quantMode
 	needCanonical    bool
@@ -23,7 +25,7 @@ type stBuild struct {
 	headDim          int
 	qDim             int
 	kvDim            int
-	w                *Weights
+	w                *darch.Weights
 	have             map[string]bool
 	tn               func(i int, suf string) string
 	fusedExperts     bool
@@ -47,7 +49,7 @@ func (b *stBuild) loadLayer(i int) error {
 	// qwen3_5_moe: per-layer kind decides the attention tensor set (Gated
 	// DeltaNet vs gated softmax); both share the MoE FFN loaded below. Stored
 	// f32 (parity-first forward). Other families take the generic path.
-	if arch.lfm2 != nil && arch.isConvLayer(i) {
+	if arch.LFM2 != nil && arch.IsConvLayer(i) {
 		// LFM2 conv layer: the gated short-conv mixer REPLACES attention, so there is
 		// no q/k/v/o and no QK-norm to load — reading them would fail on tensors the
 		// checkpoint does not contain. The FFN below is shared with the attention
@@ -56,7 +58,7 @@ func (b *stBuild) loadLayer(i int) error {
 		if err = loadLFM2Conv(st, i, l, arch, hd, tn); err != nil {
 			return err
 		}
-	} else if arch.qwen35 != nil && (arch.isLinearLayer(i) || !arch.qwen35.PlainFullAttn) {
+	} else if arch.Qwen35 != nil && (arch.IsLinearLayer(i) || !arch.Qwen35.PlainFullAttn) {
 		// PlainFullAttn (Olmo Hybrid): its full-attention layers are NOT
 		// qwen3.5's own double-width gated softmax attention, so only the
 		// linear (DeltaNet) layers come through here; the rest fall through
@@ -64,7 +66,7 @@ func (b *stBuild) loadLayer(i int) error {
 		if err = loadQwen35Attn(i, l, arch, hd, tn, loadMatMerged, loadF32Merged, quant, needCanonical, skipRow4); err != nil {
 			return err
 		}
-	} else if arch.kda != nil && arch.isLinearLayer(i) {
+	} else if arch.KDA != nil && arch.IsLinearLayer(i) {
 		// Bailing Hybrid (Ling 3.0): KDA linear layers. Non-linear layers of the SAME
 		// family fall through to the arch.mla branch below (bailingHybridArchitecture
 		// sets both kda and mla; this check must come first so the else-if chain
@@ -72,21 +74,21 @@ func (b *stBuild) loadLayer(i int) error {
 		if err = loadBailingKDA(st, i, l, arch, hd, tn, loadMatQ); err != nil {
 			return err
 		}
-	} else if arch.mla != nil {
+	} else if arch.MLA != nil {
 		if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 			return err
 		}
 		if mlaProjInt8(quant) {
-			l.mla.quantizeProjections(arch)
+			l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
 		}
-	} else if arch.gemma4 != nil {
+	} else if arch.Gemma4 != nil {
 		// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers
 		// use a wider head (global_head_dim, e.g. 512 vs 16 local) and their own KV
 		// head count, so qDim/kvDim/head_dim differ by layer. attention_k_eq_v makes
 		// the 12B global layers reuse K as V (no v_proj → VFromK); the E-models and
 		// the MoE tiny carry v_proj on every layer.
-		ahd := arch.headDimAt(i)
-		aKV := arch.kvHeadsAt(i)
+		ahd := arch.HeadDimAt(i)
+		aKV := arch.KVHeadsAt(i)
 		aqDim, akvDim := arch.NumHeads*ahd, aKV*ahd
 		if l.QProj, err = loadProj(tn(i, s.QProj), aqDim, hd, true); err != nil {
 			return err
@@ -99,13 +101,13 @@ func (b *stBuild) loadLayer(i int) error {
 		// (loadG4) does the same. l.KVShared is the per-layer "reuses an earlier layer's KV" flag (LayerWeights.KVShared), not
 		// arch.gemma4.KVShared, which is attention_k_eq_v (V reuses K's projection on global layers): same field name, different
 		// struct, different meaning (see arch.go).
-		firstShared := arch.NumLayers - arch.gemma4.SharedKVLayers
+		firstShared := arch.NumLayers - arch.Gemma4.SharedKVLayers
 		l.KVShared = i >= firstShared
 		if !l.KVShared {
 			if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd, true); err != nil {
 				return err
 			}
-			if arch.gemma4.KVShared && arch.isGlobalLayer(i) {
+			if arch.Gemma4.KVShared && arch.IsGlobalLayer(i) {
 				l.VFromK = true // V = v_norm(k_proj output); no v_proj tensor
 			} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd, true); err != nil {
 				return err
@@ -123,7 +125,7 @@ func (b *stBuild) loadLayer(i int) error {
 		// Attention projections ([out, in] row-major). qDim is per layer: some families (Laguna) vary the query head count by
 		// layer type, so q_proj differs between layers. headsAt collapses to NumHeads for every other family, leaving
 		// lqDim == qDim.
-		lqDim := arch.headsAt(i) * headDim
+		lqDim := arch.HeadsAt(i) * headDim
 		if l.QProj, err = loadProj(tn(i, s.QProj), lqDim, hd, true); err != nil {
 			return err
 		}
@@ -142,9 +144,9 @@ func (b *stBuild) loadLayer(i int) error {
 		// than a silently mis-shaped gate. See applyGateRow for why the checkpoint,
 		// not config.gating, is authoritative here.
 		if s.GProj != "" {
-			perHead, perElem := arch.headsAt(i), lqDim
+			perHead, perElem := arch.HeadsAt(i), lqDim
 			rows := perHead
-			if arch.laguna != nil && !arch.laguna.GatePerHead {
+			if arch.Laguna != nil && !arch.Laguna.GatePerHead {
 				rows = perElem
 			}
 			if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd, false); err != nil {
@@ -191,12 +193,12 @@ func (b *stBuild) loadLayer(i int) error {
 		}
 		// Per-head attention sink logit (Flint: self_attn.softmax_offset, or
 		// self_attn.sinks on older builds).
-		if arch.hasAttnSinks() && s.AttnSinks != "" {
+		if arch.HasAttnSinks() && s.AttnSinks != "" {
 			sinkName := tn(i, s.AttnSinks)
 			if !have[sinkName] && s.AttnSinksAlt != "" && have[tn(i, s.AttnSinksAlt)] {
 				sinkName = tn(i, s.AttnSinksAlt)
 			}
-			if l.AttnSinks, err = st.TensorF32(sinkName, arch.headsAt(i)); err != nil {
+			if l.AttnSinks, err = st.TensorF32(sinkName, arch.HeadsAt(i)); err != nil {
 				return err
 			}
 		}
@@ -207,7 +209,7 @@ func (b *stBuild) loadLayer(i int) error {
 	// layers instead (see their own comment on tensorSchema).
 	preAttn, postAttn, preMLP, postMLP := s.PreAttnNorm, s.PostAttnNorm, s.PreMLPNorm, s.PostMLPNorm
 	hasLinearNormOverride := s.PreAttnNormLinear != "" || s.PostAttnNormLinear != "" || s.PreMLPNormLinear != "" || s.PostMLPNormLinear != ""
-	if hasLinearNormOverride && arch.isLinearLayer(i) {
+	if hasLinearNormOverride && arch.IsLinearLayer(i) {
 		preAttn, postAttn, preMLP, postMLP = s.PreAttnNormLinear, s.PostAttnNormLinear, s.PreMLPNormLinear, s.PostMLPNormLinear
 	}
 	if l.PreAttnNorm, err = optNorm(i, preAttn); err != nil {
@@ -228,11 +230,11 @@ func (b *stBuild) loadLayer(i int) error {
 	// gemma4's FFN load because its MoE shape doesn't fit the generic Router/
 	// Experts path below. The PLE branch's per-layer tensors load here too; the
 	// model-level PLE inputs load once, before the layer loop.
-	if arch.gemma4 != nil {
+	if arch.Gemma4 != nil {
 		// Per-layer FFN width: arch.gemma4.FFNPerLayer is seeded (safetensors
 		// checkpoints) below, right before this loop starts, from each layer's own
 		// on-disk tensor shape — see that seeding step's comment for why.
-		ffn := arch.ffnAt(i)
+		ffn := arch.FFNAt(i)
 		if l.GateProj, err = loadProj(tn(i, s.GateProj), ffn, hd, true); err != nil {
 			return err
 		}
@@ -248,7 +250,7 @@ func (b *stBuild) loadLayer(i int) error {
 		} else {
 			l.LayerScalar = 1
 		}
-		if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+		if pleDim := arch.Gemma4.HiddenSizePerLayerInput; pleDim > 0 {
 			if l.PLEGate, err = loadProj(tn(i, "per_layer_input_gate.weight"), pleDim, hd, false); err != nil {
 				return err
 			}
@@ -260,7 +262,7 @@ func (b *stBuild) loadLayer(i int) error {
 			}
 		}
 		if arch.MoE != nil {
-			if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, needCanonical, skipRow4, sink); err != nil {
+			if l.Gemma4MoE, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, needCanonical, skipRow4, sink); err != nil {
 				return err
 			}
 		}
@@ -295,7 +297,7 @@ func (b *stBuild) loadLayer(i int) error {
 				return err
 			}
 		} else {
-			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+			l.Experts = make([]archparts.ExpertWeights, arch.MoE.NumExperts)
 			if err = forExperts(arch.MoE.NumExperts, sink, func(e int) error {
 				ex := &l.Experts[e]
 				var err error
@@ -350,7 +352,7 @@ func (b *stBuild) loadLayer(i int) error {
 
 // finish seeds what only some families need after the per-layer loader is built (Gemma 4's per-layer-embedding inputs and per-layer
 // FFN widths, before the layers load) and loads the layers.
-func (b *stBuild) finish() (*Weights, error) {
+func (b *stBuild) finish() (*darch.Weights, error) {
 	cfg, arch, s, st, quant, needCanonical, sink, hd, w, tn, loadProj, mp, id := b.cfg, b.arch, b.s, b.st, b.quant, b.needCanonical, b.sink, b.hd, b.w, b.tn, b.loadProj, b.mp, b.id
 	loadLayer := b.loadLayer
 	var err error
@@ -359,13 +361,13 @@ func (b *stBuild) finish() (*Weights, error) {
 	// layer, so it is seeded here, sequentially, before the parallel loop above reads it: each layer's width comes from its
 	// own GateProj tensor's on-disk shape (a header lookup; Tensor() does not decode data), not from a rule guessed from the
 	// KV-shared boundary, which is correlated on one checkpoint but is not something the config asserts.
-	if arch.gemma4 != nil {
+	if arch.Gemma4 != nil {
 		// Per-Layer-Embedding (PLE) model-level inputs: the same three tensors GGUF loads, at the same precisions. The token
 		// table takes the embedding policy and streams a row at a time; the projection is a plain matmul weight; the norm is
 		// taken as-is (safetensors norms carry the HF convention already, where GGUF's vnorm has to undo llama.cpp's baked +1).
 		// Leaving them nil would crash runLayersFromEmbedPLE's rmsNorm on an E-model.
-		if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
-			pleVocab := arch.gemma4.VocabSizePerLayerInput
+		if pleDim := arch.Gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+			pleVocab := arch.Gemma4.VocabSizePerLayerInput
 			if pleVocab == 0 {
 				pleVocab = cfg.VocabSize
 			}
@@ -415,7 +417,7 @@ func (b *stBuild) finish() (*Weights, error) {
 		// key. Setting it unconditionally would make every safetensors gemma4 checkpoint, including a uniform-width dense or MoE
 		// fixture, report FeatGemma4EModel.
 		if varies {
-			arch.gemma4.FFNPerLayer = ffnPerLayer
+			arch.Gemma4.FFNPerLayer = ffnPerLayer
 		}
 	}
 	return finishLayers(w, arch, loadLayer, sink, id, b.abort)

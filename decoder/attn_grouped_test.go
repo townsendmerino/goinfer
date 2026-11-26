@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"math/rand"
 	"sync/atomic"
@@ -10,8 +11,8 @@ import (
 // syntheticGroupedArch returns an Architecture whose GQA ratio is exactly attnGroupedNEONSize (6), the group
 // size aikit's NEON port covers, so a test against it exercises kvAttend.groupedHeads rather than silently falling
 // back to kvAttend.oneHead (bit-identity would hide a dispatch that never happened).
-func syntheticGroupedArch(hd int) *Architecture {
-	return &Architecture{
+func syntheticGroupedArch(hd int) *darch.Architecture {
+	return &darch.Architecture{
 		NumHeads:   attnGroupedNEONSize * 2, // two kv heads' worth
 		NumKVHeads: 2,
 		HeadDim:    hd,
@@ -19,7 +20,7 @@ func syntheticGroupedArch(hd int) *Architecture {
 	}
 }
 
-func syntheticDecodeCache(t *testing.T, arch *Architecture, nKeys int, seed int64) (*KVCache, []float32) {
+func syntheticDecodeCache(t *testing.T, arch *darch.Architecture, nKeys int, seed int64) (*KVCache, []float32) {
 	t.Helper()
 	kvDim := arch.NumKVHeads * arch.HeadDim
 	cache := NewKVCache(1, arch.NumKVHeads, arch.HeadDim, 0, nKeys+1, nil)
@@ -40,7 +41,7 @@ func syntheticDecodeCache(t *testing.T, arch *Architecture, nKeys int, seed int6
 	return cache, q
 }
 
-func runDecodeAttend(t *testing.T, arch *Architecture, cache *KVCache, q []float32, nKeys int) []float32 {
+func runDecodeAttend(t *testing.T, arch *darch.Architecture, cache *KVCache, q []float32, nKeys int) []float32 {
 	t.Helper()
 	hd := arch.HeadDim
 	qDim := arch.NumHeads * hd
@@ -226,7 +227,7 @@ func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
 // take the grouped path, even above the nWin gate and with grouping enabled (aikit's NEON port is specialized to
 // exactly that group size; see attnGroupedNEONSize).
 func TestAttendGroupedHeads_wrongGroupSizeStaysUngrouped(t *testing.T) {
-	arch := &Architecture{NumHeads: 8, NumKVHeads: 2, HeadDim: 64, AttnScale: 1 / math.Sqrt(64)} // group=4
+	arch := &darch.Architecture{NumHeads: 8, NumKVHeads: 2, HeadDim: 64, AttnScale: 1 / math.Sqrt(64)} // group=4
 	const nKeys = 200
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511B)
 

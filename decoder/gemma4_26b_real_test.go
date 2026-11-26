@@ -98,7 +98,7 @@ func TestGemma4_26B_gate(t *testing.T) {
 // gemma4CheckSeams asserts the gemma4 MoE structure on the real, unified checkpoint.
 func gemma4CheckSeams(t *testing.T, m *Model) {
 	t.Helper()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "gemma4" {
 		t.Fatalf("arch = %q, want gemma4", a.Name)
 	}
@@ -110,7 +110,7 @@ func gemma4CheckSeams(t *testing.T, m *Model) {
 	}
 	nMoE, nVFromK := 0, 0
 	for i := range m.w.Layers {
-		if m.w.Layers[i].gemma4moe != nil {
+		if m.w.Layers[i].Gemma4MoE != nil {
 			nMoE++
 		}
 		if m.w.Layers[i].VFromK {

@@ -117,7 +117,7 @@ model can differ, because `decoder/admit.go:Admit` reads the model's own configu
 **The runner-shape lines, broken down by a second test** (its output is the second block):
 - **Llama 4 and LFM2** run their own forwards, which no GPU runner bridges.
 - **Granite-4.0-H** is held by its bring-up gate (`GOINFER_SSM_RESIDENT` empty).
-- **Laguna and Spark-X2.5 are not own forwards.** They fail `decoder/residency.go:Architecture.ropeResidentCompatible`: their
+- **Laguna and Spark-X2.5 are not own forwards.** They fail `decoder/arch/residency.go:Architecture.ropeResidentCompatible`: their
   local and global RoPE tables have different lengths. In the representative configs these are 8 and 4 for Laguna, and 16 and
   4 for Spark-X2.5.
 

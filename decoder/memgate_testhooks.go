@@ -21,7 +21,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	w := reflect.ValueOf(m.w).Elem()
 	weights := func(path string) mem.LineID {
 		for f := range strings.SplitSeq(path, ".") {
-			if f == "Experts" || f == "expertsGateUp" || f == "expertsDown" {
+			if f == "Experts" || f == "ExpertsGateUp" || f == "ExpertsDown" {
 				return mem.LineExperts
 			}
 		}
@@ -29,7 +29,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	}
 	for i := range w.NumField() {
 		switch f := w.Type().Field(i); f.Name {
-		case "Cfg", "arch", "schema", "backing", "st", "bakedQuant", "ggufPath", "prof": // a load's config, label, path and timings, package-level tables, and what the file maps
+		case "Cfg", "Arch", "Schema", "Backing", "ST", "BakedQuant", "GGUFPath", "Prof": // a load's config, label, path and timings, package-level tables, and what the file maps
 		default:
 			h.root(weights, f.Name, w.Field(i))
 		}

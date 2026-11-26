@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -44,8 +45,8 @@ func testGGUFParity(t *testing.T, ggufPath string, minCosine float64) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "llama" {
-		t.Fatalf("resolved arch %q, want llama", m.w.arch.Name)
+	if m.w.Arch.Name != "llama" {
+		t.Fatalf("resolved arch %q, want llama", m.w.Arch.Name)
 	}
 
 	cache := m.NewCache(len(g.IDs))
@@ -107,10 +108,10 @@ func TestGGUF_gemma3_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "gemma3" {
-		t.Fatalf("resolved arch %q, want gemma3", m.w.arch.Name)
+	if m.w.Arch.Name != "gemma3" {
+		t.Fatalf("resolved arch %q, want gemma3", m.w.Arch.Name)
 	}
-	if m.w.arch.NormPlacement != NormSandwich4 {
+	if m.w.Arch.NormPlacement != darch.NormSandwich4 {
 		t.Errorf("expected NormSandwich4 for gemma3")
 	}
 	if m.w.Layers[0].PostAttnNorm == nil || m.w.Layers[0].PostMLPNorm == nil {
@@ -169,10 +170,10 @@ func TestGGUF_qwen3_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen3" {
-		t.Fatalf("resolved arch %q, want qwen3", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen3" {
+		t.Fatalf("resolved arch %q, want qwen3", m.w.Arch.Name)
 	}
-	if !m.w.arch.QKNorm {
+	if !m.w.Arch.QKNorm {
 		t.Errorf("expected QKNorm=true for Qwen3")
 	}
 	if m.w.Layers[0].QNorm == nil || m.w.Layers[0].KNorm == nil {
@@ -236,10 +237,10 @@ func TestGGUF_qwen2_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen2" {
-		t.Fatalf("resolved arch %q, want qwen2", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen2" {
+		t.Fatalf("resolved arch %q, want qwen2", m.w.Arch.Name)
 	}
-	if !m.w.arch.QKVBias {
+	if !m.w.Arch.QKVBias {
 		t.Errorf("expected QKVBias=true for Qwen2")
 	}
 	if m.w.Layers[0].QBias == nil || m.w.Layers[0].KBias == nil || m.w.Layers[0].VBias == nil {
@@ -342,7 +343,7 @@ func TestGGUF_int8_resident(t *testing.T) {
 		t.Fatalf("Load int8: %v", err)
 	}
 	// Resident int8: every matmul weight kept its int8 codes and freed its f32.
-	for _, wm := range m.w.matmulWeights() {
+	for _, wm := range m.w.MatmulWeights() {
 		if wm.Kind() != "int8" || wm.Kind() == "f32" {
 			t.Fatalf("matmul weight %dx%d not resident int8 (q8=%v f32=%v)",
 				wm.Rows(), wm.Cols(), wm.Kind() == "int8", wm.Kind() == "f32")

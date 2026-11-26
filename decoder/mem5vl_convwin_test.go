@@ -19,15 +19,15 @@ func TestConvWin_noSlabRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	arch := m.w.arch
+	arch := m.w.Arch
 	layer := -1
 	for l := range arch.NumLayers {
-		if arch.isLinearLayer(l) {
+		if arch.IsLinearLayer(l) {
 			layer = l
 			break
 		}
 	}
-	p := *arch.qwen35
+	p := *arch.Qwen35
 	nv, hk, hv, nk := p.NumValueHeads, p.KeyHeadDim, p.ValueHeadDim, p.NumKeyHeads
 	valueDim, convDim := hv*nv, 2*hk*nk+hv*nv
 	rnd := rand.New(rand.NewSource(3))
@@ -43,7 +43,7 @@ func TestConvWin_noSlabRetained(t *testing.T) {
 		lo := uintptr(unsafe.Pointer(&mixed[0]))
 		hi := lo + uintptr(4*len(mixed))
 		st := newDeltaState(p)
-		deltaNetCoreN(make([]float32, K*valueDim), mixed, vec(K*nv), vec(K*nv), vec(K*valueDim), K, m.w.Layers[layer].delta, p, arch.NormEps, st)
+		deltaNetCoreN(make([]float32, K*valueDim), mixed, vec(K*nv), vec(K*nv), vec(K*valueDim), K, m.w.Layers[layer].Delta, p, arch.NormEps, st)
 		if len(st.convWin) != min(K, p.ConvKernel-1) {
 			t.Fatalf("K=%d: the window holds %d rows", K, len(st.convWin))
 		}
@@ -72,13 +72,13 @@ func TestConvWin_qwen35BitIdentical(t *testing.T) {
 			t.Fatal("the fixture does not take the batched Qwen3.5 pass")
 		}
 		if cache.scr == nil {
-			cache.scr = newDecodeScratch(m.w.arch, cache.knobs)
+			cache.scr = newDecodeScratch(m.w.Arch, cache.knobs)
 		}
 		hn, err := m.runLayersQwen35N(context.Background(), m.embedN(ids), cache)
 		if err != nil {
 			t.Fatal(err)
 		}
-		hidden := m.w.arch.HiddenDim
+		hidden := m.w.Arch.HiddenDim
 		lg := slices.Clone(m.logitsFromNormed(hn[len(hn)-hidden:], cache))
 		out := [][]float32{lg}
 		for range 8 {

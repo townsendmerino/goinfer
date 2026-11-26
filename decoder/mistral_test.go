@@ -47,21 +47,21 @@ func TestMistral_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "mistral" {
-		t.Fatalf("resolved arch %q, want mistral", m.w.arch.Name)
+	if m.w.Arch.Name != "mistral" {
+		t.Fatalf("resolved arch %q, want mistral", m.w.Arch.Name)
 	}
-	if m.w.arch.SlidingWindow <= 0 {
-		t.Fatalf("expected a sliding window, got %d", m.w.arch.SlidingWindow)
+	if m.w.Arch.SlidingWindow <= 0 {
+		t.Fatalf("expected a sliding window, got %d", m.w.Arch.SlidingWindow)
 	}
 	// Every layer must be local (the all-local Mistral pattern), unlike Gemma's 5:1.
-	for i := 0; i < m.w.arch.NumLayers; i++ {
-		if m.w.arch.isGlobalLayer(i) {
+	for i := 0; i < m.w.Arch.NumLayers; i++ {
+		if m.w.Arch.IsGlobalLayer(i) {
 			t.Fatalf("layer %d is global; Mistral is all-local", i)
 		}
 	}
 	// The test is only meaningful if the prompt exceeds the window.
-	if len(g.IDs) <= m.w.arch.SlidingWindow {
-		t.Fatalf("prompt (%d ids) must exceed the window (%d) to exercise sliding attention", len(g.IDs), m.w.arch.SlidingWindow)
+	if len(g.IDs) <= m.w.Arch.SlidingWindow {
+		t.Fatalf("prompt (%d ids) must exceed the window (%d) to exercise sliding attention", len(g.IDs), m.w.Arch.SlidingWindow)
 	}
 
 	cache := m.NewCache(len(g.IDs))
@@ -104,5 +104,5 @@ func TestMistral_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, mistralForwardFullPath)
 	t.Logf("mistral: %d-token prompt (window %d) | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		len(g.IDs), m.w.arch.SlidingWindow, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
+		len(g.IDs), m.w.Arch.SlidingWindow, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }

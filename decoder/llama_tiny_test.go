@@ -47,10 +47,10 @@ func TestLlamaTiny_textParity(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "llama" {
-		t.Fatalf("arch = %q, want llama — the fixture is meant to pin the BASELINE arch", m.w.arch.Name)
+	if m.w.Arch.Name != "llama" {
+		t.Fatalf("arch = %q, want llama — the fixture is meant to pin the BASELINE arch", m.w.Arch.Name)
 	}
-	if m.w.arch.TiedLMHead {
+	if m.w.Arch.TiedLMHead {
 		t.Fatal("fixture resolved as tied; it is built untied on purpose, so a tied read here " +
 			"means the config was misparsed and the LMHead path is not being exercised")
 	}

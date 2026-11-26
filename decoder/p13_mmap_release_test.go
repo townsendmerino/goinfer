@@ -68,7 +68,7 @@ func TestP13_realCheckpointReleases(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	if m.w.st != nil {
+	if m.w.ST != nil {
 		t.Errorf("source mapping still retained after load — P13's release did not fire on an " +
 			"all-BF16 checkpoint, so the bf16 source is still competing with the quantized weights")
 	}
@@ -120,5 +120,5 @@ func TestP13_rssAfterLoad(t *testing.T) {
 		"P13 RSS: before %.2f GB -> after %.2f GB (delta %.2f GB); source on disk %.2f GB; "+
 			"mapping retained: %v\n",
 		float64(before)/1e9, float64(after)/1e9, float64(after-before)/1e9, float64(src)/1e9,
-		m.w.st != nil)
+		m.w.ST != nil)
 }

@@ -54,15 +54,15 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 - **LFM2.5** — also an arch-shape decline (`decoder/residency.go:decodeRunnerEligible`, `case a.lfm2 != nil:
   ... return false`), same discipline as Llama 4: 22 of 30 layers run a gated short convolution
   with a rolling window no uniform-layer runner can express. Even past that gate, no backend
-  declares `FeatShortConv` (`decoder/features.go:FeatGemma4EModel`) — "no resident backend implements the conv
+  declares `FeatShortConv` (`decoder/arch/features.go:FeatGemma4EModel`) — "no resident backend implements the conv
   OR its recurrent state."
-- **Laguna** — needs `FeatAttnOutputGate` (`decoder/features.go:FeatGemma4EModel`): `ctx *=
+- **Laguna** — needs `FeatAttnOutputGate` (`decoder/arch/features.go:FeatGemma4EModel`): `ctx *=
   softplus(g_proj·h)` applied before `o_proj`, plus a per-layer query head count. "No resident
   backend implements either." WebGPU's Gated-DeltaNet output gate is a similar shape (fused
   double-width q-proj + sigmoid) but not interchangeable — Laguna's is a separate `g_proj`
-  through softplus, spelled differently on purpose (`decoder/features.go:FeatDeltaNet` explains why the
+  through softplus, spelled differently on purpose (`decoder/arch/features.go:FeatDeltaNet` explains why the
   two must not be conflated).
-- **Ling 3.0** — needs `FeatKDA` (`decoder/features.go:FeatKDA`), Kimi Delta Attention: a delta-rule
+- **Ling 3.0** — needs `FeatKDA` (`decoder/arch/features.go:FeatKDA`), Kimi Delta Attention: a delta-rule
   recurrence structurally close to Gated DeltaNet but with a per-channel decay (one value per
   state-matrix row) where DeltaNet's is a single scalar per head. "No resident backend
   implements it."
@@ -109,7 +109,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   the original N-04 record, kept for the reasoning.** — the "resident on CUDA and Metal" above described
   only the dense 12B/26B shape. E2B/E4B add per-layer embeddings (PLE, `hidden_size_per_layer_input
   > 0`), a cross-layer shared-KV pattern, and variable per-layer FFN width; `FeatGemma4EModel`
-  (`decoder/features.go:FeatGemma4EModel`) is declared by NO resident backend, so `decodeRunnerEligible` declines
+  (`decoder/arch/features.go:FeatGemma4EModel`) is declared by NO resident backend, so `decodeRunnerEligible` declines
   all three uniformly until an E-model bridge lands (the dense bridges were built PLE-free and
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.

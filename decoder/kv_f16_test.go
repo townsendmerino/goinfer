@@ -169,7 +169,7 @@ func TestKVF16_F1Exactness(t *testing.T) {
 			path = rel // a fixture under decoder/testdata
 		}
 		m := f1Load(t, path)
-		if !m.w.arch.kvF16OK() {
+		if !m.w.Arch.KVF16OK() {
 			t.Fatalf("%s: kvF16OK is false", fx.dir)
 		}
 		for cell, d := range f1Cells(t, m, fx.n, fx.setup) {
@@ -334,7 +334,7 @@ func TestKVF16_decodeReadsInPlace(t *testing.T) {
 		}
 		inPlace = append(inPlace, append([]float32(nil), lg...))
 	}
-	if want := int64(len(ids) * m.w.arch.NumLayers); c.f16InPlaceReads != want {
+	if want := int64(len(ids) * m.w.Arch.NumLayers); c.f16InPlaceReads != want {
 		t.Fatalf("decode over the f16 cache read its rows in place %d times, want %d (every layer of every token)", c.f16InPlaceReads, want)
 	}
 	if d := f1Diff(inPlace, f1Run(true, func() [][]float32 { return f1Decode(t, ref, ids) })); d != 0 {

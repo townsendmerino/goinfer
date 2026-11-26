@@ -83,7 +83,7 @@ func TestLaguna_textParity(t *testing.T) {
 			}
 			defer m.Close()
 
-			if got := m.w.arch.Name; got != "laguna" {
+			if got := m.w.Arch.Name; got != "laguna" {
 				t.Fatalf("arch = %q, want laguna", got)
 			}
 			// The loader must have picked the granularity from the tensor, and for xs2

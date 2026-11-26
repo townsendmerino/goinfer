@@ -19,7 +19,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/config"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -47,7 +49,7 @@ var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o fl
 type Model struct {
 	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
 	fitOf       *fitMemo       // what Plan derives from the config and architecture alone; nil on a Model built by hand
-	w           *Weights
+	w           *darch.Weights
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
@@ -108,7 +110,7 @@ type Model struct {
 	resDecline string
 
 	// prof is this load's phase timing, when the loader instrumented it. nil otherwise.
-	prof *LoadProfile
+	prof *darch.LoadProfile
 
 	// reqBackend / effBackend record what the caller asked for and what is actually executing. They differ when NewBackend
 	// falls back (`--backend metal` on a build without the metal submodule runs on CPU), so the load banner can name the
@@ -270,8 +272,8 @@ func (m *Model) WindowedKVLayer(l int) bool {
 	if !m.opts.ResidentWindowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
-	a := m.w.arch
-	return a != nil && a.mla == nil && a.kvDimAt(l) > 0
+	a := m.w.Arch
+	return a != nil && a.MLA == nil && a.KVDimAt(l) > 0
 }
 
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1 for a
@@ -412,7 +414,7 @@ func (e *pinnedRefusal) Is(target error) bool { return target == ErrPinnedContex
 // giw and direct paths, LoadGGUFBytes, NewModelWithOptions) read them, so they cannot drift apart (a constructor that skipped
 // a field silently ignored that option). Callers set what is specific to their path (the requested quant, the resolved EOS
 // ids, the file mapping), then apply backend names, knobs, streaming and residency in the order their path needs.
-func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
+func modelFromOptions(w *darch.Weights, be Backend, opts Options) *Model {
 	// Stamp the activation group on every quantizable weight: the CPU matmul helpers read it from
 	// the weight they hold, whichever backend object they run under.
 	if opts.Quant == "q4k" && opts.ActQuantGroup == 0 {
@@ -420,7 +422,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		opts.ActQuantGroup = 32
 	}
 	if opts.ActQuantGroup > 0 {
-		for _, wm := range w.matmulWeights() {
+		for _, wm := range w.MatmulWeights() {
 			wm.SetActQuantGroup(opts.ActQuantGroup)
 		}
 	}
@@ -429,17 +431,17 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		// A backend with a registered KV policy builds what ResolveKV says (kvresolve.go); an explicit "f16" it cannot hold says why
 		// (Model.KVF16DeclineReason), and Load refuses it (kvRefusal).
 		if _, ok := kvPolicies[be.Name()]; ok {
-			got, why := ResolveKV(be.Name(), w.arch, opts)
+			got, why := ResolveKV(be.Name(), w.Arch, opts)
 			kvF16 = got == kvPrecF16
 			if !kvF16 && opts.KVPrecision == "f16" {
 				kvDecline = why
 			}
 		}
 	}
-	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
+	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.Arch, w.HasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		kvSnaps: newKVSnapStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter)}
+		kvSnaps: newKVSnapStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.Arch, opts.Drafter)}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a.
@@ -551,11 +553,11 @@ func Load(dir string, opts Options) (*Model, error) {
 	if m, err = m.withResidencyOrAbort(); err != nil {
 		return nil, err
 	}
-	if w.prof != nil {
+	if w.Prof != nil {
 		if d := time.Since(tRes); d > time.Millisecond {
-			w.prof.record("resident", d)
+			w.Prof.Record("resident", d)
 		}
-		m.prof = w.prof
+		m.prof = w.Prof
 	}
 	return m, nil
 }
@@ -571,7 +573,7 @@ func Load(dir string, opts Options) (*Model, error) {
 // generation_config.json is read through os.DirFS of a real directory. For a .gguf load dir is the file path, so
 // os.DirFS(dir) can never open anything inside it (internal/runtime/ggufconfig's ggufEOS comment describes a fallback that does not cover this case); a
 // GGUF conversion keeps generation_config.json beside the file, in its parent directory.
-func resolveLoadEOS(dir string, w *Weights) []int {
+func resolveLoadEOS(dir string, w *darch.Weights) []int {
 	eosDir := dir
 	if strings.HasSuffix(dir, ".gguf") {
 		eosDir = filepath.Dir(dir)
@@ -676,9 +678,9 @@ func (m *Model) Close() error {
 		_ = unmapGIW(m.mmap)
 		m.mmap = nil
 	}
-	if m.w != nil && m.w.st != nil { // release the safetensors mmap + per-shard fds; serve load/unload cycles otherwise retain them until GC
-		_ = m.w.st.Close()
-		m.w.st = nil
+	if m.w != nil && m.w.ST != nil { // release the safetensors mmap + per-shard fds; serve load/unload cycles otherwise retain them until GC
+		_ = m.w.ST.Close()
+		m.w.ST = nil
 	}
 	if reg := m.adapters; reg != nil {
 		reg.mu.Lock()
@@ -701,21 +703,21 @@ func (m *Model) Close() error {
 // weightAllocs applies to loadWeights).
 func (m *Model) NewCache(capHint int) *KVCache {
 	prefillEnters.Add(1)
-	a := m.w.arch
+	a := m.w.Arch
 	// An MLA family never writes c.keys[l]/c.vals[l] on any layer (the per-layer compressed latent, c.mlaLatent, set up below, is
 	// the whole store), so reserving capHint*kvDim for them is dead weight. kvCapHint=0 makes the reservation itself match what
 	// happens: an empty slice that ordinary append would still grow correctly if anything ever did write to it.
 	kvCapHint := capHint
-	if a.mla != nil {
+	if a.MLA != nil {
 		kvCapHint = 0
 	}
 	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it, f16 (Options.KVQuant == "f16") where kvF16OK does;
 	// see Architecture.kvInt8OK for why a family's own loop must opt in. Either stores its K/V in the arrays setQuant reserves, so
 	// the f32 ones would be dead weight too.
 	quant := kvqF32
-	if m.kvI8 && a.kvInt8OK() {
+	if m.kvI8 && a.KVInt8OK() {
 		quant = kvI8
-	} else if m.kvH && a.kvF16OK() {
+	} else if m.kvH && a.KVF16OK() {
 		quant = kvqF16
 	}
 	if quant != kvqF32 {
@@ -727,9 +729,9 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// A ring layer (ringLayerAt, which also decides enableRings below) never reads or grows its append-forever arrays
 	// either, so it reserves none.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
-		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l) || a.gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
+		return a.HasNoAttentionKVAt(l) || a.RingLayerAt(l) || a.Gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
 	})
-	c.reserveWidths(kvCapHint, a.kvDimAt)
+	c.reserveWidths(kvCapHint, a.KVDimAt)
 	c.knobs, c.scr = m.knobs, newDecodeScratch(a, m.knobs)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
@@ -738,54 +740,54 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
 	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever.
-	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.ringLayerAt(l) })
+	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.RingLayerAt(l) })
 	defer c.setRowPad(a, kvCapHint) // after every hybrid and MLA field is set, which it declines
-	if a.gemma4 != nil {
+	if a.Gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
 	}
-	if a.qwen35 != nil {
+	if a.Qwen35 != nil {
 		// Hybrid cache: KV for the softmax layers + a recurrent DeltaState for each
 		// linear layer. manualPos because the linear layers never Append.
 		c.manualPos = true
-		c.delta = layerStates(a.NumLayers, a.isLinearLayer, func() *deltaState { return newDeltaState(*a.qwen35) })
+		c.delta = layerStates(a.NumLayers, a.IsLinearLayer, func() *deltaState { return newDeltaState(*a.Qwen35) })
 	}
-	if a.lfm2 != nil {
+	if a.LFM2 != nil {
 		// Hybrid cache: KV for the attention layers + a rolling conv window for each conv layer. manualPos because the conv layers
 		// never Append, so position cannot be inferred from the KV length.
 		c.manualPos = true
-		c.conv = layerStates(a.NumLayers, a.isConvLayer, newShortConvState)
+		c.conv = layerStates(a.NumLayers, a.IsConvLayer, newShortConvState)
 	}
-	if a.granite != nil {
+	if a.Granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
 		// each mamba layer. manualPos because the mamba layers never Append.
 		c.manualPos = true
-		mp := mamba2Params{NHeads: a.granite.NHeads, HeadDim: a.granite.HeadDim, DState: a.granite.DState, NGroups: a.granite.NGroups, DConv: a.granite.DConv, Hidden: a.HiddenDim}
-		c.mamba = layerStates(a.NumLayers, a.isMambaLayer, func() *mamba2State { return newMamba2State(mp) })
+		mp := archparts.Mamba2Params{NHeads: a.Granite.NHeads, HeadDim: a.Granite.HeadDim, DState: a.Granite.DState, NGroups: a.Granite.NGroups, DConv: a.Granite.DConv, Hidden: a.HiddenDim}
+		c.mamba = layerStates(a.NumLayers, a.IsMambaLayer, func() *mamba2State { return newMamba2State(mp) })
 	}
-	if a.nemotron != nil {
+	if a.Nemotron != nil {
 		// Single-op-block hybrid: only attention layers touch KV (manualPos), mamba
 		// layers carry a Mamba-2 recurrent state, mlp layers neither.
 		c.manualPos = true
-		mp := mamba2Params{NHeads: a.nemotron.NHeads, HeadDim: a.nemotron.HeadDim, DState: a.nemotron.DState, NGroups: a.nemotron.NGroups, DConv: a.nemotron.DConv, Hidden: a.HiddenDim}
-		c.mamba = layerStates(a.NumLayers, func(l int) bool { return a.nemotron.blockKind[l] == nemoMamba }, func() *mamba2State { return newMamba2State(mp) })
+		mp := archparts.Mamba2Params{NHeads: a.Nemotron.NHeads, HeadDim: a.Nemotron.HeadDim, DState: a.Nemotron.DState, NGroups: a.Nemotron.NGroups, DConv: a.Nemotron.DConv, Hidden: a.HiddenDim}
+		c.mamba = layerStates(a.NumLayers, func(l int) bool { return a.Nemotron.BlockKind[l] == archparts.NemoMamba }, func() *mamba2State { return newMamba2State(mp) })
 	}
-	if a.mla != nil {
+	if a.MLA != nil {
 		// DeepSeek MLA: the cache is the per-layer compressed latent, not full K/V.
 		// manualPos because the forward appends via AppendLatent (not the standard
 		// Append) and advances pos once per token after the full layer sweep.
 		c.manualPos = true
 		c.mlaLatent = make([][]float32, a.NumLayers)
 		for l := range c.mlaLatent {
-			if d := a.kvDimAt(l); d > 0 && capHint > 0 { // reserved as K/V are, so a cache at its context holds what the plan prices and no growth past it
+			if d := a.KVDimAt(l); d > 0 && capHint > 0 { // reserved as K/V are, so a cache at its context holds what the plan prices and no growth past it
 				c.mlaLatent[l] = make([]float32, 0, capHint*d)
 			}
 		}
 	}
-	if a.kda != nil {
+	if a.KDA != nil {
 		// Bailing Hybrid (Ling 3.0): a third hybrid-cache shape. The MLA layers' latent cache is handled by the a.mla block above
 		// (bailingHybridArchitecture sets both), so only the KDA linear layers' recurrent state needs its own array here.
 		c.manualPos = true
-		c.kda = layerStates(a.NumLayers, a.isLinearLayer, func() *kdaState { return newKDAState(*a.kda) })
+		c.kda = layerStates(a.NumLayers, a.IsLinearLayer, func() *kdaState { return newKDAState(*a.KDA) })
 	}
 	return c
 }

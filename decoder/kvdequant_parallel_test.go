@@ -75,7 +75,7 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 			toks := make([]int, N)
 			rng := rand.New(rand.NewSource(8))
 			for i := range toks {
-				toks[i] = 1 + rng.Intn(m.w.arch.VocabSize-1)
+				toks[i] = 1 + rng.Intn(m.w.Arch.VocabSize-1)
 			}
 			run := func(par bool) [][]float32 {
 				kvDequantParallel = par

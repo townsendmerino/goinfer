@@ -111,6 +111,43 @@
       "why": "internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package."
     },
     {
+      "name": "arch-leaf",
+      "from": [
+        "decoder/arch"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "decoder/arch": [
+          "decoder/config",
+          "internal/runtime/archparts",
+          "internal/runtime/kvmgr",
+          "internal/runtime/program",
+          "internal/runtime/rope"
+        ]
+      },
+      "why": "decoder/arch holds the resolved Architecture descriptor, Weights, LayerWeights and LoadProfile below decoder (SZ12 option (b)), aliased back from decoder/zz_arch_alias.go. It never imports decoder."
+    },
+    {
+      "name": "archparts-leaf",
+      "from": [
+        "internal/runtime/archparts"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/archparts": [
+          "internal/runtime/hybridattn",
+          "internal/runtime/mamba2"
+        ]
+      },
+      "why": "internal/runtime/archparts holds per-family parameter and weight structs and small internal helpers below decoder/arch (SZ12 option (b)). It imports only internal/runtime/hybridattn and internal/runtime/mamba2 and never decoder or decoder/arch."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -364,12 +401,14 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/arch",
       "decoder/config",
       "decoder/fit",
       "decoder/quant",
       "decoder/resident",
       "internal/cost",
       "internal/runtime/adapter",
+      "internal/runtime/archparts",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
       "internal/runtime/ggufconfig",
@@ -386,6 +425,13 @@
       "internal/runtime/sampling",
       "internal/testassets",
       "tokenizer"
+    ],
+    "decoder/arch": [
+      "decoder/config",
+      "internal/runtime/archparts",
+      "internal/runtime/kvmgr",
+      "internal/runtime/program",
+      "internal/runtime/rope"
     ],
     "decoder/fit": [
       "internal/runtime/mem"
@@ -558,6 +604,10 @@
       "decoder",
       "internal/runtime/logs",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/archparts": [
+      "internal/runtime/hybridattn",
+      "internal/runtime/mamba2"
     ],
     "internal/runtime/ggufconfig": [
       "decoder/config"
@@ -736,6 +786,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/arch",
       "decoder/config",
       "decoder/fit",
       "decoder/quant",
@@ -745,6 +796,7 @@
       "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
+      "internal/runtime/archparts",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",

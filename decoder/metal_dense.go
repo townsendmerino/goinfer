@@ -58,11 +58,11 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 				}
 			}
 		}
-		g4 := lw.gemma4moe
+		g4 := lw.Gemma4MoE
 		switch {
 		case !hasFFN:
-		case g4 != nil && w.arch.gemma4 != nil:
-			floats += int64(g4.nE) + 1 - int64(len(g4.routerScale))
+		case g4 != nil && w.Arch.Gemma4 != nil:
+			floats += int64(g4.NE) + 1 - int64(len(g4.RouterScale))
 		case isMoE && len(lw.Experts) > 0:
 			if len(lw.RouterBias) == 0 {
 				floats += int64(nE)
@@ -75,7 +75,7 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 				floats += int64(lw.DownProj.Rows())
 			}
 		}
-		if g4 == nil && w.arch.gemma4 != nil {
+		if g4 == nil && w.Arch.Gemma4 != nil {
 			if s := lw.LayerScalar; s != 0 && s != 1 {
 				floats++
 			}

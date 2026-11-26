@@ -30,8 +30,8 @@ func loadLfm2Tiny(t *testing.T) *Model {
 		t.Fatalf("Load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if m.w.arch.lfm2 == nil {
-		t.Fatalf("lfm2-tiny resolved to %q, not lfm2", m.w.arch.Name)
+	if m.w.Arch.LFM2 == nil {
+		t.Fatalf("lfm2-tiny resolved to %q, not lfm2", m.w.Arch.Name)
 	}
 	return m
 }
@@ -39,7 +39,7 @@ func loadLfm2Tiny(t *testing.T) *Model {
 func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 	m := loadLfm2Tiny(t)
 	ctx := context.Background()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	// start, a marker, a 3-token tile, a marker, a 2-token thumbnail, end, text.
 	const img, start, mark, thumb, end = 40, 41, 42, 43, 44
 	ids := []int{1, 5, start, mark, img, img, img, thumb, img, img, end, 20, 21, 22}
@@ -62,7 +62,7 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		normalize(m.w.arch, h, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+		normalize(m.w.Arch, h, m.w.FinalNorm, m.w.FinalNormBias, hidden)
 		plain = append(plain, h...)
 	}
 	if !slices.Equal(got, plain) {
@@ -90,7 +90,7 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+			normalize(m.w.Arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
 		}
 		return h
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // TestGatedMLPFusedGateUp_bitIdentical pins the claim cpu_gateup_fused.go rests on: the fused fork/join
@@ -14,7 +15,7 @@ import (
 // tolerance), across fan-out widths that do and do not divide N, ragged N, and several K, because the
 // chunk boundaries are the only thing this path adds and a boundary bug shows up as one wrong element.
 func TestGatedMLPFusedGateUp_bitIdentical(t *testing.T) {
-	arch := &Architecture{Act: ActSiLU}
+	arch := &darch.Architecture{Act: darch.ActSiLU}
 	shapes := []struct{ N, K int }{
 		{8960, 1536}, // 1.5B gate/up
 		{4864, 896},  // 0.5B gate/up
@@ -32,7 +33,7 @@ func TestGatedMLPFusedGateUp_bitIdentical(t *testing.T) {
 			}
 			return v
 		}
-		lw := &LayerWeights{
+		lw := &darch.LayerWeights{
 			GateProj: linalg.QuantizeInt4(fill(sh.N*sh.K, 0.5), sh.N, sh.K, 32),
 			UpProj:   linalg.QuantizeInt4(fill(sh.N*sh.K, 0.5), sh.N, sh.K, 32),
 		}
@@ -68,21 +69,21 @@ func TestGatedMLPFusedGateUp_bitIdentical(t *testing.T) {
 func TestGatedMLPFusedGateUp_declines(t *testing.T) {
 	const N, K = 64, 64
 	w := make([]float32, N*K)
-	lw := &LayerWeights{
+	lw := &darch.LayerWeights{
 		GateProj: linalg.QuantizeInt4(w, N, K, 32),
 		UpProj:   linalg.QuantizeInt4(w, N, K, 32),
 	}
 	h := make([]float32, K)
 	scr := &decodeScratch{gate: make([]float32, N), up: make([]float32, N)}
-	if gatedMLPFusedGateUp(h, lw, &Architecture{Act: ActGeluTanh}, scr) {
+	if gatedMLPFusedGateUp(h, lw, &darch.Architecture{Act: darch.ActGeluTanh}, scr) {
 		t.Error("fused path ran for a GeGLU activation")
 	}
 	small := &decodeScratch{gate: make([]float32, N-1), up: make([]float32, N)}
-	if gatedMLPFusedGateUp(h, lw, &Architecture{Act: ActSiLU}, small) {
+	if gatedMLPFusedGateUp(h, lw, &darch.Architecture{Act: darch.ActSiLU}, small) {
 		t.Error("fused path ran with a gate scratch shorter than N")
 	}
-	f32 := &LayerWeights{GateProj: linalg.WrapF32(w, N, K), UpProj: linalg.WrapF32(w, N, K)}
-	if gatedMLPFusedGateUp(h, f32, &Architecture{Act: ActSiLU}, scr) {
+	f32 := &darch.LayerWeights{GateProj: linalg.WrapF32(w, N, K), UpProj: linalg.WrapF32(w, N, K)}
+	if gatedMLPFusedGateUp(h, f32, &darch.Architecture{Act: darch.ActSiLU}, scr) {
 		t.Error("fused path ran for f32 weights")
 	}
 }

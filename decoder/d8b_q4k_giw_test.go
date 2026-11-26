@@ -531,7 +531,7 @@ func TestGIWWeightsQuant(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer m.Close()
-		if l := m.w.quantLabel(); l != want {
+		if l := m.w.QuantLabel(); l != want {
 			t.Errorf("%s: a full load labels it %q, want %q", name, l, want)
 		}
 	}

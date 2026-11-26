@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"testing"
 )
 
@@ -69,7 +70,7 @@ var (
 // model in production (no RecurrentSpecAvailable) and fell back from the logits-free seed.
 func TestBlockSpec_hostIsTheResident(t *testing.T) {
 	res := &splitResident{}
-	m := &Model{w: &Weights{arch: deltaNetArch(8)}, resident: res}
+	m := &Model{w: &darch.Weights{Arch: deltaNetArch(8)}, resident: res}
 	s, err := m.newBlockSpec(blockspecStubWeights{blockSize: 16}, nil)
 	if err != nil {
 		t.Fatalf("newBlockSpec on a recurrent target whose resident serves the fold path: %v", err)

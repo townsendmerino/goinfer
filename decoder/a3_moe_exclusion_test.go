@@ -41,7 +41,7 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.MoE == nil {
+	if m.w.Arch.MoE == nil {
 		t.Fatalf("%s is not a MoE — this test measures the MoE exclusion", path)
 	}
 	if !m.canBatchN(K) {
@@ -49,7 +49,7 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	}
 	// Varied ids: on a MoE the prompt is the routing, and a constant-id prompt collapses the top-k to one
 	// near-identical set, understating the near-tie flips this test exists to provoke.
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids := make([]int, K)
 	for i := range ids {
 		ids[i] = (i*131 + 7) % vocab

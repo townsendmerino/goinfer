@@ -135,16 +135,16 @@ func TestDFlashAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenizer.Load(%s): %v", tokDir, err)
 	}
-	if m.w.arch.HiddenDim != d.hidden {
-		t.Fatalf("target hidden %d != drafter hidden %d — wrong pairing", m.w.arch.HiddenDim, d.hidden)
+	if m.w.Arch.HiddenDim != d.hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d — wrong pairing", m.w.Arch.HiddenDim, d.hidden)
 	}
 	for _, l := range d.TargetLayerIDs() {
-		if l >= m.w.arch.NumLayers {
-			t.Fatalf("drafter taps layer %d but the target has %d — wrong pairing", l, m.w.arch.NumLayers)
+		if l >= m.w.Arch.NumLayers {
+			t.Fatalf("drafter taps layer %d but the target has %d — wrong pairing", l, m.w.Arch.NumLayers)
 		}
 	}
 	t.Logf("pairing: drafter=%s target=%s (hidden %d, %d target layers, %d taps, block %d)",
-		ddir, tdir, d.hidden, m.w.arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
+		ddir, tdir, d.hidden, m.w.Arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
 
 	type result struct{ rounds, accepted, generated int }
 	overall := map[string]*result{}

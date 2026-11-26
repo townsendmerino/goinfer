@@ -17,6 +17,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
@@ -31,7 +33,7 @@ import (
 // per-layer resident-vs-CPU parity gate needs both, and running the token twice would append it to the KV cache twice. Same
 // arch guard and byte-identical-output contract as ForwardSubCapture.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
-	a := m.w.arch
+	a := m.w.Arch
 	if m.program().SubCaptureUncovered() {
 		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q: a layer has an operation its contributions do not cover", a.Name)
 	}
@@ -66,7 +68,7 @@ type LayerCaptureForTest struct {
 // change the residual past the two contributions, so a diff compares Out, not a sum of contributions. It refuses Gemma 4's
 // MoE block, which replaces the residual with no captured part. The forward's output is byte-identical to forward(id).
 func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]float32, LayerCaptureForTest, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	if m.program().AnyOp(func(o *op) bool { return o.Kind == opGemma4MoE }) {
 		return nil, LayerCaptureForTest{}, fmt.Errorf("decoder.ForwardLayerCaptureLogitsForTest: not wired for arch %q: Gemma 4's MoE block replaces the residual with no captured contribution", a.Name)
 	}
@@ -93,7 +95,7 @@ func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]floa
 	for l := range c.Scalar {
 		c.Scalar[l] = m.w.Layers[l].LayerScalar
 	}
-	if a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0 {
+	if a.Gemma4 != nil && a.Gemma4.HiddenSizePerLayerInput > 0 {
 		c.PLE = cache.subPLE
 	}
 	return slices.Clone(lg), c, nil
@@ -236,23 +238,23 @@ func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []
 // GLM are indexed but SiLU), so it is verified directly, not argued by composition. ok=false for a non-gemma4 model, a dense
 // layer, an e out of range, or len(xe) != hidden.
 func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []float32, gateUp, down *linalg.WeightMat, moeInter, hidden int, ok bool) {
-	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
+	if m.w.Arch.Gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
 		return nil, nil, nil, 0, 0, false
 	}
-	gm := m.w.Layers[layer].gemma4moe
-	if gm == nil || e < 0 || e >= len(gm.expertsGateUp) || len(xe) != m.w.arch.HiddenDim {
+	gm := m.w.Layers[layer].Gemma4MoE
+	if gm == nil || e < 0 || e >= len(gm.ExpertsGateUp) || len(xe) != m.w.Arch.HiddenDim {
 		return nil, nil, nil, 0, 0, false
 	}
 	be := &cpuBackend{}
-	gu := make([]float32, 2*gm.moeInter)
-	matmul(be, &gm.expertsGateUp[e], xe, gu, 1)
-	mid := make([]float32, gm.moeInter)
-	for i := 0; i < gm.moeInter; i++ {
-		mid[i] = normact.GELUTanh(gu[i]) * gu[gm.moeInter+i]
+	gu := make([]float32, 2*gm.MoeInter)
+	matmul(be, &gm.ExpertsGateUp[e], xe, gu, 1)
+	mid := make([]float32, gm.MoeInter)
+	for i := 0; i < gm.MoeInter; i++ {
+		mid[i] = normact.GELUTanh(gu[i]) * gu[gm.MoeInter+i]
 	}
-	out := make([]float32, m.w.arch.HiddenDim)
-	matmul(be, &gm.expertsDown[e], mid, out, 1)
-	return out, &gm.expertsGateUp[e], &gm.expertsDown[e], gm.moeInter, m.w.arch.HiddenDim, true
+	out := make([]float32, m.w.Arch.HiddenDim)
+	matmul(be, &gm.ExpertsDown[e], mid, out, 1)
+	return out, &gm.ExpertsGateUp[e], &gm.ExpertsDown[e], gm.MoeInter, m.w.Arch.HiddenDim, true
 }
 
 // Gemma4MoERouterForTest exposes a gemma4 MoE layer's f32 router projection (row-major [nE, hidden]) and its selection bias
@@ -261,18 +263,18 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 // from any expert-GEMV numeric difference. ok=false for a non-gemma4 model, a dense (non-MoE) layer, an out-of-range layer, or a
 // router not held as f32.
 func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, topK, hidden int, ok bool) {
-	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
+	if m.w.Arch.Gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
 		return nil, nil, 0, 0, 0, false
 	}
-	gm := m.w.Layers[layer].gemma4moe
+	gm := m.w.Layers[layer].Gemma4MoE
 	if gm == nil {
 		return nil, nil, 0, 0, 0, false
 	}
-	f, has := gm.routerProj.F32()
+	f, has := gm.RouterProj.F32()
 	if !has {
 		return nil, nil, 0, 0, 0, false
 	}
-	return f, make([]float32, gm.nE), gm.nE, gm.topK, m.w.arch.HiddenDim, true
+	return f, make([]float32, gm.NE), gm.NE, gm.TopK, m.w.Arch.HiddenDim, true
 }
 
 // gemma4HiddenBuf accumulates a copy of the residual stream after each layer (index 0 = post-embedding, from g4traceHidden's
@@ -431,8 +433,8 @@ func DeltaNetStepForTest(be Backend, h []float32, w *DeltaNetWeightsForTest, hid
 // DeltaNetWeightsForTest builds the CPU weight struct from plain slices, so a backend test can
 // construct one without the decoder package's unexported types.
 type DeltaNetWeightsForTest struct {
-	w *deltaNetWeights
-	p qwen35Params
+	w *archparts.DeltaNetWeights
+	p archparts.Qwen35Params
 }
 
 // DeltaStateForTest wraps the per-layer recurrent state (conv window + delta state).
@@ -444,22 +446,22 @@ type DeltaStateForTest struct{ s *deltaState }
 func NewDeltaNetForTest(convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, hidden int,
 	inProjQKV, inProjZ, inProjB, inProjA, convW, dtBias, negExpA, normW, outProj []float32,
 ) (*DeltaNetWeightsForTest, *DeltaStateForTest) {
-	p := qwen35Params{
+	p := archparts.Qwen35Params{
 		ConvKernel: convKernel, KeyHeadDim: keyHeadDim, ValueHeadDim: valueHeadDim,
 		NumKeyHeads: numKeyHeads, NumValueHeads: numValueHeads,
 	}
 	keyDim, valueDim := keyHeadDim*numKeyHeads, valueHeadDim*numValueHeads
 	convDim := 2*keyDim + valueDim
-	w := &deltaNetWeights{
-		inProjQKV: linalg.WrapF32(inProjQKV, convDim, hidden),
-		inProjZ:   linalg.WrapF32(inProjZ, valueDim, hidden),
-		inProjB:   inProjB,
-		inProjA:   inProjA,
-		convW:     convW,
-		dtBias:    dtBias,
-		negExpA:   negExpA,
-		normW:     normW,
-		outProj:   linalg.WrapF32(outProj, hidden, valueDim),
+	w := &archparts.DeltaNetWeights{
+		InProjQKV: linalg.WrapF32(inProjQKV, convDim, hidden),
+		InProjZ:   linalg.WrapF32(inProjZ, valueDim, hidden),
+		InProjB:   inProjB,
+		InProjA:   inProjA,
+		ConvW:     convW,
+		DtBias:    dtBias,
+		NegExpA:   negExpA,
+		NormW:     normW,
+		OutProj:   linalg.WrapF32(outProj, hidden, valueDim),
 	}
 	return &DeltaNetWeightsForTest{w: w, p: p}, &DeltaStateForTest{s: newDeltaState(p)}
 }
@@ -697,7 +699,7 @@ func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
 		rows[i] = "unknown"
 	}
 	for _, r := range s.Classes() {
-		name := map[KVClass]string{kvmgr.ClassFast: "fast", kvmgr.ClassExact: "exact"}[r.Class]
+		name := map[darch.KVClass]string{kvmgr.ClassFast: "fast", kvmgr.ClassExact: "exact"}[r.Class]
 		for p := r.Start; p < r.Start+r.Len && p < len(rows); p++ {
 			if name != "" {
 				rows[p] = name
@@ -731,12 +733,12 @@ func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
 // seam that is gated but not yet declared is reachable from its own
 // tests only through this: production admission reads the unexported map and never sees a feature a test added after restore. It is not
 // safe for parallel tests, and it panics on a backend that declares no set, so a typo cannot pass as a no-op.
-func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore func()) {
+func SetResidentFeaturesForTest(backend string, add ...darch.ResidentFeature) (restore func()) {
 	set, ok := residentBackendFeatures[backend]
 	if !ok {
 		panic("decoder.SetResidentFeaturesForTest: no feature set declared for backend " + backend)
 	}
-	prev := make(map[ResidentFeature]bool, len(add))
+	prev := make(map[darch.ResidentFeature]bool, len(add))
 	for _, f := range add {
 		prev[f] = set[f]
 		set[f] = true
@@ -900,12 +902,12 @@ const WebGPUVkFixed = webgpuVkFixed
 // kQ and vQ are [pos+1][kvDim] int8, kSc and vSc [pos+1][nKV] f32 scales. m must hold an int8 CPU cache (Options.KVQuant "i8"). It is the
 // CPU half of the exact-input identity gate: both backends' readers fed one cache.
 func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kSc, vSc []float32) ([]float32, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(pos + 1)
 	if cache.quant != kvI8 {
 		return nil, fmt.Errorf("decoder: AttendInt8ForTest needs an int8 CPU cache (Options.KVQuant \"i8\"), this one is quant %v", cache.quant)
 	}
-	nH, hd := a.headsAt(layer), a.HeadDim
+	nH, hd := a.HeadsAt(layer), a.HeadDim
 	kvDim, nKV := a.NumKVHeads*hd, a.NumKVHeads
 	if len(kQ) != (pos+1)*kvDim || len(vQ) != len(kQ) || len(kSc) != (pos+1)*nKV || len(vSc) != len(kSc) || len(q) != nH*hd {
 		return nil, fmt.Errorf("decoder: AttendInt8ForTest: %d K, %d V, %d K scales, %d V scales, %d query for %d rows of %d (%d heads)",
@@ -913,7 +915,7 @@ func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kS
 	}
 	var p attentionParams
 	found := false
-	for _, o := range a.attentionOps(layer) {
+	for _, o := range a.AttentionOps(layer) {
 		if o.Kind == opAttention {
 			p, found = o.Attn, true
 		}

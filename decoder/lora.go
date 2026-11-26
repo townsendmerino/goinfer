@@ -14,6 +14,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // LoRA adapter loading (PEFT safetensors), merged into the base weights at load:
@@ -141,7 +143,7 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 // merge-at-load path in weights.go looks up prefixed names (tn, which adds language_model.* and model.language_model.*
 // on VL checkpoints), while the compute-time path (buildLoraRuntime) uses the bare tensorName. A wrong builder lets a
 // VL-prefixed base validate clean and then silently ignore the whole adapter. History: docs/code-notes/decoder.md#loraAdapter.validateTargets.
-func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer int, suffix string) string) error {
+func (a *loraAdapter) validateTargets(numLayers int, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
 	known := map[string]bool{}
 	for i := range numLayers {
 		for _, suf := range []string{s.QProj, s.KProj, s.VProj, s.OProj, s.GateProj, s.UpProj, s.DownProj} {
@@ -165,7 +167,7 @@ func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(
 // against a different-size base would make a kernel write past its slot. This is the one chokepoint every backend's
 // compute-time LoRA passes through: keep the check here, not per backend.
 // History: docs/code-notes/decoder.md#loraAdapter.validateComputeTimeDims.
-func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []LayerWeights, s *tensorSchema, name func(layer int, suffix string) string) error {
+func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []darch.LayerWeights, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
 	check := func(i int, suf string, proj *linalg.WeightMat) error {
 		if suf == "" {
 			return nil
@@ -311,7 +313,7 @@ func (rt *loraRuntime) close() {
 
 // buildLoraRuntime indexes a loaded adapter by (layer, projection) for compute-time
 // application, mapping each schema suffix to the adapter's HF-named delta.
-func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchema) *loraRuntime {
+func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *archparts.TensorSchema) *loraRuntime {
 	rt := &loraRuntime{name: name, layers: make([]loraLayerDelta, numLayers), a: a}
 	get := func(i int, suf string) *loraDelta {
 		if suf == "" {
@@ -353,11 +355,11 @@ func (m *Model) LoadAdapter(name, dir string) error {
 
 // loadAdapter is LoadAdapter without the lifecycle guard (lifecycle.go).
 func (m *Model) loadAdapter(name, dir string) error {
-	arch := m.w.arch
+	arch := m.w.Arch
 	switch {
-	case m.w.schema == nil:
+	case m.w.Schema == nil:
 		return fmt.Errorf("decoder: compute-time LoRA needs a safetensors base (HF tensor names)")
-	case arch.ownLoopFamily() || !arch.genericKindsOnly():
+	case arch.OwnLoopFamily() || !arch.GenericKindsOnly():
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for %s (own forward path)", arch.Name)
 	case arch.MoE != nil:
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for MoE (expert FFN not wired)")
@@ -370,17 +372,17 @@ func (m *Model) loadAdapter(name, dir string) error {
 	}
 	// Compute-time application (buildLoraRuntime) indexes deltas by the bare tensorName, so validate
 	// against that — this path is prefix-agnostic (it applies by layer/projection, not physical name).
-	if err := a.validateTargets(arch.NumLayers, m.w.schema, tensorName); err != nil {
+	if err := a.validateTargets(arch.NumLayers, m.w.Schema, tensorName); err != nil {
 		a.close()
 		return err
 	}
 	// validateTargets checks names only; every resident backend's SetAdapter trusts In/Out from the checkpoint, so a
 	// mismatched adapter is caught here, once, before it reaches any of them.
-	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.schema, tensorName); err != nil {
+	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.Schema, tensorName); err != nil {
 		a.close()
 		return err
 	}
-	m.registerAdapter(name, buildLoraRuntime(name, a, arch.NumLayers, m.w.schema))
+	m.registerAdapter(name, buildLoraRuntime(name, a, arch.NumLayers, m.w.Schema))
 	return nil
 }
 
