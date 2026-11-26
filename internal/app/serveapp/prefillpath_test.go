@@ -221,7 +221,7 @@ func TestServe_contextWindowIsTheEnforcedOne(t *testing.T) {
 // asserted on the source — prepare must take its limit from contextWindow, the same function pathFields
 // publishes, and must not read MaxPositions itself.
 func TestServe_prepareEnforcesThePublishedWindow(t *testing.T) {
-	src, err := os.ReadFile("openai.go")
+	src, err := os.ReadFile("openai_generate.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestServe_prepareEnforcesThePublishedWindow(t *testing.T) {
 	start := strings.Index(body, "func (lm *loadedModel) prepare(")
 	end := strings.Index(body[start:], "\n}\n")
 	if start < 0 || end < 0 {
-		t.Fatal("prepare not found in openai.go — this guard is watching nothing")
+		t.Fatal("prepare not found in openai_generate.go — this guard is watching nothing")
 	}
 	prep := body[start : start+end]
 	if !strings.Contains(prep, "lm.contextWindow(residentPath)") {
@@ -238,7 +238,12 @@ func TestServe_prepareEnforcesThePublishedWindow(t *testing.T) {
 	if strings.Contains(prep, ".MaxPositions") || strings.Contains(prep, ".ResidentContextCap(") { // code, not the comments that explain them
 		t.Error("prepare reads MaxPositions/ResidentContextCap directly — derive the limit only in contextWindow, which /v1/models publishes")
 	}
-	pf := body[strings.Index(body, "func (s *server) pathFields("):]
+	srvSrc, err := os.ReadFile("openai.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srvBody := string(srvSrc)
+	pf := srvBody[strings.Index(srvBody, "func (s *server) pathFields("):]
 	if !strings.Contains(pf[:strings.Index(pf, "\n}\n")], `"context_window"`) {
 		t.Error("pathFields no longer publishes context_window")
 	}
