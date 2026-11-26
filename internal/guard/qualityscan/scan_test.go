@@ -57,11 +57,13 @@ func TestFuncKey_namesTheReceiverType(t *testing.T) {
 }
 
 // The file-length ratchet's plant: a new long file and a grown one fail, and so does every allowlist line the tree no
-// longer matches (shrunk, gone, or without a ceiling); a long test file and a file at its line pass.
+// longer matches (shrunk, gone, or without a ceiling, reported once); a long test file, a file at the ceiling and a file at
+// its line pass.
 func TestFileLengthRatchet_plantsGoRed(t *testing.T) {
 	lines := func(n int) []byte { return []byte(strings.Repeat("x\n", n)) }
 	files := []*File{
 		{Path: "a/new.go", Src: lines(1501)},
+		{Path: "a/edge.go", Src: lines(1500)},
 		{Path: "a/grown.go", Src: lines(1602)},
 		{Path: "a/held.go", Src: lines(1700)},
 		{Path: "a/shrunk.go", Src: lines(1550)},
@@ -71,7 +73,7 @@ func TestFileLengthRatchet_plantsGoRed(t *testing.T) {
 	}
 	allow, err := ParseAllowlist([]byte(strings.Join([]string{
 		"a/grown.go 1601 -- r", "a/held.go 1700 -- r", "a/shrunk.go 1600 -- r", "a/under.go 1600 -- r",
-		"a/gone.go 1600 -- r", "a/open.go -- r",
+		"a/gone.go 1600 -- r", "a/open.go -- r", "a/gone-open.go -- r",
 	}, "\n")))
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +86,8 @@ func TestFileLengthRatchet_plantsGoRed(t *testing.T) {
 	if want := []string{"a/grown.go (1602, ceiling 1601)", "a/new.go (1501)"}; !slices.Equal(grown, want) {
 		t.Errorf("grown = %q, want %q", grown, want)
 	}
-	if want := []string{"a/gone.go (gone)", "a/open.go (no ceiling)", "a/shrunk.go (1550, ceiling 1600)", "a/under.go (gone)"}; !slices.Equal(stale, want) {
+	want := []string{"a/gone-open.go (no ceiling)", "a/gone.go (gone)", "a/open.go (no ceiling)", "a/shrunk.go (1550, ceiling 1600)", "a/under.go (gone)"}
+	if !slices.Equal(stale, want) {
 		t.Errorf("stale = %q, want %q", stale, want)
 	}
 }

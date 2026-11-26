@@ -25,7 +25,7 @@ func TestQualityScan_fileLengthRatchet(t *testing.T) {
 			len(grown), fileLenCeiling, strings.Join(grown, "\n\t"))
 	}
 	if len(stale) > 0 {
-		t.Errorf("%d line(s) of testdata/filelen.allow no longer match the tree (lower the ceiling to the file's length, or remove the line):\n\t%s",
-			len(stale), strings.Join(stale, "\n\t"))
+		t.Errorf("%d line(s) of testdata/filelen.allow no longer match the tree (lower the ceiling to the file's length; remove the line of a file now gone or at most %d lines):\n\t%s",
+			len(stale), fileLenCeiling, strings.Join(stale, "\n\t"))
 	}
 }
