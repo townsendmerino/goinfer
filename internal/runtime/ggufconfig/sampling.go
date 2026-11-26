@@ -1,4 +1,4 @@
-package decoder
+package ggufconfig
 
 import (
 	"strconv"
