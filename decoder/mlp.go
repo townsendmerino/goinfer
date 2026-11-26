@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // moeSelTrace, when non-nil, records the top-k expert indices of every moeMLP call in forward order (de-interleave by NumLayers
@@ -278,13 +279,13 @@ func swiglu(gate, up []float32) {
 		_ = gate[i+3]
 		_ = u[i+3]
 		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
-		gate[i] = silu(g0) * u[i]
-		gate[i+1] = silu(g1) * u[i+1]
-		gate[i+2] = silu(g2) * u[i+2]
-		gate[i+3] = silu(g3) * u[i+3]
+		gate[i] = normact.SiLU(g0) * u[i]
+		gate[i+1] = normact.SiLU(g1) * u[i+1]
+		gate[i+2] = normact.SiLU(g2) * u[i+2]
+		gate[i+3] = normact.SiLU(g3) * u[i+3]
 	}
 	for ; i < n; i++ {
-		gate[i] = silu(gate[i]) * u[i]
+		gate[i] = normact.SiLU(gate[i]) * u[i]
 	}
 }
 
@@ -301,13 +302,13 @@ func geglu(gate, up []float32) {
 		_ = gate[i+3]
 		_ = u[i+3]
 		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
-		gate[i] = geluTanh(g0) * u[i]
-		gate[i+1] = geluTanh(g1) * u[i+1]
-		gate[i+2] = geluTanh(g2) * u[i+2]
-		gate[i+3] = geluTanh(g3) * u[i+3]
+		gate[i] = normact.GELUTanh(g0) * u[i]
+		gate[i+1] = normact.GELUTanh(g1) * u[i+1]
+		gate[i+2] = normact.GELUTanh(g2) * u[i+2]
+		gate[i+3] = normact.GELUTanh(g3) * u[i+3]
 	}
 	for ; i < n; i++ {
-		gate[i] = geluTanh(gate[i]) * u[i]
+		gate[i] = normact.GELUTanh(gate[i]) * u[i]
 	}
 }
 
@@ -327,13 +328,13 @@ func gegluExact(gate, up []float32) {
 		_ = gate[i+3]
 		_ = u[i+3]
 		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
-		gate[i] = geluErf(g0) * u[i]
-		gate[i+1] = geluErf(g1) * u[i+1]
-		gate[i+2] = geluErf(g2) * u[i+2]
-		gate[i+3] = geluErf(g3) * u[i+3]
+		gate[i] = normact.GELUErf(g0) * u[i]
+		gate[i+1] = normact.GELUErf(g1) * u[i+1]
+		gate[i+2] = normact.GELUErf(g2) * u[i+2]
+		gate[i+3] = normact.GELUErf(g3) * u[i+3]
 	}
 	for ; i < n; i++ {
-		gate[i] = geluErf(gate[i]) * u[i]
+		gate[i] = normact.GELUErf(gate[i]) * u[i]
 	}
 }
 
@@ -457,15 +458,15 @@ func nonGatedMLPWith(h, out []float32, lw *LayerWeights, act ActKind, inter, hid
 	switch act {
 	case ActGeluTanh: // GPT-2's "gelu_new" is the tanh approximation
 		for i := range mid {
-			mid[i] = geluTanh(mid[i])
+			mid[i] = normact.GELUTanh(mid[i])
 		}
 	case ActGelu: // HF's "gelu" — the exact erf function, NOT a spelling of gelu_new
 		for i := range mid {
-			mid[i] = geluErf(mid[i])
+			mid[i] = normact.GELUErf(mid[i])
 		}
 	case ActReLU2: // Nemotron-H's mlp blocks
 		for i := range mid {
-			mid[i] = relu2(mid[i])
+			mid[i] = normact.ReLU2(mid[i])
 		}
 	default:
 		return fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)

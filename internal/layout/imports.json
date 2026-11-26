@@ -73,6 +73,17 @@
       "why": "internal/runtime/ggufconfig reads a GGUF's metadata into a Config, one reader per architecture, so the readers and their fuzz target test without compiling decoder. It sits below decoder, which calls Read: it imports decoder/config and no other goinfer package, decoder included."
     },
     {
+      "name": "normact-leaf",
+      "from": [
+        "internal/runtime/normact"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -342,6 +353,7 @@
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
       "tokenizer"
@@ -710,6 +722,7 @@
       "internal/runtime/kvmgr",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
       "internal/testgate",
