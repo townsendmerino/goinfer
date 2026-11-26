@@ -60,7 +60,8 @@ func TestWebGPUBackend_MatmulW4A8_matchesCPU(t *testing.T) {
 
 			dstCPU := make([]float32, N)
 			var ws linalg.Workspace
-			linalg.MatmulBTW4A8Into(&ws, a, bQ4, scales, dstCPU, 1, K, N, group)
+			wm, _ := linalg.WrapInt4(bQ4, linalg.F32ToF16Scales(scales), N, K, group, linalg.LayoutCanonical) // the scales the GPU got
+			wm.MatmulBTInto(&ws, a, dstCPU, 1)
 
 			var dot, na, nb, maxAbs float64
 			for i := range dstGPU {

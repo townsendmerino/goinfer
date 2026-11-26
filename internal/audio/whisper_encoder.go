@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // The Whisper audio encoder, float32 on the CPU: transformers 5.15.0's WhisperEncoder, which Voxtral's audio tower also is (VoxtralEncoder, same modules; its projector is separate).
@@ -232,7 +233,7 @@ func (e *WhisperEncoder) geluInto(buf []float32) {
 	const chunk = 1 << 14
 	parallelRows((len(buf)+chunk-1)/chunk, func(c0, c1 int) {
 		lo, hi := c0*chunk, min(c1*chunk, len(buf))
-		linalg.GELUContractInto(buf[lo:hi], buf[lo:hi])
+		elem.GELUContractInto(buf[lo:hi], buf[lo:hi])
 	})
 }
 
@@ -374,7 +375,7 @@ func (e *WhisperEncoder) attend(q, k, v []float32, n, window int, scale float32)
 			parallelRows(m, func(r0, r1 int) {
 				for i := r0; i < r1; i++ {
 					row := sc[i*m : (i+1)*m]
-					linalg.SoftmaxRowScaledContractInto(row, row, scale)
+					elem.SoftmaxRowScaledContractInto(row, row, scale)
 				}
 			})
 			// out[i][d] = sum_j sc[i][j] * v[lo+j][d]: with vt [hd][n], take the window's columns

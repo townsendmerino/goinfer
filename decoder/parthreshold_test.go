@@ -31,19 +31,18 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 	for i := range a {
 		a[i] = float32(rng.NormFloat64())
 	}
-	ops := func() []linalg.W4A8Op {
-		var out []linalg.W4A8Op
+	ops := func() []linalg.BatchOp {
+		var out []linalg.BatchOp
 		for _, n := range []int{qN, kvN, kvN} {
 			wf := make([]float32, n*hidden)
 			for i := range wf {
 				wf[i] = float32(rng.NormFloat64()) * 0.05
 			}
 			wm := linalg.QuantizeInt4(wf, n, hidden, int4GroupSize)
-			q4, q4s, _, ok := Int4F32(&wm)
-			if !ok {
+			if !wm.IsInt4() {
 				t.Fatal("QuantizeInt4 did not yield an int4 WeightMat")
 			}
-			out = append(out, linalg.W4A8Op{W4: q4, Scales: q4s, Dst: make([]float32, n), N: n})
+			out = append(out, linalg.BatchOp{W: &wm, Dst: make([]float32, n)})
 		}
 		return out
 	}()
@@ -54,7 +53,7 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 		for i := range ops {
 			clear(ops[i].Dst)
 		}
-		linalg.MatmulBTW4A8Batch(&ws, a, 1, hidden, int4GroupSize, ops)
+		linalg.MatmulBTBatchInto(&ws, a, 1, ops)
 		res := make([][]float32, len(ops))
 		for i := range ops {
 			res[i] = slices.Clone(ops[i].Dst)

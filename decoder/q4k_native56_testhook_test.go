@@ -39,11 +39,11 @@ func TestQ4K_native56(t *testing.T) {
 	for i := range native.w.Layers {
 		l := &native.w.Layers[i]
 		for _, w := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj} {
-			if w.Kind() != wantQKV {
+			if w.Kind().String() != wantQKV {
 				t.Errorf("layer %d: a q/k/v split of the Q5_K qkv loads as %q, want %q", i, w.Kind(), wantQKV)
 			}
 		}
-		if l.DownProj.Kind() != wantDown {
+		if l.DownProj.Kind().String() != wantDown {
 			t.Errorf("layer %d: the Q6_K down projection loads as %q, want %q", i, l.DownProj.Kind(), wantDown)
 		}
 		for _, w := range []*linalg.WeightMat{&l.OProj, &l.GateProj, &l.UpProj} {
@@ -102,7 +102,7 @@ func TestQ4K_native56Sidecar(t *testing.T) {
 		}
 		for i := range m.w.Layers {
 			l := &m.w.Layers[i]
-			if l.QProj.Kind() != wantQKV || l.DownProj.Kind() != wantDown {
+			if l.QProj.Kind().String() != wantQKV || l.DownProj.Kind().String() != wantDown {
 				t.Errorf("round %d layer %d: sidecar load holds q %q, down %q; want %q, %q", round, i, l.QProj.Kind(), l.DownProj.Kind(), wantQKV, wantDown)
 			}
 		}

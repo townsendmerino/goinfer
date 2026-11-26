@@ -4,13 +4,12 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/aikit/linalg/attn"
 	"math/rand/v2"
 	"os"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // TestCPUAttnKernelProbe splits CPU decode attention's time between its two acc64 kernels at one layer's shape, and sets each
@@ -68,10 +67,10 @@ func TestCPUAttnKernelProbe(t *testing.T) {
 	var sink float32
 	var mu sync.Mutex
 	qk := func(h int, sc, _ []float32, _ []float64) {
-		linalg.MatmulQKAcc64(q[h*hd:h*hd+hd], keys, sc, 1, hd, nKeys, h*hd, kvDim)
+		attn.MatmulQKAcc64(q[h*hd:h*hd+hd], keys, sc, 1, hd, nKeys, h*hd, kvDim)
 	}
 	av := func(h int, sc, dst []float32, acc []float64) {
-		linalg.MatmulAVAcc64(sc, vals, dst, acc, 1, nKeys, hd, h*hd, kvDim)
+		attn.MatmulAVAcc64(sc, vals, dst, acc, 1, nKeys, hd, h*hd, kvDim)
 	}
 	// The ceiling: read the same layer's K bytes in the same head-sliced pattern, one add a float, eight chains so the adds are
 	// not the bound.

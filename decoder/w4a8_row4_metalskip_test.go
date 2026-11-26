@@ -42,7 +42,7 @@ func TestWantsRow4Fallback_metalOnly(t *testing.T) {
 // family-specific call sites); see TestW4A8Row4_skippedForMetalBackend_MoE for router/expert coverage, which this
 // dense-only fixture doesn't exercise.
 func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
-	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {
+	if linalg.PreferredInt4Layout(4, int4GroupSize, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("row4 layout is arm64 dotprod only; non-arm64 builds never build row4")
 	}
 	path := prequantGGUF(t)
@@ -129,7 +129,7 @@ func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
 // both the generic-MoE safetensors path (loadMatQ, buildWeightsFromSafetensors) and gemma4's own
 // (loadGemma4MoE/streamExperts).
 func TestW4A8Row4_skippedForMetalBackend_MoE(t *testing.T) {
-	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {
+	if linalg.PreferredInt4Layout(4, int4GroupSize, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("row4 layout is arm64 dotprod only; non-arm64 builds never build row4")
 	}
 	for _, ckpt := range []string{"testdata/qwen3_5_moe-tiny", "../testdata/gemma4-moe-tiny"} {

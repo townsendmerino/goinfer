@@ -1,6 +1,6 @@
 //go:build arm64
 
-// arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit declares its A/B toggle (linalg.SetW4A8RowFold /
+// arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit declares its A/B toggle (linalg.SetW4A8RowFoldForTest /
 // W4A8RowFold) in an arm64-tagged file, so this file does not compile on linux/amd64 without the tag.
 
 package decoder
@@ -19,7 +19,7 @@ import (
 // TestR9_s05FoldAB is the end-to-end arm of aikit S-05 (docs/task-simd-audit.md: the -8 centering folded into the SDOT
 // accumulator of the M=1 W4A8 decode kernel, bit-identical). The kernel's single-core win is measured in aikit's own
 // harness; this is the separate token-level number the decision rule asks for: one loaded 1.5B, depth 128, 24 greedy tokens,
-// the fold flipped IN-PROCESS via linalg.SetW4A8RowFold, ABBA pairs, paired ratio with a win count (the same shape as
+// the fold flipped IN-PROCESS via linalg.SetW4A8RowFoldForTest, ABBA pairs, paired ratio with a win count (the same shape as
 // TestR9_cpuTuningAB). The per-component split names where any change lands: the matmul terms (q/k/v, o, gate+up, down, LM
 // head) are the only ones the kernel touches.
 //
@@ -43,8 +43,8 @@ func TestR9_s05FoldAB(t *testing.T) {
 	prevTiming := decodeTiming
 	decodeTiming = true
 	defer func() { decodeTiming = prevTiming }()
-	prevFold := linalg.W4A8RowFold()
-	defer linalg.SetW4A8RowFold(prevFold)
+	prevFold := linalg.W4A8RowFoldForTest()
+	defer linalg.SetW4A8RowFoldForTest(prevFold)
 
 	m, err := Load(path, Options{Backend: "cpu", Quant: "int4"})
 	if err != nil {
@@ -83,14 +83,14 @@ func TestR9_s05FoldAB(t *testing.T) {
 	for p := 0; p < pairs; p++ {
 		var on, off obs
 		if p%2 == 0 {
-			linalg.SetW4A8RowFold(true)
+			linalg.SetW4A8RowFoldForTest(true)
 			on = gen()
-			linalg.SetW4A8RowFold(false)
+			linalg.SetW4A8RowFoldForTest(false)
 			off = gen()
 		} else {
-			linalg.SetW4A8RowFold(false)
+			linalg.SetW4A8RowFoldForTest(false)
 			off = gen()
-			linalg.SetW4A8RowFold(true)
+			linalg.SetW4A8RowFoldForTest(true)
 			on = gen()
 		}
 		sumOn.fwd, sumOn.matmul = sumOn.fwd+on.fwd, sumOn.matmul+on.matmul

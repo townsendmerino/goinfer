@@ -55,8 +55,7 @@ func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 			wf[i] = float32(rng.NormFloat64()) * 0.05
 		}
 		wm := linalg.QuantizeInt4(wf, sh.N, sh.K, int4GroupSize)
-		q4, q4s, group, ok := Int4F32(&wm)
-		if !ok {
+		if !wm.IsInt4() {
 			b.Fatalf("%s: QuantizeInt4 did not yield an int4 WeightMat", sh.name)
 		}
 		a := make([]float32, sh.K)
@@ -69,7 +68,8 @@ func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 				var ws linalg.Workspace
 				ws.SetThreshold(thr)
 				for b.Loop() {
-					linalg.MatmulBTW4A8Into(&ws, a, q4, q4s, dst, 1, sh.K, sh.N, group)
+					wm.MatmulBTInto(&ws, a, dst, 1) // canonical: MatmulBTW4A8F16Into, the kernel the f32-scale form widened to
+
 				}
 			})
 		}
@@ -98,7 +98,7 @@ func BenchmarkInt8ParThresholdSweep(b *testing.B) {
 				var ws linalg.Workspace
 				ws.SetThreshold(thr)
 				for b.Loop() {
-					linalg.MatmulBTW8A8Into(&ws, a, q8, scales, dst, 1, sh.K, sh.N)
+					aikitMatmulW8A8Into(&ws, a, q8, scales, dst, 1, sh.K, sh.N)
 				}
 			})
 		}

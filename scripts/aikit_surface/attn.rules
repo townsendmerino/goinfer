@@ -1,0 +1,14 @@
+# LS4 move 2 (aikit linalg-surface-2026-11): the attention kernels move from linalg to linalg/attn.
+package attn github.com/townsendmerino/aikit/linalg/attn
+linalg.AttendTileFused -> attn.AttendTileFused
+linalg.AttendTileFusedContractExp -> attn.AttendTileFusedContractExp
+linalg.FusedAttnKeyBlock -> attn.FusedAttnKeyBlock
+linalg.FusedAttnScratch -> attn.FusedAttnScratch
+linalg.GatherVBlockMajor -> attn.GatherVBlockMajor
+linalg.MatmulAVAcc64 -> attn.MatmulAVAcc64
+linalg.MatmulAVAcc64F16 -> attn.MatmulAVAcc64F16
+linalg.MatmulAVAcc64Group -> attn.MatmulAVAcc64Group
+linalg.MatmulQKAcc64 -> attn.MatmulQKAcc64
+linalg.MatmulQKAcc64F16 -> attn.MatmulQKAcc64F16
+linalg.MatmulQKAcc64Group -> attn.MatmulQKAcc64Group
+linalg.NewFusedAttnScratch -> attn.NewFusedAttnScratch

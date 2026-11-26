@@ -185,7 +185,7 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 
 // TestCPUBatchS0b_fusedShapesAndWidth is an EXPLORATORY probe (not a gate) for what is left after MC3c step 2 S1, on a
 // real checkpoint's layer 0:
-//   - E1: the shapes the batched step now issues — q‖k‖v and gate‖up as one linalg.MatmulBTW4A8Batch each, o and down
+//   - E1: the shapes the batched step now issues — q‖k‖v and gate‖up as one linalg.MatmulBTBatchInto each, o and down
 //     alone — timed at M = 1, 2, 4, 8 against M = 1 (t(M)/t(1): 1 = weights read once for every row);
 //   - E2: the same shapes at M = 4 (and M = 1) across fan-out widths and serial. Width is numerically inert
 //     (parallel matmuls partition output columns), so a width that wins is a free lever for the step's Workspace.
@@ -223,7 +223,7 @@ func TestCPUBatchS0b_fusedShapesAndWidth(t *testing.T) {
 			ws.SetThreshold(1 << 62)
 		}
 		ws.SetWorkers(width)
-		ops := make([]linalg.W4A8Op, len(sh.ws))
+		ops := make([]linalg.BatchOp, len(sh.ws))
 		dd := make([][]float32, len(sh.ws))
 		for i, w := range sh.ws {
 			dd[i] = dsts[i][:M*w.Rows()]
@@ -340,7 +340,7 @@ func TestCPUBatchS0c_widthAA(t *testing.T) {
 			for i := range a {
 				a[i] = float32(rng.NormFloat64())
 			}
-			ops := make([]linalg.W4A8Op, len(sh.ws))
+			ops := make([]linalg.BatchOp, len(sh.ws))
 			group, ag, ok := w4a8FusedOps(ops, sh.ws, dd)
 			if !ok {
 				t.Fatalf("%s: not fusable", sh.name)

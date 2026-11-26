@@ -171,7 +171,7 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
 			linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 		}
-		canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
+		canon, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
 		if row4 {
 			return repackW4A8IfEligible(canon), nil
 		}
@@ -228,7 +228,7 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 		linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
 		linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 	}
-	canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
+	canon, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
@@ -337,7 +337,8 @@ func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
-		return repackedOnlyOrCanonical(linalg.WrapInt4F16(q4, q4s, rows, cols, group), needCanonical, skipRow4), nil
+		wm4, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
+		return repackedOnlyOrCanonical(wm4, needCanonical, skipRow4), nil
 	default: // quantNone: keep the full f32
 		f32 := make([]float32, rows*cols)
 		err := forRowRanges(rows, cols, align, workers, newReader, func(lo, hi int, read rowReader) error {
@@ -488,7 +489,7 @@ var w4a8SplitHalfRepacked, w4a8SplitHalfSkipped, w4a8SplitHalfBytes atomic.Int64
 var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
 
 // w4a8BatchEnabled runs a layer's q/k/v (and gate/up, where the fused gate+up does not take them) as one W4A8 fork/join
-// instead of one per projection (aikit MatmulBTW4A8Batch). Bit-identical: every output column is the same dot product
+// instead of one per projection (aikit MatmulBTBatchInto). Bit-identical: every output column is the same dot product
 // either way. The default is per architecture (w4a8BatchDefault, cpu_tuning_{arm64,other}.go); GOINFER_W4A8_BATCH=0
 // opts out and =1 forces it on. Why the defaults differ: docs/code-notes/decoder.md#w4a8BatchEnabled.
 var w4a8BatchEnabled = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault)
@@ -563,7 +564,7 @@ func wantsRow4Fallback(backendName string) bool {
 
 // repackedOnlyOrCanonical is the decision shared by quantizeEmbedWM and quantizeBatchedProjWM: given a canonical int4
 // WeightMat, build it repacked-only when needCanonical is false and this core and shape can build row4
-// (linalg.Int4Row4Usable), which avoids the double nibble+scale residency of canonical+row4. Otherwise (needCanonical,
+// (linalg.PreferredInt4Layout (== LayoutRow4)), which avoids the double nibble+scale residency of canonical+row4. Otherwise (needCanonical,
 // no row4 on this core, or a shape that does not qualify) it applies repackW4A8IfEligible's policy, what every other int4
 // tensor gets from quantizeWM, so it is never worse than the default.
 //
@@ -579,13 +580,13 @@ func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 boo
 		return repackW4A8IfEligible(canon)
 	}
 	q4, q4s, group, ok := canon.Int4F16()
-	if !ok || !linalg.Int4Row4Usable(canon.Rows(), canon.Cols(), group) {
+	if !ok || linalg.PreferredInt4Layout(canon.Rows(), canon.Cols(), group) != linalg.LayoutRow4 {
 		return repackW4A8IfEligible(canon) // this core/shape can't do row4 at all — existing policy
 	}
-	if repacked, repOK := linalg.RepackInt4Row4InPlaceF16(q4, q4s, canon.Rows(), canon.Cols(), group); repOK {
+	if repacked, repOK := linalg.RepackInt4InPlace(q4, q4s, canon.Rows(), canon.Cols(), group, linalg.LayoutRow4); repOK {
 		return repacked
 	}
-	return repackW4A8IfEligible(canon) // Int4Row4Usable said yes, so this shouldn't miss — no silent data loss either way
+	return repackW4A8IfEligible(canon) // PreferredInt4Layout said yes, so this shouldn't miss — no silent data loss either way
 }
 
 // quantizeEmbedWM is quantizeWM's Embed/LMHead twin; the policy is repackedOnlyOrCanonical. needCanonical is computed once
@@ -608,14 +609,14 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 }
 
 // quantizeBatchedProjWM is quantizeWM's twin for attention Q/K/V and MLP gate/up, the tensors reached through the
-// batched W4A8 dispatch (matmulW4A8Batch, wmW4A8Op, isW4A8). That dispatch is unsafe for a repacked-only op in general:
-// MatmulBTW4A8Batch has no row4 tile, so a repacked-only op panics if it is reached at M>1 or when a fan-out shard
-// boundary splits one of its quads (N%4 != 0 at the boundary).
+// batched W4A8 dispatch (matmulW4A8Batch, wmW4A8Op, isW4A8). The fused kernel serves a repacked-only op only at M=1
+// over whole quads; linalg.MatmulBTBatchInto runs any other such batch per op instead (M>1, or a row count not a
+// multiple of 4), so it is correct everywhere and fused where the conditions below hold.
 //
 // It is safe for the per-token walker's two batch call sites, projQKVToken and gatedMLPAct: both are decode-only and call matmulW4A8Batch
 // with a literal M=1, while prefill uses matmul/matmulInto per projection, which are safe at any M. wmW4A8Op builds the
 // right op shape for a repacked-only tensor and isW4A8's IsInt4 gate lets it through. The N%4==0 condition is
-// linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
+// linalg.PreferredInt4Layout (== LayoutRow4)'s rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
 // built repacked-only.
 //
 // Down-proj, the router and MoE expert weights are not this class and take the same policy through quantizeLayerWM. The
@@ -713,10 +714,10 @@ func GIWTargetForBackend(backendName string) GIWTarget {
 		switch runtime.GOARCH {
 		case "arm64":
 			// A kind-5 (row4-only) file promises that this core can read it, and aikit's row4 kernels need DotProd
-			// (Int4Row4Usable). A core without it (a Raspberry Pi 4, Windows on ARM, where aikit assumes none) would refuse to load
+			// (PreferredInt4Layout). A core without it (a Raspberry Pi 4, Windows on ARM, where aikit assumes none) would refuse to load
 			// its own cpu-arm64 file and rebuild it on every start, so it builds canonical bundles, which any core loads. A
 			// cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
-			if linalg.Int4Row4Usable(4, 32, 32) {
+			if linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4 {
 				return GIWTargetCPUArm64
 			}
 			return GIWTargetNone
@@ -789,15 +790,13 @@ func Int4F32(w *linalg.WeightMat) (q4 []byte, scales []float32, group int, ok bo
 	return q4, scales, group, ok
 }
 
-// wmW4A8Op builds one linalg.W4A8Op for the batched W4A8 dispatch. Canonical nibbles and scales are present unless the
-// tensor is repacked-only (then W4 is nil and Row4 carries the data). Row4/Row4Scales are populated only after
-// RepackInt4Row4 has run (arm64, heap-backed weights; see repackW4A8Row4IfEligible) and are nil otherwise, which
-// linalg.MatmulBTW4A8Batch reads as "run canonical for this op". group is shared across the batch, as in
-// MatmulBTW4A8Into: every op in one call comes from the same layer's quant config.
-func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) {
-	q4, q4s, group, _ := w.Int4F16()
-	row4, row4s, _ := w.Int4Row4F16()
-	return linalg.W4A8Op{W4: q4, ScalesF16: q4s, Row4: row4, Row4ScalesF16: row4s, Dst: dst, N: w.Rows()}, group
+// wmW4A8Op builds one linalg.BatchOp for the batched W4A8 dispatch and reports w's weight group, which a GPU batch
+// backend needs and which every op of one call shares (the same layer's quant config). linalg.MatmulBTBatchInto reads
+// the layouts from the WeightMat: canonical, with row4 when RepackInt4Row4 has run (arm64, heap-backed weights; see
+// repackW4A8Row4IfEligible), or the repacked layout alone for a repacked-only tensor.
+func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.BatchOp, group int) {
+	_, _, group, _ = w.Int4F16()
+	return linalg.BatchOp{W: w, Dst: dst}, group
 }
 
 // matmulWSPool recycles the Workspace matmul falls back to when the caller has no decodeScratch. A fresh Workspace per
@@ -949,7 +948,7 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 			}
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
 			ws.SetActQuantGroup(w.ActQuantGroup())
-			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+			w.MatmulBTInto(ws, a, dst, M)
 			return
 		}
 		// Pooled Workspace, as in the W8A8 case: the bare linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every
@@ -959,7 +958,7 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 			defer matmulWSPool.Put(ws)
 		}
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
-		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
 	if k := w.Kind(); k == "q4k" || k == "q5k" || k == "q6k" {
@@ -1023,14 +1022,14 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 			return
 		}
 		ws.SetActQuantGroup(w.ActQuantGroup())
-		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
-	if q8, scales, w8a8, ok := w.Int8(); ok && !w8a8 {
+	if _, _, w8a8, ok := w.Int8(); ok && !w8a8 {
 		// Weight-only Q8 (the int8-pinned LM head in int4 mode): thread the caller's own scratch Workspace rather than falling
 		// through to matmul's pool round-trip.
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
-		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
 	if w.IsInt4() {

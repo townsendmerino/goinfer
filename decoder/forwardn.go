@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/aikit/linalg/attn"
 )
 
 // cpuFastAttention reports whether the live environment enables f32 prefill attention (GOINFER_CPU_FAST_ATTENTION; on unless
@@ -558,9 +560,9 @@ func (a *kvAttend) oneHead(qhead int, ws *headWorkerScratch, mm func(a, b, dst [
 		// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
 		// (TestAttendStrided_matchesGatherReference checks it at this stride).
 		if a.f16 {
-			linalg.MatmulQKAcc64F16(qh[:kt*hd], a.keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
+			attn.MatmulQKAcc64F16(qh[:kt*hd], a.keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
 		} else if a.useAcc64 {
-			linalg.MatmulQKAcc64(qh[:kt*hd], a.keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
+			attn.MatmulQKAcc64(qh[:kt*hd], a.keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
 		} else {
 			mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
 		}
@@ -591,14 +593,14 @@ func (a *kvAttend) oneHead(qhead int, ws *headWorkerScratch, mm func(a, b, dst [
 		direct := a.useAcc64 && kt == 1
 		if direct && a.f16 {
 			b := t0*qDim + qhead*hd
-			linalg.MatmulAVAcc64F16(scores[:nKeys], a.valsH, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
+			attn.MatmulAVAcc64F16(scores[:nKeys], a.valsH, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
 		} else if direct {
 			b := t0*qDim + qhead*hd
-			linalg.MatmulAVAcc64(scores[:nKeys], a.vals, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
+			attn.MatmulAVAcc64(scores[:nKeys], a.vals, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
 		} else if a.f16 {
-			linalg.MatmulAVAcc64F16(scores[:kt*nKeys], a.valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
+			attn.MatmulAVAcc64F16(scores[:kt*nKeys], a.valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
 		} else if a.useAcc64 {
-			linalg.MatmulAVAcc64(scores[:kt*nKeys], a.vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
+			attn.MatmulAVAcc64(scores[:kt*nKeys], a.vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
 		} else {
 			mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 		}
@@ -623,7 +625,7 @@ func (a *kvAttend) groupedHeads(kvh int, ws *headWorkerScratch) {
 	qh0 := kvh * group
 	q := a.q[qh0*hd : qh0*hd+group*hd]
 	gScores := ws.groupScores[:group*nKeys]
-	linalg.MatmulQKAcc64Group(q, a.keys, gScores, group, hd, nKeys, kvh*hd, a.rs)
+	attn.MatmulQKAcc64Group(q, a.keys, gScores, group, hd, nKeys, kvh*hd, a.rs)
 	loP, hiP := a.attendRange(a.startPos) // K==1 is a precondition, so this call's only row is gi=0
 	for g := range group {
 		a.softmaxRow(qh0+g, gScores[g*nKeys:g*nKeys+nKeys], loP, hiP)
@@ -631,7 +633,7 @@ func (a *kvAttend) groupedHeads(kvh int, ws *headWorkerScratch) {
 	// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
 	// straight into ctx with no scratch copy.
 	gAvAcc := ws.groupAvAcc[:group*hd]
-	linalg.MatmulAVAcc64Group(gScores, a.vals, a.ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, a.rs)
+	attn.MatmulAVAcc64Group(gScores, a.vals, a.ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, a.rs)
 	atomic.AddInt64(&attnGroupedRuns, 1)
 }
 
@@ -676,7 +678,7 @@ func (a *kvAttend) groupedLayer(pool []headWorkerScratch) {
 		for kvh := range nKV {
 			qh0 := kvh * group
 			qg := a.q[qh0*hd : qh0*hd+group*hd]
-			linalg.MatmulQKAcc64Group(qg, a.keys, slice, group, hd, sliceLen, kvh*hd+lo*a.rs, a.rs)
+			attn.MatmulQKAcc64Group(qg, a.keys, slice, group, hd, sliceLen, kvh*hd+lo*a.rs, a.rs)
 			dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
 			for g := range group {
 				copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
@@ -703,7 +705,7 @@ func (a *kvAttend) groupedLayer(pool []headWorkerScratch) {
 		sliceAcc := ws.groupAvAcc[:group*sliceHd]
 		for kvh := range nKV {
 			rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-			linalg.MatmulAVAcc64Group(rows, a.vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, a.rs)
+			attn.MatmulAVAcc64Group(rows, a.vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, a.rs)
 			dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
 			for g := range group {
 				copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])

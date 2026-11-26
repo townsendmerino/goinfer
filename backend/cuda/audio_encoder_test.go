@@ -3,14 +3,13 @@
 package cuda
 
 import (
+	"github.com/townsendmerino/aikit/linalg/elem"
+	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/audio"
 	"math"
 	"math/rand"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
-	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // S14.6 lever B's kernels and encoder: the exact GELU against aikit's contract kernel BIT FOR BIT, the im2col
@@ -18,7 +17,7 @@ import (
 // audio_encoder_real_test.go. Needs a CUDA device; skips without one.
 
 // TestAudioGeluErf_bitsMatchContract runs the kernel over a sweep that crosses both erf branches (|x/sqrt2| below and above 1), the exp edge cases (underflow, the clamp) and
-// both signs, and compares every bit with linalg.GELUContractInto.
+// both signs, and compares every bit with elem.GELUContractInto.
 func TestAudioGeluErf_bitsMatchContract(t *testing.T) {
 	ops := newTestTower(t, 16)
 	var pm Pipeline
@@ -43,7 +42,7 @@ func TestAudioGeluErf_bitsMatchContract(t *testing.T) {
 	}
 	src = append(src, 0, float32(math.Copysign(0, -1)), 1e-30, -1e-30, 1.4142135, -1.4142135, 5.7, -5.7, 6, -6, 9.5, -9.5, 100, -100, 1e4, -1e4)
 	want := make([]float32, len(src))
-	linalg.GELUContractInto(want, src)
+	elem.GELUContractInto(want, src)
 	got := make([]float32, len(src))
 	if err := ops.do(func() error {
 		defer ops.releaseScratch()

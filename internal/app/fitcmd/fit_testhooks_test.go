@@ -140,7 +140,7 @@ func TestPlanFor_metalPricesASourceAsItsSidecarRoute(t *testing.T) {
 			}
 			p := planFor(plain, "metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true})
 			plain.Close()
-			row4 := linalg.Int4Row4Usable(256, 256, 32)
+			row4 := linalg.PreferredInt4Layout(256, 256, 32) == linalg.LayoutRow4
 			if p.HostCopyBytes <= before.HostCopyBytes || p.DenseBytes < before.DenseBytes || row4 && p.DenseBytes == before.DenseBytes {
 				t.Fatalf("the source opened as itself prices dense %d, host copy %d B, against its stand-in's %d, %d B (row4 on this core: %v): the test cannot see the layout",
 					p.DenseBytes, p.HostCopyBytes, before.DenseBytes, before.HostCopyBytes, row4)

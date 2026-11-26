@@ -7,14 +7,17 @@
    "gate": "AVX-512 VNNI / VNNI+VL int8 and W4A8 kernels",
    "kind": "cpu-feature",
    "predicates": [
-    "cpu:hasAVX512VNNI",
-    "cpu:hasAVX512VNNIVL"
+    "cpu:HasAVX512VNNI",
+    "cpu:HasAVX512VNNIVL"
    ],
    "selected_when": "an x86 CPU with AVX-512 VNNI (+VL): Zen 4/5, Intel Ice Lake and later",
    "files": [
+    "aikit/internal/cpufeat/x86_amd64.go",
     "aikit/linalg/dot_i8_avx512vnni_amd64.go",
-    "aikit/linalg/dot_w4a8_avx512vnni_amd64.go",
     "aikit/linalg/quant_i8_amd64.go",
+    "aikit/linalg/quant_i8_tile_amd64.go",
+    "aikit/linalg/f16scale_amd64.go",
+    "aikit/linalg/quant_w4a8_amd64.go",
     "aikit/linalg/quant_w4a8_tile_amd64.go",
     "aikit/linalg/weightmat_splithalf_amd64.go",
     "aikit/linalg/matmul_w4a8_splithalf_tile_amd64.go"
@@ -53,11 +56,13 @@
    "gate": "AVX2 SIMD kernels (the x86 fast path)",
    "kind": "cpu-feature",
    "predicates": [
+    "cpu:HasAVX2",
     "cpu:hasAVX2"
    ],
    "selected_when": "any x86 CPU with AVX2 (Haswell and later, Zen and later)",
    "files": [
-    "aikit/linalg/*_amd64.go (the hasAVX2 branches: dot_amd64.go defines it)"
+    "aikit/linalg/*_amd64.go, aikit/linalg/attn/*_amd64.go, aikit/linalg/elem/*_amd64.go (the cpufeat.HasAVX2 branches: internal/cpufeat/x86_amd64.go defines it)",
+    "aikit/embed/gguf_dequant_q4k_amd64.go (embed's own hasAVX2, from x/sys/cpu; no aikit_* tag forces it)"
    ],
    "our_machines": "nobara's 3700X; every GitHub x86 runner",
    "last_executed": [
@@ -87,7 +92,7 @@
    "predicates": [],
    "selected_when": "pre-2013 x86, and some VMs that hide AVX2",
    "files": [
-    "aikit/linalg/*_amd64.go (the !hasAVX2 side)"
+    "aikit/linalg/*_amd64.go, aikit/linalg/attn/*_amd64.go, aikit/linalg/elem/*_amd64.go (the !cpufeat.HasAVX2 side)"
    ],
    "our_machines": "never on hardware",
    "last_executed": [
@@ -115,11 +120,13 @@
    "gate": "F16C half-precision conversion (binary16 int4 group scales)",
    "kind": "cpu-feature",
    "predicates": [
-    "cpu:hasF16C"
+    "cpu:HasF16C"
    ],
    "selected_when": "x86 with F16C (every AVX2 CPU in practice)",
    "files": [
-    "aikit/linalg/f16scale_amd64.go"
+    "aikit/internal/cpufeat/x86_amd64.go",
+    "aikit/linalg/f16scale_amd64.go",
+    "aikit/linalg/attn/attn_acc64_amd64.go"
    ],
    "our_machines": "nobara's 3700X; GitHub x86 runners",
    "last_executed": [
@@ -147,11 +154,13 @@
    "gate": "Q4_K native dot (AVX2 + F16C)",
    "kind": "cpu-feature",
    "predicates": [
-    "cpu:hasQ4KAVX2"
+    "cpu:HasQ4KAVX2"
    ],
    "selected_when": "x86 with AVX2 and F16C",
    "files": [
-    "aikit/linalg/q4k_dot_amd64.go"
+    "aikit/internal/cpufeat/x86_amd64.go",
+    "aikit/linalg/q4k_dot_amd64.go",
+    "aikit/linalg/q56k_dot_amd64.go"
    ],
    "our_machines": "nobara's 3700X; GitHub x86 runners",
    "last_executed": [
@@ -171,11 +180,12 @@
    "gate": "POPCNT Hamming distance",
    "kind": "cpu-feature",
    "predicates": [
-    "cpu:hasPOPCNT"
+    "cpu:HasPOPCNT"
    ],
    "selected_when": "x86 with POPCNT",
    "files": [
-    "aikit/linalg/hamming_amd64.go"
+    "aikit/internal/cpufeat/x86_amd64.go",
+    "aikit/linalg/bitvec/hamming_amd64.go"
    ],
    "our_machines": "nobara's 3700X",
    "last_executed": [],
@@ -186,11 +196,11 @@
    "gate": "arm64 DotProd (SDOT) int8 kernels",
    "kind": "cpu-feature",
    "predicates": [
-    "cpu:hasDotProd"
+    "cpu:HasDotProd"
    ],
    "selected_when": "arm64 with the DotProd extension: Apple M-series, Pi 5, Graviton 2+",
    "files": [
-    "aikit/linalg/*_arm64.go (the hasDotProd branches: quant_i8_arm64.go defines it)"
+    "aikit/linalg/*_arm64.go (the cpufeat.HasDotProd branches: internal/cpufeat/arm64.go defines it)"
    ],
    "our_machines": "the M1 Pro; GitHub's macOS runners",
    "last_executed": [
@@ -228,7 +238,7 @@
    "predicates": [],
    "selected_when": "Raspberry Pi 4 class (Cortex-A72) and older ARM",
    "files": [
-    "aikit/linalg/*_arm64.go (the !hasDotProd side)"
+    "aikit/linalg/*_arm64.go (the !cpufeat.HasDotProd side)"
    ],
    "our_machines": "never (M1 has DotProd)",
    "last_executed": [

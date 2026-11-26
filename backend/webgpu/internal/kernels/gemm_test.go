@@ -73,7 +73,7 @@ func TestTiled_microbench(t *testing.T) {
 		act := randMat(M*K, uint64(M)+7)
 		aq, aScales := linalg.QuantizeRowsInt8(act, M, K)
 		cpuDst := make([]float32, M*N)
-		linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, M, K, N)
+		aikitMatmulW8A8(act, bq, bScales, cpuDst, M, K, N)
 		if _, err := ctx.MatmulW8A8(aq, aScales, rm, M); err != nil {
 			t.Fatalf("naive: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestTiled_microbench(t *testing.T) {
 
 		t0 := time.Now()
 		for range iters {
-			linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, M, K, N)
+			aikitMatmulW8A8(act, bq, bScales, cpuDst, M, K, N)
 		}
 		cpu := time.Since(t0) / time.Duration(iters)
 		t1 := time.Now()

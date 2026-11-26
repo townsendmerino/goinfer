@@ -905,9 +905,9 @@ func (m *Model) HeadTable() string {
 		return ""
 	}
 	if m.w.arch != nil && m.w.arch.TiedLMHead {
-		return m.w.Embed.Kind()
+		return m.w.Embed.Kind().String()
 	}
-	return m.w.LMHead.Kind()
+	return m.w.LMHead.Kind().String()
 }
 
 // DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the

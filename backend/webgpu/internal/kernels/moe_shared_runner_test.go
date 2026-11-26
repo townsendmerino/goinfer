@@ -6,8 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // TestDecodeRunnerMoEShared_parity pins the resident MoE forward with an always-on shared expert.
@@ -154,55 +152,55 @@ func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 				L := &layers[l]
 				xn := refRMSNorm(x, L.an, hidden, eps, false)
 				q := make([]float32, qDim)
-				linalg.MatmulBTW8A8(xn, L.qBQ, L.qS, q, 1, hidden, qDim)
+				aikitMatmulW8A8(xn, L.qBQ, L.qS, q, 1, hidden, qDim)
 				k := make([]float32, kvDim)
-				linalg.MatmulBTW8A8(xn, L.kBQ, L.kS, k, 1, hidden, kvDim)
+				aikitMatmulW8A8(xn, L.kBQ, L.kS, k, 1, hidden, kvDim)
 				v := make([]float32, kvDim)
-				linalg.MatmulBTW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
+				aikitMatmulW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
 				refRoPE(q, nH, hd, pos, invFreq)
 				refRoPE(k, nKV, hd, pos, invFreq)
 				kFull := slices.Concat(L.priorK, k)
 				vFull := slices.Concat(L.priorV, v)
 				cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 				ao := make([]float32, hidden)
-				linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)
+				aikitMatmulW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)
 				for i := range x {
 					x[i] += ao[i]
 				}
 				xn2 := refRMSNorm(x, L.mn, hidden, eps, false)
 				logits := make([]float32, nE)
-				linalg.MatmulBTW8A8(xn2, L.rBQ, L.rS, logits, 1, hidden, nE)
+				aikitMatmulW8A8(xn2, L.rBQ, L.rS, logits, 1, hidden, nE)
 				idx, wts := routeRef(logits, L.rBias)
 				for j, e := range idx {
 					gate := make([]float32, inter)
-					linalg.MatmulBTW8A8(xn2, L.gBQ[e], L.gS[e], gate, 1, hidden, inter)
+					aikitMatmulW8A8(xn2, L.gBQ[e], L.gS[e], gate, 1, hidden, inter)
 					up := make([]float32, inter)
-					linalg.MatmulBTW8A8(xn2, L.uBQ[e], L.uS[e], up, 1, hidden, inter)
+					aikitMatmulW8A8(xn2, L.uBQ[e], L.uS[e], up, 1, hidden, inter)
 					mid := make([]float32, inter)
 					for i := range mid {
 						mid[i] = silu(gate[i]) * up[i]
 					}
 					down := make([]float32, hidden)
-					linalg.MatmulBTW8A8(mid, L.dBQ[e], L.dS[e], down, 1, inter, hidden)
+					aikitMatmulW8A8(mid, L.dBQ[e], L.dS[e], down, 1, inter, hidden)
 					for i := range x {
 						x[i] += wts[j] * down[i]
 					}
 				}
 				// shared expert.
 				sgate := make([]float32, sInter)
-				linalg.MatmulBTW8A8(xn2, L.sgBQ, L.sgS, sgate, 1, hidden, sInter)
+				aikitMatmulW8A8(xn2, L.sgBQ, L.sgS, sgate, 1, hidden, sInter)
 				sup := make([]float32, sInter)
-				linalg.MatmulBTW8A8(xn2, L.suBQ, L.suS, sup, 1, hidden, sInter)
+				aikitMatmulW8A8(xn2, L.suBQ, L.suS, sup, 1, hidden, sInter)
 				smid := make([]float32, sInter)
 				for i := range smid {
 					smid[i] = silu(sgate[i]) * sup[i]
 				}
 				sdown := make([]float32, hidden)
-				linalg.MatmulBTW8A8(smid, L.sdBQ, L.sdS, sdown, 1, sInter, hidden)
+				aikitMatmulW8A8(smid, L.sdBQ, L.sdS, sdown, 1, sInter, hidden)
 				g := float32(1)
 				if !tc.ungated {
 					gl := make([]float32, 1)
-					linalg.MatmulBTW8A8(xn2, L.sGateBQ, L.sGateS, gl, 1, hidden, 1)
+					aikitMatmulW8A8(xn2, L.sGateBQ, L.sGateS, gl, 1, hidden, 1)
 					g = float32(1.0 / (1.0 + math.Exp(-float64(gl[0]))))
 				}
 				for i := range x {
@@ -211,7 +209,7 @@ func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 			}
 			xnf := refRMSNorm(x, fnorm, hidden, eps, false)
 			refLogits := make([]float32, vocab)
-			linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
+			aikitMatmulW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 			// --- GPU resident MoE+shared runner ---
 			var own closers

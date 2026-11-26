@@ -189,13 +189,13 @@ func (v BackendModelView) MoEExpertKind() string {
 	for i := range v.m.w.Layers {
 		lw := &v.m.w.Layers[i]
 		if gm := lw.gemma4moe; gm != nil && len(gm.expertsGateUp) > 0 {
-			return gm.expertsGateUp[0].Kind()
+			return gm.expertsGateUp[0].Kind().String()
 		}
 		if len(lw.Experts) > 0 {
 			e := &lw.Experts[0]
 			for _, w := range []*linalg.WeightMat{&e.Gate, &e.Up, &e.Down} {
 				if w.Rows() > 0 {
-					return w.Kind()
+					return w.Kind().String()
 				}
 			}
 		}

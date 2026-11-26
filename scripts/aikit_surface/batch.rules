@@ -1,0 +1,7 @@
+# LS6 step 2: the batch call through WeightMat (aikit's MatmulBTBatchInto and BatchOp). One gofmt -r rule a line, in
+# order: the W8A8 op literal before the type rule, since it names the type. gofmt -r wildcards are single lowercase letters.
+linalg.W8A8Op{BQ: wmInt8(w), Scales: wmScales(w), Dst: d, N: n} -> linalg.BatchOp{W: w, Dst: d}
+linalg.W8A8Op -> linalg.BatchOp
+linalg.W4A8Op -> linalg.BatchOp
+linalg.MatmulBTW8A8Batch(w, a, m, k, o) -> linalg.MatmulBTBatchInto(w, a, m, o)
+linalg.MatmulBTW4A8Batch(w, a, m, k, g, o) -> linalg.MatmulBTBatchInto(w, a, m, o)

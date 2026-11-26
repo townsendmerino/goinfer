@@ -99,7 +99,7 @@ func planRows(m decoder.DrafterRows) (hostW, error) {
 // planKQuantHeld plans a weight the load holds as Q5_K or Q6_K (WeightMat.Q5K / Q6K) from its own blocks, row r at r·(K/256)
 // blocks, as planKQuant takes the file's blocks from KQuantReader for a heap load's int8 copy.
 func planKQuantHeld(w *linalg.WeightMat) (hostW, error) {
-	kind := w.Kind()
+	kind := w.Kind().String()
 	raw, ok := w.Q5K()
 	if kind == "q6k" {
 		raw, ok = w.Q6K()

@@ -119,7 +119,7 @@ func (iw *identWalker) walk(path string, v reflect.Value) {
 			}
 		}
 		m := (*linalg.WeightMat)(unsafe.Pointer(v.UnsafeAddr()))
-		iw.add(path, m.Kind(), fmt.Sprintf("%dx%d", m.Rows(), m.Cols()), h)
+		iw.add(path, m.Kind().String(), fmt.Sprintf("%dx%d", m.Rows(), m.Cols()), h)
 		return
 	}
 	switch v.Kind() {

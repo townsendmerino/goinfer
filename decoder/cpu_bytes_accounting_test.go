@@ -49,7 +49,7 @@ func TestCPUDecode_weightBytesPerToken(t *testing.T) {
 					return
 				}
 				a.params += r * c
-				kinds[w.Kind()]++
+				kinds[w.Kind().String()]++
 				if q4, s, _, ok := w.Int4F16(); ok {
 					a.packed += int64(len(q4))
 					a.scales += int64(len(s)) * 2 // int4 scales are binary16 (aikit v1.50.0)
