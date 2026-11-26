@@ -456,7 +456,7 @@ func bundleHeadIsCopied(t *testing.T, path string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r.opensCopiedF32()
+	return r.OpensCopiedF32()
 }
 
 // TestFitQuery_refusesACopiedF32Bundle: fit answers as the load does, rather than saying a bundle fits that the load refuses, reading

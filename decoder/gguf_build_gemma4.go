@@ -161,7 +161,7 @@ func (b *ggufBuild) loadGemma4(g4 *archparts.Gemma4Params) (*darch.Weights, erro
 	// (decoder/gguf_streaming_shape_test.go keeps that true). So: head once the PLE globals exist, then streamLayers'
 	// build, write and release. Non-streaming (sink == nil): all layers in parallel.
 	if sink != nil {
-		if err := sink.writeHeadGlobals(w, id); err != nil {
+		if err := sink.WriteHeadGlobals(w, id); err != nil {
 			return nil, err
 		}
 		// The head is on disk and nothing below reads these again (the returned *Weights of a streaming build is discarded; see

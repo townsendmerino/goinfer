@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // loadLFM2Conv reads one LFM2 gated short-convolution mixer from a safetensors checkpoint.
@@ -26,7 +27,7 @@ func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, arch 
 	nm := func(suf string) string { return tn(i, suf) }
 	c := &archparts.ShortConvWeights{}
 	var err error
-	if c.InProj, err = stIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
+	if c.InProj, err = giwcodec.STIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
 		return err
 	}
 	// [convDim, 1, K] on disk — the middle dim is the depthwise groups=channels marker and is
@@ -34,7 +35,7 @@ func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, arch 
 	if c.ConvW, err = st.TensorF32(nm("conv.conv.weight"), g.ConvDim, 1, g.ConvLCache); err != nil {
 		return err
 	}
-	if c.OutProj, err = stIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
+	if c.OutProj, err = giwcodec.STIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
 		return err
 	}
 	l.ShortConv = c

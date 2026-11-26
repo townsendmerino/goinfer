@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"io"
 	"os"
 	"runtime"
@@ -55,7 +56,7 @@ func TestForExperts(t *testing.T) {
 		t.Errorf("no sink: a failed expert returned %v", err)
 	}
 
-	sink := &giwWriter{sink: io.Discard}
+	sink := &giwWriter{Writer: giwcodec.Writer{Sink: io.Discard}}
 	// Four workers is a ceiling the scheduler may not fill on a busy box: over it is wrong, one is the bug.
 	peak = 0
 	for attempt := 0; attempt < 5 && peak < 2; attempt++ {

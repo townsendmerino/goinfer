@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // TestLoadFusedExperts_perExpertSlicing exercises loadFusedExperts directly
@@ -160,7 +161,7 @@ func TestLoadFusedExperts_transposedLayoutGivesTheRowLayout(t *testing.T) {
 	cols := open("cols", stTensor{[]int{nExpert, hidden, 2 * inter}, guCols}, stTensor{[]int{nExpert, inter, hidden}, dnCols})
 
 	for _, quant := range []quantMode{quantNone, quantInt8, quantInt8I8, quantInt4} {
-		for _, sink := range []*giwWriter{nil, {sink: io.Discard}} {
+		for _, sink := range []*giwWriter{nil, {Writer: giwcodec.Writer{Sink: io.Discard}}} {
 			want, err := loadFusedExperts(rows, "gate_up_proj", "down_proj", nExpert, inter, hidden, quant, true, false, sink)
 			if err != nil {
 				t.Fatalf("quant %d, row layout: %v", quant, err)

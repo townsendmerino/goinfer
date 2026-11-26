@@ -223,25 +223,25 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 
 	buildBlob := func(kLen, vLen, ksLen, vsLen int) []byte {
 		wr := &giwWriter{}
-		wr.raw([]byte(kvSnapMagic))
-		wr.u32(kvSnapVersion)
-		wr.str("m")
-		wr.str("")
-		wr.u32(uint32(ref.numLayers))
-		wr.u32(uint32(kvDim))
-		wr.u32(uint32(ref.window))
-		wr.u32(uint32(ref.headDim))
-		wr.raw([]byte{0, byte(kvI8)})
-		wr.u32(pos)
+		wr.Raw([]byte(kvSnapMagic))
+		wr.U32(kvSnapVersion)
+		wr.Str("m")
+		wr.Str("")
+		wr.U32(uint32(ref.numLayers))
+		wr.U32(uint32(kvDim))
+		wr.U32(uint32(ref.window))
+		wr.U32(uint32(ref.headDim))
+		wr.Raw([]byte{0, byte(kvI8)})
+		wr.U32(pos)
 		wr.ints([]int{1, 2})
-		wr.i8(make([]int8, kLen))
-		wr.i8(make([]int8, vLen))
-		wr.f32Body(make([]float32, ksLen))
-		wr.f32Body(make([]float32, vsLen))
-		crc := crc32.ChecksumIEEE(wr.buf)
+		wr.I8(make([]int8, kLen))
+		wr.I8(make([]int8, vLen))
+		wr.F32Body(make([]float32, ksLen))
+		wr.F32Body(make([]float32, vsLen))
+		crc := crc32.ChecksumIEEE(wr.Buf)
 		var tail [4]byte
 		binary.LittleEndian.PutUint32(tail[:], crc)
-		return append(wr.buf, tail[:]...)
+		return append(wr.Buf, tail[:]...)
 	}
 
 	// Valid complete kvI8 snapshot loads cleanly.

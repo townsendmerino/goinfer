@@ -1,4 +1,4 @@
-package decoder
+package giwcodec
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // The per-group checks validateShapes runs. Each returns the first mismatch it finds as a *SerializeError naming the layer
@@ -90,7 +91,7 @@ type layerNeeds struct {
 	mambaNormGroups              int
 	mlaHeadWise                  bool
 	gemma4MoE                    bool
-	ple                          bool // gemma-4's per-layer-embedding branch (opPLE)
+	ple                          bool // gemma-4's per-layer-embedding branch (program.OpPLE)
 }
 
 // needsAt reads layer i's needs from the ops the forward walks (Architecture.layerOps), so a check cannot drift from the
@@ -100,38 +101,38 @@ func needsAt(w *darch.Weights, arch *darch.Architecture, i int) layerNeeds {
 	lw := &w.Layers[i]
 	for _, o := range arch.LayerOps(i, w.HasExperts(i)) {
 		switch o.Kind {
-		case opProjQKV:
+		case program.OpProjQKV:
 			n.qkv, n.kv, n.v = true, true, !lw.VFromK
-		case opProjO:
+		case program.OpProjO:
 			n.o = true
-		case opGemma4Attn:
+		case program.OpGemma4Attn:
 			n.qkv, n.o = true, true
 			n.kv = o.G4.OwnsKV
 			n.v = o.G4.OwnsKV && !lw.VFromK
-		case opFFN:
+		case program.OpFFN:
 			switch o.FFN.Form {
-			case ffnGated, ffnGemma4Dense:
+			case program.FfnGated, program.FfnGemma4Dense:
 				n.gate, n.up, n.down = true, true, true
-			case ffnNonGated:
+			case program.FfnNonGated:
 				n.up, n.down = true, true
 			default:
 				n.router = true
 			}
-		case opGemma4MoE:
+		case program.OpGemma4MoE:
 			n.gemma4MoE = true
-		case opPLE:
+		case program.OpPLE:
 			n.ple = true
-		case opDeltaNet:
+		case program.OpDeltaNet:
 			n.delta = true
-		case opGatedAttn:
+		case program.OpGatedAttn:
 			n.qattn = true
-		case opMLA:
+		case program.OpMLA:
 			n.mla, n.mlaHeadWise = true, o.MLA.HeadWise
-		case opKDA:
+		case program.OpKDA:
 			n.kda = true
-		case opShortConv:
+		case program.OpShortConv:
 			n.conv = true
-		case opMamba2:
+		case program.OpMamba2:
 			n.mamba, n.mambaNormGroups = true, o.Mamba.NormGroups
 		}
 	}

@@ -111,6 +111,26 @@
       "why": "internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package."
     },
     {
+      "name": "giwcodec-leaf",
+      "from": [
+        "internal/runtime/giwcodec"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/giwcodec": [
+          "decoder/arch",
+          "decoder/config",
+          "internal/runtime/archparts",
+          "internal/runtime/families",
+          "internal/runtime/program"
+        ]
+      },
+      "why": "internal/runtime/giwcodec implements the .giw binary weight-bundle format (writer, reader, shape validator, island bf16/f32 helpers, row4 emitter, and target policy) below decoder (SZ13c). It never imports decoder."
+    },
+    {
       "name": "families-leaf",
       "from": [
         "internal/runtime/families"
@@ -435,6 +455,7 @@
       "internal/runtime/families",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
+      "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
@@ -642,6 +663,13 @@
     "internal/runtime/ggufconfig": [
       "decoder/config"
     ],
+    "internal/runtime/giwcodec": [
+      "decoder/arch",
+      "decoder/config",
+      "internal/runtime/archparts",
+      "internal/runtime/families",
+      "internal/runtime/program"
+    ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
     ],
@@ -830,6 +858,7 @@
       "internal/runtime/families",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
+      "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/mem",

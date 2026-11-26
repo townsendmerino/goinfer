@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // mat builds a zeroed [rows, cols] f32 weight — WrapF32 requires the exact backing length.
@@ -56,7 +57,7 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 
 	// The premise: a COMPLETE bundle passes. Without this every case below could pass for an
 	// unrelated reason and the test would assert nothing about the tail.
-	if e := validateShapes(full(), arch); e != nil {
+	if e := giwcodec.ValidateShapes(full(), arch); e != nil {
 		t.Fatalf("a complete gpt-oss bundle is rejected: %v — every case below would pass for "+
 			"the wrong reason", e)
 	}
@@ -82,7 +83,7 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			w := full()
 			tc.break_(w)
-			e := validateShapes(w, arch)
+			e := giwcodec.ValidateShapes(w, arch)
 			if e == nil {
 				t.Fatal("accepted; the bundle loads clean and panics at the first forward (M-11)")
 			}
@@ -102,7 +103,7 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 		w.Layers[0].Experts[0].GateBias = nil
 		w.Layers[0].Experts[0].UpBias = nil
 		w.Layers[0].Experts[0].DownBias = nil
-		if e := validateShapes(w, &plain); e != nil {
+		if e := giwcodec.ValidateShapes(w, &plain); e != nil {
 			t.Errorf("a non-gpt-oss bundle is rejected for missing gpt-oss fields: %v", e)
 		}
 	})

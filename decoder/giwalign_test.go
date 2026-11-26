@@ -11,6 +11,7 @@ import (
 	"github.com/townsendmerino/aikit/mmap"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // A .giw's int4/int8 group SCALES must alias the mapping, not be copied to the Go heap on every load (giwReader.f32
@@ -149,7 +150,7 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 					// repackRow4ForEmit is the writer's own cross-arch entry point; this branch is only
 					// reachable where it is real (arm64), because elsewhere the writer emits kind 3.
 					q4, q4s, group, _ := pair[0].Int4F16()
-					_, rs, ok := repackRow4ForEmit(q4, q4s, pair[0].Rows(), pair[0].Cols(), group)
+					_, rs, ok := giwcodec.RepackRow4ForEmit(q4, q4s, pair[0].Rows(), pair[0].Cols(), group)
 					if !ok {
 						t.Fatalf("%s: stored as row4 but the source shape is not row4-eligible", name)
 					}
@@ -222,13 +223,13 @@ func TestGIWAligned_paddingIsCoveredByTheCRC(t *testing.T) {
 	}
 	// Find a pad byte: the header pad sits right after the quant label; locate the first zero run
 	// that is provably padding by re-deriving the header end the way the reader does.
-	r := &giwReader{data: blob}
-	r.rawN(len(giwMagic))
-	r.u32() // version
-	r.str()
-	r.bytesField()
-	r.str()
-	end := r.off
+	r := &giwReader{Reader: giwcodec.Reader{Data: blob}}
+	r.RawN(len(giwMagic))
+	r.U32() // version
+	r.Str()
+	r.BytesField()
+	r.Str()
+	end := r.Off
 	if pad := int((-int64(end)) & 15); pad > 0 {
 		blob[end] ^= 0xFF
 		if _, err := LoadSerializedWeights(blob); err == nil {

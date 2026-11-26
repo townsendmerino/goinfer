@@ -403,8 +403,8 @@ func finishLayers(w *darch.Weights, arch *darch.Architecture, loadLayer func(i i
 		}
 		return w, nil
 	}
-	sink.arch = arch
-	if err := sink.writeHeadGlobals(w, id); err != nil {
+	sink.Arch = arch
+	if err := sink.WriteHeadGlobals(w, id); err != nil {
 		return nil, err
 	}
 	// The logit tables and Gemma 4's per-layer token table are written; nothing after the head reads them.

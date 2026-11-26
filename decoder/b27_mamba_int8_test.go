@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -202,18 +203,18 @@ func TestB27_unknownEncodingRefusedByName(t *testing.T) {
 		name string
 		read func(r *giwReader)
 	}{
-		{"array", func(r *giwReader) { r.f32() }},
-		{"matrix", func(r *giwReader) { r.weightMat() }},
+		{"array", func(r *giwReader) { r.F32() }},
+		{"matrix", func(r *giwReader) { r.WeightMat() }},
 	} {
-		r := &giwReader{data: []byte{255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
+		r := &giwReader{Reader: giwcodec.Reader{Data: []byte{255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}}
 		c.read(r)
-		if se, ok := errors.AsType[*SerializeError](r.err); !ok || !strings.Contains(se.Error(), "encoding 255") {
-			t.Errorf("%s with encoding 255: err %v, want a *SerializeError naming encoding 255", c.name, r.err)
+		if se, ok := errors.AsType[*SerializeError](r.Err); !ok || !strings.Contains(se.Error(), "encoding 255") {
+			t.Errorf("%s with encoding 255: err %v, want a *SerializeError naming encoding 255", c.name, r.Err)
 		}
 	}
-	r := &giwReader{data: []byte{giwEncF32, 1, 0, 0, 0, 0, 0, 128, 63}}
-	if got := r.f32(); r.err != nil || len(got) != 1 || got[0] != 1 {
-		t.Errorf("a known encoding: %v, err %v", got, r.err)
+	r := &giwReader{Reader: giwcodec.Reader{Data: []byte{giwEncF32, 1, 0, 0, 0, 0, 0, 128, 63}}}
+	if got := r.F32(); r.Err != nil || len(got) != 1 || got[0] != 1 {
+		t.Errorf("a known encoding: %v, err %v", got, r.Err)
 	}
 }
 

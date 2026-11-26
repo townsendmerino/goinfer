@@ -7,7 +7,7 @@
     "decoder/lfm2.go",
     "decoder/forward_lfm2.go",
     "internal/runtime/families/arch_lfm2.go",
-    "decoder/island.go"
+    "internal/runtime/giwcodec/island.go"
   ],
   "programs": [
     "testdata/lfm2-tiny"

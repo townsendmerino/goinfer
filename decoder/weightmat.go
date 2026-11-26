@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // Weight matrices are linalg.WeightMat (aikit): one type that hides f32, per-row int8 and group-wise int4 storage behind
@@ -684,78 +684,26 @@ func isBatchedProjTensor(name string) bool {
 	return false
 }
 
-// GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is built for, so the writer can choose the
-// one on-disk int4 layout that consumer reads. GIWTargetNone ("") means unknown or multi-consumer and keeps every int4
-// tensor canonical (kind 3), the safe default: a bundle nobody has promised to a single reader must stay portable, as
-// wantsCanonicalInt4 never infers a promise from an omission.
-type GIWTarget string
+// GIWTarget names the single consumer a .giw bundle is built for.
+type GIWTarget = giwcodec.Target
 
 const (
-	GIWTargetNone     GIWTarget = ""
-	GIWTargetCPUArm64 GIWTarget = "cpu-arm64"
-	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined, but does not yet change what's written
-	GIWTargetMetal    GIWTarget = "metal"
-	GIWTargetCUDA     GIWTarget = "cuda"
-	GIWTargetWebGPU   GIWTarget = "webgpu"
+	GIWTargetNone     = giwcodec.TargetNone
+	GIWTargetCPUArm64 = giwcodec.TargetCPUArm64
+	GIWTargetCPUAmd64 = giwcodec.TargetCPUAmd64
+	GIWTargetMetal    = giwcodec.TargetMetal
+	GIWTargetCUDA     = giwcodec.TargetCUDA
+	GIWTargetWebGPU   = giwcodec.TargetWebGPU
 )
 
-// GIWTargetForBackend derives the GIWTarget for a caller naming backendName as the
-// ONE consumer about to read a .giw bundle being built now (EnsureCachedGIW,
-// cmd/prequant's -target default). Mirrors wantsCanonicalInt4's literal-"cpu"-is-
-// a-promise rule: only backendName == "cpu" unlocks an arch-specific repacked-only
-// target, and only for THIS process's own GOARCH — the box building the bundle now
-// is the box that will read a same-machine cache, never a claim about some other
-// reader. Any GPU name maps to its own always-canonical target (visible in the
-// cache key even though it does not yet change which kind gets written); an
-// unrecognized name returns GIWTargetNone, the safe default.
+// GIWTargetForBackend derives the GIWTarget for a caller naming backendName.
 func GIWTargetForBackend(backendName string) GIWTarget {
-	switch backendName {
-	case "cpu":
-		switch runtime.GOARCH {
-		case "arm64":
-			// A kind-5 (row4-only) file promises that this core can read it, and aikit's row4 kernels need DotProd
-			// (PreferredInt4Layout). A core without it (a Raspberry Pi 4, Windows on ARM, where aikit assumes none) would refuse to load
-			// its own cpu-arm64 file and rebuild it on every start, so it builds canonical bundles, which any core loads. A
-			// cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
-			if linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4 {
-				return GIWTargetCPUArm64
-			}
-			return GIWTargetNone
-		case "amd64":
-			return GIWTargetCPUAmd64
-		default:
-			return GIWTargetNone
-		}
-	case "metal":
-		return GIWTargetMetal
-	case "cuda":
-		return GIWTargetCUDA
-	case "webgpu":
-		return GIWTargetWebGPU
-	default:
-		return GIWTargetNone
-	}
+	return giwcodec.TargetForBackend(backendName, linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4)
 }
 
-// ParseGIWTarget parses a -target flag value: one of the five named GIWTarget
-// values, "cpu" (resolved via this process's own GOARCH, like
-// GIWTargetForBackend("cpu")), "canonical" (GIWTargetNone, an explicit "no
-// target" for a bundle more than one consumer/arch will read — e.g. one .giw
-// embedded into several cross-compiled release binaries, where no single
-// arch-specific repacked-only layout is safe for all of them), or "" (defaults
-// the same as "cpu": cmd/prequant's traditional single-box use).
+// ParseGIWTarget parses a -target flag value.
 func ParseGIWTarget(s string) (GIWTarget, error) {
-	switch GIWTarget(s) {
-	case GIWTargetCPUArm64, GIWTargetCPUAmd64, GIWTargetMetal, GIWTargetCUDA, GIWTargetWebGPU:
-		return GIWTarget(s), nil
-	}
-	switch s {
-	case "", "cpu":
-		return GIWTargetForBackend("cpu"), nil
-	case "canonical":
-		return GIWTargetNone, nil
-	}
-	return GIWTargetNone, fmt.Errorf("unknown .giw target %q (want cpu-arm64 | cpu-amd64 | metal | cuda | webgpu | cpu | canonical)", s)
+	return giwcodec.ParseTarget(s, linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4)
 }
 
 // isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a

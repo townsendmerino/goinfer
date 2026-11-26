@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // streamedTable is an embedding-shaped table (the token embedding, the LM head, Gemma 4's per-layer token table) that a
@@ -26,15 +27,6 @@ var streamTablesOn = true
 // streamTableBlockBytes bounds pass two's code buffer.
 var streamTableBlockBytes = 32 << 20
 
-// headTable writes the table that stands for dst: from its registered source when there is one, else dst itself.
-func (w *giwWriter) headTable(dst *linalg.WeightMat) {
-	if t := w.tables[dst]; t != nil {
-		w.streamTable(t)
-		return
-	}
-	w.weightMat(dst)
-}
-
 // streamTable writes t as weightMat writes the WeightMat streamQuantizedEmbed builds for a sink (canonical, no row4 copy):
 // kind 2 for int8, kind 3 for int4 (kind 5 on a cpu-arm64 target when the shape allows), kind 10 for f32.
 func (w *giwWriter) streamTable(t *streamedTable) {
@@ -45,19 +37,19 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 	if mode == quantInt4 && fakeQuantScheme != "" {
 		m, err := streamQuantizedEmbed(t.rows, t.cols, mode, true, true, 1, w.testHooks.embedWorkers, t.newReader)
 		if err != nil {
-			w.setErr(err)
+			w.SetErr(err)
 			return
 		}
-		w.weightMat(&m)
+		w.WeightMat(&m)
 		return
 	}
 	rows, cols := t.rows, t.cols
 	header := func(kind byte, group int, w8a8 bool) {
-		w.raw([]byte{kind})
-		w.u32(uint32(rows))
-		w.u32(uint32(cols))
-		w.u32(uint32(group))
-		w.raw([]byte{map[bool]byte{true: 1, false: 0}[w8a8]})
+		w.Raw([]byte{kind})
+		w.U32(uint32(rows))
+		w.U32(uint32(cols))
+		w.U32(uint32(group))
+		w.Raw([]byte{map[bool]byte{true: 1, false: 0}[w8a8]})
 	}
 	switch mode {
 	case quantInt8, quantInt8I8:
@@ -69,20 +61,20 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			return
 		}
 		header(2, 0, mode == quantInt8I8)
-		w.alignArray()
-		w.f32Body(scales)
-		w.alignArray()
-		w.u32(uint32(rows * cols))
+		w.AlignArray()
+		w.F32Body(scales)
+		w.AlignArray()
+		w.U32(uint32(rows * cols))
 		block := max(1, streamTableBlockBytes/cols)
 		q8 := make([]int8, min(block, rows)*cols)
-		for lo := 0; lo < rows && w.err == nil; lo += block {
+		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
 			if !w.tablePass(t, lo, hi, func() func(int, []float32) {
 				return func(r int, row []float32) { linalg.QuantizeRowInt8(row, q8[(r-lo)*cols:(r-lo+1)*cols]) }
 			}) {
 				return
 			}
-			w.raw(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), (hi-lo)*cols))
+			w.Raw(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), (hi-lo)*cols))
 		}
 	case quantInt4:
 		const group = int4GroupSize
@@ -99,18 +91,18 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			return
 		}
 		kind, scales := byte(3), q4s
-		row4 := w.target == GIWTargetCPUArm64 && row4EmitEligible(rows, cols, group)
+		row4 := w.Target == GIWTargetCPUArm64 && giwcodec.Row4EmitEligible(rows, cols, group)
 		if row4 {
-			kind, scales = 5, repackRow4ScalesForEmit(q4s, rows, cols, group)
+			kind, scales = 5, giwcodec.RepackRow4ScalesForEmit(q4s, rows, cols, group)
 		}
 		header(kind, group, false)
-		w.alignArray()
-		w.scales16(scales)
-		w.alignArray()
-		w.u32(uint32(rows * bpr))
+		w.AlignArray()
+		w.Scales16(scales)
+		w.AlignArray()
+		w.U32(uint32(rows * bpr))
 		block := max(4, streamTableBlockBytes/bpr/4*4) // whole 4-row groups, the row4 layout's unit
 		q4 := make([]byte, min(block, rows)*bpr)
-		for lo := 0; lo < rows && w.err == nil; lo += block {
+		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
 			if !w.tablePass(t, lo, hi, func() func(int, []float32) {
 				sc := make([]float32, nGroups)
@@ -122,21 +114,21 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			}
 			out := q4[:(hi-lo)*bpr]
 			if row4 {
-				out = repackRow4CodesForEmit(out, hi-lo, cols, group)
+				out = giwcodec.RepackRow4CodesForEmit(out, hi-lo, cols, group)
 			}
-			w.raw(out)
+			w.Raw(out)
 		}
 	default: // f32
 		if giwF32Kind1ForTest {
 			header(1, 0, false)
 		} else {
 			header(giwKindF32, 0, false)
-			w.alignArray()
+			w.AlignArray()
 		}
-		w.u32(uint32(rows * cols))
+		w.U32(uint32(rows * cols))
 		block := max(1, streamTableBlockBytes/(4*cols))
 		buf := make([]byte, min(block, rows)*cols*4)
-		for lo := 0; lo < rows && w.err == nil; lo += block {
+		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
 			if !w.tablePass(t, lo, hi, func() func(int, []float32) {
 				return func(r int, row []float32) {
@@ -148,7 +140,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			}) {
 				return
 			}
-			w.raw(buf[:(hi-lo)*cols*4])
+			w.Raw(buf[:(hi-lo)*cols*4])
 		}
 	}
 }
@@ -157,7 +149,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 // scratch), and hands each row to it; do must write only that row's own output. It records a read error on the writer and
 // reports whether the pass completed.
 func (w *giwWriter) tablePass(t *streamedTable, lo, hi int, newDo func() func(r int, row []float32)) bool {
-	if w.err != nil {
+	if w.Err != nil {
 		return false
 	}
 	err := forRowRanges(hi-lo, t.cols, 1, w.testHooks.embedWorkers, t.newReader, func(a, b int, read rowReader) error {
@@ -171,15 +163,8 @@ func (w *giwWriter) tablePass(t *streamedTable, lo, hi int, newDo func() func(r 
 		return nil
 	})
 	if err != nil {
-		w.setErr(err)
+		w.SetErr(err)
 		return false
 	}
 	return true
-}
-
-// setErr records err as the writer's first error.
-func (w *giwWriter) setErr(err error) {
-	if w.err == nil {
-		w.err = err
-	}
 }

@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"hash/crc32"
 )
 
@@ -94,14 +95,14 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 		adapterName = c.lora.name
 	}
 	wr := &giwWriter{}
-	wr.raw([]byte(kvSnapMagic))
-	wr.u32(kvSnapVersion)
-	wr.str(id)
-	wr.str(adapterName)
-	wr.u32(uint32(c.numLayers))
-	wr.u32(uint32(c.kvDim))
-	wr.u32(uint32(c.window))
-	wr.u32(uint32(c.headDim))
+	wr.Raw([]byte(kvSnapMagic))
+	wr.U32(kvSnapVersion)
+	wr.Str(id)
+	wr.Str(adapterName)
+	wr.U32(uint32(c.numLayers))
+	wr.U32(uint32(c.kvDim))
+	wr.U32(uint32(c.window))
+	wr.U32(uint32(c.headDim))
 	manualPos := byte(0)
 	if c.manualPos {
 		manualPos = 1
@@ -110,8 +111,8 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 	if f16ByteAsF32 && c.quant == kvqF16 {
 		quantByte = byte(kvqF32) // planted defect: the storage byte left at f32's value
 	}
-	wr.raw([]byte{manualPos, quantByte})
-	wr.u32(uint32(c.pos))
+	wr.Raw([]byte{manualPos, quantByte})
+	wr.U32(uint32(c.pos))
 	wr.ints(s.tokens)
 	// Per layer, in cache-structure order (the loader reconstructs the same rings +
 	// quant from the model, so no per-layer tags are needed): ring layers store
@@ -125,9 +126,9 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 			// (which over-store a short, un-wrapped session). Restore re-wraps.
 			lo := max(0, r.count-r.w)
 			nLive := r.count - lo
-			wr.u32(uint32(r.count))
-			wr.u32(uint32(nLive))
-			wr.u32(uint32(r.stride))
+			wr.U32(uint32(r.count))
+			wr.U32(uint32(nLive))
+			wr.U32(uint32(r.stride))
 			if r.stride == 0 || nLive == 0 {
 				continue // never-written ring: count/nLive/stride suffice
 			}
@@ -139,8 +140,8 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 					copy(kb[do:do+st], r.kh[so:so+st])
 					copy(vb[do:do+st], r.vh[so:so+st])
 				}
-				wr.scales16(kb)
-				wr.scales16(vb)
+				wr.Scales16(kb)
+				wr.Scales16(vb)
 			} else if c.quant == kvI8 {
 				nKV := st / r.headDim
 				kb, vb := make([]int8, nLive*st), make([]int8, nLive*st)
@@ -153,10 +154,10 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 					copy(ks[sdo:sdo+nKV], r.ksc[sso:sso+nKV])
 					copy(vs[sdo:sdo+nKV], r.vsc[sso:sso+nKV])
 				}
-				wr.i8(kb)
-				wr.i8(vb)
-				wr.f32Body(ks)
-				wr.f32Body(vs)
+				wr.I8(kb)
+				wr.I8(vb)
+				wr.F32Body(ks)
+				wr.F32Body(vs)
 			} else {
 				kb, vb := make([]float32, nLive*st), make([]float32, nLive*st)
 				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
@@ -164,26 +165,26 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 					copy(kb[do:do+st], r.k[so:so+st])
 					copy(vb[do:do+st], r.v[so:so+st])
 				}
-				wr.f32Body(kb)
-				wr.f32Body(vb)
+				wr.F32Body(kb)
+				wr.F32Body(vb)
 			}
 		} else if c.quant == kvqF16 { // compact rows: the format holds kvDim-wide rows whatever the cache's pad
 			n := c.storedRows(l, c.kvDim)
-			wr.scales16(compactRows(c.keysH[l], n, c.kvDim, c.rowStride(c.kvDim)))
-			wr.scales16(compactRows(c.valsH[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.Scales16(compactRows(c.keysH[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.Scales16(compactRows(c.valsH[l], n, c.kvDim, c.rowStride(c.kvDim)))
 		} else if c.quant == kvI8 {
-			wr.i8(c.keysQ[l])
-			wr.i8(c.valsQ[l])
-			wr.f32Body(c.keyScale[l])
-			wr.f32Body(c.valScale[l])
+			wr.I8(c.keysQ[l])
+			wr.I8(c.valsQ[l])
+			wr.F32Body(c.keyScale[l])
+			wr.F32Body(c.valScale[l])
 		} else {
 			n := c.storedRows(l, c.kvDim)
-			wr.f32Body(compactRows(c.keys[l], n, c.kvDim, c.rowStride(c.kvDim)))
-			wr.f32Body(compactRows(c.vals[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.F32Body(compactRows(c.keys[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.F32Body(compactRows(c.vals[l], n, c.kvDim, c.rowStride(c.kvDim)))
 		}
 	}
-	wr.u32(crc32.ChecksumIEEE(wr.buf))
-	return wr.buf
+	wr.U32(crc32.ChecksumIEEE(wr.Buf))
+	return wr.Buf
 }
 
 // LoadSession reconstructs a *Session from a Snapshot blob, validating its KV
@@ -272,8 +273,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	// + quant from NewCache, so fill its fields in place.
 	for l := range numLayers {
 		if rr := ref.rings[l]; rr != nil {
-			rr.count = int(r.u32())
-			nLive, st := int(r.u32()), int(r.u32())
+			rr.count = int(r.U32())
+			nLive, st := int(r.U32()), int(r.U32())
 			rr.stride = st
 			if st == 0 || nLive == 0 {
 				// A never-written ring must also have count 0: count>0 with stride/nLive 0 is a state the writer never emits (it leaves rr.count
@@ -294,7 +295,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			nRows := rr.count - lo // copy iterations = payload rows the writer emitted
 			if quant == kvqF16 {
 				rr.kh, rr.vh = make([]uint16, rr.w*st), make([]uint16, rr.w*st)
-				kb, vb := r.u16View(int(r.u32())), r.u16View(int(r.u32()))
+				kb, vb := r.U16View(int(r.U32())), r.U16View(int(r.U32()))
 				if len(kb) < nRows*st || len(vb) < nRows*st {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
@@ -307,7 +308,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				nKV := st / rr.headDim
 				rr.kq, rr.vq = make([]int8, rr.w*st), make([]int8, rr.w*st)
 				rr.ksc, rr.vsc = make([]float32, rr.w*nKV), make([]float32, rr.w*nKV)
-				kb, vb, ks, vs := r.i8(), r.i8(), r.f32Body(), r.f32Body()
+				kb, vb, ks, vs := r.I8(), r.I8(), r.F32Body(), r.F32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st || len(ks) < nRows*nKV || len(vs) < nRows*nKV {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
@@ -321,7 +322,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				}
 			} else {
 				rr.k, rr.v = make([]float32, rr.w*st), make([]float32, rr.w*st)
-				kb, vb := r.f32Body(), r.f32Body()
+				kb, vb := r.F32Body(), r.F32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
@@ -333,8 +334,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 		} else if quant == kvqF16 {
 			// Copied, not aliased: the cache outlives the blob it was restored from.
-			ref.keysH[l] = append(ref.keysH[l][:0], r.u16View(int(r.u32()))...)
-			ref.valsH[l] = append(ref.valsH[l][:0], r.u16View(int(r.u32()))...)
+			ref.keysH[l] = append(ref.keysH[l][:0], r.U16View(int(r.U32()))...)
+			ref.valsH[l] = append(ref.valsH[l][:0], r.U16View(int(r.U32()))...)
 			if e := checkGlobalPair(l, "keysH", "valsH", len(ref.keysH[l]), len(ref.valsH[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
@@ -343,7 +344,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				ref.keysH[l], ref.valsH[l] = padRows(ref.keysH[l], pos, kvDim, ref.stride[l]), padRows(ref.valsH[l], pos, kvDim, ref.stride[l])
 			}
 		} else if quant == kvI8 {
-			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32Body(), r.f32Body()
+			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.I8(), r.I8(), r.F32Body(), r.F32Body()
 			// Blob-controlled lengths must be compared, as the ring branch above does for its stride, nLive and payload. The forward derives
 			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
 			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
@@ -364,10 +365,10 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		} else {
 			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
 			// empty-but-non-nil slice so Append/Keys stay well-formed.
-			if k := r.f32Body(); k != nil {
+			if k := r.F32Body(); k != nil {
 				ref.keys[l] = k
 			}
-			if v := r.f32Body(); v != nil {
+			if v := r.F32Body(); v != nil {
 				ref.vals[l] = v
 			}
 			// stride[] is set only by Append, which LoadSession bypasses; without the assignment below a restored global layer has stride 0,
@@ -383,8 +384,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 		}
 	}
-	if r.err != nil {
-		return nil, &SnapshotError{"truncated body: " + r.err.Error()}
+	if r.Err != nil {
+		return nil, &SnapshotError{"truncated body: " + r.Err.Error()}
 	}
 	ref.pos = pos
 	ref.lora = lora
@@ -403,25 +404,25 @@ type kvSnapHeader struct {
 // readKVSnapHeader reads a session snapshot's magic, version and header, and checks the payload's CRC before any offset or
 // length in it is trusted. The reader it returns is positioned after the header.
 func readKVSnapHeader(data []byte) (*giwReader, kvSnapHeader, error) {
-	r := &giwReader{data: data}
-	if got := r.rawN(len(kvSnapMagic)); string(got) != kvSnapMagic {
+	r := &giwReader{Reader: giwcodec.Reader{Data: data}}
+	if got := r.RawN(len(kvSnapMagic)); string(got) != kvSnapMagic {
 		return nil, kvSnapHeader{}, &SnapshotError{fmt.Sprintf("bad magic %q (want %q)", got, kvSnapMagic)}
 	}
-	if v := r.u32(); v != kvSnapVersion {
+	if v := r.U32(); v != kvSnapVersion {
 		return nil, kvSnapHeader{}, &SnapshotError{fmt.Sprintf("format version %d, this build reads %d", v, kvSnapVersion)}
 	}
 	var h kvSnapHeader
-	h.id = r.str()
-	h.adapter = r.str()
-	h.numLayers, h.kvDim, h.window, h.headDim = int(r.u32()), int(r.u32()), int(r.u32()), int(r.u32())
-	if !r.need(2) {
+	h.id = r.Str()
+	h.adapter = r.Str()
+	h.numLayers, h.kvDim, h.window, h.headDim = int(r.U32()), int(r.U32()), int(r.U32()), int(r.U32())
+	if !r.Need(2) {
 		return nil, kvSnapHeader{}, &SnapshotError{"truncated header"}
 	}
-	h.manualPos = r.data[r.off] == 1
-	h.quant = kvQuant(r.data[r.off+1])
-	r.off += 2
-	h.pos = int(r.u32())
-	if r.err != nil {
+	h.manualPos = r.Data[r.Off] == 1
+	h.quant = kvQuant(r.Data[r.Off+1])
+	r.Off += 2
+	h.pos = int(r.U32())
+	if r.Err != nil {
 		return nil, kvSnapHeader{}, &SnapshotError{"truncated header"}
 	}
 
@@ -439,22 +440,22 @@ func readKVSnapHeader(data []byte) (*giwReader, kvSnapHeader, error) {
 
 // ints writes a length-prefixed []int as uint32s (token ids are non-negative).
 func (w *giwWriter) ints(s []int) {
-	w.u32(uint32(len(s)))
+	w.U32(uint32(len(s)))
 	for _, v := range s {
-		w.u32(uint32(v))
+		w.U32(uint32(v))
 	}
 }
 
 // ints reads a length-prefixed []int written by giwWriter.ints. Returns nil for
 // a zero length.
 func (r *giwReader) ints() []int {
-	n := int(r.u32())
-	if n == 0 || !r.need(n*4) {
+	n := int(r.U32())
+	if n == 0 || !r.Need(n*4) {
 		return nil
 	}
 	out := make([]int, n)
 	for i := range out {
-		out[i] = int(r.u32())
+		out[i] = int(r.U32())
 	}
 	return out
 }

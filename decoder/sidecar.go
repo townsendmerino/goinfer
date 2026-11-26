@@ -19,6 +19,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/diskfree"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -450,7 +451,7 @@ func legacyCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) s
 // q4kNative56), ".k56"; "" otherwise. A q4k sidecar written before those kinds widened them under the name without the
 // segment, so the two are never mistaken for each other, and no legacy (unversioned) name carries it.
 func kquantTag(quant string, target GIWTarget) string {
-	if quant != "q4k" || !giwCarriesKQuant56(target) || !linalg.KQuantNative() {
+	if quant != "q4k" || !giwcodec.CarriesKQuant56(target) || !linalg.KQuantNative() {
 		return ""
 	}
 	return ".k56"
