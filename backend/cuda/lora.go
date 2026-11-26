@@ -275,3 +275,19 @@ func loraDownCfg(rank int) LaunchConfig {
 // loraDownSerial is test-only. Tests set it between Forward calls, which reach the executor
 // through r.do's channel, so the write happens-before the launch that reads it.
 var loraDownSerial bool
+
+// loraBind is cudaResident's compute-time LoRA state: the bound adapter's layers and cache, the shared scratch and the two
+// kernels.
+type loraBind struct {
+	// loraLayers is nil until SetAdapter binds a compute-time LoRA adapter, then non-nil for the life of that bind.
+	// segA/segB check it directly (cuda/lora.go's applyLora), so it must never be bound while r.graphs replays a
+	// captured segment: the graph was captured with this nil, so replay would silently skip every LoRA dispatch.
+	// SetAdapter refuses (returns an error) rather than bind under graphs; graphs are opt-in (GOINFER_CUDA_GRAPHS).
+	loraLayers []cudaLoraLayer
+	loraT      Buffer         // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
+	lora       loraCacheState // the bound adapter's device cache + bind counters (cuda/lora.go)
+	// Compute-time LoRA ( cuda/lora.go). Own module (lora.ptx), loaded
+	// unconditionally like every other glue pipeline: cheap, and whether a model will ever receive an adapter is not
+	// known at BuildResident time.
+	fLoraDown, fLoraUp Pipeline
+}
