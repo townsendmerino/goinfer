@@ -31,7 +31,7 @@ func TestWalkBatchPlant_qwen35GateSkipped(t *testing.T) {
 	const n, bar = 32, 1e-6
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+		ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
 	want, err := m.hiddenLastSequential(context.Background(), ids)
 	if err != nil {
@@ -67,9 +67,9 @@ func TestWalkBatchPlant_qwen35ConvWindowDropped(t *testing.T) {
 	const n, b = 40, 17
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*37 + 5) % m.w.arch.VocabSize
+		ids[i] = (i*37 + 5) % m.w.Arch.VocabSize
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	last := func(cuts ...int) []float32 {
 		cache := m.NewCache(n)
 		var out []float32
@@ -167,14 +167,14 @@ func TestWalkBatchPlant_gemma4ImagePLE(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	if m.w.arch.gemma4.HiddenSizePerLayerInput == 0 {
+	if m.w.Arch.Gemma4.HiddenSizePerLayerInput == 0 {
 		t.Fatal("test bug: gemma4-emodel-tiny carries no PLE")
 	}
 	const n, imgPos, bar = 20, 7, 1e-5
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+		ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
 	feats := make([]float32, hidden)
 	for j := range feats {

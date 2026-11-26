@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // mat builds a zeroed [rows, cols] f32 weight — WrapF32 requires the exact backing length.
@@ -28,19 +30,19 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 	// A minimal gpt-oss-shaped arch and bundle. Built by hand rather than loaded, because the
 	// defect is a bundle that CANNOT be produced by the current writer — it is what an older
 	// one left behind.
-	arch := &Architecture{
-		Name: "gpt_oss", Norm: NormRMS, NormEps: 1e-5, AttnScale: 0.25,
+	arch := &darch.Architecture{
+		Name: "gpt_oss", Norm: darch.NormRMS, NormEps: 1e-5, AttnScale: 0.25,
 		HiddenDim: 8, NumLayers: 1, NumHeads: 4, NumKVHeads: 2, HeadDim: 2, VocabSize: 16,
-		gptoss: &gptOssParams{},
+		GPTOSS: &archparts.GPTOSSParams{},
 		MoE:    &MoEConfig{NumExperts: 1, TopK: 1, IntermediateDim: 4},
 	}
-	full := func() *Weights {
+	full := func() *darch.Weights {
 		qDim, kvDim := arch.NumHeads*arch.HeadDim, arch.NumKVHeads*arch.HeadDim
-		return &Weights{Layers: []LayerWeights{{
+		return &darch.Weights{Layers: []darch.LayerWeights{{
 			QProj: mat(qDim, arch.HiddenDim), KProj: mat(kvDim, arch.HiddenDim), VProj: mat(kvDim, arch.HiddenDim),
 			OProj: mat(arch.HiddenDim, qDim), Router: mat(arch.MoE.NumExperts, arch.HiddenDim),
 			AttnSinks: make([]float32, arch.NumHeads),
-			Experts: []expertWeights{{
+			Experts: []archparts.ExpertWeights{{
 				Gate: mat(arch.MoE.IntermediateDim, arch.HiddenDim),
 				Up:   mat(arch.MoE.IntermediateDim, arch.HiddenDim),
 				Down: mat(arch.HiddenDim, arch.MoE.IntermediateDim),
@@ -60,22 +62,22 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 	}
 
 	for name, tc := range map[string]struct {
-		break_ func(*Weights)
+		break_ func(*darch.Weights)
 		names  string
 	}{
 		// THE REAL ONE: exactly what a pre-v6 sidecar hands back.
 		"AttnSinks absent (a pre-v6 sidecar)": {
-			func(w *Weights) { w.Layers[0].AttnSinks = nil }, "AttnSinks"},
+			func(w *darch.Weights) { w.Layers[0].AttnSinks = nil }, "AttnSinks"},
 		"AttnSinks short": {
-			func(w *Weights) { w.Layers[0].AttnSinks = make([]float32, 1) }, "AttnSinks"},
+			func(w *darch.Weights) { w.Layers[0].AttnSinks = make([]float32, 1) }, "AttnSinks"},
 		"expert GateBias absent": {
-			func(w *Weights) { w.Layers[0].Experts[0].GateBias = nil }, "GateBias"},
+			func(w *darch.Weights) { w.Layers[0].Experts[0].GateBias = nil }, "GateBias"},
 		"expert UpBias absent": {
-			func(w *Weights) { w.Layers[0].Experts[0].UpBias = nil }, "UpBias"},
+			func(w *darch.Weights) { w.Layers[0].Experts[0].UpBias = nil }, "UpBias"},
 		"expert DownBias absent": {
-			func(w *Weights) { w.Layers[0].Experts[0].DownBias = nil }, "DownBias"},
+			func(w *darch.Weights) { w.Layers[0].Experts[0].DownBias = nil }, "DownBias"},
 		"expert DownBias short": {
-			func(w *Weights) { w.Layers[0].Experts[0].DownBias = make([]float32, 1) }, "DownBias"},
+			func(w *darch.Weights) { w.Layers[0].Experts[0].DownBias = make([]float32, 1) }, "DownBias"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := full()
@@ -94,7 +96,7 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 	// and a fix that demanded them universally would refuse every non-gpt-oss bundle.
 	t.Run("absent is fine without the gptoss marker", func(t *testing.T) {
 		plain := *arch
-		plain.gptoss = nil
+		plain.GPTOSS = nil
 		w := full()
 		w.Layers[0].AttnSinks = nil
 		w.Layers[0].Experts[0].GateBias = nil

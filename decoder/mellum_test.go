@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"io/fs"
 	"math"
 	"os"
@@ -66,7 +67,7 @@ func TestResolveMellum(t *testing.T) {
 	if arch.HiddenDim != 2304 || arch.NumHeads != 32 || arch.NumKVHeads != 4 || arch.HeadDim != 128 {
 		t.Errorf("dims: hidden=%d heads=%d kv=%d hd=%d", arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim)
 	}
-	if !arch.QKNorm || arch.Norm != NormRMS || arch.RMSAddOne || arch.Act != ActSiLU || arch.NormPlacement != NormPre2 {
+	if !arch.QKNorm || arch.Norm != darch.NormRMS || arch.RMSAddOne || arch.Act != darch.ActSiLU || arch.NormPlacement != darch.NormPre2 {
 		t.Errorf("wrong norm/act flags (QKNorm=%v norm=%v rmsAddOne=%v act=%v placement=%v)",
 			arch.QKNorm, arch.Norm, arch.RMSAddOne, arch.Act, arch.NormPlacement)
 	}
@@ -84,12 +85,12 @@ func TestResolveMellum(t *testing.T) {
 
 	// Attention interleave: layer_types says layers 3,7,11,… are full (global).
 	for _, i := range []int{0, 1, 2, 4} {
-		if arch.isGlobalLayer(i) {
+		if arch.IsGlobalLayer(i) {
 			t.Errorf("layer %d classified global, want sliding (local)", i)
 		}
 	}
 	for _, i := range []int{3, 7, 27} {
-		if !arch.isGlobalLayer(i) {
+		if !arch.IsGlobalLayer(i) {
 			t.Errorf("layer %d classified sliding, want full (global)", i)
 		}
 	}
@@ -99,14 +100,14 @@ func TestResolveMellum(t *testing.T) {
 	if g == nil {
 		return
 	}
-	closeVec(t, "mellum global (YaRN) inv_freq", arch.ropeInvFreqGlobal, g.Full.InvFreq)
-	closeVec(t, "mellum local (plain) inv_freq", arch.ropeInvFreqLocal, g.Sliding.InvFreq)
+	closeVec(t, "mellum global (YaRN) inv_freq", arch.RoPEInvFreqGlobal, g.Full.InvFreq)
+	closeVec(t, "mellum local (plain) inv_freq", arch.RoPEInvFreqLocal, g.Sliding.InvFreq)
 
 	// mscale: YaRN attention_factor on the full layers, 1.0 on sliding.
-	if ms := arch.ropeMscale(3); ms != g.Full.AttentionFactor {
+	if ms := arch.RoPEMscale(3); ms != g.Full.AttentionFactor {
 		t.Errorf("global mscale = %v, want %v", ms, g.Full.AttentionFactor)
 	}
-	if ms := arch.ropeMscale(0); ms != 1.0 {
+	if ms := arch.RoPEMscale(0); ms != 1.0 {
 		t.Errorf("local mscale = %v, want 1.0", ms)
 	}
 }

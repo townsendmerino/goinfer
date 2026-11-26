@@ -49,9 +49,9 @@ func TestR13_cpuAB(t *testing.T) {
 			t.Fatalf("load %s: %v", path, err)
 		}
 		name := filepath.Base(path)
-		moe := m.w.arch.MoE != nil
-		hb("%s: loaded (%d layers, MoE %v)", name, m.w.arch.NumLayers, moe)
-		V := m.w.arch.VocabSize
+		moe := m.w.Arch.MoE != nil
+		hb("%s: loaded (%d layers, MoE %v)", name, m.w.Arch.NumLayers, moe)
+		V := m.w.Arch.VocabSize
 		ids := make([]int, prefillN)
 		for i := range ids {
 			ids[i] = (i*7919 + 11) % V

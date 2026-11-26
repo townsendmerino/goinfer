@@ -48,17 +48,17 @@ func TestLlama_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "llama" {
-		t.Fatalf("resolved arch %q, want llama", m.w.arch.Name)
+	if m.w.Arch.Name != "llama" {
+		t.Fatalf("resolved arch %q, want llama", m.w.Arch.Name)
 	}
-	if m.w.arch.TiedLMHead {
+	if m.w.Arch.TiedLMHead {
 		t.Errorf("expected untied LM head for TinyLlama (lm_head.weight present)")
 	}
-	if m.w.arch.QKNorm {
+	if m.w.Arch.QKNorm {
 		t.Errorf("Llama must not use QK-norm")
 	}
-	if m.w.arch.HeadDim != 64 { // derived: hidden 2048 / 32 heads
-		t.Errorf("HeadDim = %d, want 64 (derived from hidden/heads)", m.w.arch.HeadDim)
+	if m.w.Arch.HeadDim != 64 { // derived: hidden 2048 / 32 heads
+		t.Errorf("HeadDim = %d, want 64 (derived from hidden/heads)", m.w.Arch.HeadDim)
 	}
 
 	cache := m.NewCache(len(g.IDs))

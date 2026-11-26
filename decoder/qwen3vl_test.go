@@ -24,10 +24,10 @@ func TestQwen3VL_textParity(t *testing.T) {
 		golden: "../testdata/qwen3vl_tiny_text_golden.json", ckpt: "../testdata/qwen3vl-tiny", pin: "scripts/pin_qwen3vl_tiny.py",
 		label: "qwen3-VL text parity",
 		check: func(t *testing.T, m *Model) {
-			if m.w.arch.Name != "qwen3_vl" {
-				t.Fatalf("arch.Name = %q, want qwen3_vl", m.w.arch.Name)
+			if m.w.Arch.Name != "qwen3_vl" {
+				t.Fatalf("arch.Name = %q, want qwen3_vl", m.w.Arch.Name)
 			}
-			if !m.w.arch.MRopeInterleaved {
+			if !m.w.Arch.MRopeInterleaved {
 				t.Error("arch.MRopeInterleaved = false, want true for qwen3_vl")
 			}
 		},

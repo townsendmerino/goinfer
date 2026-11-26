@@ -29,7 +29,7 @@ func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) 
 		t.Fatalf("load gguf (int4, row4-eligible): %v", err)
 	}
 	var eligible, int4Count int
-	for _, wm := range mGGUF.w.matmulWeights() {
+	for _, wm := range mGGUF.w.MatmulWeights() {
 		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
@@ -68,8 +68,8 @@ func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) 
 	if err != nil {
 		t.Fatalf("LoadSerializedWeights (kind 5): %v", err)
 	}
-	srcWeights := mGGUF.w.matmulWeights()
-	gotWeights := w5.matmulWeights()
+	srcWeights := mGGUF.w.MatmulWeights()
+	gotWeights := w5.MatmulWeights()
 	if len(srcWeights) != len(gotWeights) {
 		t.Fatalf("matmulWeights() count changed across round-trip: src=%d got=%d", len(srcWeights), len(gotWeights))
 	}
@@ -138,7 +138,7 @@ func TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad(t *testing.
 		t.Fatalf("load gguf (int4, row4-eligible): %v", err)
 	}
 	var eligible bool
-	for _, wm := range mGGUF.w.matmulWeights() {
+	for _, wm := range mGGUF.w.MatmulWeights() {
 		if _, _, ok := int4Row4F32(wm); ok {
 			eligible = true
 			break

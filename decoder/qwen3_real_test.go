@@ -52,7 +52,7 @@ func TestQwen3Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "qwen3" {
 		t.Fatalf("arch = %q, want qwen3", a.Name)
 	}

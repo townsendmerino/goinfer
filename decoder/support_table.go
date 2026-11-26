@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 // What the README and docs/multimodal.md support table's decoder cells are computed from.
 // Each cell answers "after an image, does this
 // family's turn decode on this backend's resident?", from the declarations the runtime itself admits on, so the table
@@ -17,20 +21,20 @@ func HybridImagePrefillDeclared(backend string, moe bool) bool { return backend 
 func gemma4ImageDecodeResident(bidirectional, eModel bool) bool { return bidirectional || eModel }
 
 // gemma4IsEModel is the E-model test GenerateGemma4VLSpans applies.
-func gemma4IsEModel(a *Architecture) bool {
-	return a.gemma4 != nil && (a.gemma4.HiddenSizePerLayerInput > 0 || a.gemma4.SharedKVLayers > 0)
+func gemma4IsEModel(a *darch.Architecture) bool {
+	return a.Gemma4 != nil && (a.Gemma4.HiddenSizePerLayerInput > 0 || a.Gemma4.SharedKVLayers > 0)
 }
 
 // imageTurnDecodesResident is the support table's decoder cell: the family is resident-eligible on backend, a recurrent
 // hybrid also has the backend's hybrid image prefill, and a Gemma 4 passes gemma4ImageDecodeResident.
-func imageTurnDecodesResident(cfg *Config, a *Architecture, backend string) bool {
+func imageTurnDecodesResident(cfg *Config, a *darch.Architecture, backend string) bool {
 	if !ResidentEligible(a, backend) {
 		return false
 	}
-	if a.recurrent() && !HybridImagePrefillDeclared(backend, a.MoE != nil) {
+	if a.Recurrent() && !HybridImagePrefillDeclared(backend, a.MoE != nil) {
 		return false
 	}
-	if a.gemma4 != nil && !gemma4ImageDecodeResident(cfg.UseBidirectionalAttention != "", gemma4IsEModel(a)) {
+	if a.Gemma4 != nil && !gemma4ImageDecodeResident(cfg.UseBidirectionalAttention != "", gemma4IsEModel(a)) {
 		return false
 	}
 	return true

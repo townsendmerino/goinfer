@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -96,10 +97,10 @@ func TestWebGPUActGroupShapeDecline_layerNorm(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		why := webgpuActGroupShapeDecline("webgpu", 32, m.w.arch)
+		why := webgpuActGroupShapeDecline("webgpu", 32, m.w.Arch)
 		_ = m.Close()
-		if got := why != ""; got != tc.decline || (tc.decline && !strings.Contains(why, string(FeatLayerNorm))) {
-			t.Errorf("%s: decline %q, want a decline naming %s: %v", tc.dir, why, FeatLayerNorm, tc.decline)
+		if got := why != ""; got != tc.decline || (tc.decline && !strings.Contains(why, string(darch.FeatLayerNorm))) {
+			t.Errorf("%s: decline %q, want a decline naming %s: %v", tc.dir, why, darch.FeatLayerNorm, tc.decline)
 		}
 	}
 }

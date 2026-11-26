@@ -67,8 +67,8 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != wantArch {
-		t.Fatalf("arch = %q, want %s", m.w.arch.Name, wantArch)
+	if m.w.Arch.Name != wantArch {
+		t.Fatalf("arch = %q, want %s", m.w.Arch.Name, wantArch)
 	}
 
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)

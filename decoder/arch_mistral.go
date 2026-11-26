@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -13,7 +15,7 @@ import (
 // machinery, but all-local rather than 5:1). A checkpoint with sliding_window
 // null/0 (Mistral-v0.2+) falls back to full attention. The tensor schema is
 // llamaTensorSchema (Mistral and Llama share tensor names).
-func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func mistralArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := backfillFlatRope(cfg, "mistral"); err != nil {
 		return nil, nil, err
 	}
@@ -30,7 +32,7 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.SlidingWindow > 0 {
 		layerIsGlobal = func(int) bool { return false }
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "mistral",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -39,19 +41,19 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		QKNorm:          false,
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   cfg.SlidingWindow, // 0 ⇒ full attention
-		layerIsGlobal:   layerIsGlobal,     // all-local when windowed
+		LayerIsGlobal:   layerIsGlobal,     // all-local when windowed
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
 		RotaryDim:       cfg.RotaryDim(),
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil

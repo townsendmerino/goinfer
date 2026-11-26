@@ -27,9 +27,9 @@ func TestKV2_G0cpuSplitInvariance(t *testing.T) {
 	const N = 1100
 	prompt := make([]int, N)
 	for i := range prompt {
-		prompt[i] = (i*37 + 11) % m.w.arch.VocabSize
+		prompt[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
-	nL, nKV, hd := m.w.arch.NumLayers, m.w.arch.NumKVHeads, m.w.arch.HeadDim
+	nL, nKV, hd := m.w.Arch.NumLayers, m.w.Arch.NumKVHeads, m.w.Arch.HeadDim
 	fill := func(cuts []int, p []int) *KVCache {
 		c := NewKVCache(nL, nKV, hd, 0, N, nil)
 		prev := 0
@@ -69,7 +69,7 @@ func TestKV2_G0cpuSplitInvariance(t *testing.T) {
 		m.opts.ExactPrefill = exact
 		whole := fill(nil, prompt)
 		pert := slices.Clone(prompt)
-		pert[300] = (pert[300] + 1) % m.w.arch.VocabSize
+		pert[300] = (pert[300] + 1) % m.w.Arch.VocabSize
 		if r := firstDiff(fill(nil, pert), whole); r != 300 {
 			t.Fatalf("exact %v: control first differs at row %d, want 300", exact, r)
 		}

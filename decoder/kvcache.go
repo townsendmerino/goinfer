@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
@@ -33,15 +34,6 @@ var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 // multiple of 4 KiB apart share L1 sets, and a 64 B pad separates them.
 const kvRowPadAlignDefault = 4096
 
-// kvRowPadElems is the pad, in elements, for a row of elems elements of elemBytes bytes: one 64 B line when the row is a multiple of
-// align bytes, else none.
-func kvRowPadElems(elems, elemBytes, align int) int {
-	if elems <= 0 || align <= 0 || (elems*elemBytes)%align != 0 {
-		return 0
-	}
-	return 64 / elemBytes
-}
-
 // mustUnpadded panics on a padded cache: what names an accessor that hands out the store without its stride.
 func (c *KVCache) mustUnpadded(what string) {
 	if c.rowPad != 0 {
@@ -52,7 +44,7 @@ func (c *KVCache) mustUnpadded(what string) {
 // setRowPad pads the cache at Architecture.kvRowPad's answer for its precision (int8 is never padded): each layer's rows then sit
 // kvDim+rowPad elements apart in keys/vals (or keysH/valsH), re-reserved here for capHint rows. A cache holding a ring, an MLA latent
 // or hybrid state on an architecture kvRowPad accepts means the rule and the cache disagree, which panics.
-func (c *KVCache) setRowPad(a *Architecture, capHint int) {
+func (c *KVCache) setRowPad(a *darch.Architecture, capHint int) {
 	if c.quant == kvI8 {
 		return
 	}
@@ -60,7 +52,7 @@ func (c *KVCache) setRowPad(a *Architecture, capHint int) {
 	if c.quant == kvqF16 {
 		eb = 2
 	}
-	pad := a.kvRowPad(eb)
+	pad := a.KVRowPad(eb)
 	if pad == 0 {
 		return
 	}

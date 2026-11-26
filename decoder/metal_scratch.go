@@ -136,7 +136,7 @@ type metalDecodeRows struct {
 }
 
 func (m *Model) metalDecodeRows(H, V int) metalDecodeRows {
-	a, p := m.w.arch, m.Program()
+	a, p := m.w.Arch, m.Program()
 	d := metalDecodeRows{widest: map[string]int{}}
 	for l, ops := range p.Layers {
 		s := layerShapeOf(a, l, ops)

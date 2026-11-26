@@ -55,16 +55,16 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "qwen2_moe" {
-		t.Fatalf("resolved arch %q, want qwen2_moe", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen2_moe" {
+		t.Fatalf("resolved arch %q, want qwen2_moe", m.w.Arch.Name)
 	}
-	if m.w.arch.MoE == nil || m.w.arch.MoE.SharedIntermediateDim == 0 {
-		t.Fatalf("shared-expert MoE not configured (MoE=%v)", m.w.arch.MoE)
+	if m.w.Arch.MoE == nil || m.w.Arch.MoE.SharedIntermediateDim == 0 {
+		t.Fatalf("shared-expert MoE not configured (MoE=%v)", m.w.Arch.MoE)
 	}
 	// The routed experts, shared expert, and sigmoid gate all loaded.
 	l0 := &m.w.Layers[0]
-	if len(l0.Experts) != m.w.arch.MoE.NumExperts {
-		t.Fatalf("layer 0 has %d experts, want %d", len(l0.Experts), m.w.arch.MoE.NumExperts)
+	if len(l0.Experts) != m.w.Arch.MoE.NumExperts {
+		t.Fatalf("layer 0 has %d experts, want %d", len(l0.Experts), m.w.Arch.MoE.NumExperts)
 	}
 	if l0.SharedExpert.Gate.Rows() == 0 || l0.SharedGate.Rows() == 0 {
 		t.Fatalf("shared expert / gate not loaded for layer 0")

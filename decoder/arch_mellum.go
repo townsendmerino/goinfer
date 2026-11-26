@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -15,7 +17,7 @@ import (
 // per-attention-type RoPE from rope_parameters, with YaRN (and its attention_factor
 // mscale) on the full layers and plain RoPE on the sliding layers, both at theta
 // 500000.
-func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func mellumArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateMellum(); err != nil {
 		return nil, nil, err
 	}
@@ -31,7 +33,7 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "mellum",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -40,11 +42,11 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim, // dense width (vestigial; experts use the MoE width)
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		MoE: &MoEConfig{
 			NumExperts:      cfg.NumExperts,
 			TopK:            cfg.NumExpertsPerTok,
@@ -54,11 +56,11 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		QKNorm:           true, // Mellum has q_norm/k_norm per head (like Qwen3)
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
-		layerIsGlobal:    cfg.IsGlobalLayer, // from layer_types (3:1 sliding/full)
+		LayerIsGlobal:    cfg.IsGlobalLayer, // from layer_types (3:1 sliding/full)
 		RoPEGlobalBase:   full.Base,         // full_attention layers
 		RoPELocalBase:    sliding.Base,      // sliding_attention layers (same theta, plain)
-		ropeScaling:      full.Scaling,      // YaRN on full layers
-		ropeScalingLocal: sliding.Scaling,   // nil (plain) on sliding layers
+		RoPEScaling:      full.Scaling,      // YaRN on full layers
+		RoPEScalingLocal: sliding.Scaling,   // nil (plain) on sliding layers
 		RotaryDim:        cfg.RotaryDim(),
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load

@@ -61,13 +61,13 @@ func TestInternLM3_textParity(t *testing.T) {
 	defer m.Close()
 
 	// The alias resolves onto llama's descriptor, and the dynamic scaling resolves to none.
-	if got := m.w.arch.Name; got != "llama" {
+	if got := m.w.Arch.Name; got != "llama" {
 		t.Errorf("arch = %q, want llama (internlm3 is an alias, not its own descriptor)", got)
 	}
-	if m.w.arch.ropeScaling != nil {
+	if m.w.Arch.RoPEScaling != nil {
 		t.Errorf("ropeScaling = %+v, want nil — dynamic NTK is identity within the trained "+
 			"window, so it must resolve to no scaling rather than to some approximation",
-			m.w.arch.ropeScaling)
+			m.w.Arch.RoPEScaling)
 	}
 
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)

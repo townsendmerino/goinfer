@@ -1,53 +1,8 @@
 package decoder
 
-// tensorSchema maps each weight role to its safetensors key (per-layer roles
-// are suffixes for tensorName). An empty string means the tensor is ABSENT for
-// this family — e.g. Pre2 families have no Post*Norm, and a tied head has no
-// LMHead. The per-family adapter (registry.go) picks the schema; the loader is
-// schema-driven so one buildWeightsFromSafetensors serves every family.
-//
-// The norm roles are by POSITION in the block, not by HF tensor name: Gemma's
-// "post_attention_layernorm" is a post-attn norm (PostAttnNorm) while Qwen's
-// same-named tensor is the pre-MLP norm (PreMLPNorm) — exactly why the schema
-// is per-family.
-type tensorSchema struct {
-	Embed     string
-	LMHead    string // "" = tied (use Embed)
-	FinalNorm string
-	// per-layer suffixes passed to tensorName(layer, suffix); "" = absent
-	QProj, KProj, VProj, OProj string
-	// GProj is Laguna's attention output gate (g_proj). "" = the family has none.
-	GProj string
-	// AttnSinks is Flint's per-query-head attention sink logit (self_attn.softmax_offset,
-	// with AttnSinksAlt = self_attn.sinks for older checkpoints). "" = none.
-	AttnSinks, AttnSinksAlt    string
-	QBias, KBias, VBias        string // "" = no projection bias (Qwen2 sets q/k/v)
-	QNorm, KNorm               string // "" = no QK-norm
-	PreAttnNorm, PostAttnNorm  string
-	GateProj, UpProj, DownProj string
-	PreMLPNorm, PostMLPNorm    string
-	// PreAttnNormLinear, PostAttnNormLinear, PreMLPNormLinear and PostMLPNormLinear override the corresponding suffix above
-	// on layers where isLinearLayer(i) is true, as a group, not per field. buildWeightsFromSafetensors ORs the four into one
-	// hasLinearNormOverride flag; if any is non-empty, all four replace the generic suffixes on linear layers, and a field
-	// left "" then means "no norm at this position on linear layers" (Olmo Hybrid's PostAttnNormLinear and
-	// PostMLPNormLinear below), not "fall back to the generic one". Setting one and expecting per-field fallback would
-	// silently drop the other three's generic norms.
-	//
-	// Olmo Hybrid needs this: its two decoder-layer classes each define an attribute named "post_attention_layernorm" in
-	// different positional roles (a post-attn norm on full-attention layers, NormPostOnly; a pre-MLP norm on linear/DeltaNet
-	// layers, NormPre2), and only its linear layers carry an input_layernorm at all. One static per-family schema cannot
-	// route one on-disk name to two LayerWeights fields by layer kind, so these four give linear layers their own suffix set.
-	PreAttnNormLinear, PostAttnNormLinear, PreMLPNormLinear, PostMLPNormLinear string
-	// MoE (Mixtral): router + per-expert gate/up/down. The Expert* templates
-	// contain a single %d for the expert index. Empty ⇒ dense FFN.
-	Router                           string
-	RouterBias                       string // "" = none; DeepSeek/GLM e_score_correction_bias [NumExperts]
-	ExpertGate, ExpertUp, ExpertDown string
-	// Shared expert (Qwen2-MoE): an always-on gated MLP + a sigmoid gate. Empty ⇒
-	// no shared expert.
-	SharedGate, SharedUp, SharedDown string
-	SharedExpertGate                 string
-}
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
 
 // lfm2TensorSchema: LFM2/LFM2.5. Tied head, Pre2 norms under LFM2's own names (operator_norm before the mixer, ffn_norm
 // before the FFN), per-head RMSNorm on Q and K, SwiGLU under llama's w1/w2/w3 naming, and attention output as out_proj
@@ -59,7 +14,7 @@ type tensorSchema struct {
 //
 // FinalNorm is embedding_norm, not model.norm: LFM2 normalises before the tied LM head under a name no other family here
 // uses, so a copy of "model.norm.weight" fails to load rather than loading the wrong thing.
-var lfm2TensorSchema = tensorSchema{
+var lfm2TensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "", // tied (tie_word_embeddings true on every released checkpoint)
 	FinalNorm:   "model.embedding_norm.weight",
@@ -77,7 +32,7 @@ var lfm2TensorSchema = tensorSchema{
 }
 
 // gemma3TensorSchema: tied head, 4-norm sandwich, QK-norm.
-var gemma3TensorSchema = tensorSchema{
+var gemma3TensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "", // tied
 	FinalNorm:    "model.norm.weight",
@@ -99,7 +54,7 @@ var gemma3TensorSchema = tensorSchema{
 // qwen3TensorSchema: separate lm_head, 2-norm Pre2 (input_layernorm pre-attn,
 // post_attention_layernorm pre-MLP), QK-norm, SwiGLU. Llama/Mistral/Qwen2 reuse
 // this minus QNorm/KNorm (and Qwen2 adds q/k/v bias — a later add).
-var qwen3TensorSchema = tensorSchema{
+var qwen3TensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "lm_head.weight",
 	FinalNorm:    "model.norm.weight",
@@ -122,7 +77,7 @@ var qwen3TensorSchema = tensorSchema{
 // Llama has no QK-norm tensors (QNorm/KNorm empty) — RoPE applies to raw q/k.
 // Same Pre2 norm layout and SwiGLU MLP; LM head tied (small) or untied (8B+),
 // resolved from lm_head.weight presence at load.
-var llamaTensorSchema = tensorSchema{
+var llamaTensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "lm_head.weight",
 	FinalNorm:    "model.norm.weight",
@@ -145,7 +100,7 @@ var llamaTensorSchema = tensorSchema{
 // the parallel block has ONE norm per layer (input_layernorm, shared by attn and
 // MLP), so PreMLPNorm/PostAttnNorm/PostMLPNorm are all empty. No biases anywhere;
 // no QK-norm (cohere1 Phase 1). Embeddings are tied (LMHead empty ⇒ use Embed).
-var cohereTensorSchema = tensorSchema{
+var cohereTensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "", // tied
 	FinalNorm:    "model.norm.weight",
@@ -167,7 +122,7 @@ var cohereTensorSchema = tensorSchema{
 // mixtralTensorSchema: Mixtral — the llama attention/norm names with a sparse
 // MoE FFN in place of the dense gate/up/down. Router + 8 experts (w1=gate,
 // w3=up, w2=down) per layer. No QK-norm, no bias, untied head.
-var mixtralTensorSchema = tensorSchema{
+var mixtralTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -188,7 +143,7 @@ var mixtralTensorSchema = tensorSchema{
 // mlp.experts.E.{gate,up,down}_proj) rather than Mixtral's block_sparse_moe /
 // w1,w3,w2. Every layer is MoE (mlp_layer_types all "sparse"); no QK-norm, no
 // bias, untied head. The experts use moe_intermediate_size (MoEConfig.IntermediateDim).
-var mellumTensorSchema = tensorSchema{
+var mellumTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -209,13 +164,13 @@ var mellumTensorSchema = tensorSchema{
 // gpt2TensorSchema is a marker — GPT-2's fused c_attn + Conv1D weight layout
 // don't fit the per-suffix schema, so buildGPT2Weights handles its tensors
 // directly. Kept non-empty so the adapter returns a valid (if unused) schema.
-var gpt2TensorSchema = tensorSchema{Embed: "wte.weight"}
+var gpt2TensorSchema = archparts.TensorSchema{Embed: "wte.weight"}
 
 // qwen2TensorSchema: Qwen2/Qwen2.5 dense. Identical to llamaTensorSchema plus
 // the q/k/v projection biases Qwen2 carries (o_proj stays biasless), and still
 // no QK-norm (that arrived in Qwen3). Pre2 norms, SwiGLU; tied head on the small
 // models / untied on the large, resolved from lm_head.weight presence at load.
-var qwen2TensorSchema = tensorSchema{
+var qwen2TensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "lm_head.weight",
 	FinalNorm:    "model.norm.weight",
@@ -239,7 +194,7 @@ var qwen2TensorSchema = tensorSchema{
 
 // qwen35DenseTensorSchema is Qwen3.8's (model_type qwen3_5): identical to the MoE sibling's except the router/expert names
 // give way to a plain SwiGLU. Kept as its own value rather than mutating the MoE schema, so the MoE families are untouched.
-var qwen35DenseTensorSchema = tensorSchema{
+var qwen35DenseTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -259,7 +214,7 @@ var qwen35DenseTensorSchema = tensorSchema{
 // qwen35TensorSchema covers the qwen3_5_moe softmax layers' names (QK-norm, no bias) and the routed/shared MoE common to
 // every layer. The Gated DeltaNet (linear) layers carry a tensor set this schema cannot express (in_proj_qkv/z/a/b,
 // conv1d, A_log, dt_bias, norm, out_proj); loadQwen35Attn loads them. See docs/qwen3_5_moe.md.
-var qwen35TensorSchema = tensorSchema{
+var qwen35TensorSchema = archparts.TensorSchema{
 	Embed:            "model.embed_tokens.weight",
 	LMHead:           "lm_head.weight",
 	FinalNorm:        "model.norm.weight",
@@ -286,7 +241,7 @@ var qwen35TensorSchema = tensorSchema{
 // mlp.gate + per-expert mlp.experts.%d.*) — no shared expert (Shared* fields
 // left empty; arch.MoE.SharedIntermediateDim stays 0, which both the
 // safetensors and GGUF loaders already read as "no shared expert").
-var qwen3MoeTensorSchema = tensorSchema{
+var qwen3MoeTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -309,7 +264,7 @@ var qwen3MoeTensorSchema = tensorSchema{
 // (no input_layernorm tensor exists at all — confirmed by instantiating Olmo3ForCausalLM
 // directly) and PostAttnNorm/PostMLPNorm mapping to post_attention_layernorm/
 // post_feedforward_layernorm actually differs from qwen3TensorSchema.
-var olmo3TensorSchema = tensorSchema{
+var olmo3TensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "lm_head.weight",
 	FinalNorm:    "model.norm.weight",
@@ -336,7 +291,7 @@ var olmo3TensorSchema = tensorSchema{
 // SAME on-disk name as the full-attention layers' PostAttnNorm ("post_attention_layernorm.weight")
 // for a DIFFERENT role — pre-MLP norm, not post-attn norm — because the two decoder-layer classes
 // each independently define an attribute with that name (see PreAttnNormLinear's own comment).
-var olmoHybridTensorSchema = tensorSchema{
+var olmoHybridTensorSchema = archparts.TensorSchema{
 	Embed:              "model.embed_tokens.weight",
 	LMHead:             "lm_head.weight", // tie_word_embeddings false on the released checkpoint
 	FinalNorm:          "model.norm.weight",
@@ -361,7 +316,7 @@ var olmoHybridTensorSchema = tensorSchema{
 
 // qwen2MoeTensorSchema: qwen2 attention (q/k/v bias) with the FFN replaced by a sparse MoE (router mlp.gate + per-expert
 // mlp.experts.%d.*) plus an always-on shared expert (mlp.shared_expert.* and the mlp.shared_expert_gate sigmoid gate).
-var qwen2MoeTensorSchema = tensorSchema{
+var qwen2MoeTensorSchema = archparts.TensorSchema{
 	Embed:            "model.embed_tokens.weight",
 	LMHead:           "lm_head.weight",
 	FinalNorm:        "model.norm.weight",
@@ -391,7 +346,7 @@ var qwen2MoeTensorSchema = tensorSchema{
 // empty ⇒ the ungated path). The first_k_dense_replace prefix layers carry the
 // dense mlp.{gate,up,down}_proj instead; the loader uses those suffixes on
 // i < FirstKDense and the MoE ones on i ≥ FirstKDense.
-var glm4moeTensorSchema = tensorSchema{
+var glm4moeTensorSchema = archparts.TensorSchema{
 	Embed:     "model.embed_tokens.weight",
 	LMHead:    "lm_head.weight",
 	FinalNorm: "model.norm.weight",
@@ -429,7 +384,7 @@ var glm4moeTensorSchema = tensorSchema{
 // identical to GLM: dense prefix (first_k_dense_replace), DeepSeekMoE (router gate +
 // e_score_correction_bias, per-expert gate/up/down), and an ungated shared expert under
 // the plural "shared_experts" name.
-var deepseekTensorSchema = tensorSchema{
+var deepseekTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -459,7 +414,7 @@ var deepseekTensorSchema = tensorSchema{
 // naming in three places: the embedding is word_embeddings (not embed_tokens), the router's
 // expert-bias buffer is expert_bias (not e_score_correction_bias), and both MLA/KDA mixers are
 // named self.attention (not self.self_attn — see mlaParams.AttnPrefix's own comment).
-var bailingHybridTensorSchema = tensorSchema{
+var bailingHybridTensorSchema = archparts.TensorSchema{
 	Embed:       "model.word_embeddings.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -485,13 +440,13 @@ var bailingHybridTensorSchema = tensorSchema{
 // mixer vs attention) and fused-stacked GraniteMoe experts don't fit the per-suffix
 // schema, so buildGraniteWeights loads them directly. Kept non-empty for a valid
 // (unused) schema return.
-var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+var graniteTensorSchema = archparts.TensorSchema{Embed: "model.embed_tokens.weight"}
 
 // internlm2TensorSchema is a MARKER, like phi3's: InternLM2's fused, GROUPED wqkv cannot be
 // expressed as per-tensor suffixes, so buildInternLM2Weights loads this family directly and
 // the generic schema-driven path is never used. The names are recorded here anyway so the
 // family's layout is discoverable from the same place every other family's is.
-var internlm2TensorSchema = tensorSchema{
+var internlm2TensorSchema = archparts.TensorSchema{
 	Embed:       "model.tok_embeddings.weight",
 	LMHead:      "output.weight",
 	FinalNorm:   "model.norm.weight",
@@ -506,7 +461,7 @@ var internlm2TensorSchema = tensorSchema{
 
 // phi3TensorSchema is a marker — Phi-3/Phi-4's fused qkv_proj + gate_up_proj are split by
 // buildPhi3Weights into the standard fields, after which the generic llama forward runs.
-var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+var phi3TensorSchema = archparts.TensorSchema{Embed: "model.embed_tokens.weight"}
 
 // glmOcrTensorSchema names GLM-OCR's per-layer tensors by ROLE, but is only a marker for the generic
 // loader: the fused mlp.gate_up_proj is split by buildGlmOcrWeights, which reads these suffixes so the
@@ -523,7 +478,7 @@ var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 //
 // Embedding, final norm and head live under model.language_model. / the top level (glmOcrEmbed,
 // glmOcrFinalNorm, glmOcrLMHead). GateProj/UpProj are empty on purpose: both come from GateUpProj.
-var glmOcrTensorSchema = tensorSchema{
+var glmOcrTensorSchema = archparts.TensorSchema{
 	Embed:        glmOcrEmbed,
 	LMHead:       glmOcrLMHead,
 	FinalNorm:    glmOcrFinalNorm,
@@ -550,16 +505,16 @@ const (
 // buildSpark25Weights into the standard fields, after which the generic forward runs. Note the
 // non-standard embedding tensor name (model.embedding.weight, not model.embed_tokens.weight —
 // verified against the real modeling_spark.py's `self.embedding = nn.Embedding(...)`).
-var spark25TensorSchema = tensorSchema{Embed: "model.embedding.weight", GProj: "self_attn.g_proj.weight"}
+var spark25TensorSchema = archparts.TensorSchema{Embed: "model.embedding.weight", GProj: "self_attn.g_proj.weight"}
 
 // llama4TensorSchema is a marker — Llama 4's per-layer dense/MoE FFN, fused+transposed
 // batched experts, and parameter-free L2 QK-norm are loaded directly by buildLlama4Weights.
-var llama4TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+var llama4TensorSchema = archparts.TensorSchema{Embed: "model.embed_tokens.weight"}
 
 // nemotronTensorSchema is a marker — Nemotron-H's single-op-per-block layout
 // (per-layer one of mamba/attention/mlp under a "mixer" prefix) is loaded directly
 // by buildNemotronWeights.
-var nemotronTensorSchema = tensorSchema{Embed: "backbone.embedding.weight"}
+var nemotronTensorSchema = archparts.TensorSchema{Embed: "backbone.embedding.weight"}
 
 // lagunaTensorSchema: Laguna (poolside). The names follow the real Laguna-XS.2 checkpoint index, not modeling_laguna.py,
 // because the two disagree in two places that matter:
@@ -578,7 +533,7 @@ var nemotronTensorSchema = tensorSchema{Embed: "backbone.embedding.weight"}
 //
 // The dense prefix layers (mlp_only_layers) use the plain GateProj/UpProj/DownProj names at the model's
 // intermediate_size; the MoE layers use the Expert*/Shared* names at moe_intermediate_size. See docs/task-laguna.md.
-var lagunaTensorSchema = tensorSchema{
+var lagunaTensorSchema = archparts.TensorSchema{
 	Embed:       "model.embed_tokens.weight",
 	LMHead:      "lm_head.weight",
 	FinalNorm:   "model.norm.weight",
@@ -614,7 +569,7 @@ var lagunaTensorSchema = tensorSchema{
 // 2D mlp.experts.%d.{gate,up,down}_proj.weight and fused 3D
 // mlp.experts.{gate_up,down}_proj are handled by buildWeightsFromSafetensorsTo)
 // plus an always-on ungated SwiGLU shared expert (mlp.shared_expert.*).
-var flintTensorSchema = tensorSchema{
+var flintTensorSchema = archparts.TensorSchema{
 	Embed:        "model.embed_tokens.weight",
 	LMHead:       "lm_head.weight",
 	FinalNorm:    "model.norm.weight",

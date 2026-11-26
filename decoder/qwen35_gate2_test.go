@@ -128,8 +128,8 @@ func TestQwen35Real_gate2FullModel(t *testing.T) {
 		t.Fatalf("Load(int8int8): %v", err)
 	}
 	defer m.Close()
-	if m.w.arch.qwen35 == nil {
-		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.arch.Name)
+	if m.w.Arch.Qwen35 == nil {
+		t.Fatalf("arch = %q, want qwen3_5_moe", m.w.Arch.Name)
 	}
 	if got := len(m.w.Layers); got != 40 {
 		t.Fatalf("loaded %d layers, want 40", got)

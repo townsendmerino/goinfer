@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -13,7 +15,7 @@ import (
 // experts — a router picks top-k of NumExperts experts per token. Recent HF
 // Mixtral uses full attention (the config's sliding_window is vestigial), so
 // this does too. The tensor schema is mixtralTensorSchema.
-func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func mixtralArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateMixtral(); err != nil {
 		return nil, nil, err
 	}
@@ -26,7 +28,7 @@ func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "mixtral",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -35,11 +37,11 @@ func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       false,
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		MoE: &MoEConfig{
 			NumExperts:      cfg.NumLocalExperts,
 			TopK:            cfg.NumExpertsPerTok,
@@ -49,11 +51,11 @@ func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		QKNorm:         false,
 		AttnScale:      math.Pow(float64(hd), -0.5),
 		SlidingWindow:  0, // full attention (HF Mixtral ignores config sliding_window)
-		layerIsGlobal:  nil,
+		LayerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
 		RotaryDim:      cfg.RotaryDim(),
-		ropeScaling:    scaling,
+		RoPEScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 	}, &mixtralTensorSchema, nil

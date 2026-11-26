@@ -177,7 +177,7 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 				t.Skipf("load: %v", err)
 			}
 			defer m.Close()
-			if e := canSerialize(m.w.arch); e != nil {
+			if e := canSerialize(m.w.Arch); e != nil {
 				t.Skipf("refused (a correct answer): %v", e)
 			}
 			blob, err := SerializeWeights(m.w, "census")

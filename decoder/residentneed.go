@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -55,10 +56,10 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 
 // cpuKVBytes is what this model's CPU cache holds for ctx positions (kvBytesForCtx); without a resolved architecture, Plan's flat rate.
 func (m *Model) cpuKVBytes(ctx int, f16, i8 bool) int64 {
-	if m.w.arch == nil {
+	if m.w.Arch == nil {
 		return m.kvBytesPerPositionAllLayers(f16, i8) * int64(ctx)
 	}
-	return kvBytesForCtx(m.w.arch, ctx, f16, i8)
+	return kvBytesForCtx(m.w.Arch, ctx, f16, i8)
 }
 
 // MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.
@@ -95,18 +96,18 @@ func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
 		return 0
 	}
 	blocks := func(n int) int64 { return int64((n + KVBlockRows - 1) / KVBlockRows) }
-	return int64(metalKVTables(m.w.arch)) * int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
+	return int64(metalKVTables(m.w.Arch)) * int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
 }
 
 // metalKVTables is how many block tables a Metal resident holds for each slot: the primary group's and, when sliding layers and
 // layers of another group both hold K/V, the window group's. It reads the geometry the build reads.
-func metalKVTables(a *Architecture) int {
+func metalKVTables(a *darch.Architecture) int {
 	if a == nil {
 		return 1
 	}
 	win, other := false, false
 	for _, g := range a.KVGeometry().Groups {
-		if g.Retention == KVRetainWindow {
+		if g.Retention == darch.KVRetainWindow {
 			win = true
 		} else {
 			other = true
@@ -121,12 +122,12 @@ func metalKVTables(a *Architecture) int {
 // metalKVParts is one slot's KV on Metal at the precision ResolveKV delivers for this model's load, and its pools' null blocks
 // (metalKVPartsFor over the memoized LayerBuffers).
 func (m *Model) metalKVParts(ctx int) (slot, null int64) {
-	return metalKVPartsFor(m.w.arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
+	return metalKVPartsFor(m.w.Arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
 }
 
 // metalKVBytesFor is ResidentKVBytes("metal") for arch at precision delivered, read from the architecture alone: what the host guards
 // price a Metal-resident load's KV at before any model exists.
-func metalKVBytesFor(a *Architecture, ctx int, delivered string) int64 {
+func metalKVBytesFor(a *darch.Architecture, ctx int, delivered string) int64 {
 	if a == nil || ctx <= 0 {
 		return 0
 	}
@@ -139,12 +140,12 @@ func metalKVBytesFor(a *Architecture, ctx int, delivered string) int64 {
 // winBlocks, when positive, is the blocks a slot's window group holds (MetalWindowBlocks): the layers of a window-retention group take
 // no more than that many; 0 prices every layer at the context's blocks, which the host guards do before any model exists and a binary
 // without the Metal backend does always: more than a bounded build allocates, the safe direction.
-func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int) []program.Buf, winBlocks int) (slot, null int64) {
+func metalKVPartsFor(a *darch.Architecture, ctx int, delivered string, bufs func(l int) []program.Buf, winBlocks int) (slot, null int64) {
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	win := map[int]bool{}
 	if winBlocks > 0 {
 		for _, g := range a.KVGeometry().Groups {
-			if g.Retention == KVRetainWindow {
+			if g.Retention == darch.KVRetainWindow {
 				for _, l := range g.Layers {
 					win[l] = true
 				}
@@ -231,9 +232,9 @@ func (m *Model) CUDAKVSlotBytes(ctx int, kvF16, kvI8 bool) int64 {
 // model was loaded with: ResidentKVBytes answers what a precision would cost (fit and Plan ask it of loads that hold another), so a load's
 // slot count or drafter must not change the price of the cache asked about.
 func (m *Model) cudaKVPrec(kvF16, kvI8 bool) string {
-	a := m.w.arch
+	a := m.w.Arch
 	bare := Options{Backend: "cuda"}
-	if p, ok := kvPolicies["cuda"]; kvI8 && ok && p.DeclineI8 != nil && p.DeclineI8(a.kvFacts(), bare) == "" {
+	if p, ok := kvPolicies["cuda"]; kvI8 && ok && p.DeclineI8 != nil && p.DeclineI8(a.KVFacts(), bare) == "" {
 		return kvPrecI8
 	}
 	if kvF16 && kvF16Decline("cuda", a, bare) == "" {
@@ -265,7 +266,7 @@ func (m *Model) cudaKVParts(ctx int, kvF16, kvI8 bool) (slot, null int64) {
 	prec := m.cudaKVPrec(kvF16, kvI8)
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	var perBlock, windowed int64
-	for l := range m.w.arch.NumLayers {
+	for l := range m.w.Arch.NumLayers {
 		for _, b := range m.LayerBuffers(l) {
 			if b.Unit != program.PerPosition {
 				continue

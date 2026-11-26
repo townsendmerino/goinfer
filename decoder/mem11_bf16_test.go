@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -32,7 +33,7 @@ func TestMEM11_lfm2ResidentBytes(t *testing.T) {
 	var conv int64
 	nConv := 0
 	for i := range m.w.Layers {
-		if sc := m.w.Layers[i].shortConv; sc != nil {
+		if sc := m.w.Layers[i].ShortConv; sc != nil {
 			conv += shortConvProjBytes(sc)
 			nConv++
 		}
@@ -46,8 +47,8 @@ func TestMEM11_lfm2ResidentBytes(t *testing.T) {
 }
 
 // shortConvProjBytes is the bytes a short-conv layer's in and out projections hold.
-func shortConvProjBytes(sc *shortConvWeights) int64 {
-	return wmBytes(&sc.inProj) + wmBytes(&sc.outProj)
+func shortConvProjBytes(sc *archparts.ShortConvWeights) int64 {
+	return wmBytes(&sc.InProj) + wmBytes(&sc.OutProj)
 }
 
 // mem11Logits decodes 16 fixed tokens from a fresh cache and returns every position's logits.
@@ -87,11 +88,11 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	var convs []*shortConvWeights
+	var convs []*archparts.ShortConvWeights
 	for l := range m.w.Layers {
-		if sc := m.w.Layers[l].shortConv; sc != nil {
+		if sc := m.w.Layers[l].ShortConv; sc != nil {
 			convs = append(convs, sc)
-			if k := sc.inProj.Kind(); k != "f32" {
+			if k := sc.InProj.Kind(); k != "f32" {
 				t.Fatalf("the committed fixture's in_proj is %s: its f32 islands are bf16-exact, so B16-G3 would not cover the f32 rule", k)
 			}
 		}
@@ -109,16 +110,16 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 	type pair struct{ in, out []float32 }
 	rounded := make([]pair, len(convs))
 	for i, sc := range convs {
-		rounded[i] = pair{round(&sc.inProj), round(&sc.outProj)}
+		rounded[i] = pair{round(&sc.InProj), round(&sc.OutProj)}
 	}
 	set := func(on bool) {
 		for i, sc := range convs {
-			r, c := sc.inProj.Rows(), sc.inProj.Cols()
-			ro, co := sc.outProj.Rows(), sc.outProj.Cols()
+			r, c := sc.InProj.Rows(), sc.InProj.Cols()
+			ro, co := sc.OutProj.Rows(), sc.OutProj.Cols()
 			if on {
-				sc.inProj, sc.outProj = islandMat(slices.Clone(rounded[i].in), r, c), islandMat(slices.Clone(rounded[i].out), ro, co)
+				sc.InProj, sc.OutProj = islandMat(slices.Clone(rounded[i].in), r, c), islandMat(slices.Clone(rounded[i].out), ro, co)
 			} else {
-				sc.inProj, sc.outProj = linalg.WrapF32(slices.Clone(rounded[i].in), r, c), linalg.WrapF32(slices.Clone(rounded[i].out), ro, co)
+				sc.InProj, sc.OutProj = linalg.WrapF32(slices.Clone(rounded[i].in), r, c), linalg.WrapF32(slices.Clone(rounded[i].out), ro, co)
 			}
 		}
 	}
@@ -126,8 +127,8 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 	offBytes, off := m.ResidentWeightBytes(), mem11Logits(t, m)
 	set(true)
 	for _, sc := range convs {
-		if sc.inProj.Kind() != "bf16" || sc.outProj.Kind() != "bf16" {
-			t.Fatalf("islandMat kept a bf16-exact projection as %s / %s", sc.inProj.Kind(), sc.outProj.Kind())
+		if sc.InProj.Kind() != "bf16" || sc.OutProj.Kind() != "bf16" {
+			t.Fatalf("islandMat kept a bf16-exact projection as %s / %s", sc.InProj.Kind(), sc.OutProj.Kind())
 		}
 	}
 	onBytes, on := m.ResidentWeightBytes(), mem11Logits(t, m)
@@ -153,14 +154,14 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 		t.Fatalf("LoadSerializedWeights: %v", err)
 	}
 	for l := range w2.Layers {
-		sc := w2.Layers[l].shortConv
+		sc := w2.Layers[l].ShortConv
 		if sc == nil {
 			continue
 		}
-		if sc.inProj.Kind() != "bf16" || sc.outProj.Kind() != "bf16" {
-			t.Errorf("layer %d: the round-tripped projections are %s / %s, want bf16", l, sc.inProj.Kind(), sc.outProj.Kind())
+		if sc.InProj.Kind() != "bf16" || sc.OutProj.Kind() != "bf16" {
+			t.Errorf("layer %d: the round-tripped projections are %s / %s, want bf16", l, sc.InProj.Kind(), sc.OutProj.Kind())
 		}
-		m.w.Layers[l].shortConv = sc // decode through the round-tripped mixers
+		m.w.Layers[l].ShortConv = sc // decode through the round-tripped mixers
 	}
 	if d := mem11SameBits(on, mem11Logits(t, m)); d != 0 {
 		t.Errorf("the round-tripped bundle's logits: %d differ from the direct load's", d)

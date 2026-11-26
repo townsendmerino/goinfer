@@ -97,7 +97,7 @@ func runPremiseArm(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Token
 		if err != nil {
 			t.Fatalf("JSONSchema: %v", err)
 		}
-		mk = constrain.NewMasker(gr, constrain.TokenBytes(m.w.arch.VocabSize, tk.TokenText), m.eosIDs)
+		mk = constrain.NewMasker(gr, constrain.TokenBytes(m.w.Arch.VocabSize, tk.TokenText), m.eosIDs)
 	}
 
 	turns := []chat.Turn{{Role: "user", Content: prompt}}

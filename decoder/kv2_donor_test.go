@@ -77,7 +77,7 @@ func TestKV2_donorWhoseWindowHoldsTheRows(t *testing.T) {
 	const maxTok = 6
 	alone := kv2Alone(t, 3, 1, maxTok, false)
 	m, rf := loadWithDonorFake(t, 3)
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	pre := kv2Preamble(vocab)
 	convs := []*kv2Conv{newKV2Conv(pre, 0, vocab), newKV2Conv(pre, 1, vocab), newKV2Conv(pre, 2, vocab)}
 	convs[0].turn(t, context.Background(), m, 0, maxTok)

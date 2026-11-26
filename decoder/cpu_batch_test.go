@@ -16,7 +16,7 @@ import (
 // copy of the same cache (MC3c step 2's identity contract; MC2's gate before it).
 func assertBatchedStepBitIdentical(t *testing.T, m *Model, depths []int, steps int) {
 	t.Helper()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ctx := context.Background()
 	multi, ref := make([]*KVCache, len(depths)), make([]*KVCache, len(depths))
 	ids := make([]int, len(depths))
@@ -119,7 +119,7 @@ func TestCPUBatch_everyEligibleFixtureBitIdentical(t *testing.T) {
 // conversation decoding alone, and every token runs solo.
 func cpuBatchConversations(t *testing.T, m *Model, nConv, turns, maxTok int, sp func(c, turn int) SamplingParams, concurrent bool) ([][][]int, [][]int) {
 	t.Helper()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids, reused := make([][][]int, nConv), make([][]int, nConv)
 	met := make([]sync.WaitGroup, turns)
 	if concurrent {

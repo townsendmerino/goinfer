@@ -12,10 +12,10 @@ func TestKSO4_kvHeldBytes(t *testing.T) {
 		t.Fatalf("load the tiny gpt-oss fixture: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	n := 4*a.SlidingWindow + 3 // well past the window
 	withRings := m.NewCache(n)
-	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n, a.hasNoAttentionKVAt)
+	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n, a.HasNoAttentionKVAt)
 	appendForever.scr = newDecodeScratch(a, appendForever.knobs)
 	for range n {
 		if _, err := m.forward(1, withRings); err != nil {
@@ -37,8 +37,8 @@ func TestKSO4_kvHeldBytes(t *testing.T) {
 	ring, forever := held(withRings), held(appendForever)
 	var windowRows, globalRows int64
 	for l := range a.NumLayers {
-		row := 2 * 4 * int64(a.kvDimAt(l)) // K and V, f32
-		if a.ringLayerAt(l) {
+		row := 2 * 4 * int64(a.KVDimAt(l)) // K and V, f32
+		if a.RingLayerAt(l) {
 			windowRows += row
 		} else {
 			globalRows += row

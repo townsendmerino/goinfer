@@ -4,33 +4,34 @@ import (
 	"slices"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // kvBytesForCtxOracle is the CPU cache's K/V price as it was written from the architecture alone, before the price read the
 // per-layer declarations (MM5's CPU half): it is what kvBytesForCtx must keep equaling, so a change to either side is seen.
-func kvBytesForCtxOracle(a *Architecture, ctx int, f16, i8 bool) int64 {
+func kvBytesForCtxOracle(a *darch.Architecture, ctx int, f16, i8 bool) int64 {
 	if a == nil || ctx <= 0 || a.NumLayers <= 0 {
 		return 0
 	}
 	quant := kvqF32
-	if i8 && a.kvInt8OK() {
+	if i8 && a.KVInt8OK() {
 		quant = kvI8
-	} else if f16 && a.kvF16OK() {
+	} else if f16 && a.KVF16OK() {
 		quant = kvqF16
 	}
 	var total int64
 	for l := range a.NumLayers {
-		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
+		if a.HasNoAttentionKVAt(l) || a.Gemma4KVSrcAt(l) != l {
 			continue
 		}
-		width := int64(a.kvDimAt(l))
-		if a.mla != nil {
+		width := int64(a.KVDimAt(l))
+		if a.MLA != nil {
 			total += 4 * width * int64(ctx)
 			continue
 		}
 		rows := int64(ctx)
-		if a.ringLayerAt(l) {
+		if a.RingLayerAt(l) {
 			rows = int64(a.SlidingWindow)
 			if quant == kvqF32 && ctx > a.SlidingWindow {
 				rows *= 2
@@ -53,7 +54,7 @@ func kvBytesForCtxOracle(a *Architecture, ctx int, f16, i8 bool) int64 {
 func TestKVBytesForCtx_isTheDeclaredRows(t *testing.T) {
 	var checked int
 	for _, fx := range hostKVFixtures(t) {
-		a := fx.m.w.arch
+		a := fx.m.w.Arch
 		for _, ctx := range hostKVContexts(a) {
 			for _, kv := range []string{"", "f16", "i8"} {
 				got, want := kvBytesForCtx(a, ctx, kv == "f16", kv == "i8"), kvBytesForCtxOracle(a, ctx, kv == "f16", kv == "i8")
@@ -75,7 +76,7 @@ func TestKVBytesForCtx_isTheDeclaredRows(t *testing.T) {
 func TestKVBytesForRows_plantedShortRowGoesRed(t *testing.T) {
 	planted := 0
 	for _, fx := range hostKVFixtures(t) {
-		a := fx.m.w.arch
+		a := fx.m.w.Arch
 		short := func(l int) []program.Buf {
 			bufs := slices.Clone(layerBuffers(a, l))
 			for i := range bufs {

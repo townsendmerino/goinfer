@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -9,7 +11,7 @@ import (
 // mamba / attention (NoPE — no q/k permute) / non-gated mlp, under a single
 // attn_norm. The ssm_* tensors reuse llama.cpp's conventions (ssm_a = −exp(A_log),
 // conv [convDim,K], grouped ssm_norm). Mixer f32; attention/mlp/embeddings quantize.
-func (b *ggufBuild) loadNemotron(npar *nemotronParams) (*Weights, error) {
+func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights, error) {
 	arch, g, w, quant, sink, abort, hidden, streamMat, mat, vnorm, stackedExperts := b.arch, b.g, b.w, b.quant, b.sink, b.abort, b.hidden, b.streamMat, b.mat, b.vnorm, b.stackedExperts
 	dInner := npar.NHeads * npar.HeadDim
 	convDim := dInner + 2*npar.NGroups*npar.DState
@@ -44,43 +46,43 @@ func (b *ggufBuild) loadNemotron(npar *nemotronParams) (*Weights, error) {
 		if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
 			return e
 		}
-		switch npar.blockKind[i] {
-		case nemoMamba:
-			mw := &mamba2Weights{}
-			if mw.inProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
+		switch npar.BlockKind[i] {
+		case archparts.NemoMamba:
+			mw := &archparts.Mamba2Weights{}
+			if mw.InProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
 				return e
 			}
-			if mw.convW, e = f32mat(p+"ssm_conv1d.weight", convDim, npar.DConv); e != nil {
+			if mw.ConvW, e = f32mat(p+"ssm_conv1d.weight", convDim, npar.DConv); e != nil {
 				return e
 			}
-			if mw.convB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
+			if mw.ConvB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
 				return e
 			}
-			if mw.d, e = flat(p+"ssm_d", npar.NHeads); e != nil {
+			if mw.D, e = flat(p+"ssm_d", npar.NHeads); e != nil {
 				return e
 			}
-			if mw.dtBias, e = flat(p+"ssm_dt.bias", npar.NHeads); e != nil {
+			if mw.DtBias, e = flat(p+"ssm_dt.bias", npar.NHeads); e != nil {
 				return e
 			}
-			if mw.normW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
+			if mw.NormW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
 				return e
 			}
-			if mw.outProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
+			if mw.OutProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
 				return e
 			}
 			a, aerr := flat(p+"ssm_a", npar.NHeads)
 			if aerr != nil {
 				return aerr
 			}
-			mw.aLog = make([]float32, npar.NHeads)
+			mw.ALog = make([]float32, npar.NHeads)
 			for h := range a {
-				mw.aLog[h] = float32(math.Log(-float64(a[h])))
+				mw.ALog[h] = float32(math.Log(-float64(a[h])))
 			}
 			if mambaProjInt8(quant) {
-				mw.quantizeProjections(projDim, hidden, dInner)
+				mw.QuantizeProjections(projDim, hidden, dInner)
 			}
-			l.mamba = mw
-		case nemoAttn:
+			l.Mamba = mw
+		case archparts.NemoAttn:
 			// NoPE → no q/k permute.
 			if l.QProj, e = mat(p+"attn_q.weight", qDim, hidden); e != nil {
 				return e
@@ -94,14 +96,14 @@ func (b *ggufBuild) loadNemotron(npar *nemotronParams) (*Weights, error) {
 			if l.OProj, e = mat(p+"attn_output.weight", hidden, qDim); e != nil {
 				return e
 			}
-		case nemoMLP:
+		case archparts.NemoMLP:
 			if l.UpProj, e = mat(p+"ffn_up.weight", inter, hidden); e != nil {
 				return e
 			}
 			if l.DownProj, e = mat(p+"ffn_down.weight", hidden, inter); e != nil {
 				return e
 			}
-		case nemoMoE:
+		case archparts.NemoMoE:
 			// Nemotron 3 Nano's MoE FFN. The tensor names are the GGUF's own, not llama.cpp's conversion-script source mapping (which
 			// names the source safetensors tensor, not the output GGUF tensor). Experts are fused per projection (one 3-D
 			// [in,out,nExpert] tensor each), unlike the safetensors path's one tensor per expert, so stackedExperts, the helper other
@@ -122,7 +124,7 @@ func (b *ggufBuild) loadNemotron(npar *nemotronParams) (*Weights, error) {
 			if derr != nil {
 				return derr
 			}
-			l.Experts = make([]expertWeights, moe.NumExperts)
+			l.Experts = make([]archparts.ExpertWeights, moe.NumExperts)
 			for ei := range l.Experts {
 				l.Experts[ei].Up, l.Experts[ei].Down = upExp[ei], downExp[ei]
 			}

@@ -1,10 +1,14 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 // AdmitFacts is everything the decoder's resident admission reads. Admit reads nothing else: no device, no Model and no
 // environment. A Model supplies the facts with admitFacts; the hardware and capability matrices supply them with archAdmitFacts,
 // from the arch and the backend alone.
 type AdmitFacts struct {
-	Arch        *Architecture
+	Arch        *darch.Architecture
 	Backend     string // the backend's name, as Backend.Name reports it
 	Residency   bool   // the backend can build a resident runner (it implements ResidencyBackend)
 	QuantLabel  string // the precision the weights loaded at (Model.Quant), which a backend's build reads; a .giw records its own
@@ -37,7 +41,7 @@ func Admit(f AdmitFacts) Admission {
 	if isWebGPUBackend(key) {
 		key = "webgpu"
 	}
-	ad := Admission{Shape: f.Arch.runnerShapeDeclineSSM(f.SSMResident)}
+	ad := Admission{Shape: f.Arch.RunnerShapeDeclineSSM(f.SSMResident)}
 	if residentDeclared(key) {
 		ad.Gates = residentGateReasons(f.Arch, f.program, key, admitActSafe(f, key))
 	}
@@ -67,7 +71,7 @@ func admitWhy(f AdmitFacts, ad Admission) string {
 	if why := autoMetalPrecision(f.BackendAuto, f.Backend, f.QuantLabel); why != "" {
 		return why
 	}
-	if a := f.Arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(f.Backend) {
+	if a := f.Arch; a.Nemotron != nil && a.MoE != nil && !isWebGPUBackend(f.Backend) {
 		// Nemotron 3's MoE FFN block has no GPU resident implementation on cuda/metal. The runner-shape gate below declines it too,
 		// but only generically; this names the gap (webgpu implements the block).
 		return "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
@@ -106,7 +110,7 @@ func admitResident(f AdmitFacts, ad Admission) string {
 func admitRunner(f AdmitFacts, shape string) string {
 	a := f.Arch
 	eligible := shape == ""
-	if !eligible && a.nemotron != nil && a.MoE != nil && isWebGPUBackend(f.Backend) {
+	if !eligible && a.Nemotron != nil && a.MoE != nil && isWebGPUBackend(f.Backend) {
 		// webgpu implements the Nemotron MoE block (its residency switch and nemoKMoE dispatch), so it overrides the runner shape's
 		// blanket MoE-block decline, which stays for cuda and metal: a narrow backend-specific override, not a general escape hatch.
 		eligible = true
@@ -116,7 +120,7 @@ func admitRunner(f AdmitFacts, shape string) string {
 	}
 	// Nemotron-H resident is default-on at int4 only: its int4 disagreements with f32 are all at near-tied positions.
 	// int8 stays opt-in behind GOINFER_SSM_RESIDENT.
-	if a.nemotron != nil && !f.SSMResident && !f.ProjsInt4 {
+	if a.Nemotron != nil && !f.SSMResident && !f.ProjsInt4 {
 		return "Nemotron-H runs resident with int4 projections only by default (load with Quant int4, or set GOINFER_SSM_RESIDENT to allow int8)"
 	}
 	return ""
@@ -124,13 +128,13 @@ func admitRunner(f AdmitFacts, shape string) string {
 
 // archAdmitFacts is the facts of a model-free question, from the arch and the backend alone: a load with the default options on
 // a backend that builds residents, and the GOINFER_SSM_RESIDENT knob as the arch reads it.
-func archAdmitFacts(a *Architecture, backend string) AdmitFacts {
+func archAdmitFacts(a *darch.Architecture, backend string) AdmitFacts {
 	return AdmitFacts{Arch: a, Backend: backend, Residency: true, SSMResident: ssmResidentEnv()}
 }
 
 // admitFacts gathers the facts Admit reads from a loaded model.
 func (m *Model) admitFacts() AdmitFacts {
-	f := AdmitFacts{Arch: m.w.arch, QuantLabel: m.Quant(), BackendAuto: m.opts.BackendAuto, ActGroup: m.opts.ActQuantGroup,
+	f := AdmitFacts{Arch: m.w.Arch, QuantLabel: m.Quant(), BackendAuto: m.opts.BackendAuto, ActGroup: m.opts.ActQuantGroup,
 		ProjsInt4: m.residentProjsInt4(), SSMResident: m.knobs.get(knobSSMResident) != ""}
 	if m.be != nil {
 		f.Backend = m.be.Name()

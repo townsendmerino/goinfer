@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // qwen3_5_moe (qwen35moe): the Gated DeltaNet / gated-softmax hybrid. The GGUF
@@ -14,7 +16,7 @@ import (
 // unchanged. Attention stays f32 (parity-first, like the safetensors path);
 // experts/embeddings quantize. Only blk.{0..NumLayers-1} load — the trailing
 // NextN/MTP block is excluded by ggufQwen35Config's NumLayers.
-func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
+func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error) {
 	arch, g, w, quant, needCanonical, skipRow4, sink, abort, hidden := b.arch, b.g, b.w, b.quant, b.needCanonical, b.skipRow4, b.sink, b.abort, b.hidden
 	streamMat, mat, vec, vnorm, stackedExperts := b.streamMat, b.mat, b.vec, b.vnorm, b.stackedExperts
 	numK, numV := q.NumKeyHeads, q.NumValueHeads
@@ -60,8 +62,8 @@ func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
 		if l.PreMLPNorm, e = vnorm(p+"post_attention_norm.weight", hidden); e != nil {
 			return e
 		}
-		if arch.isLinearLayer(i) {
-			d := &deltaNetWeights{}
+		if arch.IsLinearLayer(i) {
+			d := &archparts.DeltaNetWeights{}
 			// in_proj_qkv (attn_qkv): only the V output rows are tiled; q/k untouched.
 			qkv, err := f32mat(p+"attn_qkv.weight", convDim, hidden)
 			if err != nil {
@@ -69,24 +71,24 @@ func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
 			}
 			vOff := 2 * keyDim * hidden
 			copy(qkv[vOff:], untileVHeads(qkv[vOff:], 1, numK, vpk, hvd, hidden))
-			d.inProjQKV = wrapQ(qkv, convDim, hidden)
+			d.InProjQKV = wrapQ(qkv, convDim, hidden)
 			// in_proj_z (attn_gate): all rows tiled.
 			z, err := f32mat(p+"attn_gate.weight", valueDim, hidden)
 			if err != nil {
 				return err
 			}
-			d.inProjZ = wrapQ(untileVHeads(z, 1, numK, vpk, hvd, hidden), valueDim, hidden)
+			d.InProjZ = wrapQ(untileVHeads(z, 1, numK, vpk, hvd, hidden), valueDim, hidden)
 			// in_proj_a / in_proj_b (ssm_alpha/ssm_beta): one row per value head (hd=1).
 			a, err := f32mat(p+"ssm_alpha.weight", numV, hidden)
 			if err != nil {
 				return err
 			}
-			d.inProjA = untileVHeads(a, 1, numK, vpk, 1, hidden)
+			d.InProjA = untileVHeads(a, 1, numK, vpk, 1, hidden)
 			b, err := f32mat(p+"ssm_beta.weight", numV, hidden)
 			if err != nil {
 				return err
 			}
-			d.inProjB = untileVHeads(b, 1, numK, vpk, 1, hidden)
+			d.InProjB = untileVHeads(b, 1, numK, vpk, 1, hidden)
 			// conv1d (ssm_conv1d): only the V channel block tiled; trail = kernel width.
 			cw, err := f32mat(p+"ssm_conv1d.weight", convDim, q.ConvKernel)
 			if err != nil {
@@ -94,22 +96,22 @@ func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
 			}
 			vOffC := 2 * keyDim * q.ConvKernel
 			copy(cw[vOffC:], untileVHeads(cw[vOffC:], 1, numK, vpk, hvd, q.ConvKernel))
-			d.convW = cw
+			d.ConvW = cw
 			// ssm_a is already −exp(A_log); reorder by value head (1-D).
 			av, err := vec(p+"ssm_a", numV)
 			if err != nil {
 				return err
 			}
-			d.negExpA = untileVHeads(av, 1, numK, vpk, 1, 1)
+			d.NegExpA = untileVHeads(av, 1, numK, vpk, 1, 1)
 			// dt_bias (ssm_dt.bias): reorder by value head (1-D).
 			dt, err := vec(p+"ssm_dt.bias", numV)
 			if err != nil {
 				return err
 			}
-			d.dtBias = untileVHeads(dt, 1, numK, vpk, 1, 1)
+			d.DtBias = untileVHeads(dt, 1, numK, vpk, 1, 1)
 			// ssm_norm: per-head_v_dim gated-RMSNorm weight — NOT tiled and NOT
 			// (1+w)'d by the converter, so load raw (vec, not vnorm).
-			if d.normW, err = vec(p+"ssm_norm.weight", hvd); err != nil {
+			if d.NormW, err = vec(p+"ssm_norm.weight", hvd); err != nil {
 				return err
 			}
 			// out_proj (ssm_out): the value/input columns are tiled.
@@ -117,33 +119,33 @@ func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
 			if err != nil {
 				return err
 			}
-			d.outProj = wrapQ(untileVHeads(op, hidden, numK, vpk, hvd, 1), hidden, valueDim)
-			l.delta = d
+			d.OutProj = wrapQ(untileVHeads(op, hidden, numK, vpk, hvd, 1), hidden, valueDim)
+			l.Delta = d
 		} else {
 			// Gated softmax layer: double-width q_proj (query ‖ gate per head, kept
 			// fused in attn_q), per-head QK-norm. NEOX rope ⇒ no q/k permute.
-			a := &qwenAttnWeights{}
+			a := &archparts.QwenAttnWeights{}
 			shd := arch.HeadDim
 			kvDim := arch.NumKVHeads * shd
-			if a.qProj, e = wmQ(p+"attn_q.weight", arch.NumHeads*shd*2, hidden); e != nil {
+			if a.QProj, e = wmQ(p+"attn_q.weight", arch.NumHeads*shd*2, hidden); e != nil {
 				return e
 			}
-			if a.kProj, e = wmQ(p+"attn_k.weight", kvDim, hidden); e != nil {
+			if a.KProj, e = wmQ(p+"attn_k.weight", kvDim, hidden); e != nil {
 				return e
 			}
-			if a.vProj, e = wmQ(p+"attn_v.weight", kvDim, hidden); e != nil {
+			if a.VProj, e = wmQ(p+"attn_v.weight", kvDim, hidden); e != nil {
 				return e
 			}
-			if a.oProj, e = wmQ(p+"attn_output.weight", hidden, arch.NumHeads*shd); e != nil {
+			if a.OProj, e = wmQ(p+"attn_output.weight", hidden, arch.NumHeads*shd); e != nil {
 				return e
 			}
-			if a.qNorm, e = vnorm(p+"attn_q_norm.weight", shd); e != nil {
+			if a.QNorm, e = vnorm(p+"attn_q_norm.weight", shd); e != nil {
 				return e
 			}
-			if a.kNorm, e = vnorm(p+"attn_k_norm.weight", shd); e != nil {
+			if a.KNorm, e = vnorm(p+"attn_k_norm.weight", shd); e != nil {
 				return e
 			}
-			l.qattn = a
+			l.QAttn = a
 		}
 		// DENSE (Qwen3.8, llama.cpp arch "qwen35"): a plain SwiGLU where the MoE sibling has a router. The rest of this loader (the
 		// V un-tile, the -exp(A_log) un-bake, the (1+w) norms) is shared.
@@ -171,9 +173,9 @@ func (b *ggufBuild) loadQwen35(q *qwen35Params) (*Weights, error) {
 		if gerr != nil || uerr != nil || derr != nil {
 			return fmt.Errorf("decoder(gguf-qwen35): experts layer %d: %w", i, errors.Join(gerr, uerr, derr))
 		}
-		l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+		l.Experts = make([]archparts.ExpertWeights, arch.MoE.NumExperts)
 		for ei := range arch.MoE.NumExperts {
-			l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			l.Experts[ei] = archparts.ExpertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
 		}
 		sInter := arch.MoE.SharedIntermediateDim
 		if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {

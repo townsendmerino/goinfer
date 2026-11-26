@@ -61,8 +61,8 @@ func loadQwen35VLTiny(t *testing.T) (*Model, qwen35VLGold) {
 		t.Fatalf("Load: %v", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	if m.w.arch.Name != "qwen3_5" || m.w.arch.qwen35 == nil {
-		t.Fatalf("arch %q: the wrong adapter ran for a qwen3_5 image checkpoint", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen3_5" || m.w.Arch.Qwen35 == nil {
+		t.Fatalf("arch %q: the wrong adapter ran for a qwen3_5 image checkpoint", m.w.Arch.Name)
 	}
 	return m, g
 }
@@ -80,7 +80,7 @@ func rowCosMin(a, b []float32, dim int) float64 {
 
 func TestQwen35VL_loaderSetsMRope(t *testing.T) {
 	m, _ := loadQwen35VLTiny(t)
-	a := m.w.arch
+	a := m.w.Arch
 	if !slices.Equal(a.MRopeSection, []int{3, 3, 2}) || !a.MRopeInterleaved {
 		t.Fatalf("MRopeSection %v interleaved %v, want [3 3 2] true (rope_parameters)", a.MRopeSection, a.MRopeInterleaved)
 	}
@@ -176,7 +176,7 @@ func TestQwen35VL_e2eChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if len(feats) != g.NImageTokens*hidden {
 		t.Fatalf("tower emitted %d floats, want %d tokens x %d", len(feats), g.NImageTokens, hidden)
 	}
@@ -194,7 +194,7 @@ func TestQwen35VL_e2eChain(t *testing.T) {
 // any resident method runs.
 func TestGenerateQwenVL_recurrentTakesNoResidentBranch(t *testing.T) {
 	m, g := loadQwen35VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 	if !m.hasRecurrentState() {

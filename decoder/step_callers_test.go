@@ -406,7 +406,7 @@ func (f callLogMarked) PrefillLastMarked(_ context.Context, embs [][]float32, st
 // resident that logs its calls; each log is held to the one the direct calls made (recorded from them).
 func TestStepCallers_multimodalAndHiddenCallLog(t *testing.T) {
 	newRF := func(m *Model) *callLogResident {
-		return &callLogResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+		return &callLogResident{fakeResident: &fakeResident{vocab: m.w.Arch.VocabSize}}
 	}
 	cases := []struct {
 		name string
@@ -510,7 +510,7 @@ func TestStepCallers_multimodalAndHiddenCallLog(t *testing.T) {
 // generated (scripts/pin_gemma4_vl_bidir_tiny.py), so the call is checked by its form rather than a recorded log.
 func TestStepCallers_gemma4SpanPrefillCallLog(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
-	rf := &callLogResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+	rf := &callLogResident{fakeResident: &fakeResident{vocab: m.w.Arch.VocabSize}}
 	m.resident = callLogSpans{rf}
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
 	ids, err := drainGen(m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0xC0FFEE, features, 3, SamplingParams{}))

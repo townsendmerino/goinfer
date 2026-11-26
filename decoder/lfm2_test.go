@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"slices"
 	"strings"
 	"testing"
@@ -26,16 +27,16 @@ func TestLFM2_arch(t *testing.T) {
 	if arch.AttnScale <= 0 {
 		t.Errorf("AttnScale = %v, want >0 (head_dim**-0.5)", arch.AttnScale)
 	}
-	if arch.lfm2 == nil {
+	if arch.LFM2 == nil {
 		t.Fatal("arch.lfm2 is nil")
 	}
-	if arch.lfm2.ConvLCache != 3 || arch.lfm2.ConvDim != 64 {
-		t.Errorf("conv geometry = {dim %d, K %d}, want {64, 3}", arch.lfm2.ConvDim, arch.lfm2.ConvLCache)
+	if arch.LFM2.ConvLCache != 3 || arch.LFM2.ConvDim != 64 {
+		t.Errorf("conv geometry = {dim %d, K %d}, want {64, 3}", arch.LFM2.ConvDim, arch.LFM2.ConvLCache)
 	}
 	// layer_types is what selects the mixer per layer; a loader that ignored it would run
 	// attention everywhere and still produce logits.
 	for i, wantConv := range []bool{true, true, false, true} {
-		if got := arch.isConvLayer(i); got != wantConv {
+		if got := arch.IsConvLayer(i); got != wantConv {
 			t.Errorf("isConvLayer(%d) = %v, want %v", i, got, wantConv)
 		}
 	}
@@ -69,8 +70,8 @@ func TestResolveArchitecture_guardFiresRed(t *testing.T) {
 	t.Run("missing_norm_eps_resolved_guard", func(t *testing.T) {
 		// validateResolved's own branch, reached directly — this is the one that covers
 		// families with no eps check of their own, which is the whole point of it existing.
-		a := &Architecture{Name: "probe", Norm: NormRMS, AttnScale: 0.25} // NormEps omitted
-		err := a.validateResolved()
+		a := &darch.Architecture{Name: "probe", Norm: darch.NormRMS, AttnScale: 0.25} // NormEps omitted
+		err := a.ValidateResolved()
 		if err == nil {
 			t.Fatal("validateResolved accepted NormEps=0 — the guard did not fire")
 		}
@@ -79,8 +80,8 @@ func TestResolveArchitecture_guardFiresRed(t *testing.T) {
 		}
 	})
 	t.Run("missing_attn_scale", func(t *testing.T) {
-		a := &Architecture{Name: "probe", Norm: NormRMS, NormEps: 1e-5} // AttnScale omitted
-		err := a.validateResolved()
+		a := &darch.Architecture{Name: "probe", Norm: darch.NormRMS, NormEps: 1e-5} // AttnScale omitted
+		err := a.ValidateResolved()
 		if err == nil {
 			t.Fatal("validateResolved accepted AttnScale=0 — the guard did not fire")
 		}
@@ -116,8 +117,8 @@ func TestLFM2_declinesResidentRunner(t *testing.T) {
 		t.Error("decodeRunnerEligible() = true — LFM2's short-convolution layers are not bridged; " +
 			"the resident runner would treat its conv layers as attention")
 	}
-	feats := arch.residentFeatures()
-	if !slices.Contains(feats, FeatShortConv) {
+	feats := arch.ResidentFeatures()
+	if !slices.Contains(feats, darch.FeatShortConv) {
 		t.Errorf("residentFeatures() = %v, missing FeatShortConv — without it LFM2's profile is "+
 			"{FeatQKNorm}, which every backend implements, so all three would admit it", feats)
 	}

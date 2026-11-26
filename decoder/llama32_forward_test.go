@@ -63,13 +63,13 @@ func TestLlama32_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "llama" {
-		t.Fatalf("resolved arch %q, want llama", m.w.arch.Name)
+	if m.w.Arch.Name != "llama" {
+		t.Fatalf("resolved arch %q, want llama", m.w.Arch.Name)
 	}
-	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.Kind != rope.ScaleLlama3 {
-		t.Fatalf("expected llama3 rope scaling, got %+v", m.w.arch.ropeScaling)
+	if m.w.Arch.RoPEScaling == nil || m.w.Arch.RoPEScaling.Kind != rope.ScaleLlama3 {
+		t.Fatalf("expected llama3 rope scaling, got %+v", m.w.Arch.RoPEScaling)
 	}
-	if !m.w.arch.TiedLMHead {
+	if !m.w.Arch.TiedLMHead {
 		t.Errorf("expected tied LM head for Llama-3.2-1B")
 	}
 

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"slices"
 	"testing"
 )
@@ -13,13 +14,13 @@ import (
 // env var with no gate behind it, so this fails if setting or clearing it changes any answer. The matrix's GPUResident
 // column is decodeRunnerEligible(arch) (capability_matrix_test.go), so this also keeps docs/hardware-matrix.md honest.
 func TestGemma4Admission_unconditional(t *testing.T) {
-	denseArch := func() *Architecture {
+	denseArch := func() *darch.Architecture {
 		a, _, err := resolveArchitecture(representativeConfig("gemma4"))
 		if err != nil {
 			t.Fatalf("resolve gemma4 (dense): %v", err)
 		}
-		if a.gemma4 == nil || a.MoE != nil {
-			t.Fatalf("representativeConfig(gemma4) is not dense Gemma 4 (gemma4=%v MoE=%v)", a.gemma4 != nil, a.MoE != nil)
+		if a.Gemma4 == nil || a.MoE != nil {
+			t.Fatalf("representativeConfig(gemma4) is not dense Gemma 4 (gemma4=%v MoE=%v)", a.Gemma4 != nil, a.MoE != nil)
 		}
 		return a
 	}
@@ -63,13 +64,13 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	// FeatGemma4EModel, which is all three. A backend without the
 	// feature would skip the per-layer embeddings and mis-run, so the gate must refuse it: the made-up backend below.
 	e := denseArch()
-	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
+	e.Gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
 	for _, be := range []string{"metal", "cuda", "webgpu"} {
 		if !ResidentEligible(e, be) {
-			t.Errorf("%s declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", be, missingFeatures(e.residentFeatures(), residentBackendFeatures[be]))
+			t.Errorf("%s declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", be, missingFeatures(e.ResidentFeatures(), residentBackendFeatures[be]))
 		}
 	}
-	if missing := missingFeatures(e.residentFeatures(), map[ResidentFeature]bool{}); !slices.Contains(missing, FeatGemma4EModel) {
+	if missing := missingFeatures(e.ResidentFeatures(), map[darch.ResidentFeature]bool{}); !slices.Contains(missing, darch.FeatGemma4EModel) {
 		t.Errorf("an E-model does not require FeatGemma4EModel (missing from a backend with no features: %v)", missing)
 	}
 

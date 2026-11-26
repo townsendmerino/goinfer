@@ -116,7 +116,7 @@ func loadWithRideFake(t *testing.T, slots int) (*Model, *rideFake) {
 func rideCell(t *testing.T, rideErr error) (*Model, *rideFake) {
 	t.Helper()
 	long := func(m *Model) []int {
-		v := m.w.arch.VocabSize
+		v := m.w.Arch.VocabSize
 		p := make([]int, 1200)
 		for i := range p {
 			p[i] = (i*7 + 3) % v

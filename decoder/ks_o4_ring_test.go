@@ -16,13 +16,13 @@ func TestKSO4_ringEqualsAppendForever(t *testing.T) {
 		t.Fatalf("load the tiny gpt-oss fixture: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
-	if a.gptoss == nil || a.SlidingWindow <= 0 || !a.kvRingsOK() {
-		t.Fatalf("the fixture must be a windowed gpt-oss with rings admitted: gptoss %v, window %d, rings %v", a.gptoss != nil, a.SlidingWindow, a.kvRingsOK())
+	a := m.w.Arch
+	if a.GPTOSS == nil || a.SlidingWindow <= 0 || !a.KVRingsOK() {
+		t.Fatalf("the fixture must be a windowed gpt-oss with rings admitted: gptoss %v, window %d, rings %v", a.GPTOSS != nil, a.SlidingWindow, a.KVRingsOK())
 	}
 	rings := 0
 	for l := range a.NumLayers {
-		if a.ringLayerAt(l) {
+		if a.RingLayerAt(l) {
 			rings++
 		}
 	}
@@ -32,10 +32,10 @@ func TestKSO4_ringEqualsAppendForever(t *testing.T) {
 	n := 2*a.SlidingWindow + 10 // past the window, so the ring has wrapped before the first compared step
 	const steps = 64
 	withRings := m.NewCache(n + steps)
-	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n+steps, a.hasNoAttentionKVAt)
+	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n+steps, a.HasNoAttentionKVAt)
 	appendForever.scr = newDecodeScratch(a, appendForever.knobs)
 	for l := range a.NumLayers {
-		if (withRings.rings[l] != nil) != a.ringLayerAt(l) || appendForever.rings[l] != nil {
+		if (withRings.rings[l] != nil) != a.RingLayerAt(l) || appendForever.rings[l] != nil {
 			t.Fatalf("layer %d: the two caches are not the two layouts compared (ring %v, append-forever ring %v)", l, withRings.rings[l] != nil, appendForever.rings[l] != nil)
 		}
 	}

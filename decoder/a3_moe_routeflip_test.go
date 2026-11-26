@@ -46,12 +46,12 @@ func TestA3MoERouteFlips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.MoE == nil {
+	if m.w.Arch.MoE == nil {
 		t.Fatalf("%s is not a MoE", path)
 	}
 	// Varied ids: a constant-id prompt collapses the top-k to one near-identical set and cannot produce
 	// the near-tie flip this test exists to find.
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids := make([]int, K)
 	for i := range ids {
 		ids[i] = (i*131 + 7) % vocab

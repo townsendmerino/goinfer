@@ -58,9 +58,9 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "laguna" || a.laguna == nil {
-		t.Fatalf("arch = %q (laguna=%v), want laguna", a.Name, a.laguna != nil)
+	a := m.w.Arch
+	if a.Name != "laguna" || a.Laguna == nil {
+		t.Fatalf("arch = %q (laguna=%v), want laguna", a.Name, a.Laguna != nil)
 	}
 	if a.NumLayers != 40 || a.HiddenDim != 2048 || a.HeadDim != 128 || a.NumKVHeads != 8 {
 		t.Errorf("geometry = %dL/%dh/hd%d/kv%d, want 40/2048/128/8",
@@ -72,13 +72,13 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	full, sliding := 0, 0
 	for i := range a.NumLayers {
 		wantHeads := 64
-		if a.isGlobalLayer(i) {
+		if a.IsGlobalLayer(i) {
 			wantHeads, full = 48, full+1
 		} else {
 			sliding++
 		}
-		if got := a.headsAt(i); got != wantHeads {
-			t.Fatalf("headsAt(%d) = %d, want %d (global=%v)", i, got, wantHeads, a.isGlobalLayer(i))
+		if got := a.HeadsAt(i); got != wantHeads {
+			t.Fatalf("headsAt(%d) = %d, want %d (global=%v)", i, got, wantHeads, a.IsGlobalLayer(i))
 		}
 		if got := m.w.Layers[i].QProj.Rows(); got != wantHeads*a.HeadDim {
 			t.Fatalf("layer %d attn_q rows = %d, want %d", i, got, wantHeads*a.HeadDim)
@@ -100,10 +100,10 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	if a.RotaryDim != 64 || a.RotaryDimLocal != 128 {
 		t.Errorf("RotaryDim/Local = %d/%d, want 64/128", a.RotaryDim, a.RotaryDimLocal)
 	}
-	if got := len(a.ropeInvFreqGlobal); got != 32 {
+	if got := len(a.RoPEInvFreqGlobal); got != 32 {
 		t.Errorf("len(ropeInvFreqGlobal) = %d, want 32 (partial rotary 0.5 on full layers)", got)
 	}
-	if got := len(a.ropeInvFreqLocal); got != 64 {
+	if got := len(a.RoPEInvFreqLocal); got != 64 {
 		t.Errorf("len(ropeInvFreqLocal) = %d, want 64 (full-width rotary on sliding layers)", got)
 	}
 	// THE yarn_attn_factor SENTINEL. llama.cpp stores 1.0 meaning "unset"; goinfer
@@ -111,11 +111,11 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	// is exactly what poolside's own config.json states. Taking the 1.0 at face value
 	// would silently disable YaRN's attention scaling on every full layer.
 	const wantMscale = 1.3465735902799727
-	if got := a.ropeMscale(0); math.Abs(got-wantMscale) > 1e-9 {
+	if got := a.RoPEMscale(0); math.Abs(got-wantMscale) > 1e-9 {
 		t.Errorf("full-layer YaRN mscale = %.16f, want %.16f — llama.cpp's yarn_attn_factor=1.0 "+
 			"is an UNSET sentinel, not a real attention_factor", got, wantMscale)
 	}
-	if got := a.ropeMscale(1); got != 1 {
+	if got := a.RoPEMscale(1); got != 1 {
 		t.Errorf("sliding-layer mscale = %v, want 1 (plain RoPE, no YaRN)", got)
 	}
 

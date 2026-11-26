@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 
 // rebuildProgramForTest rebuilds m's program from its Architecture, for a test that changes the Architecture after load to
 // simulate another configuration: the program is what the forward reads.
-func (m *Model) rebuildProgramForTest() { m.prog = buildProgram(m.w.arch, m.w.hasExperts) }
+func (m *Model) rebuildProgramForTest() { m.prog = buildProgram(m.w.Arch, m.w.HasExperts) }
 
 // Gates P and L, on the per-token walker. Both change a model's
 // built program and run the per-token forward over a fixed prompt on every tiny fixture whose family walks a program; a change
@@ -153,7 +154,7 @@ func programPrompt(m *Model) []int {
 	}
 	ids := make([]int, n)
 	for i := range ids {
-		ids[i] = (i*7 + 3) % m.w.arch.VocabSize
+		ids[i] = (i*7 + 3) % m.w.Arch.VocabSize
 	}
 	return ids
 }
@@ -192,7 +193,7 @@ func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logit
 	}()
 	newCache := func() *KVCache {
 		c := mm.NewCache(len(ids))
-		if len(m.w.arch.MRopeSection) > 0 {
+		if len(m.w.Arch.MRopeSection) > 0 {
 			// A text prompt's m-RoPE positions are (p, p, p), where the section and the interleave cannot show: give each axis its own.
 			c.mropePos = make([][3]int, len(ids))
 			for i := range ids {
@@ -269,9 +270,9 @@ func TestProgram_P_plants(t *testing.T) {
 	plants := []struct {
 		name string
 		// apply changes layer 0 of a clone; false when the fixture has nothing it applies to.
-		apply func(a *Architecture, ops []op) ([]op, bool)
+		apply func(a *darch.Architecture, ops []op) ([]op, bool)
 	}{
-		{"drop layer 0's second residual", func(_ *Architecture, ops []op) ([]op, bool) {
+		{"drop layer 0's second residual", func(_ *darch.Architecture, ops []op) ([]op, bool) {
 			idx := indexesOf(ops, opResidual)
 			i := idx[len(idx)-1] // the parallel block has one
 			if len(idx) > 1 {
@@ -279,7 +280,7 @@ func TestProgram_P_plants(t *testing.T) {
 			}
 			return append(ops[:i:i], ops[i+1:]...), true
 		}},
-		{"swap layer 0's qk-norm and rope, or its first norm and the operation after it", func(_ *Architecture, ops []op) ([]op, bool) {
+		{"swap layer 0's qk-norm and rope, or its first norm and the operation after it", func(_ *darch.Architecture, ops []op) ([]op, bool) {
 			qn, rp := indexesOf(ops, opQKNorm), indexesOf(ops, opRope)
 			i, j := 0, 1 // the input norm and the operation after it (proj-qkv, or a whole sublayer such as MLA)
 			if len(qn) > 0 && len(rp) > 0 {
@@ -288,7 +289,7 @@ func TestProgram_P_plants(t *testing.T) {
 			ops[i], ops[j] = ops[j], ops[i]
 			return ops, true
 		}},
-		{"rope one pair short on layer 0", func(_ *Architecture, ops []op) ([]op, bool) {
+		{"rope one pair short on layer 0", func(_ *darch.Architecture, ops []op) ([]op, bool) {
 			r := indexesOf(ops, opRope)
 			if len(r) == 0 || len(ops[r[0]].Rope.InvFreq) < 2 {
 				return ops, false
@@ -321,7 +322,7 @@ func TestProgram_P_plants(t *testing.T) {
 				c := cloneProgram(f.m.prog)
 				ok := false
 				if pl.apply != nil {
-					c.Layers[0], ok = pl.apply(f.m.w.arch, c.Layers[0])
+					c.Layers[0], ok = pl.apply(f.m.w.Arch, c.Layers[0])
 				} else {
 				windowed:
 					for l := range c.Layers {

@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"context"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"slices"
 	"testing"
 )
@@ -76,19 +78,19 @@ func TestNgramSpeculativeGreedyParity(t *testing.T) {
 // caller (e.g. cmd/serve) falls back to plain decode, exactly like an unsupported
 // sampler. Model-free: validateNgramSpec rejects before any forward.
 func TestSpecRollbackSafetyGuard(t *testing.T) {
-	safe := &Model{w: &Weights{arch: &Architecture{}}}
+	safe := &Model{w: &darch.Weights{Arch: &darch.Architecture{}}}
 	if !safe.specRollbackSafe() {
 		t.Error("plain (softmax/GQA) arch must be spec-rollback-safe")
 	}
 	recurrent := map[string]*Model{
 		// One recurrent layer each: a family whose layers are all attention carries no in-place state.
-		"granite":  {w: &Weights{arch: &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}}},
-		"nemotron": {w: &Weights{arch: &Architecture{NumLayers: 1, nemotron: &nemotronParams{blockKind: []uint8{nemoMamba}}}}},
-		"qwen35":   {w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}},
+		"granite":  {w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, Granite: &archparts.GraniteParams{}, LayerIsMamba: func(int) bool { return true }}}},
+		"nemotron": {w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, Nemotron: &archparts.NemotronParams{BlockKind: []uint8{archparts.NemoMamba}}}}},
+		"qwen35":   {w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, Qwen35: &archparts.Qwen35Params{}, LayerIsLinear: func(int) bool { return true }}}},
 		// lfm2's short-conv window is the same kind of state and was admitted here, so all six
 		// speculative entry points would have rolled a rejected draft back with a TruncateTo that
 		// touches only K/V — leaving the window advanced past the committed KV (C-02).
-		"lfm2": {w: &Weights{arch: &Architecture{NumLayers: 1, lfm2: &lfm2Params{}, layerIsConv: func(int) bool { return true }}}},
+		"lfm2": {w: &darch.Weights{Arch: &darch.Architecture{NumLayers: 1, LFM2: &archparts.LFM2Params{}, LayerIsConv: func(int) bool { return true }}}},
 	}
 	for name, m := range recurrent {
 		if m.specRollbackSafe() {
@@ -103,13 +105,13 @@ func TestSpecRollbackSafetyGuard(t *testing.T) {
 	// The old predicate keyed on m.resident==nil, so a windowed model with a resident
 	// backend wrongly read as safe — but EAGLE/grammar are staged-only and n-gram takes
 	// the staged ring under a Session, and a wrapped ring can't losslessly roll back.
-	windowedResident := &Model{w: &Weights{arch: &Architecture{SlidingWindow: 128}}, resident: stubResident{}}
+	windowedResident := &Model{w: &darch.Weights{Arch: &darch.Architecture{SlidingWindow: 128}}, resident: stubResident{}}
 	if windowedResident.specRollbackSafe() {
 		t.Error("sliding-window model must NOT be spec-rollback-safe even with a resident backend (C-04)")
 	}
 	// C-02: GenerateSpeculative (the fourth entry point) must apply the same guard.
-	windowed := &Model{w: &Weights{arch: &Architecture{SlidingWindow: 128}}}
-	draft := &Model{w: &Weights{arch: &Architecture{}}}
+	windowed := &Model{w: &darch.Weights{Arch: &darch.Architecture{SlidingWindow: 128}}}
+	draft := &Model{w: &darch.Weights{Arch: &darch.Architecture{}}}
 	if _, _, err := windowed.GenerateSpeculative(context.Background(), []int{1, 2, 3}, 4, draft, 8, SamplingParams{}); err == nil {
 		t.Error("GenerateSpeculative must reject a sliding-window model (C-02/C-04), got nil error")
 	}

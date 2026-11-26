@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -54,18 +55,18 @@ func TestOlmo3_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "olmo3" {
-		t.Fatalf("resolved arch %q, want olmo3", m.w.arch.Name)
+	if m.w.Arch.Name != "olmo3" {
+		t.Fatalf("resolved arch %q, want olmo3", m.w.Arch.Name)
 	}
-	if m.w.arch.NormPlacement != NormPostOnly {
-		t.Errorf("NormPlacement = %v, want NormPostOnly", m.w.arch.NormPlacement)
+	if m.w.Arch.NormPlacement != darch.NormPostOnly {
+		t.Errorf("NormPlacement = %v, want NormPostOnly", m.w.Arch.NormPlacement)
 	}
-	if !m.w.arch.QKNorm || !m.w.arch.QKNormWhole {
-		t.Errorf("QKNorm/QKNormWhole = %v/%v, want true/true", m.w.arch.QKNorm, m.w.arch.QKNormWhole)
+	if !m.w.Arch.QKNorm || !m.w.Arch.QKNormWhole {
+		t.Errorf("QKNorm/QKNormWhole = %v/%v, want true/true", m.w.Arch.QKNorm, m.w.Arch.QKNormWhole)
 	}
 	// The whole-vector QK-norm weight is [num_heads*head_dim] wide, not [head_dim] — confirms the
 	// tensor was loaded at the right length, not silently truncated/padded.
-	wantQNormLen := m.w.arch.NumHeads * m.w.arch.HeadDim
+	wantQNormLen := m.w.Arch.NumHeads * m.w.Arch.HeadDim
 	if got := len(m.w.Layers[0].QNorm); got != wantQNormLen {
 		t.Errorf("layer 0 QNorm length = %d, want %d (num_heads*head_dim)", got, wantQNormLen)
 	}

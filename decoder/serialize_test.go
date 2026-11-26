@@ -18,6 +18,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -93,7 +94,7 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 	}
 
 	// Every matmul weight is byte-identical.
-	a, b := m1.w.matmulWeights(), w2.matmulWeights()
+	a, b := m1.w.MatmulWeights(), w2.MatmulWeights()
 	if len(a) != len(b) {
 		t.Fatalf("matmul weight count: %d vs %d", len(a), len(b))
 	}
@@ -243,7 +244,7 @@ func TestLoadGIW_mmap(t *testing.T) {
 	// The int8 weights must be views INTO the mapping (zero-copy, pageable), not
 	// heap copies — the whole point of the substrate.
 	mapped := 0
-	for _, w := range m2.w.matmulWeights() {
+	for _, w := range m2.w.MatmulWeights() {
 		q8 := tQ8(w)
 		if len(q8) == 0 {
 			continue
@@ -293,10 +294,10 @@ func TestSerializeQwen35_roundTrip(t *testing.T) {
 	// Both hybrid layer kinds must have been restored.
 	var nDelta, nQattn int
 	for i := range w2.Layers {
-		if w2.Layers[i].delta != nil {
+		if w2.Layers[i].Delta != nil {
 			nDelta++
 		}
-		if w2.Layers[i].qattn != nil {
+		if w2.Layers[i].QAttn != nil {
 			nQattn++
 		}
 	}
@@ -343,16 +344,16 @@ func TestSerializeGemma4MoE_roundTrip(t *testing.T) {
 	// gemma4moe (with all experts) + layer_scalar must be restored on every layer.
 	nMoE := 0
 	for i := range w2.Layers {
-		mo, orig := w2.Layers[i].gemma4moe, m1.w.Layers[i].gemma4moe
+		mo, orig := w2.Layers[i].Gemma4MoE, m1.w.Layers[i].Gemma4MoE
 		if mo == nil {
 			t.Fatalf("layer %d: gemma4moe dropped on round-trip", i)
 		}
 		nMoE++
-		if len(mo.expertsGateUp) != len(orig.expertsGateUp) || len(mo.expertsDown) != len(orig.expertsDown) {
+		if len(mo.ExpertsGateUp) != len(orig.ExpertsGateUp) || len(mo.ExpertsDown) != len(orig.ExpertsDown) {
 			t.Fatalf("layer %d: expert count changed (%d/%d vs %d/%d)", i,
-				len(mo.expertsGateUp), len(mo.expertsDown), len(orig.expertsGateUp), len(orig.expertsDown))
+				len(mo.ExpertsGateUp), len(mo.ExpertsDown), len(orig.ExpertsGateUp), len(orig.ExpertsDown))
 		}
-		if _, isF32 := mo.expertsGateUp[0].F32(); isF32 {
+		if _, isF32 := mo.ExpertsGateUp[0].F32(); isF32 {
 			t.Errorf("layer %d: round-tripped experts are f32, not quantized", i)
 		}
 		if w2.Layers[i].LayerScalar != m1.w.Layers[i].LayerScalar {
@@ -483,11 +484,11 @@ func TestSerializeWeightsTo_matchesBuffer(t *testing.T) {
 // It walks the header by hand (only json.Marshal(w.Cfg) must succeed, and a zero Config does) rather than
 // round-tripping through LoadSerializedWeights, which would also require a resolvable arch.
 func TestSerialize_unpopulatedLayersOmitsLabel(t *testing.T) {
-	w := &Weights{Layers: make([]LayerWeights, 4)}
-	if w.hasPopulatedLayers() {
+	w := &darch.Weights{Layers: make([]darch.LayerWeights, 4)}
+	if w.HasPopulatedLayers() {
 		t.Fatal("hasPopulatedLayers() = true on an all-zero Layers slice")
 	}
-	if got := w.quantLabel(); got != "native" {
+	if got := w.QuantLabel(); got != "native" {
 		t.Fatalf("quantLabel() on unpopulated Layers = %q — the guard's rationale assumes this is "+
 			"the dangerous default \"native\"; if that changed, re-read why hasPopulatedLayers exists", got)
 	}
@@ -607,11 +608,11 @@ func TestLoadSerialized_finalizesTiedLMHead(t *testing.T) {
 	emb := linalg.WrapF32(make([]float32, cfg.VocabSize*cfg.HiddenDim), cfg.VocabSize, cfg.HiddenDim)
 	// LMHead zero-value ⇒ tied. Every layer carries the projections its program multiplies by, and the layer-count check needs
 	// len(Layers) == arch.NumLayers.
-	layers := make([]LayerWeights, arch.NumLayers)
+	layers := make([]darch.LayerWeights, arch.NumLayers)
 	for i := range layers {
 		layers[i] = completeDenseLayer(arch, i)
 	}
-	w := &Weights{Cfg: *cfg, arch: arch, Embed: emb, Layers: layers}
+	w := &darch.Weights{Cfg: *cfg, Arch: arch, Embed: emb, Layers: layers}
 	blob, err := SerializeWeights(w, "tied-head-test")
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
@@ -623,7 +624,7 @@ func TestLoadSerialized_finalizesTiedLMHead(t *testing.T) {
 	if w2.LMHead.Rows() != 0 {
 		t.Fatalf("expected empty LMHead on round-trip, got %d rows", w2.LMHead.Rows())
 	}
-	if !w2.arch.TiedLMHead {
+	if !w2.Arch.TiedLMHead {
 		t.Fatal("round-tripped tied checkpoint has TiedLMHead=false — the forward would emit all-zero logits")
 	}
 }
@@ -640,7 +641,7 @@ func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
 	emb := linalg.QuantizeInt8(make([]float32, cfg.VocabSize*cfg.HiddenDim), cfg.VocabSize, cfg.HiddenDim, false)
-	blob, err := SerializeWeights(&Weights{Cfg: *cfg, arch: arch, Embed: emb}, "m17")
+	blob, err := SerializeWeights(&darch.Weights{Cfg: *cfg, Arch: arch, Embed: emb}, "m17")
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}

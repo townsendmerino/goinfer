@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture(%s): %v", mt, err)
 	}
-	m := &Model{w: &Weights{arch: arch}}
+	m := &Model{w: &darch.Weights{Arch: arch}}
 	return m, m.NewCache(8)
 }
 
@@ -54,7 +55,7 @@ func recurrentModelTypes(t *testing.T) []string {
 			continue
 		}
 		arch, _, err := resolveArchitecture(cfg)
-		if err != nil || !arch.recurrent() {
+		if err != nil || !arch.Recurrent() {
 			continue
 		}
 		out = append(out, mt)

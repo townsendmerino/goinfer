@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -52,29 +53,29 @@ func TestBailingHybrid_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "bailing_hybrid" {
-		t.Fatalf("resolved arch %q, want bailing_hybrid", m.w.arch.Name)
+	if m.w.Arch.Name != "bailing_hybrid" {
+		t.Fatalf("resolved arch %q, want bailing_hybrid", m.w.Arch.Name)
 	}
-	if m.w.arch.kda == nil || m.w.arch.mla == nil {
-		t.Fatalf("arch.kda/mla = %v/%v, want both set", m.w.arch.kda, m.w.arch.mla)
+	if m.w.Arch.KDA == nil || m.w.Arch.MLA == nil {
+		t.Fatalf("arch.kda/mla = %v/%v, want both set", m.w.Arch.KDA, m.w.Arch.MLA)
 	}
-	if m.w.arch.NormPlacement != NormPre2 {
-		t.Errorf("NormPlacement = %v, want NormPre2 (uniform for both mixer kinds)", m.w.arch.NormPlacement)
+	if m.w.Arch.NormPlacement != darch.NormPre2 {
+		t.Errorf("NormPlacement = %v, want NormPre2 (uniform for both mixer kinds)", m.w.Arch.NormPlacement)
 	}
 
 	// Layer 3 is this fixture's one MLA layer (layer_group_size=4, matching the release's own
 	// 3:1 ratio): must have loaded MLA weights, no KDA state.
-	if m.w.Layers[3].mla == nil {
+	if m.w.Layers[3].MLA == nil {
 		t.Fatal("layer 3 (MLA) has no MLA weights loaded")
 	}
-	if m.w.Layers[3].kda != nil {
+	if m.w.Layers[3].KDA != nil {
 		t.Error("layer 3 (MLA) loaded KDA weights — should be nil")
 	}
 	// Layer 0 is a KDA layer: must have loaded KDA weights, no MLA weights.
-	if m.w.Layers[0].kda == nil {
+	if m.w.Layers[0].KDA == nil {
 		t.Fatal("layer 0 (KDA) has no KDA weights loaded")
 	}
-	if m.w.Layers[0].mla != nil {
+	if m.w.Layers[0].MLA != nil {
 		t.Error("layer 0 (KDA) loaded MLA weights — should be nil")
 	}
 

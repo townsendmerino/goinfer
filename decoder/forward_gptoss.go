@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // gpt-oss's two operations that differ from the generic ones: attention adds a learned per-head SINK to the softmax denominator
@@ -25,7 +27,7 @@ import (
 // Scores and the denominator accumulate in float64. It reads the layer's f32 rows as appended, so the cache keeps no ring for it
 // (Architecture.kvRingsOK). Heads fan out over the attention workers, each with its own score buffer from the
 // cache's scratch, and each head's arithmetic is the one-key-at-a-time loop's, so the result does not depend on the fan-out.
-func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *Architecture, lw *LayerWeights, l, pos int) {
+func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *darch.Architecture, lw *darch.LayerWeights, l, pos int) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	cache.Append(l, k, v)
@@ -112,8 +114,8 @@ func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache,
 }
 
 // gptOssMoE runs the sparse FFN with arch's routing and expert constants; gptOssMoEWith is the program walker's form.
-func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]float32, error) {
-	return m.gptOssMoEWith(h, lw, &ffnParams{Form: ffnGptOss, MoE: *arch.MoE, Alpha: arch.gptoss.SwigluAlpha, Limit: arch.gptoss.SwigluLimit}, arch.HiddenDim, nil)
+func (m *Model) gptOssMoE(h []float32, lw *darch.LayerWeights, arch *darch.Architecture) ([]float32, error) {
+	return m.gptOssMoEWith(h, lw, &ffnParams{Form: ffnGptOss, MoE: *arch.MoE, Alpha: arch.GPTOSS.SwigluAlpha, Limit: arch.GPTOSS.SwigluLimit}, arch.HiddenDim, nil)
 }
 
 // gptOssMoEWith runs the sparse FFN: a router (with a per-expert logit bias) selects the top-k experts, softmax over the selected
@@ -124,7 +126,7 @@ func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]
 // one quantized h and one fork/join; the downs stay per expert, since their inputs differ. Each output column is the same dot
 // product either way, so the result is bit-identical to the per-expert loop. The returned slice is scr's when scr is set,
 // valid until the next call on scr; a nil scr allocates.
-func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidden int, scr *decodeScratch) ([]float32, error) {
+func (m *Model) gptOssMoEWith(h []float32, lw *darch.LayerWeights, p *ffnParams, hidden int, scr *decodeScratch) ([]float32, error) {
 	moe := &p.MoE
 	var s *gptOssScratch
 	if scr != nil {
@@ -190,7 +192,7 @@ var gptOssExpertMajorRuns atomic.Int64
 // per row: the matmuls are M-invariant, the routing and the expert epilogue are the same functions per row, and each row folds its
 // k outputs in routing-rank order (gptOssAccum). It refuses (false) under a live pager, whose touch order is its eviction signal, as
 // moeMLPBatchWith does. s holds the buffers across chunks and layers.
-func (m *Model) gptOssMoEBatch(rows []float32, n int, lw *LayerWeights, p *ffnParams, hidden int, dst []float32, s *moeBatchScratch) (bool, error) {
+func (m *Model) gptOssMoEBatch(rows []float32, n int, lw *darch.LayerWeights, p *ffnParams, hidden int, dst []float32, s *moeBatchScratch) (bool, error) {
 	moe := &p.MoE
 	if len(lw.Experts) == 0 || m.pager != nil || n == 0 {
 		return false, nil
@@ -285,7 +287,7 @@ var gptOssExpertBatchCalls atomic.Int64
 // weights takes the CPU W4A8 kernel (cpuW4A8) with the same K, weight group and activation group, so a staged backend's
 // per-matmul consult and every other weight kind keep the per-expert path. M is 1, which is what makes a repacked-only
 // (row4) expert safe in the batch (see quantizeBatchedProjWM).
-func (m *Model) gptOssExpertBatch(lw *LayerWeights, idx []int, h []float32, s *gptOssScratch, scr *decodeScratch) bool {
+func (m *Model) gptOssExpertBatch(lw *darch.LayerWeights, idx []int, h []float32, s *gptOssScratch, scr *decodeScratch) bool {
 	if !w4a8BatchEnabled || len(idx) == 0 {
 		return false
 	}
@@ -331,7 +333,7 @@ func (m *Model) gptOssExpertBatch(lw *LayerWeights, idx []int, h []float32, s *g
 //	up   = clamp(Up·h + upBias, [-limit, limit])
 //	glu  = gate · sigmoid(α·gate)
 //	dst  = Down·((up + 1)·glu) + downBias
-func gptOssExpertDown(be Backend, ex *expertWeights, gate, up, dst []float32, alpha, limit float32) {
+func gptOssExpertDown(be Backend, ex *archparts.ExpertWeights, gate, up, dst []float32, alpha, limit float32) {
 	gptOssExpertAct(ex, gate, up, alpha, limit)
 	matmul(be, &ex.Down, gate, dst, 1)
 	if ex.DownBias != nil {
@@ -341,7 +343,7 @@ func gptOssExpertDown(be Backend, ex *expertWeights, gate, up, dst []float32, al
 
 // gptOssExpertAct is gptOssExpertDown's elementwise part for one row: the gate and up biases, the clamps and the gated activation,
 // written into gate.
-func gptOssExpertAct(ex *expertWeights, gate, up []float32, alpha, limit float32) {
+func gptOssExpertAct(ex *archparts.ExpertWeights, gate, up []float32, alpha, limit float32) {
 	if ex.GateBias != nil {
 		addBias(gate, ex.GateBias)
 	}

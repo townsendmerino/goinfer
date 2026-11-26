@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
@@ -115,7 +116,7 @@ func (e *SerializeError) Error() string { return "decoder: serialized weights: "
 // canSerialize reports why a model's per-layer state cannot round-trip through the .giw format, or nil if it can. It
 // returns nil for every registered family today. Refusing a family up front beats emitting a CRC-valid bundle that
 // nil-derefs at the first forward.
-func canSerialize(a *Architecture) *SerializeError {
+func canSerialize(a *darch.Architecture) *SerializeError {
 	// Empty on purpose: every registered family is representable. A hand-maintained blocklist drifted silently (a family could
 	// ride it while the writer dropped state, so bundles loaded clean and generated wrong text); the guard against drift is
 	// TestSerializeCensus_noSilentFieldDrop, which asks the struct whether a round-trip lost anything. Keep the function: a
@@ -127,7 +128,7 @@ func canSerialize(a *Architecture) *SerializeError {
 // SerializeWeights writes the resident weight bundle (already quantized to its
 // current precision) to a flat little-endian blob suitable for embedding. id is
 // an opaque model-identity string (e.g. the source filename) stored for tooling.
-func SerializeWeights(w *Weights, id string) ([]byte, error) {
+func SerializeWeights(w *darch.Weights, id string) ([]byte, error) {
 	wr := &giwWriter{}
 	if err := wr.writeBundle(w, id); err != nil {
 		return nil, err
@@ -142,7 +143,7 @@ func SerializeWeights(w *Weights, id string) ([]byte, error) {
 // (body + trailing CRC). The big int8/int4 arrays are written straight from the
 // resident slices (one write each); only the small per-tensor scale/norm vectors
 // are buffered transiently. out should be a regular file for the prequant path.
-func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
+func SerializeWeightsTo(out io.Writer, w *darch.Weights, id string) (int64, error) {
 	wr := &giwWriter{sink: out}
 	if err := wr.writeBundle(w, id); err != nil {
 		return wr.n, err
@@ -159,7 +160,7 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 // on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
 // instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
 // SerializeWeights. TranscodeGIW/EnsureCachedGIW (sidecar.go) and cmd/prequant drive this.
-func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
+func SerializeWeightsForTarget(w *darch.Weights, id string, target GIWTarget) ([]byte, error) {
 	wr := &giwWriter{target: target}
 	if err := wr.writeBundle(w, id); err != nil {
 		return nil, err
@@ -170,7 +171,7 @@ func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte,
 
 // SerializeWeightsToForTarget is SerializeWeightsTo with SerializeWeightsForTarget's
 // target-aware kind-5 opt-in — see that function's doc for the contract.
-func SerializeWeightsToForTarget(out io.Writer, w *Weights, id string, target GIWTarget) (int64, error) {
+func SerializeWeightsToForTarget(out io.Writer, w *darch.Weights, id string, target GIWTarget) (int64, error) {
 	wr := &giwWriter{sink: out, target: target}
 	if err := wr.writeBundle(w, id); err != nil {
 		return wr.n, err
@@ -186,18 +187,18 @@ func SerializeWeightsToForTarget(out io.Writer, w *Weights, id string, target GI
 // writeBundle writes the bundle body (everything but the trailing CRC) via the
 // writer's current sink (buffer or stream). Shared by SerializeWeights and
 // SerializeWeightsTo so the field order can't drift between them or from the reader.
-func (wr *giwWriter) writeBundle(w *Weights, id string) error {
-	if err := canSerialize(w.arch); err != nil {
+func (wr *giwWriter) writeBundle(w *darch.Weights, id string) error {
+	if err := canSerialize(w.Arch); err != nil {
 		return err
 	}
 	// The format has no 16-bit matmul weight kind (LFM2's bf16 conv islands, kind 9, are not matmul weights): refused before a
 	// byte is written, not emitted as a bundle that leaves them out.
-	for _, m := range w.matmulWeights() {
+	for _, m := range w.MatmulWeights() {
 		if k := m.Kind(); k == "bf16" || k == "f16" {
 			return &SerializeError{"a .giw has no " + k.String() + " matmul weight kind: serialize a load at int4, int8, int8int8 or f32"}
 		}
 	}
-	wr.arch = w.arch // gates the gemma4 model-level PLE + per-layer tail
+	wr.arch = w.Arch // gates the gemma4 model-level PLE + per-layer tail
 	if err := wr.writeHeadGlobals(w, id); err != nil {
 		return err
 	}
@@ -213,7 +214,7 @@ func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 // layer one at a time (peak RAM ~one layer, not the whole model) before the loop in
 // writeBundle. The layer count is len(w.Layers), so the streamer must allocate
 // w.Layers to NumLayers up front even though it never fills them all at once.
-func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
+func (wr *giwWriter) writeHeadGlobals(w *darch.Weights, id string) error {
 	cfgJSON, err := json.Marshal(w.Cfg)
 	if err != nil {
 		return fmt.Errorf("decoder: marshal config: %w", err)
@@ -230,8 +231,8 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// bundle. A caller that already holds a fully loaded *Weights (residentDirBody) and merely chooses the streaming API
 	// for its I/O shape does get the label, so a buffered and a streamed call on the same model produce identical bytes.
 	label := ""
-	if w.hasPopulatedLayers() {
-		label = w.quantLabel()
+	if w.HasPopulatedLayers() {
+		label = w.QuantLabel()
 	}
 	wr.str(label)
 	wr.alignHead() // the variable-length header (the label, present or not) must not shift what follows
@@ -245,14 +246,14 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// Gemma 4 model-level Per-Layer-Embedding inputs (empty on the PLE-free
 	// E-model/26B variants, but present as empty WeightMats so the layout is stable).
 	// Written for gemma4 only; no other family's bundle carries them.
-	if wr.arch != nil && wr.arch.gemma4 != nil {
+	if wr.arch != nil && wr.arch.Gemma4 != nil {
 		wr.headTable(&w.PerLayerTokenEmbed)
 		wr.weightMat(&w.PerLayerModelProj)
 		wr.f32(w.PerLayerProjNorm)
 		// FFNPerLayer (the E-models' variable per-layer FFN widths) is json:"-" on
 		// Config, so it does NOT survive the config-JSON round-trip — without it ffnAt()
 		// falls back to IntermediateDim and mis-sizes the MLP matmuls. Carry it here.
-		ffn := wr.arch.gemma4.FFNPerLayer
+		ffn := wr.arch.Gemma4.FFNPerLayer
 		wr.u32(uint32(len(ffn)))
 		for _, v := range ffn {
 			wr.u32(uint32(v))
@@ -268,14 +269,14 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 // model's lifetime (the aliased slices point into it). On any magic/version/quant/arch/CRC mismatch it returns a
 // *SerializeError, which distinguishes a corrupt or stale bundle from an I/O failure. There is no fallback to the GGUF:
 // callers return the error.
-func LoadSerializedWeights(data []byte) (*Weights, error) {
+func LoadSerializedWeights(data []byte) (*darch.Weights, error) {
 	return loadSerializedWeights(data, false)
 }
 
 // loadSerializedWeights is LoadSerializedWeights with the whole-payload CRC optionally skipped —
 // only for a caller that already holds proof THIS file passed it (see giwverify.go). Everything
 // else (magic, version, header, bounds, arch, per-tensor validation) still runs.
-func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, error) {
+func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*darch.Weights, error) {
 	return loadSerializedWeightsHook(data, crcAlreadyVerified, nil)
 }
 
@@ -303,7 +304,7 @@ func readGIWHeadReader(data []byte) (*giwReader, []byte, string, error) {
 // loadSerializedWeightsHook is loadSerializedWeights with beforeWalk, when non-nil, called once the header is read
 // and its architecture resolved, before any weight matrix is: the point at which a caller that holds the file's
 // mapping can prepare the page cache for the walk over the matrices (prepareColdLoad).
-func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture)) (*Weights, error) {
+func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*darch.Architecture)) (*darch.Weights, error) {
 	return loadSerializedWeightsAbortable(data, crcAlreadyVerified, beforeWalk, nil)
 }
 
@@ -313,7 +314,7 @@ const giwCRCChunk = 64 << 20
 
 // loadSerializedWeightsAbortable is loadSerializedWeightsHook with abort, Options.LoadAbort, polled during the CRC pass (which reads every
 // page of the mapping) and between layers of the walk. A closed abort returns an error wrapping ErrLoadAborted; nil never fires.
-func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture), abort <-chan struct{}) (*Weights, error) {
+func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, beforeWalk func(*darch.Architecture), abort <-chan struct{}) (*darch.Weights, error) {
 	return walkSerializedWeights(data, crcAlreadyVerified, beforeWalk, abort, false)
 }
 
@@ -325,11 +326,11 @@ func scanGIWWeights(blob []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return w.quantLabel(), nil
+	return w.QuantLabel(), nil
 }
 
 // walkSerializedWeights is the bundle reader; scan is scanGIWWeights' mode.
-func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture), abort <-chan struct{}, scan bool) (*Weights, error) {
+func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func(*darch.Architecture), abort <-chan struct{}, scan bool) (*darch.Weights, error) {
 	aborted := func() bool {
 		select {
 		case <-abort:
@@ -382,7 +383,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 		beforeWalk(arch)
 	}
 
-	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
+	w := &darch.Weights{Cfg: cfg, Arch: arch, Backing: data, BakedQuant: bakedQuant}
 	w.Embed = r.weightMat()
 	w.LMHead = r.weightMat()
 	// A tied checkpoint (no output.weight) round-trips with an empty LMHead; every other loader sets TiedLMHead from lm_head
@@ -392,7 +393,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	w.PosEmbed = r.weightMat()
 	w.FinalNorm = r.f32()
 	w.FinalNormBias = r.f32()
-	if arch.gemma4 != nil { // gemma4 model-level PLE inputs
+	if arch.Gemma4 != nil { // gemma4 model-level PLE inputs
 		w.PerLayerTokenEmbed = r.weightMat()
 		w.PerLayerModelProj = r.weightMat()
 		w.PerLayerProjNorm = r.f32()
@@ -405,7 +406,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 			for i := range ffn {
 				ffn[i] = int(r.u32())
 			}
-			arch.gemma4.FFNPerLayer = ffn
+			arch.Gemma4.FFNPerLayer = ffn
 		}
 	}
 	n := int(r.u32())
@@ -419,7 +420,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 		return nil, &SerializeError{fmt.Sprintf(
 			"layer count: blob has %d, arch expects %d", n, arch.NumLayers)}
 	}
-	w.Layers = make([]LayerWeights, n)
+	w.Layers = make([]darch.LayerWeights, n)
 	for i := range w.Layers {
 		if aborted() {
 			return nil, fmt.Errorf("decoder: .giw load aborted at layer %d of %d: %w", i, n, ErrLoadAborted)
@@ -448,7 +449,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 // Universal invariants (vocab and expert count are uniform in every serializable family) are always checked. The
 // attention/FFN projection dims are checked per layer through the per-layer accessors, so gemma-4's per-layer geometry
 // (FFNPerLayer, two-geom head dims) is covered without a model-level dim that would false-reject it.
-func validateShapes(w *Weights, arch *Architecture) *SerializeError {
+func validateShapes(w *darch.Weights, arch *darch.Architecture) *SerializeError {
 	if w.Embed.Rows() > 0 {
 		if e := shapeEq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
 			return e
@@ -499,8 +500,8 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 	// PerLayerModelProj is [NumLayers*HiddenSizePerLayerInput, HiddenDim]: gguf.go builds it as
 	// mat("per_layer_model_proj.weight", pleTotal, hidden) and forward_gemma4.go's matmul(&PerLayerModelProj, ...) agrees that
 	// Rows() is pleTotal, not HiddenDim.
-	if arch.gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
-		pleTotal := arch.NumLayers * arch.gemma4.HiddenSizePerLayerInput
+	if arch.Gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
+		pleTotal := arch.NumLayers * arch.Gemma4.HiddenSizePerLayerInput
 		if e := shapeEq("PerLayerModelProj", w.PerLayerModelProj.Rows(), pleTotal); e != nil {
 			return e
 		}
@@ -514,7 +515,7 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		// PerLayerProjNorm is sized HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
 		// HiddenDim; gguf.go's vnorm and forward_gemma4.go's normalize agree.
-		if e := shapeReq("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.gemma4.HiddenSizePerLayerInput); e != nil {
+		if e := shapeReq("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.Gemma4.HiddenSizePerLayerInput); e != nil {
 			return e
 		}
 	}
@@ -525,7 +526,7 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 // the live bundle (a defensive copy would duplicate gigabytes and the device buffers), so the forward pass depends on it
 // being treated as IMMUTABLE: the derived *Architecture, RoPE tables and resident buffers are built from it at load and
 // are not rebuilt, so any mutation silently desyncs them. Read-only.
-func (m *Model) Weights() *Weights { return m.w }
+func (m *Model) Weights() *darch.Weights { return m.w }
 
 // Quant names the precision the model's matmul weights are resident in
 // ("int8int8" | "int8" | "int4" | "native"). For a prequant model the runtime
@@ -540,10 +541,10 @@ func (m *Model) Quant() string {
 	}
 	// A v5 .giw records the resolved label at bake time — prefer it over re-inferring. Empty for
 	// a pre-v5 or streamed bundle, which fall back to the (corrected) tensor-kind inference.
-	if m.w.bakedQuant != "" {
-		return m.w.bakedQuant
+	if m.w.BakedQuant != "" {
+		return m.w.BakedQuant
 	}
-	return m.w.quantLabel()
+	return m.w.QuantLabel()
 }
 
 // CheckGiwQuantMatch returns a startup error when an explicit weight-quant request cannot take effect because the model
@@ -578,74 +579,10 @@ func flagQuant(q string) string {
 	return q
 }
 
-// hasPopulatedLayers reports whether w's body matmul weights actually hold data, as opposed to a freshly make()'d Layers
-// slice whose elements are still zero-valued (the streaming GGUF transcode's state at header-write time, before any layer
-// has streamed in). Check it before trusting quantLabel(): its "nothing matched" case returns "native", a real quant mode,
-// not an empty string, so an unpopulated w would silently produce a false "native" label.
-func (w *Weights) hasPopulatedLayers() bool {
-	for _, m := range w.bodyMatmulWeights() {
-		if m.Rows() > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// quantLabel names the precision of the resident matmul weights for display and the KV-snapshot fingerprint, accounting
-// for mixed bundles. It scans the body matmuls (the per-layer attention/FFN projections, experts and routers: exactly
-// what `-quant int4|int4mix|int8int8` selects and what the batched-prefill gate inspects) and returns "int4mix" only
-// when int4 coexists with an int8 body weight, which is what `-quant int4mix` produces. Pure bundles collapse to int4 /
-// int8int8 / int8 / native.
-//
-// A float32 body weight does not make a mix. No quant mode chooses one: a MoE's routers stay float32 at every quant, so
-// counting them would label every int4 MoE "int4mix" and refuse an explicit `-quant int4` against its own sidecar.
-//
-// The token embedding and LM head are excluded. int4 mode pins them to int8 by default (logit-critical; the EmbedInt4
-// knob relaxes them), so their precision is orthogonal to the int4-vs-int4mix distinction: a plain `-quant int4` bundle
-// keeps an int8 head. Including them would mislabel such a bundle "int4mix" even though every projection is int4, and the
-// label would contradict the path the prefill gate takes. The .giw header's quant field derives from the first weight
-// (the int8 embed), so it is not a substitute.
-func (w *Weights) quantLabel() string {
-	var hasInt4, hasInt8I8, hasInt8, hasQ4K bool
-	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
-	// exclusion (weights.go), so the label and the .giw resolved-quant field can never disagree.
-	for _, m := range w.bodyMatmulWeights() {
-		if m.Rows() == 0 {
-			continue
-		}
-		switch m.Kind() {
-		case "q4k", "q5k", "q6k":
-			hasQ4K = true
-		case "int4":
-			hasInt4 = true
-		case "int8":
-			if _, _, w8a8, _ := m.Int8(); w8a8 {
-				hasInt8I8 = true
-			} else {
-				hasInt8 = true
-			}
-		}
-	}
-	switch {
-	case hasQ4K:
-		return "q4k" // its other tensors are the file's Q5_K/Q6_K blocks or int8 W8A8 by construction (matmulQuant, q4kNative56)
-	case hasInt4 && (hasInt8I8 || hasInt8):
-		return "int4mix"
-	case hasInt4:
-		return "int4"
-	case hasInt8I8:
-		return "int8int8"
-	case hasInt8:
-		return "int8"
-	default:
-		return "native"
-	}
-}
-
 // NewModel wraps an already-built *Weights (e.g. from LoadSerializedWeights)
 // into a runnable *Model: it attaches a compute backend and resolves the EOS
 // ids from the config. The weights are used as-is — their quantization is fixed.
-func NewModel(w *Weights, backend string) (*Model, error) {
+func NewModel(w *darch.Weights, backend string) (*Model, error) {
 	return NewModelWithOptions(w, Options{Backend: backend})
 }
 
@@ -655,7 +592,7 @@ func NewModel(w *Weights, backend string) (*Model, error) {
 // already built, exactly as for a .giw: Quant is inert (CheckGiwQuantMatch reports an explicit one
 // that disagrees) and LoRA has no base to merge into (refuse it before calling). StreamWeights is
 // refused, not ignored: paging reads a .giw's file mapping, and in-memory weights have none.
-func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
+func NewModelWithOptions(w *darch.Weights, opts Options) (*Model, error) {
 	opts = opts.withAutoBackend()
 	if opts.StreamWeights {
 		return nil, fmt.Errorf("decoder: StreamWeights pages weights out of a .giw file mapping, and prequantized weights held in memory have none — load the .giw file with Load to stream it")
@@ -667,7 +604,7 @@ func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
 	return modelFromOptions(w, be, opts).withBackendNames(opts.Backend, beErr).bindKnobs(opts.Knobs.values()).withResidency(), nil
 }
 
-func (w *giwWriter) layer(l *LayerWeights) {
+func (w *giwWriter) layer(l *darch.LayerWeights) {
 	w.fusedGroup(&l.QProj, &l.KProj, &l.VProj)
 	w.weightMat(&l.OProj)
 	w.f32(l.QBias)
@@ -699,7 +636,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.weightMat(&l.SharedExpert.Down)
 	w.weightMat(&l.SharedGate)
 	w.hybridLayer(l)
-	if w.arch != nil && w.arch.gemma4 != nil {
+	if w.arch != nil && w.arch.Gemma4 != nil {
 		w.gemma4Layer(l)
 	}
 	w.v6Layer(l) // the completeness tail

@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // gemma4OverlapFixture builds a small, real (not synthetic-zero) gemma4MoEWeights: dense
@@ -18,7 +20,7 @@ import (
 // experts' gate‖up + down tensors are REAL int4-quantized bytes written to a temp file and
 // mmap'd -- so a real *expertPager (either mmap+madvise or pread-pool mode) can manage them
 // exactly as newExpertPager's gemma4 branch does (one key = &w.expertsGateUp[e], two spans).
-func gemma4OverlapFixture(t *testing.T, nExperts, topK int) (w *gemma4MoEWeights, arch *Architecture, path string, mapping []byte) {
+func gemma4OverlapFixture(t *testing.T, nExperts, topK int) (w *archparts.Gemma4MoEWeights, arch *darch.Architecture, path string, mapping []byte) {
 	t.Helper()
 	// Dims large enough that each expert's quantized span survives MappedSpan's PAGE
 	// rounding (mmap.PageAlignedInterior) -- Apple Silicon's 16 KB pages mean a
@@ -34,7 +36,7 @@ func gemma4OverlapFixture(t *testing.T, nExperts, topK int) (w *gemma4MoEWeights
 
 // gemma4BuildFixture is gemma4OverlapFixture's dimension-parameterized core, factored out so
 // zz_lever3_bench_test.go's production-scale fixture (real ~3 MB/expert) can share it.
-func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInter, group, guRows, guCols, dnRows, dnCols int) (w *gemma4MoEWeights, arch *Architecture, path string, mapping []byte) {
+func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInter, group, guRows, guCols, dnRows, dnCols int) (w *archparts.Gemma4MoEWeights, arch *darch.Architecture, path string, mapping []byte) {
 	t.Helper()
 	guBpr, guGroups := guCols/2, guCols/group
 	dnBpr, dnGroups := dnCols/2, dnCols/group
@@ -82,46 +84,46 @@ func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInt
 		expertsDown[e] = wrapInt4F32(dnQ4, randPos(dnRows*dnGroups), dnRows, dnCols, group)
 	}
 
-	w = &gemma4MoEWeights{
-		preFFNNorm:     randPos(hidden),
-		postFFNNorm1:   randPos(hidden),
-		preFFNNorm2:    randPos(hidden),
-		postFFNNorm2:   randPos(hidden),
-		postFFNNorm:    randPos(hidden),
-		mlpGate:        linalg.WrapF32(randF32(denseInter*hidden), denseInter, hidden),
-		mlpUp:          linalg.WrapF32(randF32(denseInter*hidden), denseInter, hidden),
-		mlpDown:        linalg.WrapF32(randF32(hidden*denseInter), hidden, denseInter),
-		routerProj:     linalg.WrapF32(randF32(nExperts*hidden), nExperts, hidden),
-		routerScale:    randPos(hidden),
-		perExpertScale: randPos(nExperts),
-		expertsGateUp:  expertsGateUp,
-		expertsDown:    expertsDown,
-		layerScalar:    1.0,
-		denseInter:     denseInter,
-		moeInter:       moeInter,
-		nE:             nExperts,
-		topK:           topK,
+	w = &archparts.Gemma4MoEWeights{
+		PreFFNNorm:     randPos(hidden),
+		PostFFNNorm1:   randPos(hidden),
+		PreFFNNorm2:    randPos(hidden),
+		PostFFNNorm2:   randPos(hidden),
+		PostFFNNorm:    randPos(hidden),
+		MlpGate:        linalg.WrapF32(randF32(denseInter*hidden), denseInter, hidden),
+		MlpUp:          linalg.WrapF32(randF32(denseInter*hidden), denseInter, hidden),
+		MlpDown:        linalg.WrapF32(randF32(hidden*denseInter), hidden, denseInter),
+		RouterProj:     linalg.WrapF32(randF32(nExperts*hidden), nExperts, hidden),
+		RouterScale:    randPos(hidden),
+		PerExpertScale: randPos(nExperts),
+		ExpertsGateUp:  expertsGateUp,
+		ExpertsDown:    expertsDown,
+		LayerScalar:    1.0,
+		DenseInter:     denseInter,
+		MoeInter:       moeInter,
+		NE:             nExperts,
+		TopK:           topK,
 	}
-	arch = &Architecture{HiddenDim: hidden, NormEps: 1e-6}
+	arch = &darch.Architecture{HiddenDim: hidden, NormEps: 1e-6}
 	return w, arch, path, mapping
 }
 
 // gemma4MmapPager mirrors newExpertPager's gemma4 branch exactly (one member per expert, keyed
 // by &expertsGateUp[e], spans = [gateUp, down]) without needing a full Weights/LayerWeights tree
 // -- matches moepaging_test.go's own newRealMmapPager convention for synthetic fixtures.
-func gemma4MmapPager(w *gemma4MoEWeights, mapping []byte, budgetExperts int) *expertPager {
+func gemma4MmapPager(w *archparts.Gemma4MoEWeights, mapping []byte, budgetExperts int) *expertPager {
 	base := uintptr(unsafe.Pointer(&mapping[0]))
 	end := base + uintptr(len(mapping))
 	type member struct {
 		key   unsafe.Pointer
 		spans [][]byte
 	}
-	members := make([]member, len(w.expertsGateUp))
+	members := make([]member, len(w.ExpertsGateUp))
 	var perExpert int64
-	for e := range w.expertsGateUp {
-		guSpan := w.expertsGateUp[e].MappedSpan(base, end)
-		dnSpan := w.expertsDown[e].MappedSpan(base, end)
-		members[e] = member{key: unsafe.Pointer(&w.expertsGateUp[e]), spans: [][]byte{guSpan, dnSpan}}
+	for e := range w.ExpertsGateUp {
+		guSpan := w.ExpertsGateUp[e].MappedSpan(base, end)
+		dnSpan := w.ExpertsDown[e].MappedSpan(base, end)
+		members[e] = member{key: unsafe.Pointer(&w.ExpertsGateUp[e]), spans: [][]byte{guSpan, dnSpan}}
 		if perExpert == 0 {
 			perExpert = int64(len(guSpan) + len(dnSpan))
 		}
@@ -130,28 +132,28 @@ func gemma4MmapPager(w *gemma4MoEWeights, mapping []byte, budgetExperts int) *ex
 	for _, m := range members {
 		cache.Add(m.key, m.spans)
 	}
-	return &expertPager{cache: cache, nExperts: len(w.expertsGateUp), total: perExpert * int64(len(w.expertsGateUp))}
+	return &expertPager{cache: cache, nExperts: len(w.ExpertsGateUp), total: perExpert * int64(len(w.ExpertsGateUp))}
 }
 
 // gemma4PoolPager builds a real pread pool over the same fixture, mirroring newExpertPager's
 // pool-mode construction for the gemma4 branch (buildExpertField over both tensors, one
 // poolMember per expert).
-func gemma4PoolPager(t *testing.T, w *gemma4MoEWeights, path string, mapping []byte, budgetExperts, minSlots int) *expertPager {
+func gemma4PoolPager(t *testing.T, w *archparts.Gemma4MoEWeights, path string, mapping []byte, budgetExperts, minSlots int) *expertPager {
 	t.Helper()
 	base := uintptr(unsafe.Pointer(&mapping[0]))
 	end := base + uintptr(len(mapping))
-	members := make([]poolMember, len(w.expertsGateUp))
+	members := make([]poolMember, len(w.ExpertsGateUp))
 	var perExpert int64
-	for e := range w.expertsGateUp {
-		guF, ok := buildExpertField(&w.expertsGateUp[e], base, end)
+	for e := range w.ExpertsGateUp {
+		guF, ok := buildExpertField(&w.ExpertsGateUp[e], base, end)
 		if !ok {
 			t.Fatalf("buildExpertField(gateUp[%d]) rejected", e)
 		}
-		dnF, ok := buildExpertField(&w.expertsDown[e], base, end)
+		dnF, ok := buildExpertField(&w.ExpertsDown[e], base, end)
 		if !ok {
 			t.Fatalf("buildExpertField(down[%d]) rejected", e)
 		}
-		members[e] = poolMember{key: unsafe.Pointer(&w.expertsGateUp[e]), fields: []expertField{guF, dnF}}
+		members[e] = poolMember{key: unsafe.Pointer(&w.ExpertsGateUp[e]), fields: []expertField{guF, dnF}}
 		if perExpert == 0 {
 			perExpert = int64(guF.n + dnF.n)
 		}
@@ -161,7 +163,7 @@ func gemma4PoolPager(t *testing.T, w *gemma4MoEWeights, path string, mapping []b
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
 	t.Cleanup(func() { _ = pool.close() })
-	return &expertPager{pool: pool, nExperts: len(w.expertsGateUp)}
+	return &expertPager{pool: pool, nExperts: len(w.ExpertsGateUp)}
 }
 
 // TestGemma4MoEFFN_overlapBitIdentical is Lever 3's correctness gate: reordering the router

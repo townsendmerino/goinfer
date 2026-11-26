@@ -55,7 +55,7 @@ func loadGemma3VLTiny(t *testing.T) (*Model, gemma3VLGolden) {
 // turn if the same image comes back (the point of P9(a)).
 func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil) // stale — must not be mistaken for a reusable image block
 
@@ -72,7 +72,7 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("GenerateVL streamed no tokens")
 	}
-	if nLayers := m.w.arch.NumLayers; len(rf.uploadKVs) != nLayers {
+	if nLayers := m.w.Arch.NumLayers; len(rf.uploadKVs) != nLayers {
 		t.Errorf("UploadKV called %d times, want %d (once per layer)", len(rf.uploadKVs), nLayers)
 	}
 	for l, c := range rf.uploadKVs {
@@ -121,7 +121,7 @@ func TestGenerateVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 // touched them, so V-11's original rule — a decline must not forget — still applies here).
 func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 	atomic.StoreInt32(&m.resBusy, 1) // simulate another in-flight generation holding the claim
@@ -159,7 +159,7 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 // corrupt resIDs or double-claim resBusy. Run with -race.
 func TestGenerateVL_residentConcurrencyRace(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 
 	var wg sync.WaitGroup
@@ -229,7 +229,7 @@ func loadQwen25VLTiny(t *testing.T) (*Model, qwen25vlGolden) {
 // test's doc comment for why commit, not forget).
 func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 
@@ -246,7 +246,7 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("GenerateQwenVL streamed no tokens")
 	}
-	if nLayers := m.w.arch.NumLayers; len(rf.uploadKVs) != nLayers {
+	if nLayers := m.w.Arch.NumLayers; len(rf.uploadKVs) != nLayers {
 		t.Errorf("UploadKV called %d times, want %d (once per layer)", len(rf.uploadKVs), nLayers)
 	}
 	if rf.forwards == 0 {
@@ -283,7 +283,7 @@ func TestGenerateQwenVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 // resBusy/resIDs.
 func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
-	rf := &residentForwardOnly{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+	rf := &residentForwardOnly{fakeResident: &fakeResident{vocab: m.w.Arch.VocabSize}}
 	m.resident = rf
 	m.setBoundSeqForTest([]int{4, 5, 6}, nil, nil)
 
@@ -316,7 +316,7 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 // fired (not just "no error," which a silently-declined fast path would also produce).
 func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 
 	towerCalls := 0
@@ -402,7 +402,7 @@ func TestGenerateVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
 // nothing were resident at all.
 func TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 
 	towerCalls := 0
@@ -445,7 +445,7 @@ func TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower(t *testing
 // ropePos = pos + rope.MRoPEDelta distinction only ForwardMRoPE can express (decoder/residency.go).
 func TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 
 	towerCalls := 0
@@ -531,7 +531,7 @@ func (r *residentForwardOnly) ResidentCaps() ResidentCaps { return r.fakeResiden
 // more, so the turn must publish the clamp and stream no more than it published.
 func checkResidentCapPublishesBudgetClamped(t *testing.T, m *Model, promptLen int, generate func(maxNew int) (<-chan int, *Generation)) {
 	t.Helper()
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	rf.capPos = promptLen + 2
 	m.resident = rf
 
@@ -561,7 +561,7 @@ func checkImageReuseDeclinesPastResidentCap(t *testing.T, m *Model, inputIDs []i
 	generate func(ids []int, features func() ([]float32, error), maxNew int) (<-chan int, *Generation),
 ) {
 	t.Helper()
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 
 	towerCalls := 0

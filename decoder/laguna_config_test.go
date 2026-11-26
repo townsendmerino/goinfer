@@ -84,7 +84,7 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("lagunaArchitecture(%s): %v", tc.repo, err)
 			}
-			arch.finalizeRoPE()
+			arch.FinalizeRoPE()
 
 			if arch.NumLayers != tc.layers || arch.HiddenDim != tc.hidden || arch.NumHeads != tc.heads {
 				t.Errorf("layers/hidden/heads = %d/%d/%d, want %d/%d/%d",
@@ -94,18 +94,18 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 				t.Errorf("head_dim/kv_heads = %d/%d, want %d/8", arch.HeadDim, arch.NumKVHeads, headDim)
 			}
 			// Per-layer QUERY heads — the accessor the XS line needs and M.1 does not.
-			if got := arch.headsAt(0); got != tc.headsAt0 {
+			if got := arch.HeadsAt(0); got != tc.headsAt0 {
 				t.Errorf("headsAt(0) = %d, want %d", got, tc.headsAt0)
 			}
-			if got := arch.headsAt(1); got != tc.headsAt1 {
+			if got := arch.HeadsAt(1); got != tc.headsAt1 {
 				t.Errorf("headsAt(1) = %d, want %d", got, tc.headsAt1)
 			}
-			if got := arch.maxHeads(); got != max(tc.headsAt0, tc.headsAt1) {
+			if got := arch.MaxHeads(); got != max(tc.headsAt0, tc.headsAt1) {
 				t.Errorf("maxHeads() = %d, want %d", got, max(tc.headsAt0, tc.headsAt1))
 			}
 			// Every per-layer head count must stay a whole number of GQA groups.
 			for i := range arch.NumLayers {
-				if h := arch.headsAt(i); h%arch.NumKVHeads != 0 {
+				if h := arch.HeadsAt(i); h%arch.NumKVHeads != 0 {
 					t.Fatalf("headsAt(%d) = %d is not a multiple of kv_heads %d", i, h, arch.NumKVHeads)
 				}
 			}
@@ -150,10 +150,10 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 			if arch.SlidingWindow != tc.sliding {
 				t.Errorf("SlidingWindow = %d, want %d", arch.SlidingWindow, tc.sliding)
 			}
-			if got := arch.isGlobalLayer(0); got != tc.globalAt0 {
+			if got := arch.IsGlobalLayer(0); got != tc.globalAt0 {
 				t.Errorf("isGlobalLayer(0) = %v, want %v", got, tc.globalAt0)
 			}
-			if got := arch.isGlobalLayer(1); got != tc.globalAt1 {
+			if got := arch.IsGlobalLayer(1); got != tc.globalAt1 {
 				t.Errorf("isGlobalLayer(1) = %v, want %v", got, tc.globalAt1)
 			}
 			// RoPE: base, per-layer-type rotary width, and YaRN presence.
@@ -171,13 +171,13 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 				t.Errorf("RotaryDim/Local = %d/%d, want %d/%d",
 					arch.RotaryDim, arch.RotaryDimLocal, tc.rotaryDim, tc.rotaryLoc)
 			}
-			if arch.ropeScaling == nil {
+			if arch.RoPEScaling == nil {
 				t.Fatal("ropeScaling = nil, want YaRN on the full-attention layers")
 			}
-			if arch.ropeScaling.Factor != tc.yarnFactor {
-				t.Errorf("YaRN factor = %v, want %v", arch.ropeScaling.Factor, tc.yarnFactor)
+			if arch.RoPEScaling.Factor != tc.yarnFactor {
+				t.Errorf("YaRN factor = %v, want %v", arch.RoPEScaling.Factor, tc.yarnFactor)
 			}
-			if tc.sliding > 0 && arch.ropeScalingLocal != nil {
+			if tc.sliding > 0 && arch.RoPEScalingLocal != nil {
 				t.Error("ropeScalingLocal != nil, want nil (sliding layers use plain RoPE, rope_type default)")
 			}
 			// The two inv-freq tables must have the per-layer-type WIDTHS, since
@@ -187,14 +187,14 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 			if tc.rotaryDim > 0 {
 				wantGlobalHalf = tc.rotaryDim / 2
 			}
-			if got := len(arch.ropeInvFreqGlobal); got != wantGlobalHalf {
+			if got := len(arch.RoPEInvFreqGlobal); got != wantGlobalHalf {
 				t.Errorf("len(ropeInvFreqGlobal) = %d, want %d", got, wantGlobalHalf)
 			}
 			wantLocalHalf := wantGlobalHalf
 			if tc.rotaryLoc > 0 {
 				wantLocalHalf = tc.rotaryLoc / 2
 			}
-			if got := len(arch.ropeInvFreqLocal); got != wantLocalHalf {
+			if got := len(arch.RoPEInvFreqLocal); got != wantLocalHalf {
 				t.Errorf("len(ropeInvFreqLocal) = %d, want %d", got, wantLocalHalf)
 			}
 			if schema.GProj == "" {

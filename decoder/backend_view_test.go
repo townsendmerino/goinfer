@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"errors"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -94,18 +96,18 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 
 func TestBackendModelView_HybridLayerOps(t *testing.T) {
 	m := &Model{
-		w: &Weights{
-			arch: &Architecture{
+		w: &darch.Weights{
+			Arch: &darch.Architecture{
 				HiddenDim:  64,
 				NumLayers:  4,
 				NumHeads:   4,
 				NumKVHeads: 2,
 				HeadDim:    16,
-				nemotron: &nemotronParams{
-					blockKind: []uint8{nemoMamba, nemoAttn, nemoMLP, nemoMoE},
+				Nemotron: &archparts.NemotronParams{
+					BlockKind: []uint8{archparts.NemoMamba, archparts.NemoAttn, archparts.NemoMLP, archparts.NemoMoE},
 				},
 			},
-			Layers: make([]LayerWeights, 4),
+			Layers: make([]darch.LayerWeights, 4),
 		},
 	}
 
@@ -132,7 +134,7 @@ func TestBackendModelView_HybridLayerOps(t *testing.T) {
 // model that carries the subsystem, ok=false and zeros for one that does not.
 func TestBackendModelView_familyParams(t *testing.T) {
 	moe := &MoEConfig{NumExperts: 8, TopK: 2, IntermediateDim: 24, SharedIntermediateDim: 16, RouterSigmoid: true, NormTopKProb: true, RoutedScale: 2.5, NGroup: 4, TopkGroup: 2}
-	m := &Model{w: &Weights{arch: &Architecture{HiddenDim: 64, NumLayers: 1, NumHeads: 4, NumKVHeads: 2, HeadDim: 16, MoE: moe}, Layers: make([]LayerWeights, 1)}}
+	m := &Model{w: &darch.Weights{Arch: &darch.Architecture{HiddenDim: 64, NumLayers: 1, NumHeads: 4, NumKVHeads: 2, HeadDim: 16, MoE: moe}, Layers: make([]darch.LayerWeights, 1)}}
 	bv := m.BackendView()
 
 	want := ResidentMoESpec{NumExperts: 8, TopK: 2, IntermediateDim: 24, SharedIntermediateDim: 16, RouterSigmoid: true,

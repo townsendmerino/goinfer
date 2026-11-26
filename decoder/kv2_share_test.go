@@ -129,7 +129,7 @@ func newKV2Conv(pre []int, c, vocab int) *kv2Conv {
 // turn runs the conversation's next turn and extends its prompt with the reply and a new user turn.
 func (cv *kv2Conv) turn(t *testing.T, ctx context.Context, m *Model, c, maxTok int) {
 	t.Helper()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ch, gen := m.Generate(ctx, cv.prompt, maxTok, SamplingParams{})
 	var ids []int
 	for id := range ch {
@@ -150,8 +150,8 @@ func kv2Alone(t *testing.T, convs, turns, maxTok int, edit bool) [][]mc3Turn {
 	out := make([][]mc3Turn, convs)
 	for c := range convs {
 		m, _ := loadWithCopyFake(t, 1, "")
-		pre := kv2Preamble(m.w.arch.VocabSize)
-		cv := newKV2Conv(pre, c, m.w.arch.VocabSize)
+		pre := kv2Preamble(m.w.Arch.VocabSize)
+		cv := newKV2Conv(pre, c, m.w.Arch.VocabSize)
 		if edit && c == 1 {
 			cv = kv2EditOf(t, pre, m, maxTok)
 		}
@@ -167,7 +167,7 @@ func kv2Alone(t *testing.T, convs, turns, maxTok int, edit bool) [][]mc3Turn {
 // second user turn, so its prompt holds rows conversation 0's decode wrote.
 func kv2EditOf(t *testing.T, pre []int, m *Model, maxTok int) *kv2Conv {
 	t.Helper()
-	a := newKV2Conv(pre, 0, m.w.arch.VocabSize)
+	a := newKV2Conv(pre, 0, m.w.Arch.VocabSize)
 	first := slices.Clone(a.prompt)
 	ref, _ := loadWithCopyFake(t, 1, "")
 	ch, gen := ref.Generate(context.Background(), first, maxTok, SamplingParams{})
@@ -200,10 +200,10 @@ func TestKV2_scheduleIndependence(t *testing.T) {
 	run := func(t *testing.T, slots int, s sched, plant string) (mismatch []string, shared int) {
 		alone := kv2Alone(t, 3, turns, maxTok, s.edit)
 		m, rf := loadWithCopyFake(t, slots, plant)
-		pre := kv2Preamble(m.w.arch.VocabSize)
+		pre := kv2Preamble(m.w.Arch.VocabSize)
 		convs := make([]*kv2Conv, 3)
 		for c := range convs {
-			convs[c] = newKV2Conv(pre, c, m.w.arch.VocabSize)
+			convs[c] = newKV2Conv(pre, c, m.w.Arch.VocabSize)
 		}
 		if s.edit {
 			convs[1] = kv2EditOf(t, pre, m, maxTok)
@@ -259,8 +259,8 @@ func TestKV2_busySourceUnderMC3(t *testing.T) {
 	if got := m.EnableResidentConcurrency(2); got != 2 {
 		t.Fatalf("EnableResidentConcurrency(2) = %d", got)
 	}
-	pre := kv2Preamble(m.w.arch.VocabSize)
-	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+	pre := kv2Preamble(m.w.Arch.VocabSize)
+	a, b := newKV2Conv(pre, 0, m.w.Arch.VocabSize), newKV2Conv(pre, 1, m.w.Arch.VocabSize)
 	chA, genA := m.Generate(context.Background(), a.prompt, maxTok, SamplingParams{})
 	var idsA []int
 	idsA = append(idsA, <-chA) // A has prefilled: its prompt is published
@@ -302,8 +302,8 @@ func TestKV2_scopes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _ := loadWithCopyFake(t, 2, "")
-			pre := kv2Preamble(m.w.arch.VocabSize)
-			a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+			pre := kv2Preamble(m.w.Arch.VocabSize)
+			a, b := newKV2Conv(pre, 0, m.w.Arch.VocabSize), newKV2Conv(pre, 1, m.w.Arch.VocabSize)
 			a.turn(t, WithKVScope(context.Background(), tc.a), m, 0, maxTok)
 			b.turn(t, WithKVScope(context.Background(), tc.b), m, 1, maxTok)
 			if got := b.turns[0].reused > 0; got != tc.wantShared {
@@ -324,8 +324,8 @@ func TestKV2_optionOff(t *testing.T) {
 	const maxTok = 8
 	m, rf := loadWithCopyFake(t, 2, "")
 	m.opts.KVShareOff = true // Options.KVShareOff
-	pre := kv2Preamble(m.w.arch.VocabSize)
-	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+	pre := kv2Preamble(m.w.Arch.VocabSize)
+	a, b := newKV2Conv(pre, 0, m.w.Arch.VocabSize), newKV2Conv(pre, 1, m.w.Arch.VocabSize)
 	a.turn(t, context.Background(), m, 0, maxTok)
 	b.turn(t, context.Background(), m, 1, maxTok)
 	if b.turns[0].reused != 0 || rf.copies != 0 {
@@ -342,8 +342,8 @@ func TestKV2_optionOff(t *testing.T) {
 func TestKV2_declinedPrefillSharesNothing(t *testing.T) {
 	const maxTok = 8
 	m, rf := loadWithCopyFake(t, 2, "")
-	pre := kv2Preamble(m.w.arch.VocabSize)
-	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+	pre := kv2Preamble(m.w.Arch.VocabSize)
+	a, b := newKV2Conv(pre, 0, m.w.Arch.VocabSize), newKV2Conv(pre, 1, m.w.Arch.VocabSize)
 	rf.declinePrefill = true
 	a.turn(t, context.Background(), m, 0, maxTok)
 	rf.declinePrefill = false
@@ -368,9 +368,9 @@ func TestKV2_declinedPrefillSharesNothing(t *testing.T) {
 func TestKV2_windowGroupRollback(t *testing.T) {
 	for _, window := range []int{0, 1024} {
 		m, rf := loadWithCopyFake(t, 2, "")
-		m.w.arch.SlidingWindow = window
+		m.w.Arch.SlidingWindow = window
 		m.rebuildProgramForTest()
-		vocab := m.w.arch.VocabSize
+		vocab := m.w.Arch.VocabSize
 		first := make([]int, 1000)
 		for i := range first {
 			first[i] = (i*37 + 11) % vocab
@@ -403,7 +403,7 @@ func TestKV2_windowGroupRollback(t *testing.T) {
 // of its first prompt still copies instead of cutting it.
 func TestKV2_ownRollbackStaysInPlace(t *testing.T) {
 	m, rf := loadWithCopyFake(t, 2, "")
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	run := func(p []int, maxTok int) ([]int, *Generation) {
 		ch, g := m.Generate(context.Background(), p, maxTok, SamplingParams{})
 		var ids []int
@@ -446,7 +446,7 @@ func TestKV2_ownRollbackStaysInPlace(t *testing.T) {
 // because the rows below the copy are still the slot's own.
 func TestKV2_copyIntoASlotWithAFloor(t *testing.T) {
 	m, rf := loadWithCopyFake(t, 2, "")
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	gen := func(prompt []int) {
 		t.Helper()
 		ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})

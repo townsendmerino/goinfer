@@ -40,19 +40,19 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 local ring, L1 global
 
 	f32 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	f32.enableRings(W, arch.isGlobalLayer)
+	f32.enableRings(W, arch.IsGlobalLayer)
 	f32.scr = newDecodeScratch(arch, f32.knobs)
 
 	i8 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	i8.setQuant(kvI8, N+1)
-	i8.enableRings(W, arch.isGlobalLayer)
+	i8.enableRings(W, arch.IsGlobalLayer)
 	i8.scr = newDecodeScratch(arch, i8.knobs)
 
 	rng := rand.New(rand.NewSource(7))
 	worst := map[int]float64{0: 1, 1: 1}
 	for pos := range N {
 		for l := range nLayers {
-			global := arch.isGlobalLayer(l)
+			global := arch.IsGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
 			f32.Append(l, slices.Clone(k), slices.Clone(v))
@@ -95,7 +95,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	mk := func() *KVCache {
 		c := NewKVCache(nLayers, nKV, hd, W, 16, nil)
 		c.setQuant(kvI8, 16)
-		c.enableRings(W, arch.isGlobalLayer)
+		c.enableRings(W, arch.IsGlobalLayer)
 		c.scr = newDecodeScratch(arch, c.knobs)
 		return c
 	}
@@ -233,7 +233,7 @@ func TestKVI8_genParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
-	if m.w.arch.MoE != nil || m.w.arch.gemma4 != nil || m.w.arch.qwen35 != nil {
+	if m.w.Arch.MoE != nil || m.w.Arch.Gemma4 != nil || m.w.Arch.Qwen35 != nil {
 		t.Skip("int8 KV excluded for this family")
 	}
 	ids, err := tk.Encode(kvi8GateText, true)
@@ -300,7 +300,7 @@ func TestKVI8_batchedPrefill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
-	if m.w.arch.MoE != nil || m.w.arch.gemma4 != nil || m.w.arch.qwen35 != nil {
+	if m.w.Arch.MoE != nil || m.w.Arch.Gemma4 != nil || m.w.Arch.Qwen35 != nil {
 		t.Skip("int8 KV excluded for this family")
 	}
 	ids, err := tk.Encode(kvi8GateText, true)

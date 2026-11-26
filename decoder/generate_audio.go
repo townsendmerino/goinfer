@@ -16,7 +16,7 @@ func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: audio prefill needs the batched path (canBatchN false)")
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if pos < 0 || n <= 0 || pos+n > len(ids) {
 		return nil, fmt.Errorf("decoder: audio run [%d,%d) out of range for %d tokens", pos, pos+n, len(ids))
 	}

@@ -29,7 +29,7 @@ func specAdaptiveTurn(t *testing.T, m *Model, prompt []int, maxTok int) mc3Turn 
 // the last exactly as mc3Conversation does for plain Generate — the two must be comparable turn for turn.
 func specAdaptiveConversation(t *testing.T, m *Model, c, turns, maxTok int) []mc3Turn {
 	t.Helper()
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	prompt := []int{1, 2, 3, (c*17 + 5) % vocab, (c*29 + 9) % vocab, (c*31 + 3) % vocab}
 	var out []mc3Turn
 	for tn := range turns {

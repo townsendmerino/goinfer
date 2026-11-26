@@ -50,7 +50,7 @@ func TestGemma3Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "gemma3" {
 		t.Fatalf("arch = %q, want gemma3", a.Name)
 	}

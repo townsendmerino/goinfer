@@ -3,6 +3,8 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 )
 
@@ -10,7 +12,7 @@ import (
 // tensors use llama.cpp's conventions (shared with qwen35): ssm_a stores -exp(A_log) directly (reversed to A_log via
 // log(-a) so the shared mamba2Step works), conv1d is [convDim, K], ssm_norm raw. Mixer stays f32 (parity-first);
 // experts/attention/embeddings quantize. NEOX rope, so no q/k permute.
-func (b *ggufBuild) loadGranite(gp *graniteParams) (*Weights, error) {
+func (b *ggufBuild) loadGranite(gp *archparts.GraniteParams) (*darch.Weights, error) {
 	arch, g, w, sink, abort, hidden, streamMat, mat, vnorm, stackedExperts, permMat := b.arch, b.g, b.w, b.sink, b.abort, b.hidden, b.streamMat, b.mat, b.vnorm, b.stackedExperts, b.permMat
 	dInner := gp.NHeads * gp.HeadDim
 	convDim := dInner + 2*gp.NGroups*gp.DState
@@ -47,27 +49,27 @@ func (b *ggufBuild) loadGranite(gp *graniteParams) (*Weights, error) {
 		if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
 			return e
 		}
-		if arch.isMambaLayer(i) {
-			mw := &mamba2Weights{}
-			if mw.inProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
+		if arch.IsMambaLayer(i) {
+			mw := &archparts.Mamba2Weights{}
+			if mw.InProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
 				return e
 			}
-			if mw.convW, e = f32mat(p+"ssm_conv1d.weight", convDim, gp.DConv); e != nil {
+			if mw.ConvW, e = f32mat(p+"ssm_conv1d.weight", convDim, gp.DConv); e != nil {
 				return e
 			}
-			if mw.convB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
+			if mw.ConvB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
 				return e
 			}
-			if mw.d, e = flat(p+"ssm_d", gp.NHeads); e != nil {
+			if mw.D, e = flat(p+"ssm_d", gp.NHeads); e != nil {
 				return e
 			}
-			if mw.dtBias, e = flat(p+"ssm_dt.bias", gp.NHeads); e != nil {
+			if mw.DtBias, e = flat(p+"ssm_dt.bias", gp.NHeads); e != nil {
 				return e
 			}
-			if mw.normW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
+			if mw.NormW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
 				return e
 			}
-			if mw.outProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
+			if mw.OutProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
 				return e
 			}
 			// ssm_a is −exp(A_log); reverse to A_log so mamba2Step's −exp(aLog) recovers it.
@@ -75,11 +77,11 @@ func (b *ggufBuild) loadGranite(gp *graniteParams) (*Weights, error) {
 			if aerr != nil {
 				return aerr
 			}
-			mw.aLog = make([]float32, gp.NHeads)
+			mw.ALog = make([]float32, gp.NHeads)
 			for h := range a {
-				mw.aLog[h] = float32(math.Log(-float64(a[h])))
+				mw.ALog[h] = float32(math.Log(-float64(a[h])))
 			}
-			l.mamba = mw
+			l.Mamba = mw
 		} else {
 			// llama.cpp converts GraniteHybrid attention with undo_permute=True, so
 			// q/k are RoPE-permuted in the GGUF (like Llama) and must be un-permuted.
@@ -108,9 +110,9 @@ func (b *ggufBuild) loadGranite(gp *graniteParams) (*Weights, error) {
 		if ge != nil || ue != nil || de != nil {
 			return fmt.Errorf("decoder(gguf-granite): experts layer %d: %w", i, errors.Join(ge, ue, de))
 		}
-		l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+		l.Experts = make([]archparts.ExpertWeights, arch.MoE.NumExperts)
 		for ei := range arch.MoE.NumExperts {
-			l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			l.Experts[ei] = archparts.ExpertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
 		}
 		sInter := arch.MoE.SharedIntermediateDim
 		if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {

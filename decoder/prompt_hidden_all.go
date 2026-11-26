@@ -48,7 +48,7 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 	if err := m.checkHiddenIDs("decoder.PromptHiddenAll", prompt); err != nil {
 		return nil, err
 	}
-	a := m.w.arch
+	a := m.w.Arch
 	if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outEveryResidual}) && m.tryClaimResident() {
 		rows, err := m.residualAllResident(ctx, prompt)
 		atomic.StoreInt32(&m.resBusy, 0)
@@ -81,7 +81,7 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 // residualAllResident is PromptHiddenAll's resident path: embed on the host (the embedding the plain resident forward uses), hand the sequence to the backend, and apply the
 // final norm to each returned residual row in f32. The caller holds the resident claim.
 func (m *Model) residualAllResident(ctx context.Context, ids []int) ([][]float32, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	m.residentForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
@@ -107,7 +107,7 @@ func (m *Model) residualAllResident(ctx context.Context, ids []int) ([][]float32
 // promptHiddenAllSequential is PromptHiddenAll's per-token path (the one PromptHidden's fallback is), callable directly so a test can
 // bound the batched paths against it.
 func (m *Model) promptHiddenAllSequential(ctx context.Context, prompt []int) ([][]float32, error) {
-	a := m.w.arch
+	a := m.w.Arch
 	cache := m.NewCache(len(prompt))
 	out := make([][]float32, len(prompt))
 	for i, id := range prompt {
@@ -151,7 +151,7 @@ func (m *Model) OutputEmbeddingRow(id int, dst []float32) error {
 
 // outputEmbeddingRow is OutputEmbeddingRow without the lifecycle guard (lifecycle.go).
 func (m *Model) outputEmbeddingRow(id int, dst []float32) error {
-	a := m.w.arch
+	a := m.w.Arch
 	if id < 0 || id >= a.VocabSize {
 		return fmt.Errorf("decoder.OutputEmbeddingRow: token id %d outside the vocabulary [0, %d)", id, a.VocabSize)
 	}
@@ -167,4 +167,4 @@ func (m *Model) outputEmbeddingRow(id int, dst []float32) error {
 }
 
 // HiddenSize is the model's hidden width (the width PromptHiddenAll rows and OutputEmbeddingRow rows have).
-func (m *Model) HiddenSize() int { return m.w.arch.HiddenDim }
+func (m *Model) HiddenSize() int { return m.w.Arch.HiddenDim }

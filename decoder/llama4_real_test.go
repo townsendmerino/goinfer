@@ -37,21 +37,21 @@ func TestLlama4Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", gguf, err)
 	}
 	defer m.Close()
-	a := m.w.arch
-	if a.Name != "llama4_text" || a.llama4 == nil {
-		t.Fatalf("arch = %q (llama4=%v), want llama4_text", a.Name, a.llama4 != nil)
+	a := m.w.Arch
+	if a.Name != "llama4_text" || a.Llama4 == nil {
+		t.Fatalf("arch = %q (llama4=%v), want llama4_text", a.Name, a.Llama4 != nil)
 	}
 	nMoE, nNoPE := 0, 0
 	for l := 0; l < a.NumLayers; l++ {
-		if a.llama4.isMoE[l] {
+		if a.Llama4.IsMoE[l] {
 			nMoE++
 		}
-		if !a.llama4.useRope[l] {
+		if !a.Llama4.UseRope[l] {
 			nNoPE++
 		}
 	}
 	t.Logf("Scout: %d layers (%d MoE, %d NoPE), H=%d kv=%d headDim=%d experts=%d top%d qknorm=%v attnTemp=%v",
-		a.NumLayers, nMoE, nNoPE, a.NumHeads, a.NumKVHeads, a.HeadDim, a.MoE.NumExperts, a.MoE.TopK, a.llama4.useQKNorm, a.llama4.attnTemp)
+		a.NumLayers, nMoE, nNoPE, a.NumHeads, a.NumKVHeads, a.HeadDim, a.MoE.NumExperts, a.MoE.TopK, a.Llama4.UseQKNorm, a.Llama4.AttnTemp)
 
 	tk, err := tokenizer.LoadGGUF(gguf)
 	if err != nil {

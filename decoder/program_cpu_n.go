@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -25,10 +26,10 @@ func (c *KVCache) batchRowPos(startPos, i int) int {
 // it is the walker's input; the program's attention order names the exact kernel the request may replace. rows carries each row's
 // token id and the prompt's bidirectional spans; Gemma 4's operations need it, and every other family passes nil.
 func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch, rows *batchRows) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
-	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
+	maxQDim, kvDim, inter := arch.MaxHeads()*hd, nKV*hd, arch.IntermediateDim
 	K := len(h) / hidden
 	startPos := cache.Pos()
 	cache.cost.Tokens(cache.costPhase, K)
@@ -60,13 +61,13 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
-	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.AnySoftcap() && !arch.hasAttnSinks() // the fused tile never sees a score to cap or a sink logit
+	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.AnySoftcap() && !arch.HasAttnSinks() // the fused tile never sees a score to cap or a sink logit
 	poolK, poolKeys := K, maxKeys
 	if ps.poolKeys > maxKeys {
 		poolKeys = ps.poolKeys
 	}
 	if (ps.pool == nil || ps.poolWant != wantFusedPool) && prog.AnyOp(func(o *op) bool { return o.Kind == opAttention || o.Kind == opGatedAttn }) {
-		ps.pool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, poolK, poolKeys, hd, arch.maxHeads()), poolK, poolKeys, hd, wantFusedPool)
+		ps.pool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, poolK, poolKeys, hd, arch.MaxHeads()), poolK, poolKeys, hd, wantFusedPool)
 		ps.poolWant = wantFusedPool
 	}
 	attnPool := ps.pool
@@ -96,7 +97,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 		return h
 	}
 	var gp *gemma4Pass
-	if arch.gemma4 != nil {
+	if arch.Gemma4 != nil {
 		if rows == nil || len(rows.ids) != K {
 			return nil, fmt.Errorf("decoder: Gemma 4's batched pass needs each row's token id (%d rows)", K)
 		}
@@ -115,7 +116,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 			m.layerPager.enterLayer(l)
 		}
 		lw := &m.w.Layers[l]
-		nH := arch.headsAt(l)
+		nH := arch.HeadsAt(l)
 		qDim := nH * hd
 		q, ctx := q[:min(len(q), K*qDim)], ctx[:min(len(ctx), K*qDim)]
 		for oi := range ops {
@@ -131,7 +132,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 					copy(dst, src)
 					break
 				}
-				w, b := lw.normWeights(o.Norm)
+				w, b := lw.NormWeights(o.Norm)
 				for i := range K {
 					applyNorm(o.Norm, row(dst, i, hidden), row(src, i, hidden), w, b, hidden)
 				}
@@ -225,7 +226,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 				}
 			case opFFN:
 				if o.FFN.Form == ffnGemma4Dense {
-					if err := m.gemma4DenseFFNBatch(o.FFN.Act, reg(o.In), reg(o.Out), lw, arch.ffnAt(l), K, hq); err != nil {
+					if err := m.gemma4DenseFFNBatch(o.FFN.Act, reg(o.In), reg(o.Out), lw, arch.FFNAt(l), K, hq); err != nil {
 						return nil, err
 					}
 				} else if err := m.ffnBatch(&o.FFN, reg(o.In), reg(o.Out), o.Out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
@@ -236,7 +237,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 			case opGemma4MoE:
 				for i := range K {
 					hi := row(h, i, hidden)
-					copy(hi, gemma4MoEFFNWith(be, hidden, o.Norms.Eps, o.Norms.AddOne, hi, lw.gemma4moe, m.pager, gp.moeScratch()))
+					copy(hi, gemma4MoEFFNWith(be, hidden, o.Norms.Eps, o.Norms.AddOne, hi, lw.Gemma4MoE, m.pager, gp.moeScratch()))
 				}
 			case opPLE:
 				m.gemma4PLEBatch(h, l, K, lw, &o.Norms, gp)
@@ -300,9 +301,9 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 
 // ffnBatch writes the feed-forward output of K rows of x into out. A MoE layer (gpt-oss's included) runs its experts per row (the
 // router picks per token) or expert-major in chunks, its buffers in the pass scratch; a dense layer runs gate/up at M=K.
-func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *LayerWeights, K int, ws *linalg.Workspace, hq *w4a8Act,
+func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *darch.LayerWeights, K int, ws *linalg.Workspace, hq *w4a8Act,
 	gate, up []float32, guOps *[2]linalg.BatchOp, ps *prefillPassScratch) error {
-	arch, be := m.w.arch, m.be
+	arch, be := m.w.Arch, m.be
 	hidden := arch.HiddenDim
 	switch p.Form {
 	case ffnMoE, ffnGptOss:
@@ -381,7 +382,7 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 // activateRows is the batched paths' gated activation over gate and up, in place into gate.
 func activateRows(act ActKind, gate, up []float32) error {
 	switch act {
-	case ActGeluTanh:
+	case darch.ActGeluTanh:
 		if len(gate) < activationFanoutThreshold {
 			geglu(gate, up)
 		} else {
@@ -391,7 +392,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 				}
 			})
 		}
-	case ActSiLU:
+	case darch.ActSiLU:
 		if len(gate) < activationFanoutThreshold {
 			swiglu(gate, up)
 		} else {
@@ -401,7 +402,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 				}
 			})
 		}
-	case ActGelu:
+	case darch.ActGelu:
 		if len(gate) < activationFanoutThreshold {
 			gegluExact(gate, up)
 		} else {
@@ -421,11 +422,11 @@ func activateRows(act ActKind, gate, up []float32) error {
 // norm; it returns the B rows' hidden states. Its operations compute what walkToken's do for each row, with the projections at
 // M=B; the program must be one multiStepEligible admits.
 func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	be := m.be
 	B := len(caches)
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
-	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
+	maxQDim, kvDim, inter := arch.MaxHeads()*hd, nKV*hd, arch.IntermediateDim
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
 	norm := make([]float32, B*hidden)
@@ -457,7 +458,7 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 
 	for l, ops := range prog.Layers {
 		lw := &m.w.Layers[l]
-		nH := arch.headsAt(l)
+		nH := arch.HeadsAt(l)
 		qDim := nH * hd
 		q, ctx := q[:B*qDim], ctx[:B*qDim]
 		for oi := range ops {
@@ -465,7 +466,7 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 			switch o.Kind {
 			case opNorm:
 				src, dst := reg(o.In), reg(o.Out)
-				w, bias := lw.normWeights(o.Norm)
+				w, bias := lw.NormWeights(o.Norm)
 				for b := range B {
 					applyNorm(o.Norm, row(dst, b, hidden), row(src, b, hidden), w, bias, hidden)
 				}

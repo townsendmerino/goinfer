@@ -64,13 +64,13 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != wantArch || a.mla == nil {
-		t.Fatalf("arch = %q (mla=%v), want %s", a.Name, a.mla != nil, wantArch)
+	a := m.w.Arch
+	if a.Name != wantArch || a.MLA == nil {
+		t.Fatalf("arch = %q (mla=%v), want %s", a.Name, a.MLA != nil, wantArch)
 	}
 	t.Logf("%s: %d layers, H=%d, q_lora=%d kv_lora=%d qk=%d v=%d, experts=%d top%d firstKDense=%d sigmoid=%v nGroup=%d routedScale=%.3f attnScale=%.6f ropeMscale=%.4f",
-		wantArch, a.NumLayers, a.NumHeads, a.mla.QLoRARank, a.mla.KVLoRARank, a.mla.qkHeadDim(), a.mla.VHeadDim,
-		a.MoE.NumExperts, a.MoE.TopK, a.FirstKDense, a.MoE.RouterSigmoid, a.MoE.NGroup, a.MoE.RoutedScale, a.AttnScale, a.ropeMscale(0))
+		wantArch, a.NumLayers, a.NumHeads, a.MLA.QLoRARank, a.MLA.KVLoRARank, a.MLA.QKHeadDim(), a.MLA.VHeadDim,
+		a.MoE.NumExperts, a.MoE.TopK, a.FirstKDense, a.MoE.RouterSigmoid, a.MoE.NGroup, a.MoE.RoutedScale, a.AttnScale, a.RoPEMscale(0))
 	if a.MoE.RouterSigmoid != wantSigmoid {
 		t.Errorf("RouterSigmoid = %v, want %v", a.MoE.RouterSigmoid, wantSigmoid)
 	}
@@ -198,13 +198,13 @@ func TestDeepseekGGUFReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", gguf, err)
 	}
 	defer m.Close()
-	a := m.w.arch
-	if a.mla == nil {
+	a := m.w.Arch
+	if a.MLA == nil {
 		t.Fatalf("arch %q has no mla (GGUF deepseek2 not resolved)", a.Name)
 	}
 	t.Logf("GGUF %s: %d layers, q_lora=%d kv_lora=%d qk=%d v=%d, experts=%d top%d firstKDense=%d sigmoid=%v ropeMscale=%.4f",
-		a.Name, a.NumLayers, a.mla.QLoRARank, a.mla.KVLoRARank, a.mla.qkHeadDim(), a.mla.VHeadDim,
-		a.MoE.NumExperts, a.MoE.TopK, a.FirstKDense, a.MoE.RouterSigmoid, a.ropeMscale(0))
+		a.Name, a.NumLayers, a.MLA.QLoRARank, a.MLA.KVLoRARank, a.MLA.QKHeadDim(), a.MLA.VHeadDim,
+		a.MoE.NumExperts, a.MoE.TopK, a.FirstKDense, a.MoE.RouterSigmoid, a.RoPEMscale(0))
 
 	tk, err := tokenizer.LoadGGUF(gguf)
 	if err != nil {

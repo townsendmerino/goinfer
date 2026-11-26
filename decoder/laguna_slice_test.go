@@ -83,17 +83,17 @@ func lagunaSliceOracle(t *testing.T, tag string) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "laguna" || a.NumLayers != g.NLayers {
 		t.Fatalf("arch = %q with %d layers, want laguna with %d", a.Name, a.NumLayers, g.NLayers)
 	}
 	// The slice preserves the real geometry: full layer 0 at 48 heads, sliding 1-3 at 64.
-	if a.headsAt(0) != 48 || a.headsAt(1) != 64 {
-		t.Fatalf("headsAt(0)/headsAt(1) = %d/%d, want 48/64", a.headsAt(0), a.headsAt(1))
+	if a.HeadsAt(0) != 48 || a.HeadsAt(1) != 64 {
+		t.Fatalf("headsAt(0)/headsAt(1) = %d/%d, want 48/64", a.HeadsAt(0), a.HeadsAt(1))
 	}
-	if !a.isGlobalLayer(0) || a.isGlobalLayer(1) {
+	if !a.IsGlobalLayer(0) || a.IsGlobalLayer(1) {
 		t.Fatalf("layer types wrong: layer0 global=%v layer1 global=%v, want true/false",
-			a.isGlobalLayer(0), a.isGlobalLayer(1))
+			a.IsGlobalLayer(0), a.IsGlobalLayer(1))
 	}
 	if got := m.w.Layers[0].GProj.Rows(); got != g.GProjRows {
 		t.Errorf("layer 0 g_proj rows = %d, want %d", got, g.GProjRows)

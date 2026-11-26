@@ -54,7 +54,7 @@ func TestPromptHidden_matchesHF(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			if m.w.arch.qwen35 == nil {
+			if m.w.Arch.Qwen35 == nil {
 				t.Fatalf("%s is expected to be a Qwen3.5-family model; the test would not cover that path", fx.Checkpoint)
 			}
 			for i, p := range fx.Prompts {
@@ -98,7 +98,7 @@ func TestPromptHidden_refusesAndCancels(t *testing.T) {
 	if _, err := m.PromptHidden(context.Background(), nil); err == nil {
 		t.Error("an empty prompt must be refused")
 	}
-	if _, err := m.PromptHidden(context.Background(), []int{1, m.w.arch.VocabSize}); err == nil {
+	if _, err := m.PromptHidden(context.Background(), []int{1, m.w.Arch.VocabSize}); err == nil {
 		t.Error("an out-of-vocab id must be refused")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -136,7 +136,7 @@ func TestPromptHidden_batchedMatchesSequential(t *testing.T) {
 			for _, n := range []int{2, 5, 13, 32, 64} {
 				ids := make([]int, n)
 				for i := range ids {
-					ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+					ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 				}
 				if !m.qwen35BatchN(n, m.NewCache(n)) {
 					t.Fatalf("%d tokens: the batched Qwen3.5 path does not apply", n)

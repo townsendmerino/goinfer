@@ -59,8 +59,8 @@ func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 			m.Close()
 			debug.FreeOSMemory() // return the ~39 GB before the next model loads
 		}()
-		if m.w.arch.qwen35 == nil {
-			t.Fatalf("%s arch = %q, want qwen3_5_moe", label, m.w.arch.Name)
+		if m.w.Arch.Qwen35 == nil {
+			t.Fatalf("%s arch = %q, want qwen3_5_moe", label, m.w.Arch.Name)
 		}
 		var out [][]float32
 		for pi := range man.Prompts {

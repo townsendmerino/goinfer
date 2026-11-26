@@ -5,6 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // TestEmbedResidentInto_reusesBuffer is P-08 (audit-2026-09-10): embedResident allocated a fresh
@@ -20,8 +21,8 @@ func TestEmbedResidentInto_reusesBuffer(t *testing.T) {
 	for i := range vals {
 		vals[i] = float32(i)
 	}
-	m := &Model{w: &Weights{
-		arch:  &Architecture{VocabSize: vocab, HiddenDim: hidden},
+	m := &Model{w: &darch.Weights{
+		Arch:  &darch.Architecture{VocabSize: vocab, HiddenDim: hidden},
 		Embed: linalg.WrapF32(vals, vocab, hidden),
 	}}
 
@@ -58,8 +59,8 @@ func TestEmbedResidentInto_growsWhenTooSmall(t *testing.T) {
 	for i := range vals {
 		vals[i] = float32(i)
 	}
-	m := &Model{w: &Weights{
-		arch:  &Architecture{VocabSize: vocab, HiddenDim: hidden},
+	m := &Model{w: &darch.Weights{
+		Arch:  &darch.Architecture{VocabSize: vocab, HiddenDim: hidden},
 		Embed: linalg.WrapF32(vals, vocab, hidden),
 	}}
 	tooSmall := make([]float32, 2) // shorter than hidden

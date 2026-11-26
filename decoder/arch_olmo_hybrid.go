@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -26,7 +28,7 @@ import (
 //   - MHA, not GQA, on the released size (validated, not assumed).
 //
 // No MoE variant exists; the FFN is a plain dense SwiGLU on every layer, with the same tensor names as olmo3/llama.
-func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func olmoHybridArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateOlmoHybrid(); err != nil {
 		return nil, nil, err
 	}
@@ -55,8 +57,8 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		scaling = sc
 	}
 	hd := cfg.EffectiveHeadDim()
-	linearPlacement := NormPre2
-	return &Architecture{
+	linearPlacement := darch.NormPre2
+	return &darch.Architecture{
 		Name:                "olmo_hybrid",
 		HiddenDim:           cfg.HiddenDim,
 		NumLayers:           cfg.NumLayers,
@@ -65,26 +67,26 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:             hd,
 		IntermediateDim:     cfg.IntermediateDim,
 		VocabSize:           cfg.VocabSize,
-		Norm:                NormRMS,
+		Norm:                darch.NormRMS,
 		RMSAddOne:           false,
 		NormEps:             cfg.RMSNormEps,
-		NormPlacement:       NormPostOnly, // full-attention layers (olmo3's own scheme)
+		NormPlacement:       darch.NormPostOnly, // full-attention layers (olmo3's own scheme)
 		NormPlacementLinear: &linearPlacement,
-		Act:                 ActSiLU,
+		Act:                 darch.ActSiLU,
 		QKNorm:              true,
 		QKNormWhole:         true,
 		AttnScale:           math.Pow(float64(hd), -0.5),
-		layerIsGlobal:       cfg.IsGlobalLayer,
-		layerIsLinear:       cfg.IsLinearLayer,
-		layerNoPE:           func(i int) bool { return noRope },
+		LayerIsGlobal:       cfg.IsGlobalLayer,
+		LayerIsLinear:       cfg.IsLinearLayer,
+		LayerNoPE:           func(i int) bool { return noRope },
 		NoPositionEncoding:  noRope,
 		RoPELocalBase:       base,
 		RoPEGlobalBase:      base,
-		ropeScaling:         scaling,
-		ropeScalingLocal:    scaling,
+		RoPEScaling:         scaling,
+		RoPEScalingLocal:    scaling,
 		EmbedScale:          0,
 		TiedLMHead:          false, // finalized from lm_head.weight presence at load
-		qwen35: &qwen35Params{
+		Qwen35: &archparts.Qwen35Params{
 			ConvKernel:            cfg.LinearConvKernelDim,
 			KeyHeadDim:            cfg.LinearKeyHeadDim,
 			ValueHeadDim:          cfg.LinearValueHeadDim,

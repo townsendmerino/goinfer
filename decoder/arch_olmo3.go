@@ -5,6 +5,8 @@ import (
 	"math"
 	"slices"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -26,7 +28,7 @@ import (
 // (cos, sin) per layer type; an earlier reading of the source as one shared table was wrong. The flat top-level form (the real release's
 // on-disk form) is expanded by PretrainedConfig into the same nested split, so both branches agree. Evidence and the retraction:
 // docs/code-notes/decoder.md#olmo3Architecture.
-func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func olmo3Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	base := cfg.RoPEGlobalBase
 	localBase := base
 	var scaling, scalingLocal *rope.Scaling
@@ -73,7 +75,7 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		return (i+1)%pattern == 0
 	}
-	return &Architecture{
+	return &darch.Architecture{
 		Name:             "olmo3",
 		HiddenDim:        cfg.HiddenDim,
 		NumLayers:        cfg.NumLayers,
@@ -82,21 +84,21 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:          hd,
 		IntermediateDim:  cfg.IntermediateDim,
 		VocabSize:        cfg.VocabSize,
-		Norm:             NormRMS,
+		Norm:             darch.NormRMS,
 		RMSAddOne:        false,
 		NormEps:          cfg.RMSNormEps,
-		NormPlacement:    NormPostOnly,
-		Act:              ActSiLU,
+		NormPlacement:    darch.NormPostOnly,
+		Act:              darch.ActSiLU,
 		QKNorm:           true,
 		QKNormWhole:      true,
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
-		layerIsGlobal:    isGlobal,
+		LayerIsGlobal:    isGlobal,
 		RoPELocalBase:    localBase, // sliding-attention layers: same theta, no YaRN scaling
 		RoPEGlobalBase:   base,      // full-attention layers: YaRN-scaled
 		RotaryDim:        cfg.RotaryDim(),
-		ropeScaling:      scaling,
-		ropeScalingLocal: scalingLocal,
+		RoPEScaling:      scaling,
+		RoPEScalingLocal: scalingLocal,
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &olmo3TensorSchema, nil

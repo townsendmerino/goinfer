@@ -47,8 +47,8 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.gemma4 == nil {
-		t.Fatalf("loaded model is not gemma4 (arch=%s)", m.w.arch.Name)
+	if m.w.Arch.Gemma4 == nil {
+		t.Fatalf("loaded model is not gemma4 (arch=%s)", m.w.Arch.Name)
 	}
 	if got := string(m.w.Cfg.UseBidirectionalAttention); got != "vision" {
 		t.Fatalf("UseBidirectionalAttention = %q, want \"vision\" (fixture didn't load the shape this test exists to cover)", got)

@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"strings"
 	"testing"
 )
@@ -9,17 +11,17 @@ import (
 func TestKVFacts_readTheArchitecture(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		a    *Architecture
-		want KVFacts
+		a    *darch.Architecture
+		want darch.KVFacts
 	}{
-		{"dense", &Architecture{Name: "qwen2"}, KVFacts{Family: "qwen2"}},
-		{"moe", &Architecture{Name: "qwen2", MoE: &MoEConfig{}}, KVFacts{Family: "qwen2", MoE: true}},
-		{"window", &Architecture{Name: "mistral", SlidingWindow: 4096}, KVFacts{Family: "mistral", SlidingWindow: true}},
-		{"pairwise", &Architecture{Name: "llama", ropeInterleave: true}, KVFacts{Family: "llama", PairwiseRoPE: true}},
-		{"mrope", &Architecture{Name: "qwen2", MRopeSection: []int{16, 24, 24}}, KVFacts{Family: "qwen2", MRoPE: true}},
-		{"mla", &Architecture{Name: "deepseek", mla: &mlaParams{}}, KVFacts{Family: "deepseek", MLA: true}},
+		{"dense", &darch.Architecture{Name: "qwen2"}, darch.KVFacts{Family: "qwen2"}},
+		{"moe", &darch.Architecture{Name: "qwen2", MoE: &MoEConfig{}}, darch.KVFacts{Family: "qwen2", MoE: true}},
+		{"window", &darch.Architecture{Name: "mistral", SlidingWindow: 4096}, darch.KVFacts{Family: "mistral", SlidingWindow: true}},
+		{"pairwise", &darch.Architecture{Name: "llama", RoPEInterleave: true}, darch.KVFacts{Family: "llama", PairwiseRoPE: true}},
+		{"mrope", &darch.Architecture{Name: "qwen2", MRopeSection: []int{16, 24, 24}}, darch.KVFacts{Family: "qwen2", MRoPE: true}},
+		{"mla", &darch.Architecture{Name: "deepseek", MLA: &archparts.MLAParams{}}, darch.KVFacts{Family: "deepseek", MLA: true}},
 	} {
-		if got := c.a.kvFacts(); got != c.want {
+		if got := c.a.KVFacts(); got != c.want {
 			t.Errorf("%s: kvFacts = %+v, want %+v", c.name, got, c.want)
 		}
 	}
@@ -28,7 +30,7 @@ func TestKVFacts_readTheArchitecture(t *testing.T) {
 // TestResolveKV_f16Resolution: CUDA's policy resolves "f16" / "auto" / "" / "f32" by family and by its auto switch; another resident backend
 // gives f16 for an explicit "f16" and nothing else.
 func TestResolveKV_f16Resolution(t *testing.T) {
-	a := &Architecture{Name: "qwen2", NumLayers: 1}
+	a := &darch.Architecture{Name: "qwen2", NumLayers: 1}
 	for _, backend := range []string{"webgpu", "nopolicy"} {
 		for _, kv := range []string{"", "auto", "f32"} {
 			if got, _ := ResolveKV(backend, a, Options{KVPrecision: kv}); got == "f16" {
@@ -43,14 +45,14 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
 	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline})
-	gemma := &Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
-	undelivered := &Architecture{Name: "laguna", NumLayers: 1}
-	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
-	pairwise := &Architecture{Name: "cohere", NumLayers: 1, ropeInterleave: true}
-	hybrid := &Architecture{Name: "qwen3_5", NumLayers: 1, qwen35: &qwen35Params{}} // a group whose G4 has not cleared it
+	gemma := &darch.Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
+	undelivered := &darch.Architecture{Name: "laguna", NumLayers: 1}
+	moe := &darch.Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
+	pairwise := &darch.Architecture{Name: "cohere", NumLayers: 1, RoPEInterleave: true}
+	hybrid := &darch.Architecture{Name: "qwen3_5", NumLayers: 1, Qwen35: &archparts.Qwen35Params{}} // a group whose G4 has not cleared it
 	for _, c := range []struct {
 		kv   string
-		a    *Architecture
+		a    *darch.Architecture
 		auto bool
 		want string
 	}{
@@ -78,10 +80,10 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 // TestCUDAKVF16Decline_table pins which architectures the CUDA f16 KV cache takes and the reason each other one is held at f32: the decision is
 // made before pricing, so a family that slipped through would be sized for f16 and then run kernels that read f32.
 func TestCUDAKVF16Decline_table(t *testing.T) {
-	dense := func(name string) KVFacts { return KVFacts{Family: name} }
+	dense := func(name string) darch.KVFacts { return darch.KVFacts{Family: name} }
 	cases := []struct {
 		name string
-		f    KVFacts
+		f    darch.KVFacts
 		o    Options
 		want string // "" = f16 allowed; else a substring of the decline
 	}{
@@ -90,32 +92,32 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"mistral dense", dense("mistral"), Options{}, ""},
 		{"qwen3 dense", dense("qwen3"), Options{}, ""},
 		{"phi3 dense", dense("phi3"), Options{}, ""},
-		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, ""},
-		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, ""},
-		{"gpt-oss", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, ""},
-		{"flint", KVFacts{Family: "flint", MoE: true, SlidingWindow: true}, Options{}, ""},
+		{"gemma3", darch.KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, ""},
+		{"gemma2", darch.KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, ""},
+		{"gpt-oss", darch.KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, ""},
+		{"flint", darch.KVFacts{Family: "flint", MoE: true, SlidingWindow: true}, Options{}, ""},
 		{"laguna not delivered", dense("laguna"), Options{}, "keeps f32"},
-		{"qwen3_5", KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, ""},
-		{"gemma4", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, ""},
-		{"lfm2 not delivered", KVFacts{Family: "lfm2", Hybrid: true}, Options{}, "keeps f32"},
-		{"qwen2 MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, ""},
-		{"qwen2_moe", KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, ""},
-		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, ""},
-		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, ""},
-		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, ""},
-		{"granitemoe not delivered", KVFacts{Family: "granitemoe", MoE: true}, Options{}, "keeps f32"},
-		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, ""},
-		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, ""},
-		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, ""},
-		{"cohere2", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, ""},
-		{"glm_ocr pairwise m-rope", KVFacts{Family: "glm_ocr", PairwiseRoPE: true, MRoPE: true}, Options{}, "keeps f32"},
-		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, ""},
-		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, ""},
-		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, ""},
-		{"llama mla", KVFacts{Family: "llama", MLA: true}, Options{}, ""},
-		{"deepseek_v2", KVFacts{Family: "deepseek_v2", MLA: true, MoE: true}, Options{}, ""},
-		{"bailing_hybrid not delivered", KVFacts{Family: "bailing_hybrid", MLA: true}, Options{}, "keeps f32"},
-		{"qwen2 hybrid", KVFacts{Family: "qwen2", Hybrid: true}, Options{}, ""},
+		{"qwen3_5", darch.KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, ""},
+		{"gemma4", darch.KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, ""},
+		{"lfm2 not delivered", darch.KVFacts{Family: "lfm2", Hybrid: true}, Options{}, "keeps f32"},
+		{"qwen2 MoE", darch.KVFacts{Family: "qwen2", MoE: true}, Options{}, ""},
+		{"qwen2_moe", darch.KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, ""},
+		{"qwen3_moe", darch.KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, ""},
+		{"mixtral", darch.KVFacts{Family: "mixtral", MoE: true}, Options{}, ""},
+		{"qwen3_moe paged experts", darch.KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, ""},
+		{"granitemoe not delivered", darch.KVFacts{Family: "granitemoe", MoE: true}, Options{}, "keeps f32"},
+		{"mistral sliding window", darch.KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, ""},
+		{"llama pairwise rope", darch.KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, ""},
+		{"cohere", darch.KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, ""},
+		{"cohere2", darch.KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, ""},
+		{"glm_ocr pairwise m-rope", darch.KVFacts{Family: "glm_ocr", PairwiseRoPE: true, MRoPE: true}, Options{}, "keeps f32"},
+		{"qwen2 m-rope", darch.KVFacts{Family: "qwen2", MRoPE: true}, Options{}, ""},
+		{"qwen2_5_vl", darch.KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, ""},
+		{"qwen3_vl_moe", darch.KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, ""},
+		{"llama mla", darch.KVFacts{Family: "llama", MLA: true}, Options{}, ""},
+		{"deepseek_v2", darch.KVFacts{Family: "deepseek_v2", MLA: true, MoE: true}, Options{}, ""},
+		{"bailing_hybrid not delivered", darch.KVFacts{Family: "bailing_hybrid", MLA: true}, Options{}, "keeps f32"},
+		{"qwen2 hybrid", darch.KVFacts{Family: "qwen2", Hybrid: true}, Options{}, ""},
 	}
 	for _, c := range cases {
 		got := CUDAKVF16Decline(c.f, c.o)
@@ -136,49 +138,49 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		f    KVFacts
+		f    darch.KVFacts
 		o    Options
 		auto bool
 	}{
-		{"qwen2 dense", KVFacts{Family: "qwen2"}, Options{}, true},
-		{"phi3 dense", KVFacts{Family: "phi3"}, Options{}, true},
-		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, true},
-		{"qwen2_moe", KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, true},
-		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, true},
-		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, true},
-		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, true},
-		{"qwen3_5_moe: hybrid and MoE", KVFacts{Family: "qwen3_5_moe", Hybrid: true, MoE: true}, Options{}, false},
-		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
-		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, false},
-		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
-		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, false},
-		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
-		{"cohere2: sliding window and pairwise RoPE", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, false},
-		{"gemma4: sliding window and hybrid", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, false},
-		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, true},
-		{"qwen3_vl", KVFacts{Family: "qwen3_vl", MRoPE: true}, Options{}, true},
-		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, true},
-		{"qwen3_5", KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, false},
-		{"deepseek_v3", KVFacts{Family: "deepseek_v3", MLA: true}, Options{}, false},
+		{"qwen2 dense", darch.KVFacts{Family: "qwen2"}, Options{}, true},
+		{"phi3 dense", darch.KVFacts{Family: "phi3"}, Options{}, true},
+		{"qwen3_moe", darch.KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, true},
+		{"qwen2_moe", darch.KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, true},
+		{"mixtral", darch.KVFacts{Family: "mixtral", MoE: true}, Options{}, true},
+		{"qwen2 with MoE", darch.KVFacts{Family: "qwen2", MoE: true}, Options{}, true},
+		{"qwen3_moe paged experts", darch.KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, true},
+		{"qwen3_5_moe: hybrid and MoE", darch.KVFacts{Family: "qwen3_5_moe", Hybrid: true, MoE: true}, Options{}, false},
+		{"gemma3", darch.KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
+		{"gemma2", darch.KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, false},
+		{"mistral with a window", darch.KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
+		{"gpt-oss: sliding window and MoE", darch.KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, false},
+		{"cohere", darch.KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
+		{"cohere2: sliding window and pairwise RoPE", darch.KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, false},
+		{"gemma4: sliding window and hybrid", darch.KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, false},
+		{"qwen2_5_vl", darch.KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, true},
+		{"qwen3_vl", darch.KVFacts{Family: "qwen3_vl", MRoPE: true}, Options{}, true},
+		{"qwen3_vl_moe", darch.KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, true},
+		{"qwen3_5", darch.KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, false},
+		{"deepseek_v3", darch.KVFacts{Family: "deepseek_v3", MLA: true}, Options{}, false},
 	} {
 		if got := CUDAKVF16AutoDecline(c.f, c.o); (got == "") != c.auto {
 			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)
 		}
 	}
-	if got := CUDAKVF16AutoDecline(KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}); !strings.Contains(got, "did not pass") {
+	if got := CUDAKVF16AutoDecline(darch.KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}); !strings.Contains(got, "did not pass") {
 		t.Errorf("qwen3_5: auto decline %q does not publish the hybrids' failed gate", got)
 	}
-	if got := CUDAKVF16AutoDecline(KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}); !strings.Contains(got, "did not pass") {
+	if got := CUDAKVF16AutoDecline(darch.KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}); !strings.Contains(got, "did not pass") {
 		t.Errorf("gemma3: auto decline %q does not publish the sliding-window group's failed gate", got)
 	}
 	// The three the owner narrowed auto away from (D-KV4-10) keep f32 under auto, each naming what would clear it.
 	for _, c := range []struct {
-		f    KVFacts
+		f    darch.KVFacts
 		want string
 	}{
-		{KVFacts{Family: "gemma3", SlidingWindow: true}, "passing K=8,000 cell"},
-		{KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, "passing K=8,000 cell"},
-		{KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, "sinks G4 cell"},
+		{darch.KVFacts{Family: "gemma3", SlidingWindow: true}, "passing K=8,000 cell"},
+		{darch.KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, "passing K=8,000 cell"},
+		{darch.KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, "sinks G4 cell"},
 	} {
 		if got := CUDAKVF16AutoDecline(c.f, Options{}); !strings.Contains(got, c.want) {
 			t.Errorf("%s: auto decline %q, want it to name %q", c.f.Family, got, c.want)
@@ -190,8 +192,8 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 // and agrees with the accessors (MoE, MLA, Qwen35).
 func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	m := &Model{
-		w: &Weights{
-			arch: &Architecture{
+		w: &darch.Weights{
+			Arch: &darch.Architecture{
 				Name:      "flint",
 				AttnScale: 0.125,
 				MoE: &MoEConfig{
@@ -206,15 +208,15 @@ func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 					NGroup:                1,
 					TopkGroup:             1,
 				},
-				mla: &mlaParams{
+				MLA: &archparts.MLAParams{
 					QLoRARank:      1536,
 					KVLoRARank:     512,
 					QKNopeHeadDim:  128,
 					QKRopeHeadDim:  64,
 					VHeadDim:       128,
-					ropeInterleave: true,
+					RoPEInterleave: true,
 				},
-				qwen35: &qwen35Params{
+				Qwen35: &archparts.Qwen35Params{
 					ConvKernel:    4,
 					KeyHeadDim:    64,
 					ValueHeadDim:  64,

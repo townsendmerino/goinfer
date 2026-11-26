@@ -100,8 +100,8 @@ func (m *Model) kvRoot(lora *loraRuntime) kvmgr.Root { return m.kvRootIn(lora, "
 // sharing namespace (KVScope), the adapter and the KV precision.
 func (m *Model) kvRootIn(lora *loraRuntime, ns string) kvmgr.Root {
 	r := kvmgr.Root{Namespace: ns, Adapter: kvAdapterID(lora), Precision: m.ResidentKVPrecision()}
-	if m.w != nil && m.w.arch != nil {
-		a := m.w.arch
+	if m.w != nil && m.w.Arch != nil {
+		a := m.w.Arch
 		r.Model = fmt.Sprintf("%s/%dx%d/%d", a.Name, a.NumLayers, a.HiddenDim, a.VocabSize)
 	}
 	if m.be != nil {
@@ -138,7 +138,7 @@ func (m *Model) kvClassMap() kvmgr.ClassMap {
 	} else if hasKernel {
 		cm = kvmgr.ClassMap{Floor: kernel, MinRows: 1}
 	}
-	cm.Windowed = m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0
+	cm.Windowed = m.w != nil && m.w.Arch != nil && m.w.Arch.SlidingWindow > 0
 	return cm
 }
 
@@ -561,7 +561,7 @@ func (m *Model) kvRollbackAllowance() int {
 	if kvAllowanceOverride > 0 {
 		return kvAllowanceOverride
 	}
-	if m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0 {
+	if m.w != nil && m.w.Arch != nil && m.w.Arch.SlidingWindow > 0 {
 		return kvmgr.RollbackFloor
 	}
 	return kvmgr.BlockRows

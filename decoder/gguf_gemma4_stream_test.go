@@ -169,7 +169,7 @@ func residentGemma4GIW(t *testing.T, path, quant string, target GIWTarget) []byt
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if arch.gemma4 == nil {
+	if arch.Gemma4 == nil {
 		t.Fatalf("resolved %q, not a gemma4 architecture — the fixture is not exercising the gemma4 branch", arch.Name)
 	}
 	w, err := buildWeightsFromGGUF(cfg, arch, g, q, false, true, false, nil, "", nil)
@@ -245,7 +245,7 @@ func TestGemma4GGUF_streamedMatchesResident(t *testing.T) {
 					}
 					last := &sw2.Layers[v.layers-1]
 					switch {
-					case v.moe && last.gemma4moe == nil:
+					case v.moe && last.Gemma4MoE == nil:
 						t.Errorf("26b variant: streamed bundle lost the MoE branch")
 					case v.kEqV && !last.VFromK:
 						t.Errorf("26b variant: streamed bundle lost the K=V flag on the global layer")

@@ -62,7 +62,7 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 	if d.Tokens != 1 {
 		errs = append(errs, fmt.Sprintf("decode tokens %d, want 1", d.Tokens))
 	}
-	arch, prog := m.w.arch, m.program()
+	arch, prog := m.w.Arch, m.program()
 	want := map[string]int64{costEmbed: 1, costFinalNorm: 1, costLMHead: 1}
 	for _, ops := range prog.Layers {
 		for _, o := range ops {
@@ -115,7 +115,7 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 // table row per row; the head reads its matrix once and writes a vocabulary of logits per row.
 func costStageErrors(m *Model, p *cost.PhaseReport, K int64) []string {
 	var errs []string
-	H, V := 4*int64(m.w.arch.HiddenDim), 4*int64(m.w.arch.VocabSize)
+	H, V := 4*int64(m.w.Arch.HiddenDim), 4*int64(m.w.Arch.VocabSize)
 	head := wmBytes(&m.w.LMHead)
 	if m.program().Head.Tied {
 		head = wmBytes(&m.w.Embed)
@@ -213,7 +213,7 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	if p == nil || p.Tokens != int64(len(ids)) {
 		t.Fatalf("prefill phase %+v, want %d tokens", p, len(ids))
 	}
-	arch, prog := m.w.arch, m.program()
+	arch, prog := m.w.Arch, m.program()
 	want := map[string]int64{costEmbed: 1, costFinalNorm: 1, costLMHead: 1}
 	for _, ops := range prog.Layers {
 		for _, o := range ops {

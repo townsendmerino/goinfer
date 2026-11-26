@@ -59,13 +59,13 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		eligible := decodeRunnerEligible(m.w.arch)
-		covered := residentCovers(m.w.arch, nil, "metal")
+		eligible := decodeRunnerEligible(m.w.Arch)
+		covered := residentCovers(m.w.Arch, nil, "metal")
 		m.Close()
 		switch {
 		case eligible && !covered && needsMore == "":
 			needsMore = dir
-		case eligible && covered && residentGateReason(m.w.arch, "metal") == "" && supported == "":
+		case eligible && covered && residentGateReason(m.w.Arch, "metal") == "" && supported == "":
 			supported = dir
 		}
 	}
@@ -81,7 +81,7 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 		t.Errorf("%s: resident despite a missing feature", filepath.Base(needsMore))
 	}
 	why := m.ResidentDecline()
-	if want := residentGateReason(m.w.arch, "metal"); want == "" || !strings.Contains(why, want) {
+	if want := residentGateReason(m.w.Arch, "metal"); want == "" || !strings.Contains(why, want) {
 		t.Errorf("%s: decline reason %q does not carry the gate's %q", filepath.Base(needsMore), why, want)
 	}
 

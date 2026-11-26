@@ -29,7 +29,7 @@ func TestEmbedInt4Knob(t *testing.T) {
 	}
 
 	// Untied models also carry a separate head; it follows the same policy.
-	if relaxed.w.arch != nil && !relaxed.w.arch.TiedLMHead && relaxed.w.LMHead.Rows() > 0 {
+	if relaxed.w.Arch != nil && !relaxed.w.Arch.TiedLMHead && relaxed.w.LMHead.Rows() > 0 {
 		if _, _, _, ok := Int4F32(&relaxed.w.LMHead); !ok {
 			t.Errorf("EmbedInt4 (untied): LM head should be int4, kind=%s", relaxed.w.LMHead.Kind())
 		}

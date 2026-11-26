@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
@@ -75,37 +76,6 @@ func PrintDeltaNetTiming() {
 // The CPU reference implementation lives in internal/hybridattn so backend kernel tests (metal/kernels) can exercise the single
 // production implementation without importing decoder.
 
-// deltaNetWeights holds one Gated DeltaNet layer's parameters, row-major, as HF
-// stores them. All projections are bias-free; the depthwise conv is bias-free too.
-type deltaNetWeights struct {
-	// The three dominant projections (inProjQKV, inProjZ, outProj) are quantizable WeightMats: they dominate the bytes streamed per
-	// token and decode is memory-bandwidth-bound, so holding them as f32 would stream them at f32 under any quant. WeightMat keeps f32
-	// when no quant is asked for (the tiny goldens still match HF exactly) and carries int8/int4 otherwise.
-	inProjQKV linalg.WeightMat // [convDim, hidden]   → [q;k;v]
-	inProjZ   linalg.WeightMat // [valueDim, hidden]  → output gate z
-	// A and B stay f32: they are small against the projections and feed the write/decay gates, where the recurrence is most
-	// sensitive to precision. Quantizing them would buy a fraction of a percent of the bytes for real numerical risk.
-	inProjB []float32        // [numV, hidden]      → write-gate logits β
-	inProjA []float32        // [numV, hidden]      → decay-gate input a
-	convW   []float32        // [convDim, K]        depthwise causal conv ([convDim,1,K] flattened)
-	dtBias  []float32        // [numV]
-	negExpA []float32        // [numV]              −exp(A_log), precomputed (see negExpAFromLog)
-	normW   []float32        // [headVDim]          gated RMSNorm weight
-	outProj linalg.WeightMat // [hidden, valueDim]
-}
-
-func (p qwen35Params) deltaNetParams() hybridattn.DeltaNetParams {
-	return hybridattn.DeltaNetParams{
-		ConvKernel:    p.ConvKernel,
-		KeyHeadDim:    p.KeyHeadDim,
-		ValueHeadDim:  p.ValueHeadDim,
-		NumKeyHeads:   p.NumKeyHeads,
-		NumValueHeads: p.NumValueHeads,
-		NegEigval:     p.NegEigval,
-		ONormEps:      p.ONormEps,
-	}
-}
-
 // matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
 // quantization-aware matmul so an int4/int8 weight uses the W4A8/W8A8 integer kernel instead of
 // being dequantized. f32 WeightMats land on the same MatmulBT path matvec uses, so the no-quant
@@ -136,7 +106,7 @@ type deltaState struct {
 	dn      hybridattn.DeltaScratch // the step's working buffers; rewritten every step, never copied with the state
 }
 
-func newDeltaState(p qwen35Params) *deltaState {
+func newDeltaState(p archparts.Qwen35Params) *deltaState {
 	return &deltaState{s: make([]float32, p.NumValueHeads*p.KeyHeadDim*p.ValueHeadDim)}
 }
 
@@ -145,10 +115,10 @@ func newDeltaState(p qwen35Params) *deltaState {
 // both prefill and decode (the recurrence is inherently sequential). Its four
 // projections are here; everything between them is deltaNetCore, which the
 // batched forward (gatedDeltaNetN) shares so the two cannot drift.
-func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
+func gatedDeltaNetStep(be Backend, h []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
 	proj := func(wm *linalg.WeightMat, x []float32, pre bool) []float32 {
 		if pre {
-			if wm == &w.inProjQKV {
+			if wm == &w.InProjQKV {
 				st.hq.prepare(be, wm, x, 1)
 			}
 			return matvecWMPre(be, wm, &st.hq, x)
@@ -157,9 +127,9 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	}
 	return st.dn.Step(
 		proj, h,
-		&w.inProjQKV, &w.inProjZ, &w.outProj,
-		w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW,
-		p.deltaNetParams(), hidden, eps,
+		&w.InProjQKV, &w.InProjZ, &w.OutProj,
+		w.InProjB, w.InProjA, w.ConvW, w.DtBias, w.NegExpA, w.NormW,
+		p.DeltaNetParams(), hidden, eps,
 		st.s, &st.convWin, deltaNetTimers(),
 	)
 }
@@ -167,20 +137,20 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 // deltaNetCore is one token's sequential middle of the Gated DeltaNet layer, from the projections'
 // outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
 // delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)).
-func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
+func deltaNetCore(core, mixed, bt, at, z []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, eps float64, st *deltaState) {
 	st.dn.Core(
 		core, mixed, bt, at, z,
-		w.convW, w.dtBias, w.negExpA, w.normW,
-		p.deltaNetParams(), eps,
+		w.ConvW, w.DtBias, w.NegExpA, w.NormW,
+		p.DeltaNetParams(), eps,
 		st.s, &st.convWin, deltaNetTimers(),
 	)
 }
 
-func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {
+func deltaNetRecurrence(core, conv, at, bt []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, st *deltaState) {
 	st.dn.Recurrence(
 		core, conv, at, bt,
-		w.dtBias, w.negExpA,
-		p.deltaNetParams(),
+		w.DtBias, w.NegExpA,
+		p.DeltaNetParams(),
 		st.s, deltaNetTimers(),
 	)
 }
@@ -188,7 +158,7 @@ func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test
 // exercises (the forward path uses the same step with a cached state).
-func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64) [][]float32 {
+func gatedDeltaNet(be Backend, h [][]float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, hidden int, eps float64) [][]float32 {
 	st := newDeltaState(p)
 	out := make([][]float32, len(h))
 	for t := range h {

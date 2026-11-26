@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // writeBF16Checkpoint copies the F32 checkpoint in src to dst with every tensor's values rounded to bf16: stored as BF16 when
@@ -100,16 +101,16 @@ func TestMEM11_lfm2BF16CheckpointKeepsItsMapping(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %q: %v", quant, err)
 		}
-		var convs []*shortConvWeights
+		var convs []*archparts.ShortConvWeights
 		for l := range m.w.Layers {
-			if sc := m.w.Layers[l].shortConv; sc != nil {
+			if sc := m.w.Layers[l].ShortConv; sc != nil {
 				convs = append(convs, sc)
 			}
 		}
-		if len(convs) == 0 || convs[0].inProj.Kind() != "bf16" {
+		if len(convs) == 0 || convs[0].InProj.Kind() != "bf16" {
 			t.Fatalf("%q: the bf16 checkpoint's islands are not bf16", quant)
 		}
-		if m.w.st == nil {
+		if m.w.ST == nil {
 			t.Fatalf("%q: the load released the source mapping its bf16 islands alias", quant)
 		}
 		got := mem11Logits(t, m)

@@ -178,7 +178,7 @@ func TestPixtralFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if len(feats) != rows*cols*hidden {
 		t.Fatalf("%d feature values, want %d x %d", len(feats), rows*cols, hidden)
 	}

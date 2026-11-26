@@ -57,14 +57,36 @@
     "decoder/wmbytes.go",
     "internal/runtime/program/methods.go",
     "internal/runtime/program/program.go",
-    "internal/runtime/program/values.go"
+    "internal/runtime/program/values.go",
+    "decoder/arch/arch.go",
+    "decoder/arch/features.go",
+    "decoder/arch/kvgeometry.go",
+    "decoder/arch/kvpolicy.go",
+    "decoder/arch/kvresolve.go",
+    "decoder/arch/loadprofile.go",
+    "decoder/arch/program.go",
+    "decoder/arch/program_alias.go",
+    "decoder/arch/program_cpu.go",
+    "decoder/arch/registry.go",
+    "decoder/arch/residency.go",
+    "decoder/arch/seam_refusals.go",
+    "decoder/arch/zz_config_alias.go",
+    "internal/runtime/archparts/arch.go",
+    "internal/runtime/archparts/forward_gemma4.go",
+    "internal/runtime/archparts/forward_gemma4_moe.go",
+    "internal/runtime/archparts/kda.go",
+    "internal/runtime/archparts/kvcache.go",
+    "internal/runtime/archparts/lfm2.go",
+    "internal/runtime/archparts/mla_int8.go",
+    "internal/runtime/archparts/residency.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",
     "decoder/deltanet_n.go",
     "decoder/forward_qwen35_n.go",
     "decoder/program_cpu_n_qwen35.go",
-    "internal/runtime/hybridattn/deltanet.go"
+    "internal/runtime/hybridattn/deltanet.go",
+    "internal/runtime/archparts/deltanet.go"
   ],
   "loaders": [
     "decoder/weights.go",
@@ -98,10 +120,14 @@
     "decoder/gguf_split.go",
     "decoder/stream_layers.go",
     "decoder/stream_table.go",
-    "decoder/config/nonfinite.go"
+    "decoder/config/nonfinite.go",
+    "decoder/arch/weights.go",
+    "internal/runtime/archparts/weights.go",
+    "internal/runtime/archparts/weights_schemas.go"
   ],
   "mamba2": [
-    "decoder/mamba2.go"
+    "decoder/mamba2.go",
+    "internal/runtime/archparts/mamba2.go"
   ],
   "moe": [
     "decoder/mlp.go"
@@ -119,12 +145,15 @@
     "decoder/quant/fp8.go",
     "decoder/quant/gptq.go",
     "decoder/quant/mlx.go",
-    "decoder/quant/nvfp4.go"
+    "decoder/quant/nvfp4.go",
+    "decoder/arch/kquant_native.go",
+    "internal/runtime/archparts/kquant_native.go"
   ],
   "serialize": [
     "decoder/serialize.go",
     "decoder/serialize_writer.go",
     "decoder/serialize_reader.go",
-    "decoder/serialize_shapes.go"
+    "decoder/serialize_shapes.go",
+    "decoder/arch/serialize.go"
   ]
 }

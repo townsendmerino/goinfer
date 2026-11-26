@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -11,7 +13,7 @@ import (
 // with a recurrent matrix state, its own forward path) and the rest are QK-norm softmax attention with partial RoPE, over a routed + shared
 // MoE on every layer. The descriptor marks the per-layer kind (layerIsLinear) and carries the DeltaNet geometry; the softmax layers reuse the
 // uniform attention fields.
-func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen35Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateQwen35(); err != nil {
 		return nil, nil, err
 	}
@@ -29,7 +31,7 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		Name:            "qwen3_5_moe",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -38,11 +40,11 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         cfg.HeadDim,
 		IntermediateDim: cfg.IntermediateDim, // dense width (vestigial; experts use the MoE width)
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		RMSAddOne:       true, // Qwen3_5MoeRMSNorm: output × (1 + weight), weight zero-init
 		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormPre2,
-		Act:             ActSiLU,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
 		MoE: &MoEConfig{
 			NumExperts:            cfg.NumExperts,
 			TopK:                  cfg.NumExpertsPerTok,
@@ -52,16 +54,16 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		},
 		QKNorm:           true, // softmax layers have per-head q_norm/k_norm
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
-		layerIsGlobal:    cfg.IsGlobalLayer, // softmax layers are full attention
-		layerIsLinear:    cfg.IsLinearLayer, // Gated DeltaNet layers
+		LayerIsGlobal:    cfg.IsGlobalLayer, // softmax layers are full attention
+		LayerIsLinear:    cfg.IsLinearLayer, // Gated DeltaNet layers
 		RoPELocalBase:    spec.Base,
 		RoPEGlobalBase:   spec.Base, // single base; only the softmax layers use RoPE
-		ropeScaling:      spec.Scaling,
-		ropeScalingLocal: spec.Scaling,
+		RoPEScaling:      spec.Scaling,
+		RoPEScalingLocal: spec.Scaling,
 		RotaryDim:        rotaryDim, // partial_rotary_factor · head_dim
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
-		qwen35: &qwen35Params{
+		Qwen35: &archparts.Qwen35Params{
 			ConvKernel:    cfg.LinearConvKernelDim,
 			KeyHeadDim:    cfg.LinearKeyHeadDim,
 			ValueHeadDim:  cfg.LinearValueHeadDim,

@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"slices"
 	"strings"
 	"testing"
@@ -204,8 +206,8 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 		t.Errorf("webgpu's dense figure holds %d past the tensors, want %d", got, want)
 	}
 	// Metal's autoMoESlots reads these: one more slot costs an expert alone, and what is left at no slots holds the biases.
-	if perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1); perSlot <= 0 || perSlot*int64(m.w.arch.MoE.NumExperts) != full {
-		t.Errorf("one more slot costs %d, the experts alone %d over %d experts", perSlot, full, m.w.arch.MoE.NumExperts)
+	if perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1); perSlot <= 0 || perSlot*int64(m.w.Arch.MoE.NumExperts) != full {
+		t.Errorf("one more slot costs %d, the experts alone %d over %d experts", perSlot, full, m.w.Arch.MoE.NumExperts)
 	} else if got, want := m.ResidentWeightBytesPaged(1)-perSlot, m.ResidentDenseWeightBytes()+bias; got != want {
 		t.Errorf("the fixed need reads %d, dense and biases %d", got, want)
 	}
@@ -280,8 +282,8 @@ func TestCUDAStateBytes_roundsEachBuffer(t *testing.T) {
 // five dimensions all differ. Each layer has a window of (DConv-1) rows of DInner+2*NGroups*DState and an SSM of NHeads*HeadDim*DState, in
 // floats, and only the Mamba layers hold them.
 func TestStateBuffers_granite(t *testing.T) {
-	a := &Architecture{NumLayers: 3, granite: &graniteParams{NHeads: 2, HeadDim: 8, DState: 3, NGroups: 5, DConv: 4},
-		layerIsMamba: func(l int) bool { return l != 1 }}
+	a := &darch.Architecture{NumLayers: 3, Granite: &archparts.GraniteParams{NHeads: 2, HeadDim: 8, DState: 3, NGroups: 5, DConv: 4},
+		LayerIsMamba: func(l int) bool { return l != 1 }}
 	win, ssm := int64((4-1)*(2*8+2*5*3))*4, int64(2*8*3)*4
 	if got, want := stateBuffers(a), []int64{win, ssm, win, ssm}; !slices.Equal(got, want) {
 		t.Errorf("Granite's state buffers: %v, want %v", got, want)
@@ -296,11 +298,11 @@ func TestStateBuffers_kdaPerStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := a.kda
+	p := a.KDA
 	win, s := int64((p.ConvKernel-1)*p.NumHeads*p.HeadDim)*4, int64(p.NumHeads*p.HeadDim*p.HeadDim)*4
 	var want []int64
 	for l := range a.NumLayers {
-		if a.isLinearLayer(l) {
+		if a.IsLinearLayer(l) {
 			want = append(want, win, win, win, s)
 		}
 	}

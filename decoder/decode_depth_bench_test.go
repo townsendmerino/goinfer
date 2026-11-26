@@ -105,8 +105,8 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 // fillCacheForBench appends depth positions of seeded random K/V rows (uniform in [-1, 1)) to every layer of a dense model's cache.
 func fillCacheForBench(b *testing.B, m *Model, cache *KVCache, depth int) {
 	b.Helper()
-	a := m.w.arch
-	if a.mla != nil || cache.hasRecurrentState() {
+	a := m.w.Arch
+	if a.MLA != nil || cache.hasRecurrentState() {
 		b.Skip("GOINFER_BENCH_FILL covers dense attention caches only")
 	}
 	kvDim := a.NumKVHeads * a.HeadDim

@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -63,37 +64,37 @@ func TestOlmoHybrid_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if m.w.arch.Name != "olmo_hybrid" {
-		t.Fatalf("resolved arch %q, want olmo_hybrid", m.w.arch.Name)
+	if m.w.Arch.Name != "olmo_hybrid" {
+		t.Fatalf("resolved arch %q, want olmo_hybrid", m.w.Arch.Name)
 	}
-	if m.w.arch.qwen35 == nil {
+	if m.w.Arch.Qwen35 == nil {
 		t.Fatalf("arch.qwen35 is nil, want the DeltaNet geometry set")
 	}
-	if !m.w.arch.qwen35.NegEigval {
+	if !m.w.Arch.Qwen35.NegEigval {
 		t.Error("qwen35.NegEigval = false, want true (linear_allow_neg_eigval on the fixture)")
 	}
-	if m.w.arch.NormPlacement != NormPostOnly {
-		t.Errorf("NormPlacement = %v, want NormPostOnly (full-attention layers)", m.w.arch.NormPlacement)
+	if m.w.Arch.NormPlacement != darch.NormPostOnly {
+		t.Errorf("NormPlacement = %v, want NormPostOnly (full-attention layers)", m.w.Arch.NormPlacement)
 	}
-	if m.w.arch.NormPlacementLinear == nil || *m.w.arch.NormPlacementLinear != NormPre2 {
-		t.Errorf("NormPlacementLinear = %v, want &NormPre2 (DeltaNet layers)", m.w.arch.NormPlacementLinear)
+	if m.w.Arch.NormPlacementLinear == nil || *m.w.Arch.NormPlacementLinear != darch.NormPre2 {
+		t.Errorf("NormPlacementLinear = %v, want &NormPre2 (DeltaNet layers)", m.w.Arch.NormPlacementLinear)
 	}
-	if !m.w.arch.QKNorm || !m.w.arch.QKNormWhole {
-		t.Errorf("QKNorm/QKNormWhole = %v/%v, want true/true", m.w.arch.QKNorm, m.w.arch.QKNormWhole)
+	if !m.w.Arch.QKNorm || !m.w.Arch.QKNormWhole {
+		t.Errorf("QKNorm/QKNormWhole = %v/%v, want true/true", m.w.Arch.QKNorm, m.w.Arch.QKNormWhole)
 	}
 
 	// Layer 3 is the fixture's one full-attention layer (layer_types has full_attention every
 	// 4th, matching the release's own ratio): whole-vector QK-norm weight is [num_heads*head_dim]
 	// wide, and it must have loaded a delta-net-free attention (QProj set, no delta state).
-	wantQNormLen := m.w.arch.NumHeads * m.w.arch.HeadDim
+	wantQNormLen := m.w.Arch.NumHeads * m.w.Arch.HeadDim
 	if got := len(m.w.Layers[3].QNorm); got != wantQNormLen {
 		t.Errorf("layer 3 QNorm length = %d, want %d (num_heads*head_dim)", got, wantQNormLen)
 	}
-	if m.w.Layers[3].delta != nil {
+	if m.w.Layers[3].Delta != nil {
 		t.Error("layer 3 (full-attention) loaded a DeltaNet state — should be nil")
 	}
 	// Layer 0 is a DeltaNet layer: must have loaded delta state, no plain QProj.
-	if m.w.Layers[0].delta == nil {
+	if m.w.Layers[0].Delta == nil {
 		t.Fatal("layer 0 (linear) has no DeltaNet weights loaded")
 	}
 	if m.w.Layers[0].QProj.Rows() != 0 {

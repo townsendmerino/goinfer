@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+)
+
 import "math"
 
 // lfm2FFNDim is HF's Lfm2MLP width: intermediate_size, or with block_auto_adjust_ff_dim int(2*intermediate_size/3) and,
@@ -29,7 +34,7 @@ func lfm2FFNDim(cfg *Config) int {
 // reusing the existing QK-norm path and writing a bias-carrying LayerNorm variant; and intermediate_size is stated, not computed from
 // block_multiple_of, so the block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
 // LFM2-VL's text_config sets block_auto_adjust_ff_dim, in which case the width is computed (lfm2FFNDim: 12288 -> 8192).
-func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func lfm2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	if err := cfg.ValidateLFM2(); err != nil {
 		return nil, nil, err
 	}
@@ -46,7 +51,7 @@ func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, err
 	}
 	types := cfg.LayerTypes
-	return &Architecture{
+	return &darch.Architecture{
 		Name:            "lfm2",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -55,22 +60,22 @@ func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		HeadDim:         hd,
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
-		Norm:            NormRMS,
+		Norm:            darch.NormRMS,
 		NormEps:         cfg.NormEps,                 // "norm_eps", NOT rms_norm_eps -- see Config.NormEps
 		AttnScale:       math.Pow(float64(hd), -0.5), // Lfm2Attention: self.scaling = head_dim**-0.5
-		NormPlacement:   NormPre2,                    // operator_norm before the mixer, ffn_norm before the FFN
-		Act:             ActSiLU,                     // SwiGLU (block_use_swiglu true)
+		NormPlacement:   darch.NormPre2,              // operator_norm before the mixer, ffn_norm before the FFN
+		Act:             darch.ActSiLU,               // SwiGLU (block_use_swiglu true)
 		QKVBias:         false,
 		QKNorm:          true, // per-head RMSNorm over head_dim — see the note above
 		RoPELocalBase:   base,
 		RoPEGlobalBase:  base,
-		ropeScaling:     scaling,
+		RoPEScaling:     scaling,
 		RotaryDim:       0, // full rotary
 		TiedLMHead:      true,
 		// conv_dim is optional and absent from Lfm2Config-written checkpoints; hidden_size is
 		// what upstream's Lfm2ShortConv actually uses. ValidateLFM2 has already refused any
 		// non-zero conv_dim that disagrees with hidden_size, so this is a default, not a guess.
-		lfm2:        &lfm2Params{ConvDim: cfg.HiddenDim, ConvLCache: cfg.ConvLCache},
-		layerIsConv: func(i int) bool { return i < len(types) && types[i] == "conv" },
+		LFM2:        &archparts.LFM2Params{ConvDim: cfg.HiddenDim, ConvLCache: cfg.ConvLCache},
+		LayerIsConv: func(i int) bool { return i < len(types) && types[i] == "conv" },
 	}, &lfm2TensorSchema, nil
 }

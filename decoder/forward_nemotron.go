@@ -3,6 +3,8 @@ package decoder
 import (
 	"unsafe"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
@@ -20,12 +22,12 @@ import (
 // always-on shared expert UNGATED (routing.SharedUngated is unconditionally true for
 // this family — verified against NemotronHTopkRouter's forward, which does a plain
 // `hidden_states = hidden_states + self.shared_experts(residuals)`, no sigmoid gate).
-func (m *Model) nemotronMoE(n []float32, lw *LayerWeights, arch *Architecture, hidden int) []float32 {
+func (m *Model) nemotronMoE(n []float32, lw *darch.LayerWeights, arch *darch.Architecture, hidden int) []float32 {
 	return m.nemotronMoEWith(n, lw, arch.MoE, hidden)
 }
 
 // nemotronMoEWith is nemotronMoE with the routing given: the program walker's form.
-func (m *Model) nemotronMoEWith(n []float32, lw *LayerWeights, moe *MoEConfig, hidden int) []float32 {
+func (m *Model) nemotronMoEWith(n []float32, lw *darch.LayerWeights, moe *MoEConfig, hidden int) []float32 {
 	logits := make([]float32, moe.NumExperts)
 	matmul(m.be, &lw.Router, n, logits, 1)
 	idx, wts := routeExperts(logits, lw.RouterBias, moe.TopK, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
@@ -54,7 +56,7 @@ func (m *Model) nemotronMoEWith(n []float32, lw *LayerWeights, moe *MoEConfig, h
 // the same shape as an mlp block's non-gated FFN, just parameterized by width
 // (routed experts and the shared expert differ) and evaluated per-expert. Only
 // expertWeights.Up/.Down are populated for this family; .Gate is left unset.
-func (m *Model) nemotronExpertFFN(ex *expertWeights, n []float32, inter, hidden int) []float32 {
+func (m *Model) nemotronExpertFFN(ex *archparts.ExpertWeights, n []float32, inter, hidden int) []float32 {
 	up := make([]float32, inter)
 	matmul(m.be, &ex.Up, n, up, 1)
 	for i := range up {

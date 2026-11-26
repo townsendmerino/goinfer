@@ -22,7 +22,7 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 	deltaNetMinWork = 2
 
 	const n = 61
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	ids := make([]int, n)
 	for i := range ids {
 		ids[i] = (i*37 + 5) % vocab
@@ -33,7 +33,7 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 	}
 	prefill := func(cuts ...int) arm {
 		cache := m.NewCache(n + 8)
-		hidden := m.w.arch.HiddenDim
+		hidden := m.w.Arch.HiddenDim
 		var last []float32
 		from := 0
 		for _, to := range append(cuts, n) {
@@ -69,7 +69,7 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 		got := prefill(b)
 		bits(t, "last-row hidden state", ref.last, got.last)
 		deltas, attn := 0, 0
-		for l := range m.w.arch.NumLayers {
+		for l := range m.w.Arch.NumLayers {
 			if st := ref.cache.delta[l]; st != nil {
 				deltas++
 				gs := got.cache.delta[l]

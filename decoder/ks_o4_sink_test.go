@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"math"
 	"math/rand"
 	"testing"
@@ -38,7 +39,7 @@ func ksO4SameBits(t *testing.T, what string, got, want []float32) {
 	}
 }
 
-func ksO4Batched(t *testing.T, arch *Architecture, sh ksO4Shape, p attentionParams, cache *KVCache, q []float32, pos int) []float32 {
+func ksO4Batched(t *testing.T, arch *darch.Architecture, sh ksO4Shape, p attentionParams, cache *KVCache, q []float32, pos int) []float32 {
 	t.Helper()
 	ctx := make([]float32, sh.nH*sh.hd)
 	nKeys := len(cache.Keys(0)) / (sh.nKV * sh.hd)
@@ -55,7 +56,7 @@ func TestKSO4_sinkTerm(t *testing.T) {
 			for _, window := range []int{0, 40} {
 				name := fmt.Sprintf("%+v, %d keys, window %d", sh, nKeys, window)
 				r := rand.New(rand.NewSource(int64(nKeys*31 + sh.hd + window)))
-				arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
+				arch := &darch.Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 				kvDim := sh.nKV * sh.hd
 				cache := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)
 				ref := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)
@@ -84,7 +85,7 @@ func TestKSO4_sinkTerm(t *testing.T) {
 				pS.Sinks = sinks
 				got := ksO4Batched(t, arch, sh, pS, cache, q, nKeys-1)
 				want := make([]float32, sh.nH*sh.hd)
-				attendSinksToken(attentionParams{Window: window, Scale: p.Scale}, q, k, v, want, ref, arch, &LayerWeights{AttnSinks: sinks}, 0, nKeys-1)
+				attendSinksToken(attentionParams{Window: window, Scale: p.Scale}, q, k, v, want, ref, arch, &darch.LayerWeights{AttnSinks: sinks}, 0, nKeys-1)
 				var maxAbs, maxDiff float64
 				for i := range want {
 					maxAbs = math.Max(maxAbs, math.Abs(float64(want[i])))

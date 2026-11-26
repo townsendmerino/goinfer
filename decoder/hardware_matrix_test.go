@@ -16,6 +16,8 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"os"
 	"slices"
 	"strings"
@@ -39,7 +41,7 @@ type hwRow struct {
 // hwDeclineReasons is every reason backend declines arch in the default configuration, as one table cell: the runner-shape gate
 // (runnerShapeDecline), then every later gate that also refuses (residentGateReasons). "" when the cell is resident. It
 // reads both checks whatever the first says, because a reason the first refusal hides is still in the way once the first is lifted.
-func hwDeclineReasons(arch *Architecture, backend string) string {
+func hwDeclineReasons(arch *darch.Architecture, backend string) string {
 	var parts []string
 	ad := Admit(archAdmitFacts(arch, backend))
 	if ad.Shape != "" {
@@ -189,7 +191,7 @@ func emodelBackendsNote() string {
 	if err != nil {
 		return "(the E-model representative did not resolve: " + err.Error() + ")"
 	}
-	e.gemma4.HiddenSizePerLayerInput = 256
+	e.Gemma4.HiddenSizePerLayerInput = 256
 	var on, off []string
 	for _, be := range residentBackends {
 		if ResidentEligible(e, be) {
@@ -242,7 +244,7 @@ func renderHardwareWhy(rows []hwRow) string {
 	}
 	b.WriteString("\nThe runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no\n")
 	b.WriteString("GPU runner reproduces. **Local and global RoPE tables differ in length** is\n")
-	b.WriteString("`decoder/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a\n")
+	b.WriteString("`decoder/arch/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a\n")
 	b.WriteString("different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity bring-up, described in the notes above.\n")
 	if len(hazard) > 0 {
 		b.WriteString("\n**" + strings.Join(hazard, ", ") + ": the table reads one configuration, and a default load picks another.** The activation\n")
@@ -348,9 +350,9 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "(short-conv): cuda has no step for it"}},
 		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "(out-gate): metal has no step for it", "`per-layer-query-heads`"}},
 		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-sigmoid`", "`gated-gelu-erf`"}},
-		{modelType: "granitemoehybrid", backend: "cuda", want: []string{"runner shape: " + runnerShapeBringUp, "cuda does not implement a residual scale"}}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate, and its residual multiplier is outside CUDA's table (OP4cu-c2)
-		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},
-		{modelType: "llama4_text", backend: "cuda", want: []string{"runner shape: " + runnerShapeOwnForward, "cuda does not implement the de-interleaving (mlaRope) rotation"}},
+		{modelType: "granitemoehybrid", backend: "cuda", want: []string{"runner shape: " + archparts.RunnerShapeBringUp, "cuda does not implement a residual scale"}}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate, and its residual multiplier is outside CUDA's table (OP4cu-c2)
+		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + archparts.RunnerShapeBringUp},
+		{modelType: "llama4_text", backend: "cuda", want: []string{"runner shape: " + archparts.RunnerShapeOwnForward, "cuda does not implement the de-interleaving (mlaRope) rotation"}},
 		{modelType: "kimi_k2", backend: "metal", exact: "router capacity: 384 experts, the kernel routes 256"}, // Metal has mla since OP2a
 		{modelType: "phi3", backend: "metal", want: []string{"activation hazard"}},
 	} {

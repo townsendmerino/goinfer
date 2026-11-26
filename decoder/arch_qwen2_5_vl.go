@@ -3,13 +3,15 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // qwen2_5_vlArchitecture expresses the Qwen2.5-VL TEXT decoder: a Qwen2 dense decoder (q/k/v bias, GQA, RMSNorm, SwiGLU, derived head_dim)
 // whose RoPE config lives under transformers-5.x's nested rope_parameters {mrope_section, rope_theta} instead of a top-level rope_theta.
 // For text, m-RoPE degenerates to standard scalar RoPE (the 3 position components are equal), so the text path is exactly Qwen2; the 3D
 // position machinery only engages on the image path. The vision_config is ignored here, like the Gemma 3 VL text side.
-func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+func qwen2_5_vlArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
 	// mrope_section + rope_theta live under EITHER the transformers-5.x nested
 	// rope_parameters {mrope_section, rope_theta} (the tiny synthetic) OR the older
 	// top-level rope_scaling {type:mrope, mrope_section} + rope_theta (the real 3B).

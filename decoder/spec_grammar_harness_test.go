@@ -23,7 +23,7 @@ func TestGrammarSpecHarness(t *testing.T) {
 	if err != nil {
 		t.Skipf("no tokenizer (%v)", err)
 	}
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	vocabBytes := constrain.TokenBytes(vocab, tk.TokenText)
 	encode := func(s string) []int { ids, _ := tk.Encode(s, false); return ids }
 	ctx := context.Background()

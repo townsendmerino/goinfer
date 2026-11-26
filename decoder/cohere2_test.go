@@ -50,7 +50,7 @@ func TestCohere2_forwardParity(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "cohere2" {
 		t.Fatalf("arch = %q, want cohere2", a.Name)
 	}
@@ -58,11 +58,11 @@ func TestCohere2_forwardParity(t *testing.T) {
 	// 3 global+NoPE. A misclassification silently corrupts logits, so assert it.
 	for l := 0; l < a.NumLayers; l++ {
 		wantGlobal := (l+1)%4 == 0
-		if a.isGlobalLayer(l) != wantGlobal {
-			t.Errorf("layer %d isGlobal=%v, want %v", l, a.isGlobalLayer(l), wantGlobal)
+		if a.IsGlobalLayer(l) != wantGlobal {
+			t.Errorf("layer %d isGlobal=%v, want %v", l, a.IsGlobalLayer(l), wantGlobal)
 		}
-		if a.isNoPELayer(l) != wantGlobal { // global == NoPE in cohere2
-			t.Errorf("layer %d isNoPE=%v, want %v", l, a.isNoPELayer(l), wantGlobal)
+		if a.IsNoPELayer(l) != wantGlobal { // global == NoPE in cohere2
+			t.Errorf("layer %d isNoPE=%v, want %v", l, a.IsNoPELayer(l), wantGlobal)
 		}
 	}
 

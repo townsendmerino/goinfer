@@ -131,7 +131,7 @@ func TestTwoImages_gemma3(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	const bar = 0.99 // TestGemma3VL_imageParity's (the batched-attention floor), with its exact last argmax
 	ctx := context.Background()
 	all := func(ids []int, spans []ImageSpan, feats []float32) [][]float32 {
@@ -300,7 +300,7 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 	}
 	defer m.Close()
 	const bar = 0.999 // TestGemma4VLBidir_imageParity's
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	ctx := context.Background()
 	for _, name := range []string{"interleaved", "adjacent"} {
 		l := g.Layouts[name]
@@ -365,7 +365,7 @@ func TestTwoImages_reuse(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf := &fakeResident{vocab: m.w.Arch.VocabSize}
 	m.resident = rf
 	l := g.Layouts["interleaved"]
 	towerCalls := 0

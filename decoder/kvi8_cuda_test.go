@@ -162,7 +162,7 @@ func TestCUDAKVI8_pricesWhatIsAsked(t *testing.T) {
 func TestCUDAKVI8_declinesRowsNotWholeWords(t *testing.T) {
 	a := *kvMatrixArch(t, "llama-tiny")
 	a.HeadDim = 15
-	if got := a.kvFacts().KVRowNotWords; got != 30 {
+	if got := a.KVFacts().KVRowNotWords; got != 30 {
 		t.Fatalf("kvFacts reports a %d-element row not whole words, want 30", got)
 	}
 	r := kvRefusal("cuda", &a, Options{Backend: "cuda", KVPrecision: kvPrecI8})

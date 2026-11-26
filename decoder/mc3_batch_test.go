@@ -283,7 +283,7 @@ type mc3Turn struct {
 
 // mc3Conversation plays conversation c for `turns` turns and returns every turn's ids and PrefillReused.
 func mc3Conversation(t *testing.T, m *Model, c, turns, maxTok int) []mc3Turn {
-	vocab := m.w.arch.VocabSize
+	vocab := m.w.Arch.VocabSize
 	prompt := []int{1, 2, 3, (c*17 + 5) % vocab, (c*29 + 9) % vocab, (c*31 + 3) % vocab}
 	var out []mc3Turn
 	for tn := range turns {
@@ -504,7 +504,7 @@ func TestMC3_sampledConcurrentMatchesAlone(t *testing.T) {
 // prompt is prefilled in one pass.
 func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 	vocabPrompt := func(m *Model, n, salt int) []int {
-		v := m.w.arch.VocabSize
+		v := m.w.Arch.VocabSize
 		p := make([]int, n)
 		for i := range p {
 			p[i] = (i*7 + salt) % v
@@ -586,7 +586,7 @@ func TestMC3_prefillChunkOffByDefault(t *testing.T) {
 	m, rf := loadWithMC3Fake(t, 4)
 	rf.delay = 3 * time.Millisecond
 	m.EnableResidentConcurrency(4)
-	v := m.w.arch.VocabSize
+	v := m.w.Arch.VocabSize
 	long := make([]int, 1200)
 	for i := range long {
 		long[i] = (i*7 + 3) % v

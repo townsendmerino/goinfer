@@ -17,7 +17,7 @@ import (
 // It leaves cache.mropePos / cache.rope.MRoPEDelta set so decode past the prompt rotates at seqPos+delta, as
 // prefillLogitsQwenVL does.
 func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
+	arch := m.w.Arch
 	hidden := arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
 		return nil, err
@@ -47,9 +47,9 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 // conv windows carry in the cache, and the full-attention layers read m-RoPE at absolute positions. A capture or a speculative tree
 // keeps one pass.
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
-		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.arch, m.knobs)
+		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.Arch, m.knobs)
 	}
 	n, C := len(ids), len(ids)
 	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {
@@ -86,7 +86,7 @@ func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeat
 // prefillQwen35VLPerToken is the original loop, kept for the families and caches qwen35BatchNAnyPos excludes (a layer pager, a
 // capture request, Olmo Hybrid) and as the reference the batched path is tested against.
 func (m *Model) prefillQwen35VLPerToken(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	all := make([]float32, len(ids)*hidden)
 	for i := range ids {
 		m.w.Embed.Row(ids[i], all[i*hidden:(i+1)*hidden])
@@ -115,14 +115,14 @@ var qwen35VLPerToken bool
 // never depends on it (rope.ParseMRoPEFlat returns nil rather than failing); the image path does, and a
 // silent fall-back to scalar RoPE would put every image token at a wrong angle without an error.
 func (m *Model) checkQwen35VLReady() error {
-	arch := m.w.arch
-	if arch.qwen35 == nil {
+	arch := m.w.Arch
+	if arch.Qwen35 == nil {
 		return fmt.Errorf("decoder: %q is not a Gated-DeltaNet hybrid", arch.Name)
 	}
 	if len(arch.MRopeSection) != 3 {
 		return fmt.Errorf("decoder: %s has no mrope_section in rope_parameters; refusing an image turn rather than rotating image tokens by scalar position", arch.Name)
 	}
-	if want := len(arch.ropeInvFreq(0)); arch.MRopeSection[0]+arch.MRopeSection[1]+arch.MRopeSection[2] != want {
+	if want := len(arch.RoPEInvFreq(0)); arch.MRopeSection[0]+arch.MRopeSection[1]+arch.MRopeSection[2] != want {
 		return fmt.Errorf("decoder: %s mrope_section %v sums to %d, want %d (rotary_dim/2)", arch.Name, arch.MRopeSection, arch.MRopeSection[0]+arch.MRopeSection[1]+arch.MRopeSection[2], want)
 	}
 	return nil

@@ -41,13 +41,13 @@ func TestGemma4GGUF_moeLayerScalarMatchesLayer(t *testing.T) {
 	}
 	for i := range w.Layers {
 		l := &w.Layers[i]
-		if l.gemma4moe == nil {
+		if l.Gemma4MoE == nil {
 			t.Fatalf("layer %d: no MoE branch — the fixture is not exercising the 26B path", i)
 		}
 		if l.LayerScalar == 0 {
 			t.Fatalf("layer %d: LayerScalar is 0 — the fixture's layer_output_scale did not load", i)
 		}
-		if got := l.gemma4moe.layerScalar; got != l.LayerScalar {
+		if got := l.Gemma4MoE.LayerScalar; got != l.LayerScalar {
 			t.Errorf("layer %d: MoE branch scales its output by %v, the layer's own scalar is %v — a stale copy "+
 				"taken before LayerScalar was assigned zeroes every MoE layer (the direct-load <pad> bug)", i, got, l.LayerScalar)
 		}

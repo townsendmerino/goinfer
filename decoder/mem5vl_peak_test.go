@@ -30,7 +30,7 @@ func TestMEM5VL_peakTier1(t *testing.T) {
 	}
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	const n, img, at = 8192, 1024, 512
 	ids := make([]int, n)
 	mrope := make([][3]int, n)

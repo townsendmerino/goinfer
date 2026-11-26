@@ -63,7 +63,7 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "mellum" || a.NumLayers != g.NLayers {
 		t.Fatalf("arch = %q with %d layers, want mellum with %d", a.Name, a.NumLayers, g.NLayers)
 	}
@@ -82,7 +82,7 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 	// every layer to one kind and this slice would gate half of what it claims to.
 	for i := range a.NumLayers {
 		wantGlobal := i == 3
-		if got := a.isGlobalLayer(i); got != wantGlobal {
+		if got := a.IsGlobalLayer(i); got != wantGlobal {
 			t.Fatalf("isGlobalLayer(%d) = %v, want %v — the 3:1 interleave did not survive slicing",
 				i, got, wantGlobal)
 		}
@@ -94,10 +94,10 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 	// G10's FeatRopeMscale declaration is about, so the slice pins it on real weights before
 	// Metal is allowed to claim it.
 	const wantMscale = 1.2772588722239782
-	if got := a.ropeMscale(3); math.Abs(got-wantMscale) > 1e-12 {
+	if got := a.RoPEMscale(3); math.Abs(got-wantMscale) > 1e-12 {
 		t.Errorf("full-layer YaRN mscale = %.16f, want %.16f", got, wantMscale)
 	}
-	if got := a.ropeMscale(0); got != 1 {
+	if got := a.RoPEMscale(0); got != 1 {
 		t.Errorf("sliding-layer mscale = %v, want 1 (plain RoPE)", got)
 	}
 	if a.MoE == nil || a.MoE.NumExperts != 64 || a.MoE.TopK != 8 {

@@ -51,7 +51,7 @@ func TestGemmaSublayerTrace(t *testing.T) {
 			t.Fatalf("load %s (%s): %v", path, quant, err)
 		}
 		defer m.Close()
-		nL := m.w.arch.NumLayers
+		nL := m.w.Arch.NumLayers
 		cache := m.NewCache(len(prompt) + 1)
 		var attn, mlp [][]float32
 		var scaledEmbed []float32

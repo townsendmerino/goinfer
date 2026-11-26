@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -42,11 +43,11 @@ func TestOlmo3Real_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	a := m.w.arch
+	a := m.w.Arch
 	if a.Name != "olmo3" {
 		t.Fatalf("arch = %q, want olmo3", a.Name)
 	}
-	if a.NormPlacement != NormPostOnly {
+	if a.NormPlacement != darch.NormPostOnly {
 		t.Errorf("NormPlacement = %v, want NormPostOnly", a.NormPlacement)
 	}
 	if !a.QKNorm || !a.QKNormWhole {
@@ -60,7 +61,7 @@ func TestOlmo3Real_gate(t *testing.T) {
 	// degenerate, same discipline as cohere2's interleave assertion.
 	var global int
 	for l := 0; l < a.NumLayers; l++ {
-		if a.isGlobalLayer(l) {
+		if a.IsGlobalLayer(l) {
 			global++
 		}
 	}

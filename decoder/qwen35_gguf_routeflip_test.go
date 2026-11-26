@@ -73,7 +73,7 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 			m.Close()
 			debug.FreeOSMemory()
 		}()
-		nL := m.w.arch.NumLayers
+		nL := m.w.Arch.NumLayers
 		var logits [][]float32
 		var sel [][][]int
 		for pi := range man.Prompts {

@@ -90,8 +90,8 @@ func loadTinyASR(t *testing.T) *Model {
 		t.Fatalf("Load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if m.w.arch.Name != "qwen3_asr" {
-		t.Fatalf("architecture %q, want qwen3_asr", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen3_asr" {
+		t.Fatalf("architecture %q, want qwen3_asr", m.w.Arch.Name)
 	}
 	return m
 }
@@ -133,7 +133,7 @@ func qwen3ASRCompose(t *testing.T, m *Model, enc *audio.QwenASREncoder, files ma
 	if pos < 0 {
 		t.Fatal("no audio placeholder in the prompt")
 	}
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	ctx := context.Background()
 	cache := m.NewCache(len(ids) + 9)
 	switch defect {

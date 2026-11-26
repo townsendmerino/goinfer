@@ -66,8 +66,8 @@ func TestQwen25VLReal_gate(t *testing.T) {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}
 	defer m.Close()
-	if m.w.arch.Name != "qwen2_5_vl" {
-		t.Fatalf("arch = %q, want qwen2_5_vl", m.w.arch.Name)
+	if m.w.Arch.Name != "qwen2_5_vl" {
+		t.Fatalf("arch = %q, want qwen2_5_vl", m.w.Arch.Name)
 	}
 
 	mropePos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)

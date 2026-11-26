@@ -34,7 +34,7 @@ func TestWindowedKV_planPrices(t *testing.T) {
 			if !on.WindowedKVLayer(l) {
 				t.Fatalf("layer %d of an all-sliding-window model is not a windowed-KV layer", l)
 			}
-			row := int64(on.w.arch.kvDimAt(l)) * 2 * 4 * KVBlockRows // K and V, f32, one block
+			row := int64(on.w.Arch.KVDimAt(l)) * 2 * 4 * KVBlockRows // K and V, f32, one block
 			want += row                                              // the null block
 			if ctx > held {
 				want += row * (blocks(held) + 1)

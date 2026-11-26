@@ -39,9 +39,9 @@ func TestGptOssSafetensors_vsGGUF(t *testing.T) {
 	}
 	defer ms.Close()
 
-	a := ms.w.arch
-	if a.Name != "gpt-oss" || a.gptoss == nil {
-		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.gptoss != nil)
+	a := ms.w.Arch
+	if a.Name != "gpt-oss" || a.GPTOSS == nil {
+		t.Fatalf("arch = %q (gptoss=%v), want gpt-oss", a.Name, a.GPTOSS != nil)
 	}
 	if a.NumLayers != 24 || a.HiddenDim != 2880 || a.NumHeads != 64 || a.NumKVHeads != 8 {
 		t.Errorf("geometry = %dL/%dh/%dq/%dkv, want 24/2880/64/8",

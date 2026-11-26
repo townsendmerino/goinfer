@@ -10,8 +10,8 @@ func (m *Model) suffixRows(ids []int) func(lo, hi int) [][]float32 {
 	n := m.BackendView().EmbedLen()
 	var slab, pleScratch []float32
 	var view [][]float32
-	if g4 := m.w.arch.gemma4; g4 != nil && g4.HiddenSizePerLayerInput > 0 {
-		pleScratch = make([]float32, m.w.arch.NumLayers*g4.HiddenSizePerLayerInput)
+	if g4 := m.w.Arch.Gemma4; g4 != nil && g4.HiddenSizePerLayerInput > 0 {
+		pleScratch = make([]float32, m.w.Arch.NumLayers*g4.HiddenSizePerLayerInput)
 	}
 	return func(lo, hi int) [][]float32 {
 		k := hi - lo

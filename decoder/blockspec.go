@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"sync/atomic"
 )
 
@@ -41,13 +42,13 @@ const RecurrentSpecMaxRows = 16
 // row, the conv input and output, the normed q and k and two gates per value head, plus one fold output, f32, rounded up to the 2 MiB
 // cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
 // state, a recurrent kind other than Gated DeltaNet, heads wider than the scan twins' 128, or a sliding window.
-func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
-	if a == nil || a.qwen35 == nil || rows < 1 || a.SlidingWindow > 0 || a.qwen35.KeyHeadDim > 128 || a.qwen35.ValueHeadDim > 128 {
+func RecurrentSpecArenaBytes(a *darch.Architecture, rows int) int64 {
+	if a == nil || a.Qwen35 == nil || rows < 1 || a.SlidingWindow > 0 || a.Qwen35.KeyHeadDim > 128 || a.Qwen35.ValueHeadDim > 128 {
 		return 0
 	}
 	nDN := 0
 	for l := range a.NumLayers {
-		for _, o := range a.layerOps(l, false) {
+		for _, o := range a.LayerOps(l, false) {
 			switch {
 			case o.Kind == opDeltaNet:
 				nDN++
@@ -59,7 +60,7 @@ func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
 	if nDN == 0 {
 		return 0
 	}
-	g := a.qwen35
+	g := a.Qwen35
 	keyDim, valueDim := g.NumKeyHeads*g.KeyHeadDim, g.NumValueHeads*g.ValueHeadDim
 	convDim := 2*keyDim + valueDim
 	floats := 2*int64(nDN)*int64(rows)*int64(2*convDim+2*keyDim+2*g.NumValueHeads) + int64(rows)*int64(valueDim)
@@ -69,7 +70,7 @@ func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
 
 // recurrentSpecReserve is what a block drafter's attach adds to the companion reserve on top of its own bytes: the fold path's arena on
 // a recurrent target (RecurrentSpecArenaBytes), 0 on any other.
-func recurrentSpecReserve(a *Architecture, drafter bool) int64 {
+func recurrentSpecReserve(a *darch.Architecture, drafter bool) int64 {
 	if !drafter {
 		return 0
 	}
@@ -224,7 +225,7 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no RecurrentSpecAvailable)")
 	}
 	// The architecture first, so a model the path refuses has no arena allocated either; the arena's price is 0 exactly there.
-	if RecurrentSpecArenaBytes(m.w.arch, 1) == 0 {
+	if RecurrentSpecArenaBytes(m.w.Arch, 1) == 0 {
 		return fmt.Errorf("decoder: the fold path does not serve this model (a recurrent layer that is not Gated DeltaNet, heads past 128, or a sliding window)")
 	}
 	rows := min(dw.BlockSize(), RecurrentSpecMaxRows) // the widest verify this drafter's loop asks the fold path for
@@ -377,7 +378,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// resident-KV reuse. reuseFrom is 0 (a full wipe) whenever nothing is safely reusable.
 	rd.TruncateContext(reuseFrom)
 
-	hidden := m.w.arch.HiddenDim
+	hidden := m.w.Arch.HiddenDim
 	eos := blockSpecStopSet(m, opt)
 	// fuse folds a batched capture into the drafter's context: the taps for n rows become n concatenated rows, projected and
 	// appended, blockSpecFuseRows at a time. The fusion is per row and ExtendContext appends, so the pieces give the context one

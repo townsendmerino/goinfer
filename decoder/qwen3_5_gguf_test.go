@@ -41,9 +41,9 @@ func TestQwen38GGUF_gate(t *testing.T) {
 	}
 	defer m.Close()
 
-	a := m.w.arch
-	if a.Name != "qwen3_5" || a.qwen35 == nil {
-		t.Fatalf("arch = %q (qwen35=%v), want qwen3_5", a.Name, a.qwen35 != nil)
+	a := m.w.Arch
+	if a.Name != "qwen3_5" || a.Qwen35 == nil {
+		t.Fatalf("arch = %q (qwen35=%v), want qwen3_5", a.Name, a.Qwen35 != nil)
 	}
 	if a.MoE != nil {
 		t.Fatal("arch.MoE != nil — the dense GGUF must not resolve to the MoE adapter")
@@ -60,7 +60,7 @@ func TestQwen38GGUF_gate(t *testing.T) {
 	// The interleave is COMPUTED from full_attention_interval=4; llama.cpp states no layer_types.
 	lin, full := 0, 0
 	for i := range a.NumLayers {
-		if a.isLinearLayer(i) {
+		if a.IsLinearLayer(i) {
 			lin++
 			continue
 		}
@@ -72,7 +72,7 @@ func TestQwen38GGUF_gate(t *testing.T) {
 	if lin != 48 || full != 16 {
 		t.Errorf("layer mix = %d linear / %d full, want 48/16", lin, full)
 	}
-	g := a.qwen35
+	g := a.Qwen35
 	if g.NumKeyHeads != 16 || g.NumValueHeads != 48 || g.KeyHeadDim != 128 || g.ValueHeadDim != 128 || g.ConvKernel != 4 {
 		t.Errorf("DeltaNet = %dk×%d / %dv×%d conv%d, want 16×128 / 48×128 conv4",
 			g.NumKeyHeads, g.KeyHeadDim, g.NumValueHeads, g.ValueHeadDim, g.ConvKernel)

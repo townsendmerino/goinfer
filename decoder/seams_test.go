@@ -56,7 +56,7 @@ func gateH(t *testing.T, m *Model, ids []int) error {
 	if !hp.Norm.Bias {
 		b = nil
 	}
-	applyNorm(hp.Norm, want, want, m.w.FinalNorm, b, m.w.arch.HiddenDim) // the head's norm, not the seam's own path
+	applyNorm(hp.Norm, want, want, m.w.FinalNorm, b, m.w.Arch.HiddenDim) // the head's norm, not the seam's own path
 	got, err := m.HiddenLast(ids)
 	if err != nil {
 		return err
@@ -79,7 +79,7 @@ func captureAll(m *Model, ids []int) ([]float32, [][]float32, error) {
 			return nil, nil, err
 		}
 	}
-	layers := make([]int, m.w.arch.NumLayers)
+	layers := make([]int, m.w.Arch.NumLayers)
 	for l := range layers {
 		layers[l] = l
 	}
@@ -97,7 +97,7 @@ func gateC(t *testing.T, m *Model, ids []int) error {
 	if !sameBits(lg, seamLogits(t, m, ids)) {
 		return fmt.Errorf("ForwardCapture changed the logits")
 	}
-	for l := range m.w.arch.NumLayers {
+	for l := range m.w.Arch.NumLayers {
 		cut := *m.program()
 		cut.Layers = cut.Layers[:l+1]
 		mm := *m

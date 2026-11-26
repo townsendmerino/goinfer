@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
 // --- writer ---
@@ -20,12 +21,12 @@ import (
 // memory (SerializeWeightsTo). Both modes route every byte through raw, so the two
 // produce identical bytes.
 type giwWriter struct {
-	buf  []byte        // buffer mode
-	sink io.Writer     // stream mode (nil ⇒ buffer mode)
-	crc  uint32        // running CRC32-IEEE over bytes written (stream mode)
-	n    int64         // bytes written (stream mode)
-	err  error         // first sink error (stream mode)
-	arch *Architecture // set in writeBundle; gates the gemma4 model-level inputs and per-layer tail
+	buf  []byte              // buffer mode
+	sink io.Writer           // stream mode (nil ⇒ buffer mode)
+	crc  uint32              // running CRC32-IEEE over bytes written (stream mode)
+	n    int64               // bytes written (stream mode)
+	err  error               // first sink error (stream mode)
+	arch *darch.Architecture // set in writeBundle; gates the gemma4 model-level inputs and per-layer tail
 
 	// target opts weightMat into emitting kind 5 (row4-only, no canonical arrays) for every eligible int4 tensor on a
 	// cpu-arm64 target, instead of kind 3: the one-representation-per-target policy, .giw's counterpart to
@@ -333,7 +334,7 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 // arch-gated like the gemma4 tail: every field here is empty on the families that do not use it, so the cost is a handful
 // of zero lengths per layer, and an arch-gated tail is how a family's state goes missing (the gate is another place to
 // remember). TestSerializeCensus_noSilentFieldDrop checks that claim against the struct itself.
-func (w *giwWriter) v6Layer(l *LayerWeights) {
+func (w *giwWriter) v6Layer(l *darch.LayerWeights) {
 	w.weightMat(&l.GProj) // Laguna's attention output gate (per-head or per-element)
 	w.f32(l.AttnSinks)    // gpt-oss per-head attention sinks
 	// gpt-oss per-expert biases. The expert loop above writes only the three matrices; these are
@@ -347,35 +348,35 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	w.f32(l.SharedExpert.UpBias)
 	w.f32(l.SharedExpert.DownBias)
 	// MLA (DeepSeek / Kimi): presence byte then the eight tensors.
-	if l.mla == nil {
+	if l.MLA == nil {
 		w.raw([]byte{0})
 	} else {
 		w.raw([]byte{1})
-		m := l.mla
-		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays
-		w.f32(m.qALayernorm)
-		w.mambaProj(m.qBProj, &m.qBQ)
-		w.mambaProj(m.qProj, &m.qQ)
-		w.mambaProj(m.kvAProj, &m.kvAQ)
-		w.f32(m.kvALayernorm)
-		w.f32(m.kvBProj)
-		w.mambaProj(m.oProj, &m.oQ)
+		m := l.MLA
+		w.mambaProj(m.QAProj, &m.QAQ) // a quantized load's int8 projections as weight records, else f32 arrays
+		w.f32(m.QALayernorm)
+		w.mambaProj(m.QBProj, &m.QBQ)
+		w.mambaProj(m.QProj, &m.QQ)
+		w.mambaProj(m.KVAProj, &m.KVAQ)
+		w.f32(m.KVALayernorm)
+		w.f32(m.KVBProj)
+		w.mambaProj(m.OProj, &m.OQ)
 	}
 	// Mamba-2 (Granite / Nemotron): presence byte then the eight tensors. The recurrent STATE is
 	// not written and must not be — it is per-sequence, rebuilt at load; only the weights are here.
-	if l.mamba == nil {
+	if l.Mamba == nil {
 		w.raw([]byte{0})
 	} else {
 		w.raw([]byte{1})
-		m := l.mamba
-		w.mambaProj(m.inProj, &m.inQ)
-		w.f32(m.convW)
-		w.f32(m.convB)
-		w.f32(m.aLog)
-		w.f32(m.d)
-		w.f32(m.dtBias)
-		w.f32(m.normW)
-		w.mambaProj(m.outProj, &m.outQ)
+		m := l.Mamba
+		w.mambaProj(m.InProj, &m.InQ)
+		w.f32(m.ConvW)
+		w.f32(m.ConvB)
+		w.f32(m.ALog)
+		w.f32(m.D)
+		w.f32(m.DtBias)
+		w.f32(m.NormW)
+		w.mambaProj(m.OutProj, &m.OutQ)
 	}
 }
 
@@ -396,16 +397,16 @@ func (w *giwWriter) mambaProj(f []float32, q *linalg.WeightMat) {
 //
 // As with mamba, only the weights are here: the rolling conv window is per-sequence state that lives in the KVCache and
 // is rebuilt at load.
-func (w *giwWriter) v8Layer(l *LayerWeights) {
-	if l.shortConv == nil {
+func (w *giwWriter) v8Layer(l *darch.LayerWeights) {
+	if l.ShortConv == nil {
 		w.raw([]byte{0})
 		return
 	}
 	w.raw([]byte{1})
-	c := l.shortConv
-	w.island(&c.inProj)
-	w.f32(c.convW)
-	w.island(&c.outProj)
+	c := l.ShortConv
+	w.island(&c.InProj)
+	w.f32(c.ConvW)
+	w.island(&c.OutProj)
 }
 
 // giwIslandsF32ForTest writes islands as f32 arrays whatever kind the load holds: the form a bundle had before kind 9.
@@ -433,31 +434,31 @@ func (w *giwWriter) island(m *linalg.WeightMat) {
 // layout, which would corrupt the read of every existing v6/v7/v8 file), then the KDA mixer (presence byte + the thirteen
 // tensors, kdaWeights' own field count). Without it a round-tripped bailing_hybrid bundle nil-dereferences in
 // kdaMixerStep on the first KDA layer; TestSerializeCensus_noSilentFieldDrop catches a missing field.
-func (w *giwWriter) v9Layer(l *LayerWeights) {
+func (w *giwWriter) v9Layer(l *darch.LayerWeights) {
 	var gProj []float32
-	if l.mla != nil {
-		gProj = l.mla.gProj // nil for deepseek_v2/v3/kimi_k2 (no gate); set for Bailing Hybrid
+	if l.MLA != nil {
+		gProj = l.MLA.GProj // nil for deepseek_v2/v3/kimi_k2 (no gate); set for Bailing Hybrid
 	}
 	w.f32(gProj)
-	if l.kda == nil {
+	if l.KDA == nil {
 		w.raw([]byte{0})
 		return
 	}
 	w.raw([]byte{1})
-	k := l.kda
-	w.weightMatKind3Only(&k.qProj)
-	w.weightMatKind3Only(&k.kProj)
-	w.weightMatKind3Only(&k.vProj)
-	w.f32(k.qConvW)
-	w.f32(k.kConvW)
-	w.f32(k.vConvW)
-	w.weightMatKind3Only(&k.fProj)
-	w.f32(k.dtBias)
-	w.f32(k.aLog)
-	w.f32(k.bProj)
-	w.weightMatKind3Only(&k.gProj)
-	w.f32(k.oNormW)
-	w.weightMatKind3Only(&k.oProj)
+	k := l.KDA
+	w.weightMatKind3Only(&k.QProj)
+	w.weightMatKind3Only(&k.KProj)
+	w.weightMatKind3Only(&k.VProj)
+	w.f32(k.QConvW)
+	w.f32(k.KConvW)
+	w.f32(k.VConvW)
+	w.weightMatKind3Only(&k.FProj)
+	w.f32(k.DtBias)
+	w.f32(k.ALog)
+	w.f32(k.BProj)
+	w.weightMatKind3Only(&k.GProj)
+	w.f32(k.ONormW)
+	w.weightMatKind3Only(&k.OProj)
 }
 
 // gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
@@ -467,28 +468,28 @@ func (w *giwWriter) v9Layer(l *LayerWeights) {
 // l.PreMLPNorm/PostMLPNorm (already written), which the reader re-aliases into
 // gemma4moe; only the three parallel-branch norms, the router (l.Router is empty for
 // gemma4), the per-expert scale, and the fused experts are new here.
-func (w *giwWriter) gemma4Layer(l *LayerWeights) {
+func (w *giwWriter) gemma4Layer(l *darch.LayerWeights) {
 	w.weightMat(&l.PLEGate)
 	w.weightMat(&l.PLEProj)
 	w.f32(l.PostPLENorm)
 	w.u32(math.Float32bits(l.LayerScalar))
 	w.raw([]byte{b2u8(l.KVShared), b2u8(l.VFromK)})
-	if l.gemma4moe == nil {
+	if l.Gemma4MoE == nil {
 		w.raw([]byte{0})
 		return
 	}
 	w.raw([]byte{1})
-	mo := l.gemma4moe
-	w.f32(mo.postFFNNorm1)
-	w.f32(mo.preFFNNorm2)
-	w.f32(mo.postFFNNorm2)
-	w.weightMatKind3Only(&mo.routerProj)
-	w.f32(mo.routerScale)
-	w.f32(mo.perExpertScale)
-	w.u32(uint32(len(mo.expertsGateUp)))
-	for e := range mo.expertsGateUp {
-		w.weightMatKind3Only(&mo.expertsGateUp[e])
-		w.weightMatKind3Only(&mo.expertsDown[e])
+	mo := l.Gemma4MoE
+	w.f32(mo.PostFFNNorm1)
+	w.f32(mo.PreFFNNorm2)
+	w.f32(mo.PostFFNNorm2)
+	w.weightMatKind3Only(&mo.RouterProj)
+	w.f32(mo.RouterScale)
+	w.f32(mo.PerExpertScale)
+	w.u32(uint32(len(mo.ExpertsGateUp)))
+	for e := range mo.ExpertsGateUp {
+		w.weightMatKind3Only(&mo.ExpertsGateUp[e])
+		w.weightMatKind3Only(&mo.ExpertsDown[e])
 	}
 }
 
@@ -502,29 +503,29 @@ func b2u8(b bool) byte {
 // hybridLayer writes the qwen3_5_moe per-layer extras (v2): a kind byte then the
 // DeltaNet (linear-layer) or gated-softmax (qattn) f32 tensor set. Every other
 // family writes kind 0 and nothing more, so the field stays one byte per layer.
-func (w *giwWriter) hybridLayer(l *LayerWeights) {
+func (w *giwWriter) hybridLayer(l *darch.LayerWeights) {
 	switch {
-	case l.delta != nil:
+	case l.Delta != nil:
 		w.raw([]byte{1})
-		d := l.delta
-		w.weightMatKind3Only(&d.inProjQKV)
-		w.weightMatKind3Only(&d.inProjZ)
-		w.f32(d.inProjB)
-		w.f32(d.inProjA)
-		w.f32(d.convW)
-		w.f32(d.dtBias)
-		w.f32(d.negExpA) // the precomputed −exp(A_log); stored as-is, no recompute on load
-		w.f32(d.normW)
-		w.weightMatKind3Only(&d.outProj)
-	case l.qattn != nil:
+		d := l.Delta
+		w.weightMatKind3Only(&d.InProjQKV)
+		w.weightMatKind3Only(&d.InProjZ)
+		w.f32(d.InProjB)
+		w.f32(d.InProjA)
+		w.f32(d.ConvW)
+		w.f32(d.DtBias)
+		w.f32(d.NegExpA) // the precomputed −exp(A_log); stored as-is, no recompute on load
+		w.f32(d.NormW)
+		w.weightMatKind3Only(&d.OutProj)
+	case l.QAttn != nil:
 		w.raw([]byte{2})
-		q := l.qattn
-		w.weightMatKind3Only(&q.qProj)
-		w.weightMatKind3Only(&q.kProj)
-		w.weightMatKind3Only(&q.vProj)
-		w.weightMatKind3Only(&q.oProj)
-		w.f32(q.qNorm)
-		w.f32(q.kNorm)
+		q := l.QAttn
+		w.weightMatKind3Only(&q.QProj)
+		w.weightMatKind3Only(&q.KProj)
+		w.weightMatKind3Only(&q.VProj)
+		w.weightMatKind3Only(&q.OProj)
+		w.f32(q.QNorm)
+		w.f32(q.KNorm)
 	default:
 		// The "no hybrid extras" marker. MLA and Mamba-2 are written by v6Layer.
 		w.raw([]byte{0})

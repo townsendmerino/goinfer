@@ -1,5 +1,9 @@
 package decoder
 
+import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+)
+
 import "testing"
 
 // TestMellum2_slidingWindowEviction is the model-free proof of Mellum2's 3:1
@@ -11,16 +15,16 @@ import "testing"
 // eviction mechanic the Gemma window test exercises, here without a 24 GB model.
 func TestMellum2_slidingWindowEviction(t *testing.T) {
 	const W, hd, N = 4, 2, 8 // window 4, 8 stored positions → positions 0..3 evicted on sliding layers
-	arch := &Architecture{
+	arch := &darch.Architecture{
 		NumHeads: 1, NumKVHeads: 1, HeadDim: hd, AttnScale: 1.0,
 		SlidingWindow: W,
-		layerIsGlobal: func(i int) bool { return (i+1)%4 == 0 }, // 3 sliding : 1 full (Mellum2)
+		LayerIsGlobal: func(i int) bool { return (i+1)%4 == 0 }, // 3 sliding : 1 full (Mellum2)
 	}
 
 	// 1. Layer dispatch: 0,1,2 sliding; 3 full.
 	for i, want := range []bool{false, false, false, true} {
-		if arch.isGlobalLayer(i) != want {
-			t.Errorf("layer %d isGlobal=%v, want %v", i, arch.isGlobalLayer(i), want)
+		if arch.IsGlobalLayer(i) != want {
+			t.Errorf("layer %d isGlobal=%v, want %v", i, arch.IsGlobalLayer(i), want)
 		}
 	}
 

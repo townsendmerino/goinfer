@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -57,8 +58,8 @@ func gemma4EModelsForLayerCapture(t *testing.T) map[string]*Model {
 // last output through the head giving the logits; and the next token's logits unchanged by the capture.
 func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 	t.Helper()
-	arch := m.w.arch
-	if arch.gemma4 == nil || arch.gemma4.HiddenSizePerLayerInput == 0 {
+	arch := m.w.Arch
+	if arch.Gemma4 == nil || arch.Gemma4.HiddenSizePerLayerInput == 0 {
 		return fmt.Errorf("not a Gemma 4 E-model")
 	}
 	n := len(ids)
@@ -99,7 +100,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 			name string
 			rows [][]float32
 			n    int // the row width
-		}{{"Ctx", c.Ctx, arch.NumHeads * arch.headDimAt(l)}, {"Attn", c.Attn, hidden}, {"MLPPre", c.MLPPre, hidden},
+		}{{"Ctx", c.Ctx, arch.NumHeads * arch.HeadDimAt(l)}, {"Attn", c.Attn, hidden}, {"MLPPre", c.MLPPre, hidden},
 			{"MLP", c.MLP, hidden}, {"PLE", c.PLE, hidden}, {"Out", c.Out, hidden}} {
 			if len(r.rows) != arch.NumLayers || len(r.rows[l]) == 0 {
 				return fmt.Errorf("layer %d: %s not captured (%d layers)", l, r.name, len(r.rows))
@@ -151,12 +152,12 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 // the output projection and the post-attention norm is Attn, and MLPPre through the post-MLP norm is MLP, bit for bit.
 func checkCaptureValues(m *Model, l int, c LayerCaptureForTest) error {
 	lw := &m.w.Layers[l]
-	hidden := m.w.arch.HiddenDim
-	post := func(slot normSlot, src []float32) []float32 {
+	hidden := m.w.Arch.HiddenDim
+	post := func(slot program.NormSlot, src []float32) []float32 {
 		for _, o := range m.program().Layers[l] {
 			if o.Kind == opNorm && o.Norm.Slot == slot {
 				dst := make([]float32, hidden)
-				w, b := lw.normWeights(o.Norm)
+				w, b := lw.NormWeights(o.Norm)
 				applyNorm(o.Norm, dst, src, w, b, hidden)
 				return dst
 			}
@@ -183,7 +184,7 @@ func TestLayerCapture_gemma4EModel(t *testing.T) {
 		if err := checkLayerCapture(t, m, layerCapturePrompt); err != nil {
 			t.Errorf("%s: %v", name, err)
 		} else {
-			t.Logf("%s: %d layers rebuilt from their captures", name, m.w.arch.NumLayers)
+			t.Logf("%s: %d layers rebuilt from their captures", name, m.w.Arch.NumLayers)
 		}
 	}
 }
@@ -191,7 +192,7 @@ func TestLayerCapture_gemma4EModel(t *testing.T) {
 // TestLayerCapture_plantsGoRed: each planted capture defect turns checkLayerCapture red with its own message.
 func TestLayerCapture_plantsGoRed(t *testing.T) {
 	m := loadTinyGemma4GGUF(t, g4EModelNoShare)
-	global := m.w.arch.NumLayers - 1 // tinyGemma4GGUF's one global layer
+	global := m.w.Arch.NumLayers - 1 // tinyGemma4GGUF's one global layer
 	for _, pl := range []struct {
 		name  string
 		plant seamPlant
@@ -238,7 +239,7 @@ func TestLayerInputs_isolateEachLayer(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			nL := m.w.arch.NumLayers
+			nL := m.w.Arch.NumLayers
 			plain, fed := m.NewCache(8), m.NewCache(8)
 			for _, tok := range []int{1, 7, 42} {
 				want, lc, err := m.ForwardLayerCaptureLogitsForTest(tok, plain)

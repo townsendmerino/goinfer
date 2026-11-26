@@ -21,7 +21,7 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 
 	convLayers := 0
 	for l := range m.w.Layers {
-		if m.w.Layers[l].shortConv != nil {
+		if m.w.Layers[l].ShortConv != nil {
 			convLayers++
 		}
 	}
@@ -39,7 +39,7 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 	}
 	back := 0
 	for l := range w2.Layers {
-		got, want := w2.Layers[l].shortConv, m.w.Layers[l].shortConv
+		got, want := w2.Layers[l].ShortConv, m.w.Layers[l].ShortConv
 		if want == nil {
 			continue
 		}
@@ -51,9 +51,9 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 			name      string
 			got, want []float32
 		}{
-			{"inProj", islandF32(&got.inProj), islandF32(&want.inProj)},
-			{"convW", got.convW, want.convW},
-			{"outProj", islandF32(&got.outProj), islandF32(&want.outProj)},
+			{"inProj", islandF32(&got.InProj), islandF32(&want.InProj)},
+			{"convW", got.ConvW, want.ConvW},
+			{"outProj", islandF32(&got.OutProj), islandF32(&want.OutProj)},
 		} {
 			if len(c.got) != len(c.want) {
 				t.Fatalf("layer %d %s: len %d, want %d", l, c.name, len(c.got), len(c.want))
@@ -81,8 +81,8 @@ func TestLFM2_bundleWithoutConvWeightsIsRefusedAtLoad(t *testing.T) {
 
 	dropped := 0
 	for l := range m.w.Layers {
-		if m.w.Layers[l].shortConv != nil {
-			m.w.Layers[l].shortConv = nil
+		if m.w.Layers[l].ShortConv != nil {
+			m.w.Layers[l].ShortConv = nil
 			dropped++
 		}
 	}

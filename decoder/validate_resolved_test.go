@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"math"
 	"strings"
 	"testing"
@@ -13,50 +15,50 @@ import (
 // validateResolved). That matters: finalizeRoPE returns early on base <= 0 WITHOUT clearing an existing table, so a
 // fixture that finalized at a good base and was then mutated keeps its old table and the RoPE guard cannot fire. Harmless
 // in production, where finalizeRoPE runs once on a fresh descriptor.
-func validArch() *Architecture {
-	return &Architecture{
-		Name: "probe", Norm: NormRMS, NormEps: 1e-5, AttnScale: 0.25,
+func validArch() *darch.Architecture {
+	return &darch.Architecture{
+		Name: "probe", Norm: darch.NormRMS, NormEps: 1e-5, AttnScale: 0.25,
 		HiddenDim: 64, NumLayers: 2, NumHeads: 4, NumKVHeads: 2, HeadDim: 16, VocabSize: 32,
 		RoPEGlobalBase: 10000,
 	}
 }
 
 // finalized is validArch() put through the step resolveArchitecture performs before validating.
-func finalized(a *Architecture) *Architecture { a.finalizeRoPE(); return a }
+func finalized(a *darch.Architecture) *darch.Architecture { a.FinalizeRoPE(); return a }
 
 // M-06: validateResolved checked two fields and waved through three more classes of zero that
 // look legal. Each of these loads CLEAN today and fails later — in the forward, or not at all.
 func TestValidateResolved_theZerosThatLookLegal(t *testing.T) {
 	// The baseline must pass, or every assertion below is vacuous.
-	if err := finalized(validArch()).validateResolved(); err != nil {
+	if err := finalized(validArch()).ValidateResolved(); err != nil {
 		t.Fatalf("the valid fixture is rejected: %v — every sub-test below would pass for the "+
 			"wrong reason", err)
 	}
 
 	for name, tc := range map[string]struct {
-		mutate func(*Architecture)
+		mutate func(*darch.Architecture)
 		names  string
 	}{
 		// NaN is the sharp one: `AttnScale <= 0` is FALSE for NaN, so the old guard accepted it.
 		// gemma3 with a negative query_pre_attn_scalar produces exactly this.
-		"NaN AttnScale": {func(a *Architecture) { a.AttnScale = math.NaN() }, "AttnScale"},
+		"NaN AttnScale": {func(a *darch.Architecture) { a.AttnScale = math.NaN() }, "AttnScale"},
 		// +Inf arrives from num_attention_heads: 0 → Pow(0, -0.5).
-		"Inf AttnScale":  {func(a *Architecture) { a.AttnScale = math.Inf(1) }, "AttnScale"},
-		"zero HiddenDim": {func(a *Architecture) { a.HiddenDim = 0 }, "HiddenDim"},
-		"zero NumLayers": {func(a *Architecture) { a.NumLayers = 0 }, "NumLayers"},
-		"zero NumHeads":  {func(a *Architecture) { a.NumHeads = 0 }, "NumHeads"},
-		"zero HeadDim":   {func(a *Architecture) { a.HeadDim = 0 }, "HeadDim"},
-		"zero VocabSize": {func(a *Architecture) { a.VocabSize = 0 }, "VocabSize"},
+		"Inf AttnScale":  {func(a *darch.Architecture) { a.AttnScale = math.Inf(1) }, "AttnScale"},
+		"zero HiddenDim": {func(a *darch.Architecture) { a.HiddenDim = 0 }, "HiddenDim"},
+		"zero NumLayers": {func(a *darch.Architecture) { a.NumLayers = 0 }, "NumLayers"},
+		"zero NumHeads":  {func(a *darch.Architecture) { a.NumHeads = 0 }, "NumHeads"},
+		"zero HeadDim":   {func(a *darch.Architecture) { a.HeadDim = 0 }, "HeadDim"},
+		"zero VocabSize": {func(a *darch.Architecture) { a.VocabSize = 0 }, "VocabSize"},
 		// The one that panics rather than misbehaves: `group := nH/nKV` is an integer divide.
-		"zero NumKVHeads": {func(a *Architecture) { a.NumKVHeads = 0 }, "NumKVHeads"},
+		"zero NumKVHeads": {func(a *darch.Architecture) { a.NumKVHeads = 0 }, "NumKVHeads"},
 		// Not a zero, but the same divisor: 5 heads over 2 kv-heads has no grouping.
 		"NumHeads not a multiple of NumKVHeads": {
-			func(a *Architecture) { a.NumHeads, a.NumKVHeads = 5, 2 }, "multiple"},
+			func(a *darch.Architecture) { a.NumHeads, a.NumKVHeads = 5, 2 }, "multiple"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := finalized(validArch())
 			tc.mutate(a)
-			err := a.validateResolved()
+			err := a.ValidateResolved()
 			if err == nil {
 				t.Fatalf("accepted; the guard did not fire")
 			}
@@ -74,8 +76,8 @@ func TestValidateResolved_theZerosThatLookLegal(t *testing.T) {
 func TestValidateResolved_positionInformationMustExist(t *testing.T) {
 	a := validArch()
 	a.RoPEGlobalBase = 0
-	a.finalizeRoPE() // tables stay nil — never populated, as on a real load
-	err := a.validateResolved()
+	a.FinalizeRoPE() // tables stay nil — never populated, as on a real load
+	err := a.ValidateResolved()
 	if err == nil {
 		t.Fatal("accepted an arch with no RoPE table and no learned positions — it would load " +
 			"clean and generate position-blind text (M-06)")
@@ -90,24 +92,24 @@ func TestValidateResolved_positionInformationMustExist(t *testing.T) {
 	t.Run("GPT-2 learned positions", func(t *testing.T) {
 		a := validArch()
 		a.RoPEGlobalBase, a.LearnedPosEmbed = 0, true
-		a.finalizeRoPE()
-		if err := a.validateResolved(); err != nil {
+		a.FinalizeRoPE()
+		if err := a.ValidateResolved(); err != nil {
 			t.Errorf("learned-position arch rejected: %v", err)
 		}
 	})
 	t.Run("Nemotron-H NoPE layers", func(t *testing.T) {
 		a := validArch()
-		a.RoPEGlobalBase, a.nemotron = 0, &nemotronParams{}
-		a.finalizeRoPE()
-		if err := a.validateResolved(); err != nil {
+		a.RoPEGlobalBase, a.Nemotron = 0, &archparts.NemotronParams{}
+		a.FinalizeRoPE()
+		if err := a.ValidateResolved(); err != nil {
 			t.Errorf("nemotron arch rejected: %v", err)
 		}
 	})
 	t.Run("MLA decoupled rope", func(t *testing.T) {
 		a := validArch()
-		a.RoPEGlobalBase, a.mla = 0, &mlaParams{}
-		a.finalizeRoPE()
-		if err := a.validateResolved(); err != nil {
+		a.RoPEGlobalBase, a.MLA = 0, &archparts.MLAParams{}
+		a.FinalizeRoPE()
+		if err := a.ValidateResolved(); err != nil {
 			t.Errorf("MLA arch rejected: %v", err)
 		}
 	})
