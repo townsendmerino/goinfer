@@ -12,4 +12,3 @@ cmd/gate/quick_select.go 1600 -- over the ceiling before the ratchet; split it w
 decoder/config/config.go 1609 -- over the ceiling before the ratchet; split it when next changed
 decoder/gguf.go 1980 -- over the ceiling before the ratchet; split it when next changed
 decoder/model.go 1728 -- over the ceiling before the ratchet; split it when next changed
-internal/app/serveapp/openai.go 1965 -- over the ceiling before the ratchet; split it when next changed
