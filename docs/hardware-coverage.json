@@ -367,12 +367,14 @@
    "predicates": [
     "mem:probe:cuda@goinfer/backend/cuda/register.go",
     "mem:MemInfo@goinfer/backend/cuda/backend.go",
-    "mem:MemInfo@goinfer/backend/cuda/resident.go"
+    "mem:MemInfo@goinfer/backend/cuda/resident.go",
+    "mem:MemInfo@goinfer/backend/cuda/resident_cache.go"
    ],
    "selected_when": "every CUDA plan and resident build; residency, slot count and context follow from what is free",
    "files": [
     "goinfer/backend/cuda/backend.go",
-    "goinfer/backend/cuda/resident.go"
+    "goinfer/backend/cuda/resident.go",
+    "goinfer/backend/cuda/resident_cache.go"
    ],
    "our_machines": "an 8 GB card only",
    "last_executed": [

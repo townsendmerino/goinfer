@@ -71,8 +71,8 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	if err != nil {
 		// An OOM here cannot be retried narrower (an image block must land in one pass and the OOM is a function of this M).
 		// Leaving prefillChunkCap unlearned would repeat it on every image turn, and a context repeatedly driven to
-		// out-of-memory can afterwards launch kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in
-		// resident.go). So halve the budget for the next image call, to the prefillChunked floor.
+		// out-of-memory can afterwards launch kernels that "return SUCCESS and execute NOTHING" (prefillRun.prefillChunkCap).
+		// So halve the budget for the next image call, to the prefillChunked floor.
 		if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 			r.prefillChunkCap.Store(int64(max(chunk/2, prefillMinChunk)))
 		}
