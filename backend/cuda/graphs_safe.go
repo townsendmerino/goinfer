@@ -135,3 +135,10 @@ func (r *cudaResident) admitGraphs() error {
 	}
 	return nil
 }
+
+// graphState is cudaResident's CUDA-graph replay switch and its two debug probes.
+type graphState struct {
+	graphs     bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask  string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+}

@@ -86,3 +86,12 @@ func (r *cudaResident) ledgerTotals() (leases, bytes int64, ok bool) {
 	u := l.Usage()
 	return int64(u.Reserved), u.ReservedRequested, true
 }
+
+// costState is cudaResident's launch cost counting (costCounter). Executor goroutine only.
+type costState struct {
+	// cost, when set, counts the token in progress into costPhase (cost.go); nil is off. Executor goroutine only.
+	cost      *cost.Counter
+	costPhase cost.Phase
+	costNames map[Pipeline]string // each kernel's name, cached
+	costNamed int64               // launches counted through r.launch, for launch_other
+}
