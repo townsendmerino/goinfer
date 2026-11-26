@@ -12,7 +12,7 @@
   "programs": [
     "testdata/lfm2-tiny"
   ],
-  "deps_hash": "sha256:2add6b02d9ca9f61a73f0314410cbd35560377a56869eaae5d5b1a3529397da8",
+  "deps_hash": "sha256:00fc3b26108b0e29fb20706a34e32de00809e5b8809827053de0df7a56f6373e",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
