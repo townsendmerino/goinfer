@@ -650,7 +650,7 @@ func (b *residentBuild) buildNorms(lb *layerBuild) error {
 	H, mk := r.H, b.mk
 	l, lw, lv, L, mixer, hasFFN, isAttn := lb.l, lb.lw, lb.lv, &lb.L, lb.mixer, lb.hasFFN, lb.isAttn
 	// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
-	// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
+	// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is resolved in buildMixer,
 	// so gate on the per-layer truth, not the model-level flag.
 	postOnlyHere := r.postOnly && isAttn
 	if !postOnlyHere {
@@ -820,8 +820,7 @@ func (b *residentBuild) buildAttnKV(lb *layerBuild) error {
 				r.ks[l], r.vs[l] = r.ks[L.kvSrc], r.vs[L.kvSrc]
 			}
 			r.kc[l], r.vc[l] = r.kc[L.kvSrc], r.vc[L.kvSrc]
-			r.layers[l] = *L
-			return nil
+			return nil // buildLayer stores the layer
 		}
 		r.kvSlotBytes[l] = kvBytes
 		r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
