@@ -75,7 +75,7 @@ func isBuilder(p string) bool {
 	if strings.HasSuffix(base, "_test.go") {
 		return false
 	}
-	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") || filepath.Dir(p) == "decoder/config" && strings.HasPrefix(base, "config_")
+	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") || strings.HasPrefix(filepath.ToSlash(p), "decoder/config/config_")
 }
 
 // TestParityKey_shadowMatchesDecoder is VK5 week 2's W1: the shadow key
