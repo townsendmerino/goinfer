@@ -1,0 +1,11 @@
+# Non-test Go files over fileLenCeiling lines (TestQualityScan_fileLengthRatchet): `<file> <lines> -- <reason>`.
+# Each is held at its exact length: a shorter file fails until its line is lowered, so the list reads as the tree does.
+# When the list is empty the ceiling drops to 1,200, then 1,000.
+backend/cuda/prefill.go 1530 -- over the ceiling before the ratchet; split it when next changed
+backend/cuda/resident_build.go 2159 -- over the ceiling before the ratchet; split it when next changed
+backend/cuda/resident.go 2294 -- over the ceiling before the ratchet; split it when next changed
+backend/metal/backend.go 1663 -- over the ceiling before the ratchet; split it when next changed
+backend/metal/batch.go 1702 -- over the ceiling before the ratchet; split it when next changed
+cmd/gate/quick_select.go 1600 -- over the ceiling before the ratchet; split it when next changed
+decoder/config/config.go 1609 -- over the ceiling before the ratchet; split it when next changed
+decoder/model.go 1728 -- over the ceiling before the ratchet; split it when next changed

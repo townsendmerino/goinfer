@@ -21,7 +21,7 @@
 > unbuilt remainder. K3, K4, K6, K7 and K8 stay open and this doc owns them. K2's "single mutex" premise is no longer the
 > shape: admission is `internal/runtime/scheduler:Admit`, N-wide under `serve -max-concurrent`
 > (`docs/tasks/parked/task-concurrency-2026-09.md`). The second halt check still runs inside
-> `internal/app/serveapp/openai.go:loadedModel.tryEnter`, so K2's fix stands, and K8's queued-not-started case still applies.
+> `internal/app/serveapp/openai_generate.go:loadedModel.tryEnter`, so K2's fix stands, and K8's queued-not-started case still applies.
 
 <!-- ledger -->
 | id | state | next | evidence |
@@ -39,7 +39,7 @@
 ## Where goinfer sits, and what that means for a kill switch
 
 goinfer is the **model server**. `serve` turns prompts into tokens and, when a client asks for
-tools, emits `tool_calls` (`internal/app/serveapp/openai.go:chatMessage`); **the client executes them**.
+tools, emits `tool_calls` (`internal/app/serveapp/openai_types.go:chatMessage`); **the client executes them**.
 The one in-tree agent (`demo/agent`) has a single read-only tool — ken `search` over MCP
 (`demo/agent/agent/kenclient.go:kenClient.search`). So goinfer cannot, by itself, stop a client that already
 received a `tool_call` from acting on it, and it cannot undo anything. What it can do, and what
@@ -99,7 +99,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/app/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/app/serveapp/openai.go:loadedModel.drive` and `internal/app/serveapp/openai.go:loadedModel.driveVL` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/app/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/app/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/app/serveapp/openai_generate.go:loadedModel.drive` and `internal/app/serveapp/openai_generate.go:loadedModel.driveVL` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/app/serveapp/helpers.go`'s `reqID()`.
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET
 /admin/generations` lists in-flight; `POST /admin/generations/{id}/cancel` calls the cancel and
