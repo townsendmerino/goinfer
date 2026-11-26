@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           # binary loaders (a panic here takes down a model load from an untrusted file)
-          - { pkg: decoder, fn: FuzzGGUFConfig }
+          - { pkg: internal/runtime/ggufconfig, fn: FuzzGGUFConfig }
           - { pkg: decoder, fn: FuzzLoadSerializedWeights }
           - { pkg: decoder, fn: FuzzParseQuantConfig }
           - { pkg: decoder, fn: FuzzGPTQReconstruct }

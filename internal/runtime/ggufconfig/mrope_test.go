@@ -1,10 +1,9 @@
-package decoder
+package ggufconfig
 
 import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
-	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 func kvI32Arr(k string, vs []int32) ggufKV {
@@ -18,7 +17,8 @@ func kvI32Arr(k string, vs []int32) ggufKV {
 // TestGGUFMRopeJSON: a Qwen3.5 GGUF's rope.dimension_sections ([11,11,10,0], llama.cpp's four) becomes the
 // safetensors config's mrope_section [11,11,10] with mrope_interleaved, so a GGUF text model can take an image turn
 // (docs/multimodal.md F5); and a missing key, a nonzero fourth section, a negative one, or all zero leaves it out, so
-// such a model stays text-only and an image turn is refused by name (rope.ParseMRoPEFlat then returns no section).
+// such a model stays text-only and an image turn is refused by name. internal/runtime/rope's TestParseMRopeFlat_ggufSynthesizedForm
+// reads the first case's form back.
 func TestGGUFMRopeJSON(t *testing.T) {
 	cases := []struct {
 		kvs  []ggufKV
@@ -39,9 +39,5 @@ func TestGGUFMRopeJSON(t *testing.T) {
 		if got := ggufMRopeJSON(g, "qwen35"); got != c.want {
 			t.Errorf("case %d: %q, want %q", i, got, c.want)
 		}
-	}
-	sec, inter := rope.ParseMRoPEFlat([]byte(`{"rope_type":"default","rope_theta":1e7,"partial_rotary_factor":0.25,"mrope_section":[11,11,10],"mrope_interleaved":true}`))
-	if len(sec) != 3 || sec[0] != 11 || sec[2] != 10 || !inter {
-		t.Errorf("parseMRopeFlat of the synthesized form: %v, %v", sec, inter)
 	}
 }

@@ -106,3 +106,12 @@ func TestApplyRoPE_partialRotary(t *testing.T) {
 		t.Errorf("rotated block unchanged, expected rotation at pos=%d", pos)
 	}
 }
+
+// TestParseMRopeFlat_ggufSynthesizedForm: the rope_parameters form internal/runtime/ggufconfig synthesizes for a Qwen3.5
+// GGUF's m-RoPE split (its TestGGUFMRopeJSON) parses back to the section and the interleave flag.
+func TestParseMRopeFlat_ggufSynthesizedForm(t *testing.T) {
+	sec, inter := ParseMRoPEFlat([]byte(`{"rope_type":"default","rope_theta":1e7,"partial_rotary_factor":0.25,"mrope_section":[11,11,10],"mrope_interleaved":true}`))
+	if len(sec) != 3 || sec[0] != 11 || sec[2] != 10 || !inter {
+		t.Errorf("ParseMRoPEFlat of the synthesized form: %v, %v", sec, inter)
+	}
+}
