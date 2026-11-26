@@ -34,6 +34,26 @@ func addBias(x, b []float32) {
 	}
 }
 
+// attnParamsFor is the attention parameters the loops that do not walk a program read from the Architecture: the cache's window
+// on a local layer (the window the cache was built with), every key on a global one.
+func attnParamsFor(a *Architecture, cache *KVCache, global bool) attentionParams {
+	p := attentionParams{Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnBatchedAcc64}
+	if !global && cache.window > 0 {
+		p.Window = cache.window
+	}
+	return p
+}
+
+// attnParamsQueryFor is attnParamsFor for attendQuery's callers, with Llama 4's chunk on its RoPE layers.
+func attnParamsQueryFor(a *Architecture, cache *KVCache, layer int, global bool) attentionParams {
+	p := attnParamsFor(a, cache, global)
+	p.Order = attnQuery
+	if l4 := a.llama4; l4 != nil && l4.chunkSize > 0 && layer < len(l4.useRope) && l4.useRope[layer] {
+		p.Chunk = l4.chunkSize
+	}
+	return p
+}
+
 // attendQuery computes the attention context for a single query q (already
 // RoPE'd / QK-normed, and whose K/V are already appended to the cache) over the
 // layer's stored keys/values in the causal/window range, into ctx ([qDim]):
@@ -45,7 +65,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
 		return
 	}
-	attendQueryP(arch.attnParamsQueryFor(cache, layer, global), q, ctx, scores, cache, layer, pos, arch)
+	attendQueryP(attnParamsQueryFor(arch, cache, layer, global), q, ctx, scores, cache, layer, pos, arch)
 }
 
 // attendQueryPFanned counts attendQueryP calls that fanned their heads out, so a test can tell the schedule was taken.

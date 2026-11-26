@@ -1,4 +1,5 @@
 # The asset registry from a test two levels down (nobara-sb01, 2026-11-06)
+<!-- citations-at: bc313005c -->
 
 `decoder/assets.go:repoRoot` was the constant `".."`. The GPU backends moved to `backend/<name>/` on 2026-11-03, so from `backend/cuda` and `backend/metal` the registry opened
 `../testdata/assets.json`, failed, and every `decoder.AssetPathForTest` call skipped (`asset registry unreadable`). A skipped test prints `ok`; nothing went red. Found 2026-11-06 while reading the MEM11 gate (`../mem11-cuda-2026-11/README.md`).
