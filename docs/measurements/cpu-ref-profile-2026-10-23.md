@@ -43,7 +43,7 @@ finished its first batch of three at 2 h 24 min (about 48 min of throughput per 
 
 ## 2. Where the time goes
 
-**CR7B: about 97% of prefill is one function, aikit's amd64 weight-only int8 matmul.** It is `linalg/quant.go:MatmulBTQ8Into` →
+**CR7B: about 97% of prefill is one function, aikit's amd64 weight-only int8 matmul.** It is `linalg/quant.go:matmulBTQ8Into` (exported as `MatmulBTQ8Into` until aikit v1.80.0) →
 `linalg/q8span_other.go:q8Span` → `linalg/quant.go:q8SpanColumn` → `dotFMA`, and its share is 96.97% at K=1024 and 96.90% at
 K=2048. Exact (f64) attention, `decoder/forwardn.go:attendBatchedHeadsP` with `qkAcc64AVX4` and `avAcc64AVX32`, is 2.6% and 2.9%.
 Everything else is under 1%. Decode is a different mix: 54% `dequantI8AVX2` (widening int8 weight rows), 20% `dotFMA`.
