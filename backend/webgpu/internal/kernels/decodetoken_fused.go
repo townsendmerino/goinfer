@@ -27,190 +27,80 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	if err := c.ensureAttn(); err != nil {
 		return nil, err
 	}
-	kvDim := nKV * hd
-	var keep []func()
-	rel := func() {
-		for _, f := range keep {
-			f()
-		}
-	}
-	defer rel()
-	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, releaser(b)) }
-	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
 	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
 	}
-	defer enc.Release()
-
-	// buildErr accumulates the FIRST device-allocation/bind failure, mirroring
-	// newDecodeRunner: the storF/uni/bind/disp helpers short-circuit once it is set, and the
-	// function returns it before Submit, so VRAM exhaustion is an error the caller can fall back
-	// on, never a panic from binding a nil buffer.
-	var buildErr error
-	storF := func(n int) *wgpu.Buffer {
-		if buildErr != nil {
-			return nil
-		}
-		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-		if e != nil {
-			buildErr = e
-			return nil
-		}
-		keepBuf(b)
-		return b
+	fe := &fusedEnc{
+		c: c, name: "DecodeTokenFused", storUsage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+		hidden: hidden, nH: nH, nKV: nKV, hd: hd, inter: inter, start: start, kvDim: nKV * hd,
+		eps: eps, scale: scale, addOne: addOne, enc: enc,
 	}
-	uni := func(v []uint32) *wgpu.Buffer {
-		if buildErr != nil {
-			return nil
-		}
-		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
-		if e != nil {
-			buildErr = e
-			return nil
-		}
-		keepBuf(b)
-		return b
-	}
-	bind := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
-		if buildErr != nil {
-			return nil
-		}
-		es := make([]wgpu.BindGroupEntry, len(bufs))
-		for i, b := range bufs {
-			if b == nil { // an upstream storF/uni failed; don't deref a nil buffer
-				buildErr = fmt.Errorf("gpu: DecodeTokenFused: nil buffer for binding %d (allocation failed)", i)
-				return nil
-			}
-			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
-		}
-		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
-		if e != nil {
-			buildErr = e
-			return nil
-		}
-		keepBG(bg)
-		return bg
-	}
-	disp := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32) {
-		if buildErr != nil || bg == nil {
-			return
-		}
-		pass := enc.BeginComputePass(nil)
-		pass.SetPipeline(pl)
-		pass.SetBindGroup(0, bg, nil)
-		pass.DispatchWorkgroups(gx, gy, 1)
-		if e := pass.TryEnd(); e != nil {
-			buildErr = fmt.Errorf("gpu: DecodeTokenFused: pass: %w", e)
-		}
-		pass.Release()
-	}
-	// op shorthands recording into enc:
-	rms := func(in, w *wgpu.Buffer) *wgpu.Buffer {
-		out := storF(hidden)
-		p := uni([]uint32{uint32(hidden), F32bits(eps), BoolU32(addOne), 0})
-		// One workgroup covers the whole row (the resident runner dispatches this same pipeline
-		// 1×1). 64 was 64× redundant work + 64 unsynchronised writes to the same addresses.
-		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
-		return out
-	}
-	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		kp := padK(K)
-		q := storF((kp / 4))
-		s := storF(1)
-		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
-		disp(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)
-		return q, s
-	}
-	gemv := func(aq, as *wgpu.Buffer, rm *ResidentW8A8) *wgpu.Buffer {
-		out := storF(rm.rows)
-		p := uni([]uint32{1, uint32(rm.kp), uint32(rm.rows), 0})
-		bg := bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, out, p)
-		gx, gy := GemvGrid(rm.rows)
-		disp(c.gemvPipeline, bg, gx, gy)
-		return out
-	}
-	rope := func(vec, invFreq *wgpu.Buffer, heads int) {
-		half := hd / 2
-		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), F32bits(1), 0, 0, 0})
-		disp(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, p), uint32(heads*half+63)/64, 1)
-	}
-	residual := func(x, y *wgpu.Buffer) {
-		p := uni([]uint32{uint32(hidden), 0, 0, 0})
-		disp(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
-	}
-	copyKV := func(src, cache *wgpu.Buffer) {
-		if buildErr != nil || src == nil || cache == nil {
-			return
-		}
-		if e := enc.TryCopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4)); e != nil {
-			buildErr = fmt.Errorf("gpu: DecodeTokenFused: KV copy: %w", e)
-		}
-	}
+	defer fe.release()
 
 	xd, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	keepBuf(xd)
-
-	// FeatAttnSink — always bound (WGSL bind groups can't
-	// bind a null storage buffer); this test-only path never carries a real sink, so one shared
-	// harmless dummy + hasSink=0 for every layer, matching attnShaderWGSL's convention.
-	noSinks := storF(1)
-	noHasSink := uni([]uint32{0, 0, 0, 0})
+	fe.keepBuf(xd)
+	fe.noSinks = fe.storF(1)
+	fe.noHasSink = fe.uni([]uint32{0, 0, 0, 0})
 
 	for i := range m.Layers {
-		lw := &m.Layers[i]
-		// attention sub-block
-		xn := rms(xd, lw.Attn.Norm.buf)
-		aq, as := quant(xn, hidden)
-		q := gemv(aq, as, lw.Attn.QProj)
-		k := gemv(aq, as, lw.Attn.KProj)
-		v := gemv(aq, as, lw.Attn.VProj)
-		rope(q, lw.Attn.InvFreq.buf, nH)
-		rope(k, lw.Attn.InvFreq.buf, nKV)
-		copyKV(k, lw.Attn.KCache.buf)
-		copyKV(v, lw.Attn.VCache.buf)
-		ctxv := storF(nH * hd)
-		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), F32bits(scale), 0})
-		disp(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, noSinks, ap, noHasSink), uint32(nH), 1)
-		cq, cs := quant(ctxv, nH*hd)
-		attnOut := gemv(cq, cs, lw.Attn.OProj)
-		residual(xd, attnOut)
-		// MLP sub-block
-		xn2 := rms(xd, lw.MLPNorm.buf)
-		mq, ms := quant(xn2, hidden)
-		gate := gemv(mq, ms, lw.Gate)
-		up := gemv(mq, ms, lw.Up)
-		mid := storF(inter)
-		sp := uni([]uint32{uint32(inter), 0, 0, 0})
-		disp(c.swigluPipeline, bind(c.swigluLayout, gate, up, mid, sp), uint32(inter+63)/64, 1)
-		dq, ds := quant(mid, inter)
-		down := gemv(dq, ds, lw.Down)
-		residual(xd, down)
+		fe.fusedLayer(&m.Layers[i], xd, pos)
 	}
 	// final norm + LM head
-	xnf := rms(xd, m.FinalNorm.buf)
-	fq, fs := quant(xnf, hidden)
-	logits := gemv(fq, fs, m.LMHead)
+	xnf := fe.rms(xd, m.FinalNorm.buf)
+	fq, fs := fe.quant(xnf, hidden)
+	logits := fe.gemv(fq, fs, m.LMHead)
 
 	// A device-allocation/bind failure anywhere above surfaces here as an error, not a panic or a
 	// read of an uninitialised `logits` buffer.
-	if buildErr != nil {
-		return nil, buildErr
+	if fe.buildErr != nil {
+		return nil, fe.buildErr
 	}
+	return fe.readOne(logits, m.LMHead.rows)
+}
 
-	stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+// fusedLayer encodes one layer of the one row at pos: the attention sub-block, then the MLP sub-block.
+func (fe *fusedEnc) fusedLayer(lw *LayerW, xd *wgpu.Buffer, pos int) {
+	hidden, nH, nKV, hd, inter := fe.hidden, fe.nH, fe.nKV, fe.hd, fe.inter
+	xn := fe.rms(xd, lw.Attn.Norm.buf)
+	aq, as := fe.quant(xn, hidden)
+	q := fe.gemv(aq, as, lw.Attn.QProj)
+	k := fe.gemv(aq, as, lw.Attn.KProj)
+	v := fe.gemv(aq, as, lw.Attn.VProj)
+	fe.rope(q, lw.Attn.InvFreq.buf, nH, pos)
+	fe.rope(k, lw.Attn.InvFreq.buf, nKV, pos)
+	fe.copyKV(k, lw.Attn.KCache.buf, pos)
+	fe.copyKV(v, lw.Attn.VCache.buf, pos)
+	ctxv := fe.attn(q, lw, pos)
+	cq, cs := fe.quant(ctxv, nH*hd)
+	attnOut := fe.gemv(cq, cs, lw.Attn.OProj)
+	fe.residual(xd, attnOut)
+	xn2 := fe.rms(xd, lw.MLPNorm.buf)
+	mq, ms := fe.quant(xn2, hidden)
+	gate := fe.gemv(mq, ms, lw.Gate)
+	up := fe.gemv(mq, ms, lw.Up)
+	mid := fe.swiglu(gate, up)
+	dq, ds := fe.quant(mid, inter)
+	down := fe.gemv(dq, ds, lw.Down)
+	fe.residual(xd, down)
+}
+
+// readOne copies the logits to a staging buffer, submits the one command buffer and reads them back after one fence.
+func (fe *fusedEnc) readOne(logits *wgpu.Buffer, vocab int) ([]float32, error) {
+	c := fe.c
+	stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(stag)
-	if err := enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4)); err != nil {
+	if err := fe.enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(vocab*4)); err != nil {
 		return nil, fmt.Errorf("gpu: DecodeTokenFused: logits copy: %w", err)
 	}
-	cmd, err := enc.TryFinish(nil)
+	cmd, err := fe.enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -218,15 +108,15 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	c.queue.Submit(cmd) // the ONE submit
 
 	st := wgpu.MapAsyncStatus(0)
-	if err := stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(m.LMHead.rows*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
+	if err := stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
 	}
 	c.device.Poll(true, nil) // the ONE fence
 	if st != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeTokenFused map failed: %v", st)
 	}
-	out := make([]float32, m.LMHead.rows)
-	copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(m.LMHead.rows*4))))
+	out := make([]float32, vocab)
+	copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(vocab*4))))
 	stag.TryUnmap()
 	return out, nil
 }
