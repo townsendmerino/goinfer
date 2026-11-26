@@ -232,6 +232,8 @@ type KVCache struct {
 	// analogue of delta/mamba below, and the smallest of the three: a window of
 	// K-1 vectors per layer and no recurrent matrix at all.
 	conv []*shortConvState
+	// ink is an Inkling 2 visit's four short-convolution windows (inkling2ConvState), one per visit; nil for other families.
+	ink []*inkling2ConvState
 
 	// mamba holds the Mamba-2 recurrent state ({conv window, SSM state}) for
 	// Granite-4.0-H's mamba layers (nil entry on attention layers, nil slice on
@@ -838,7 +840,7 @@ func (c *KVCache) Pos() int { return c.pos }
 // conversation's window into the next (TruncateTo(0) leaving it intact) and reports a partial rewind exact, so a rewound prefix
 // is warm-reused over stale windows. recurrent_census_test.go asks the struct, so a new kind cannot be missed.
 func (c *KVCache) hasRecurrentState() bool {
-	return c.mamba != nil || c.delta != nil || c.conv != nil || c.kda != nil
+	return c.mamba != nil || c.delta != nil || c.conv != nil || c.kda != nil || c.ink != nil
 }
 
 // resetRecurrent re-zeroes the rolling state of every recurrent kind (Mamba-2, Gated DeltaNet, LFM2 conv, KDA: conv windows and
@@ -851,6 +853,11 @@ func (c *KVCache) resetRecurrent() {
 	for _, st := range c.conv {
 		if st != nil {
 			st.convWin = nil
+		}
+	}
+	for _, st := range c.ink {
+		if st != nil {
+			st.reset()
 		}
 	}
 	for _, st := range c.mamba {

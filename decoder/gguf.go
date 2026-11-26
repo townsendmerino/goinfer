@@ -456,7 +456,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFi
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
-		if len(dims) != 2 || dims[0] != in || dims[1] != out {
+		if len(dims) != 2 || dims[0] != in || (dims[1] != out && !paddedVocabRows(arch, dims[1], out)) {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
 		// into reads the mapping and writes dst alone, so every row range shares it.
@@ -677,6 +677,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFi
 
 	if lp := arch.Llama4; lp != nil {
 		return b.loadLlama4(lp)
+	}
+
+	if ip := arch.Inkling2; ip != nil {
+		return b.loadInkling2(ip)
 	}
 
 	return b.loadLayers()

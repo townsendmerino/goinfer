@@ -49,6 +49,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
 	// ever tightened past ~1e-5, round the scale to bf16.
 	emb := m.program().Embed
+	if hw := arch.Inkling2Head; hw != nil { // Inkling 2 normalizes a token's embedding (an image row skips it)
+		normact.RMS(h, hw.EmbedNorm, 1, hidden, arch.NormEps, false)
+	}
 	if emb.Scale != 0 && emb.Scale != 1 {
 		scale := float32(emb.Scale)
 		for i := range h {

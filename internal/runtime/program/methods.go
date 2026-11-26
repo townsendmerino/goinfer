@@ -11,7 +11,7 @@ import (
 
 // Recurrent reports whether the operation mutates per-layer state in place, which no positional rewind restores.
 func (k OpKind) Recurrent() bool {
-	return k == OpKDA || k == OpShortConv || k == OpMamba2 || k == OpDeltaNet
+	return k == OpKDA || k == OpShortConv || k == OpMamba2 || k == OpDeltaNet || k == OpInkling2
 }
 
 // GenericKinds are the operations of the generic layer: the ones the batched and multi-sequence walkers implement, LoRA's
@@ -21,7 +21,7 @@ var GenericKinds = []OpKind{OpNorm, OpProjQKV, OpQKNorm, OpRope, OpAttnTemp, OpA
 func (k OpKind) String() string {
 	names := [...]string{OpNorm: "norm", OpProjQKV: "proj-qkv", OpQKNorm: "qk-norm", OpRope: "rope", OpAttnTemp: "attn-temp",
 		OpAttention: "attention", OpOutGate: "out-gate", OpProjO: "proj-o", OpFFN: "ffn", OpResidual: "residual", OpMLA: "mla", OpKDA: "kda", OpShortConv: "short-conv", OpMamba2: "mamba2", OpDeltaNet: "deltanet", OpGatedAttn: "gated-attn", OpGemma4Attn: "gemma4-attn", OpGemma4MoE: "gemma4-moe", OpPLE: "ple",
-		OpLayerScale: "layer-scale"}
+		OpLayerScale: "layer-scale", OpInkling2: "inkling2"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}

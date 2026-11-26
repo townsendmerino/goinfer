@@ -109,6 +109,10 @@ type LayerWeights struct {
 	// gelu-tanh fused-gate_up experts, three parallel-branch norms), so gemma4
 	// carries its own struct consumed by gemma4MoEFFN. Stored f32 (parity-first).
 	Gemma4MoE *archparts.Gemma4MoEWeights
+
+	// Inkling holds an Inkling 2 layer's tensors beyond the shared fields (its convolutions, clips, relative bias, sinks,
+	// attention-residual queries and loop controllers). nil for every other family.
+	Inkling *archparts.Inkling2LayerWeights
 }
 
 // Weights is the immutable per-checkpoint bundle. Embeddings are TIED:

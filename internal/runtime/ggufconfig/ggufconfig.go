@@ -78,6 +78,8 @@ var ggufRegistry = map[string]ggufConfigAdapter{
 	"phi3":           ggufPhi3Config,
 	"llama4":         ggufLlama4Config,
 	"gpt-oss":        ggufGptOssConfig,
+	"inkling2":       func(g *embed.GGUFFile) (*Config, error) { return ggufInkling2Config(g, "inkling2") },
+	"inkling2_loop":  func(g *embed.GGUFFile) (*Config, error) { return ggufInkling2Config(g, "inkling2_loop") },
 }
 
 func knownGGUFArchitectures() string {

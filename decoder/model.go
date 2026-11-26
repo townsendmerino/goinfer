@@ -757,6 +757,11 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		c.manualPos = true
 		c.conv = layerStates(a.NumLayers, a.IsConvLayer, newShortConvState)
 	}
+	if a.Inkling2 != nil {
+		// Every visit holds KV and four conv windows; manualPos because walkToken advances once per token after the visits.
+		c.manualPos = true
+		c.ink = layerStates(a.NumLayers, func(int) bool { return true }, newInkling2ConvState)
+	}
 	if a.Granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
 		// each mamba layer. manualPos because the mamba layers never Append.

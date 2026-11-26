@@ -20,6 +20,7 @@ type (
 	deltaNetOpParams = program.DeltaNetOpParams
 	gatedAttnParams  = program.GatedAttnParams
 	gemma4AttnParams = program.Gemma4AttnParams
+	inkling2Params   = program.Inkling2Params
 	normEpsParams    = program.NormEpsParams
 	embedParams      = program.EmbedParams
 	headParams       = program.HeadParams
@@ -46,6 +47,7 @@ const (
 	opGemma4MoE      = program.OpGemma4MoE
 	opPLE            = program.OpPLE
 	opLayerScale     = program.OpLayerScale
+	opInkling2       = program.OpInkling2
 	regH             = program.RegH
 	regX             = program.RegX
 	regA             = program.RegA

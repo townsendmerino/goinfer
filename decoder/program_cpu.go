@@ -57,6 +57,10 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 			g4traceHidden(-1, h)
 		}
 	}
+	var ink *inkling2Token // Inkling 2's per-token attention-residual blocks
+	if arch.Inkling2 != nil {
+		ink = new(inkling2Token)
+	}
 	for l, ops := range prog.Layers {
 		if ssmStopLayer >= 0 && l > ssmStopLayer {
 			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
@@ -204,6 +208,13 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 			case opShortConv:
 				copy(m.reg(o.Out, h, scr), shortConvStep(m.reg(o.In, h, scr), lw.ShortConv, *arch.LFM2, arch.HiddenDim, cache.conv[l]))
 				lastFFN = false
+			case opInkling2:
+				if ink == nil {
+					return nil, fmt.Errorf("decoder: layer %d: an Inkling 2 visit on a model without Inkling 2 geometry", l)
+				}
+				if err := m.inkling2Visit(o, h, lw, cache, l, pos, ink); err != nil {
+					return nil, err
+				}
 			case opKDA:
 				kp := *arch.KDA
 				kp.LowerBound = o.KDA.LowerBound
@@ -222,6 +233,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 		if seamPlantForTest != plantCaptureEarly {
 			m.captureLayer(cache, l, h)
 		}
+	}
+	if ink != nil {
+		m.inkling2Final(h, ink)
 	}
 	if cache.manualPos {
 		cache.Advance() // a layer that stores no K/V row (a latent, a recurrent state) does not step the position

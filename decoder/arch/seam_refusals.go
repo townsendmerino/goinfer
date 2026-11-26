@@ -6,5 +6,5 @@ package arch
 // outcome and text from before the walker: f16 KV's reason, the batched CPU decode's and LoRA's.
 func (a *Architecture) OwnLoopFamily() bool {
 	return a.Gemma4 != nil || a.Qwen35 != nil || a.LFM2 != nil || a.Granite != nil || a.Nemotron != nil || a.KDA != nil ||
-		a.MLA != nil || a.Llama4 != nil || a.GPTOSS != nil
+		a.MLA != nil || a.Llama4 != nil || a.GPTOSS != nil || a.Inkling2 != nil
 }

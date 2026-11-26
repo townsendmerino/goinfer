@@ -357,6 +357,10 @@ type Config struct {
 	// fail loudly rather than silently skip soft-capping.
 	FinalLogitSoftcap float64 `json:"final_logit_softcapping"`
 	AttnLogitSoftcap  float64 `json:"attn_logit_softcapping"`
+
+	// Inkling2 carries the Inkling 2 geometry (model_type inkling2 / inkling2_loop) that has no flat config.json field here;
+	// the GGUF reader fills it. Serialized under its own key so a .giw keeps it.
+	Inkling2 *Inkling2Config `json:"goinfer_inkling2,omitempty"`
 }
 
 // IsGlobalLayer reports whether layer i is a global (full) attention layer

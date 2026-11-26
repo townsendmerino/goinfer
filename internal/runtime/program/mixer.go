@@ -14,6 +14,7 @@ const (
 	MixerMLA                    // latent-KV attention
 	MixerKDA                    // Kimi Delta Attention, which no resident runs
 	MixerShortConv              // LFM2's gated short convolution, which no resident runs
+	MixerInkling2               // an Inkling 2 layer visit, attention and MoE in one operation, which no resident runs
 )
 
 // MixerOf is a layer's mixer and whether a feed-forward block follows it, read from the layer's operations: the program's form
@@ -35,6 +36,8 @@ func MixerOf(ops []Op) (mixer Mixer, ffn bool) {
 			mixer = MixerKDA
 		case OpShortConv:
 			mixer = MixerShortConv
+		case OpInkling2:
+			mixer, ffn = MixerInkling2, true
 		case OpFFN, OpGemma4MoE:
 			ffn = true
 		}
@@ -66,6 +69,8 @@ func (x Mixer) String() string {
 		return "KDA"
 	case MixerShortConv:
 		return "short convolution"
+	case MixerInkling2:
+		return "Inkling 2 visit"
 	}
 	return fmt.Sprintf("mixer(%d)", uint8(x))
 }
