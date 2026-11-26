@@ -24,6 +24,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -69,7 +70,7 @@ func TestQwen25VLReal_gate(t *testing.T) {
 		t.Fatalf("arch = %q, want qwen2_5_vl", m.w.arch.Name)
 	}
 
-	mropePos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	mropePos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}

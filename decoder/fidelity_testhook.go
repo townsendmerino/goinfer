@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -110,10 +111,10 @@ func (m *Model) PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx context.Conte
 	return m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, imageFeats, spans, cache)
 }
 
-// MRopePositionsForTest exposes mropePositions, Qwen2.5-VL's per-token (t,h,w) rotary positions from the image grid, so
-// a cross-package test can reproduce GenerateQwenVL's cache.mropeDelta.
+// MRopePositionsForTest exposes rope.MRoPEPositions, Qwen2.5-VL's per-token (t,h,w) rotary positions from the image grid, so
+// a cross-package test can reproduce GenerateQwenVL's cache.rope.MRoPEDelta.
 func MRopePositionsForTest(ids []int, imageToken int, gridTHW [][3]int, merge int) ([][3]int, error) {
-	return mropePositions(ids, imageToken, gridTHW, merge)
+	return rope.MRoPEPositions(ids, imageToken, gridTHW, merge)
 }
 
 // MRopeDeltaForTest exposes the KVCache's m-RoPE decode-position delta (set by prefillLogitsQwenVL): scalar decode past

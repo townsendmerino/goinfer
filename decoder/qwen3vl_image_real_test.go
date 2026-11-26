@@ -23,6 +23,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -95,7 +96,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 	if imgLen*hidden != len(merged) || len(deep) == 0 {
 		t.Fatalf("%d image tokens x %d against %d merged values, %d DeepStack sets", imgLen, hidden, len(merged), len(deep))
 	}
-	mp, err := mropePositions(in.IDs, in.Tok, [][3]int{in.Grid}, in.Merge)
+	mp, err := rope.MRoPEPositions(in.IDs, in.Tok, [][3]int{in.Grid}, in.Merge)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 		cache := m.NewCache(len(in.IDs) + 1)
 		h := m.embedN(in.IDs)
 		copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], merged)
-		cache.mropePos, cache.mropeDelta = mp, mropeDelta(mp, len(in.IDs))
+		cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(in.IDs))
 		cache.deepstack = ds
 		hN, err := m.runLayersFromEmbedN(context.Background(), h, cache, fast)
 		if err != nil {

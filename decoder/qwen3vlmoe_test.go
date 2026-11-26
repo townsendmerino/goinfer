@@ -10,6 +10,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -112,7 +113,7 @@ func qwen3vlmoeImage(t *testing.T, m *Model, g qwen3vlmoeGolden, mp [][3]int, de
 	}
 	spans := []ImageSpan{{Pos: pos, Len: n}}
 	cache := m.NewCache(len(ids))
-	cache.mropePos, cache.mropeDelta = mp, mropeDelta(mp, len(ids))
+	cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(ids))
 	cache.deepstack = &deepstackRows{spans: spans, rows: deep}
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, g.Image.Merged, hidden)
@@ -133,7 +134,7 @@ func TestQwen3VLMoe_tinyMatchesHF(t *testing.T) {
 		t.Errorf("text: worst position cosine %.9f under %.5f", ct, bar)
 	}
 
-	mp, err := mropePositions(g.Image.IDs, g.ImageToken, [][3]int{g.Image.Grid}, g.Merge)
+	mp, err := rope.MRoPEPositions(g.Image.IDs, g.ImageToken, [][3]int{g.Image.Grid}, g.Merge)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +165,7 @@ func TestQwen3VLMoe_tinyMatchesHF(t *testing.T) {
 func TestQwen3VLMoe_tinyPlantedDefects(t *testing.T) {
 	m, g := loadQwen3VLMoeTiny(t)
 	const bar = 0.99999
-	mp, err := mropePositions(g.Image.IDs, g.ImageToken, [][3]int{g.Image.Grid}, g.Merge)
+	mp, err := rope.MRoPEPositions(g.Image.IDs, g.ImageToken, [][3]int{g.Image.Grid}, g.Merge)
 	if err != nil {
 		t.Fatal(err)
 	}

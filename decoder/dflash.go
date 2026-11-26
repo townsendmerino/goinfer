@@ -13,6 +13,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -424,71 +426,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDr
 func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, true) }
 
 func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
-	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	c, theta, err := readDFlashConfig(dir)
 	if err != nil {
-		return nil, fmt.Errorf("dflash: read config: %w", err)
-	}
-	var c dflashConfig
-	if err := json.Unmarshal(cfgBytes, &c); err != nil {
-		return nil, fmt.Errorf("dflash: parse config: %w", err)
-	}
-	// Refuse DFlash 2. A v2 config carries every field this loader reads and most of its tensors are v1-shaped, so it would
-	// load without error and silently drop the two-tap dynamic convolutions (layers.N.{attention,mlp}_conv.*) and the
-	// candidate selector (candidate_selector.*). The convs sit before and after every attention and FFN sublayer, so
-	// dropping them changes every layer's output. Verify is lossless, so the failure is not wrong tokens but a drafter
-	// that drafts badly (lower acceptance, slower than v1) with no diagnostic. Detected from config rather than tensor
-	// names because it is cheaper and is what the publisher controls; a v2 checkpoint that omitted these keys would still
-	// be caught by the missing-tensor path. DFlash 2 support is unbuilt: docs/spec/08-dspark-dflash.md, section "DFlash 2".
-	if c.DFlash.ConvKernelSize > 0 || c.DFlash.SelectorRank > 0 {
-		return nil, fmt.Errorf("dflash: %s is a DFlash 2 checkpoint (conv_kernel_size=%d, "+
-			"selector_rank=%d) and this loader implements v1 — it would load and silently ignore "+
-			"the dynamic-conv and candidate-selector weights, giving a drafter that verifies losslessly "+
-			"but drafts worse than v1. DFlash 2 is not supported yet (docs/spec/08-dspark-dflash.md, "+
-			"section \"DFlash 2\")", dir, c.DFlash.ConvKernelSize, c.DFlash.SelectorRank)
-	}
-	// speculators dialect: the layer geometry lives one level down. Decode it into
-	// the SAME struct so every field below is read once, from one place, whichever
-	// dialect the checkpoint used. Top-level keys already parsed (block_size,
-	// mask_token_id, the tap list) are not repeated there, so this cannot clobber them.
-	if len(c.TransformerLayerConfig) > 0 && c.HiddenSize == 0 {
-		if err := json.Unmarshal(c.TransformerLayerConfig, &c); err != nil {
-			return nil, fmt.Errorf("dflash: parse transformer_layer_config: %w", err)
-		}
-	}
-	if c.HeadDim == 0 {
-		c.HeadDim = c.HiddenSize / c.NumAttentionHeads
-	}
-	if c.BlockSize == 0 {
-		c.BlockSize = c.DFlash.BlockSize
-	}
-	// Taps and mask token in whichever spelling this checkpoint uses.
-	if len(c.DFlash.TargetLayerIDs) == 0 {
-		c.DFlash.TargetLayerIDs = c.AuxHiddenStateLayerIDs
-	}
-	if c.MaskTokenIDTop != nil && c.DFlash.MaskTokenID == 0 {
-		c.DFlash.MaskTokenID = *c.MaskTokenIDTop
-	}
-	switch {
-	case c.HiddenSize <= 0 || c.NumHiddenLayers <= 0 || c.NumAttentionHeads <= 0:
-		return nil, fmt.Errorf("dflash: bad dims (hidden=%d layers=%d heads=%d)", c.HiddenSize, c.NumHiddenLayers, c.NumAttentionHeads)
-	case c.BlockSize < 2:
-		return nil, fmt.Errorf("dflash: block_size must be >= 2, got %d", c.BlockSize)
-	case len(c.DFlash.TargetLayerIDs) == 0:
-		return nil, fmt.Errorf("dflash: no taps — need dflash_config.target_layer_ids or aux_hidden_state_layer_ids")
-	case c.RopeTheta <= 0 && len(c.RopeParameters) == 0:
-		return nil, fmt.Errorf("dflash: no rope_theta and no rope_parameters")
-	}
-
-	theta := c.RopeTheta
-	if len(c.RopeParameters) > 0 {
-		spec, _, perr := parseRopeFlat(c.RopeParameters)
-		if perr != nil {
-			return nil, fmt.Errorf("dflash: rope_parameters: %w", perr)
-		}
-		theta = spec.base
-	}
-	if theta <= 0 {
-		return nil, fmt.Errorf("dflash: rope_theta must be >0, got %v", theta)
+		return nil, err
 	}
 
 	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "model.safetensors"))
@@ -507,7 +447,7 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	d := &DFlashDrafter{
 		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
 		inter: c.IntermediateSize, normEps: c.RMSNormEps,
-		invFreq:   computeInvFreq(theta, hd, nil),
+		invFreq:   rope.ComputeInvFreq(theta, hd, nil),
 		layers:    make([]dflashLayer, c.NumHiddenLayers),
 		blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
@@ -647,6 +587,77 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	return d, nil
 }
 
+// readDFlashConfig reads and checks a DFlash drafter's config.json, in either dialect, and resolves its RoPE base.
+func readDFlashConfig(dir string) (dflashConfig, float64, error) {
+	var c dflashConfig
+	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return c, 0, fmt.Errorf("dflash: read config: %w", err)
+	}
+	if err := json.Unmarshal(cfgBytes, &c); err != nil {
+		return c, 0, fmt.Errorf("dflash: parse config: %w", err)
+	}
+	// Refuse DFlash 2. A v2 config carries every field this loader reads and most of its tensors are v1-shaped, so it would
+	// load without error and silently drop the two-tap dynamic convolutions (layers.N.{attention,mlp}_conv.*) and the
+	// candidate selector (candidate_selector.*). The convs sit before and after every attention and FFN sublayer, so
+	// dropping them changes every layer's output. Verify is lossless, so the failure is not wrong tokens but a drafter
+	// that drafts badly (lower acceptance, slower than v1) with no diagnostic. Detected from config rather than tensor
+	// names because it is cheaper and is what the publisher controls; a v2 checkpoint that omitted these keys would still
+	// be caught by the missing-tensor path. DFlash 2 support is unbuilt: docs/spec/08-dspark-dflash.md, section "DFlash 2".
+	if c.DFlash.ConvKernelSize > 0 || c.DFlash.SelectorRank > 0 {
+		return c, 0, fmt.Errorf("dflash: %s is a DFlash 2 checkpoint (conv_kernel_size=%d, "+
+			"selector_rank=%d) and this loader implements v1 — it would load and silently ignore "+
+			"the dynamic-conv and candidate-selector weights, giving a drafter that verifies losslessly "+
+			"but drafts worse than v1. DFlash 2 is not supported yet (docs/spec/08-dspark-dflash.md, "+
+			"section \"DFlash 2\")", dir, c.DFlash.ConvKernelSize, c.DFlash.SelectorRank)
+	}
+	// speculators dialect: the layer geometry lives one level down. Decode it into
+	// the SAME struct so every field below is read once, from one place, whichever
+	// dialect the checkpoint used. Top-level keys already parsed (block_size,
+	// mask_token_id, the tap list) are not repeated there, so this cannot clobber them.
+	if len(c.TransformerLayerConfig) > 0 && c.HiddenSize == 0 {
+		if err := json.Unmarshal(c.TransformerLayerConfig, &c); err != nil {
+			return c, 0, fmt.Errorf("dflash: parse transformer_layer_config: %w", err)
+		}
+	}
+	if c.HeadDim == 0 {
+		c.HeadDim = c.HiddenSize / c.NumAttentionHeads
+	}
+	if c.BlockSize == 0 {
+		c.BlockSize = c.DFlash.BlockSize
+	}
+	// Taps and mask token in whichever spelling this checkpoint uses.
+	if len(c.DFlash.TargetLayerIDs) == 0 {
+		c.DFlash.TargetLayerIDs = c.AuxHiddenStateLayerIDs
+	}
+	if c.MaskTokenIDTop != nil && c.DFlash.MaskTokenID == 0 {
+		c.DFlash.MaskTokenID = *c.MaskTokenIDTop
+	}
+	switch {
+	case c.HiddenSize <= 0 || c.NumHiddenLayers <= 0 || c.NumAttentionHeads <= 0:
+		return c, 0, fmt.Errorf("dflash: bad dims (hidden=%d layers=%d heads=%d)", c.HiddenSize, c.NumHiddenLayers, c.NumAttentionHeads)
+	case c.BlockSize < 2:
+		return c, 0, fmt.Errorf("dflash: block_size must be >= 2, got %d", c.BlockSize)
+	case len(c.DFlash.TargetLayerIDs) == 0:
+		return c, 0, fmt.Errorf("dflash: no taps — need dflash_config.target_layer_ids or aux_hidden_state_layer_ids")
+	case c.RopeTheta <= 0 && len(c.RopeParameters) == 0:
+		return c, 0, fmt.Errorf("dflash: no rope_theta and no rope_parameters")
+	}
+
+	theta := c.RopeTheta
+	if len(c.RopeParameters) > 0 {
+		spec, _, perr := rope.ParseFlat(c.RopeParameters)
+		if perr != nil {
+			return c, 0, fmt.Errorf("dflash: rope_parameters: %w", perr)
+		}
+		theta = spec.Base
+	}
+	if theta <= 0 {
+		return c, 0, fmt.Errorf("dflash: rope_theta must be >0, got %v", theta)
+	}
+	return c, theta, nil
+}
+
 // FuseContext turns the target's captured hidden states into the drafter's context
 // representation: fused[i] = hiddenNorm(fc · concat(h[l][i] for l in targetLayerIDs)).
 // ctxCat is [ctxLen][len(targetLayerIDs)*hidden] — the ForwardCapture seam's output for
@@ -669,7 +680,7 @@ func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, e
 		}
 		f := make([]float32, d.hidden)
 		matmul(be, &d.fc, row, f, 1)
-		rmsNorm(f, d.hiddenNorm, 1, d.hidden, d.normEps, false)
+		normact.RMS(f, d.hiddenNorm, 1, d.hidden, d.normEps, false)
 		fused[i] = f
 	}
 	return fused, nil
@@ -724,8 +735,8 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 			v := make([]float32, kvDim)
 			matmul(be, &l.k, row, k, 1)
 			matmul(be, &l.v, row, v, 1)
-			rmsNorm(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
-			applyRoPE(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
+			normact.RMS(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
+			rope.Apply(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
 			ctx.k[li] = append(ctx.k[li], k)
 			ctx.v[li] = append(ctx.v[li], v)
 		}
@@ -757,7 +768,7 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 	out := make([][]float32, len(h))
 	for i, row := range h {
 		r := slices.Clone(row)
-		rmsNorm(r, d.finalNorm, 1, d.hidden, d.normEps, false)
+		normact.RMS(r, d.finalNorm, 1, d.hidden, d.normEps, false)
 		out[i] = r
 	}
 	return out, nil
@@ -840,7 +851,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	xb := make([][]float32, nBlk)
 	for i, row := range h {
 		x := slices.Clone(row)
-		rmsNorm(x, l.inputNorm, 1, hid, d.normEps, false)
+		normact.RMS(x, l.inputNorm, 1, hid, d.normEps, false)
 		xb[i] = x
 	}
 
@@ -857,8 +868,8 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 		v := make([]float32, kvDim)
 		matmul(be, &l.k, xb[j-nCtx], k, 1)
 		matmul(be, &l.v, xb[j-nCtx], v, 1)
-		rmsNorm(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
-		applyRoPE(k, d.nKV, hd, j, d.invFreq, 1)         // V is NOT roped and NOT normed
+		normact.RMS(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
+		rope.Apply(k, d.nKV, hd, j, d.invFreq, 1)            // V is NOT roped and NOT normed
 		keys[j], vals[j] = k, v
 	}
 
@@ -869,8 +880,8 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	for i := range nBlk {
 		q := make([]float32, qDim)
 		matmul(be, &l.q, xb[i], q, 1)
-		rmsNorm(q, l.qNorm, d.nHeads, hd, d.normEps, false)
-		applyRoPE(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
+		normact.RMS(q, l.qNorm, d.nHeads, hd, d.normEps, false)
+		rope.Apply(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
 
 		// Non-causal: every block query attends every context key AND every block key,
 		// including positions after itself. No mask, by construction.
@@ -916,11 +927,11 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	down := make([]float32, hid)
 	for i := range nBlk {
 		x := slices.Clone(h[i])
-		rmsNorm(x, l.postAttnNorm, 1, hid, d.normEps, false)
+		normact.RMS(x, l.postAttnNorm, 1, hid, d.normEps, false)
 		matmul(be, &l.gate, x, gate, 1)
 		matmul(be, &l.up, x, up, 1)
 		for t := range gate {
-			gate[t] = silu(gate[t]) * up[t]
+			gate[t] = normact.SiLU(gate[t]) * up[t]
 		}
 		matmul(be, &l.down, gate, down, 1)
 		for t := range hid {

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen3MoeArchitecture expresses Qwen3-MoE (model_type qwen3_moe): qwen3's dense attention (per-head q_norm/k_norm, GQA, no q/k/v bias,
@@ -17,7 +19,7 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen3Moe(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen3_moe): %w", err)
 	}

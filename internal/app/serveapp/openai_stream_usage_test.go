@@ -171,7 +171,7 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 // R-08: a per-token re-decode of the whole sequence is O(n^2) in output length), and forbids Decode.
 func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "openai.go", nil, 0)
+	af, err := parser.ParseFile(fset, "openai_generate.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

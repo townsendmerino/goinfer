@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -58,7 +59,7 @@ func TestMinistral3Real_gate(t *testing.T) {
 	if got, want := a.AttnTempOrigMaxPos, 16384.0; got != want {
 		t.Errorf("AttnTempOrigMaxPos = %v, want %v (original_max_position_embeddings)", got, want)
 	}
-	if a.ropeScaling == nil || a.ropeScaling.kind != ropeScaleYarn {
+	if a.ropeScaling == nil || a.ropeScaling.Kind != rope.ScaleYarn {
 		t.Fatalf("ropeScaling = %+v, want YaRN", a.ropeScaling)
 	}
 	t.Logf("ministral3-3b: %d layers, H=%d kv=%d headDim=%d attnTempBeta=%v origMaxPos=%v",

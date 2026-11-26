@@ -8,7 +8,6 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -267,14 +266,9 @@ func (s *buildState) admit() error {
 // planLayers validates and host-plans every layer's weights and the head, declining what CUDA cannot hold, and leaves s.hls and
 // s.hlm for the upload. With s.plans set the experts are validated instead of packed. It allocates nothing on the device.
 func (s *buildState) planLayers() error {
-	m, w, shape, planProj, plans := s.m, s.w, s.shape, s.planProj, s.plans
+	m, w, planProj, plans := s.m, s.w, s.planProj, s.plans
 	bv := m.BackendView()
-	H, nLayers, nH, pleP := s.H, s.nLayers, s.nH, s.pleP
-	nE, moeInter, sharedInter := s.nE, s.moeInter, s.sharedInter
-	sharedUngated, isMoE := s.sharedUngated, s.isMoE
-	qLoRA, kvLoRA, qkNope, qkRope, vHead := s.qLoRA, s.kvLoRA, s.qkNope, s.qkRope, s.vHead
-	dnAttnGate, dnetOK, mambaP := s.dnAttnGate, s.dnetOK, s.mambaP
-	sandwich, postOnly, qkNormWhole, parallelBlock, actG32 := s.sandwich, s.postOnly, s.qkNormWhole, s.parallelBlock, s.actG32
+	nLayers := s.nLayers
 	if planStartForTest != nil && !plans {
 		planStartForTest()
 	}
@@ -289,406 +283,9 @@ func (s *buildState) planLayers() error {
 	}
 	loadAbort := bv.LoadAbort() // the swap tripwire's channel (Options.LoadAbort); nil never fires
 	for l := range nLayers {
-		select {
-		case <-loadAbort:
-			return fmt.Errorf("cuda: resident build aborted while planning layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
-		default:
+		if e := s.planLayer(l, hls, loadAbort, expertStack, sharedStack, sharedOne); e != nil {
+			return e
 		}
-		lw := &w.Layers[l]
-		var hl hlayer
-		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
-		var mixerOK bool
-		hl.mixer, hl.ffn, mixerOK = cudaMixerOf(m.Program().Layers[l])
-		if !mixerOK {
-			x, _ := program.MixerOf(m.Program().Layers[l])
-			return decline(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, x))
-		}
-		switch hl.mixer {
-		case decoder.MixerAttention, decoder.MixerDeltaNet, decoder.MixerMLA:
-		case decoder.MixerMamba, decoder.MixerNone:
-			if mambaP == nil {
-				return decline(fmt.Errorf("layer %d: the %v mixer is built on CUDA for Nemotron-H only", l, hl.mixer))
-			}
-		default:
-			return decline(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
-		}
-		// The layer's steps come from its operations through CUDA's fusion table (OP4cu-b2); after the upload, the sublayers they
-		// run are checked against what each layer's upload holds.
-		progSteps, stepErr := cudaStepsOf(m.Program().Layers[l])
-		if stepErr != nil && legacyLayerForTest == nil {
-			return decline(fmt.Errorf("layer %d: %w", l, stepErr))
-		}
-		hl.steps = progSteps
-		g4b, isG4 := bv.Layer(l).Gemma4MoEBundle()
-		hl.g4moe = isG4
-		var proj []struct {
-			dst *hostW
-			src *linalg.WeightMat
-		}
-		type projEnt = struct {
-			dst *hostW
-			src *linalg.WeightMat
-		}
-		switch {
-		case hl.mixer == decoder.MixerDeltaNet:
-			// Gated-DeltaNet mixer layer: no attention projections at all. The three dominant
-			// projections carry the model's quant; inB/inA are f32 on the CPU by deliberate
-			// choice (they feed the write/decay gates) and packWeight quantizes them to int8
-			// here — the one place this port is knowingly coarser than the reference.
-			qkv, z, outP, inB, inA, cW, dtB, negA, nW := bv.Layer(l).Qwen35DeltaWeights()
-			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
-			hl.dnBetaScale, hl.dnONormEps = deltaNetGateSettings(m.Program().Layers[l])
-			// Name the missing tensor. Every one of these becomes a device up32, and an empty
-			// slice there is a 0-byte allocation — which this driver reports as "invalid length"
-			// with no hint at WHICH of the four (or which loader) produced it. Two different
-			// checkpoints have already failed exactly that way during this bring-up.
-			for _, chk := range []struct {
-				name string
-				n    int
-			}{{"conv_w", len(cW)}, {"dt_bias", len(dtB)}, {"neg_exp_a", len(negA)}, {"norm_w", len(nW)}} {
-				if chk.n == 0 {
-					return decline(fmt.Errorf("layer %d: DeltaNet %s is empty — the loader did not "+
-						"populate it for this container", l, chk.name))
-				}
-			}
-			bWM := linalg.WrapF32(inB, len(dtB), H)
-			aWM := linalg.WrapF32(inA, len(dtB), H)
-			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
-				{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
-		case hl.mixer == decoder.MixerMamba:
-			hm, e := packMambaLayer(m, l, H, mambaP)
-			if e != nil {
-				return decline(e)
-			}
-			hl.mamba = hm // packed above; nothing to pack through proj
-		case hl.mixer == decoder.MixerNone:
-			// A feed-forward-only block: the non-gated up and down projections (relu² between them). lw.GateProj is empty by design.
-			proj = []projEnt{{&hl.u, &lw.UpProj}, {&hl.d, &lw.DownProj}}
-		case dnetOK && dnAttnGate:
-			// The same family's gated softmax layer (qwen3_5/qwen3_5_moe/qwen3_next; not every dnetOK family: Olmo Hybrid's
-			// full-attention layer is olmo3's plain scheme, dnAttnGate=false, and falls through to default below). Its weights live
-			// off lw.QProj, and q_proj is double width, [query ‖ gate] per head.
-			hl.qGate = dnAttnGate
-			qP, kP, vP, oP, qN, kN := bv.Layer(l).Qwen35AttnWeights()
-			hl.qNorm, hl.kNorm = qN, kN
-			// Same reason as the DeltaNet check below: these become device uploads, and an empty
-			// one is an "invalid length" with no indication of which.
-			if len(qN) == 0 || len(kN) == 0 {
-				return decline(fmt.Errorf("layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
-					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN)))
-			}
-			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
-		case hl.mixer == decoder.MixerMLA:
-			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := bv.Layer(l).MLAWeights()
-			qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
-			hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
-			latDim := kvLoRA + qkRope
-			// wm is a projection's int8 form when the load holds one (the codes packWeight makes from the f32), else its f32.
-			wm := func(q *linalg.WeightMat, f []float32, rows, cols int) *linalg.WeightMat {
-				if q.Rows() > 0 {
-					return q
-				}
-				w := linalg.WrapF32(f, rows, cols)
-				return &w
-			}
-			if qLoRA > 0 {
-				proj = append(proj,
-					projEnt{&hl.mlaQA, wm(qAQ, qA, qLoRA, H)},
-					projEnt{&hl.mlaQB, wm(qBQ, qB, nH*(qkNope+qkRope), qLoRA)},
-				)
-			} else {
-				proj = append(proj, projEnt{&hl.mlaQ, wm(qQ, qProj, nH*(qkNope+qkRope), H)})
-			}
-			kvaWM := wm(kvAQ, kvA, latDim, H)
-			oWM := wm(oQ, oProj, H, nH*vHead)
-			proj = append(proj,
-				projEnt{&hl.mlaKVA, kvaWM},
-				projEnt{&hl.o, oWM},
-			)
-			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows). Slice it into W_UKᵀ [nH, kvLoRA,
-			// qkNope] (transposed for the absorb GEMV) and W_UV [nH, vHead, kvLoRA] (the lift, as-is), as
-			// webgpuBackend.BuildResident does (gpu/residency.go).
-			hRow := qkNope + vHead
-			wuk := make([]float32, nH*kvLoRA*qkNope)
-			wuv := make([]float32, nH*vHead*kvLoRA)
-			for h := range nH {
-				for d := range qkNope {
-					src := kvB[(h*hRow+d)*kvLoRA : (h*hRow+d)*kvLoRA+kvLoRA]
-					for cc := range kvLoRA {
-						wuk[(h*kvLoRA+cc)*qkNope+d] = src[cc]
-					}
-				}
-				for ev := range vHead {
-					copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
-				}
-			}
-			hl.mlaWUK, hl.mlaWUV = wuk, wuv
-		default:
-			if bv.Layer(l).KVSrc() != l {
-				// A KV-shared layer (Gemma 4 E-model) carries only Q and O: its K/V are its source layer's.
-				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.o, &lw.OProj}}
-			} else {
-				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
-				if !bv.Layer(l).VFromK() { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
-					proj = append(proj, projEnt{&hl.v, &lw.VProj})
-				}
-			}
-		}
-		if hl.g4moe {
-			// Gemma-4 MoE dense branch: lw.GateProj/UpProj/DownProj are EMPTY (the dense MLP lives in
-			// the gemma4moe sub-block), so pack from the bundle instead.
-			proj = append(proj,
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.g, g4b.MlpGate},
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.u, g4b.MlpUp},
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.d, g4b.MlpDown})
-		} else if !hl.isMoE && hl.ffn && hl.mixer != decoder.MixerNone {
-			// A routed layer carries no dense FFN — GateProj/UpProj/DownProj are empty, and
-			// packing them would fail on a zero shape rather than mean anything.
-			proj = append(proj,
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.g, &lw.GateProj},
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.u, &lw.UpProj},
-				struct {
-					dst *hostW
-					src *linalg.WeightMat
-				}{&hl.d, &lw.DownProj})
-		}
-		if pleP > 0 {
-			if lw.PLEGate.Rows() != pleP || lw.PLEProj.Rows() != H || len(lw.PostPLENorm) != H {
-				return decline(fmt.Errorf("layer %d: PLE weights are not the expected shape (gate rows %d want %d, proj rows %d want %d, post-norm %d want %d)",
-					l, lw.PLEGate.Rows(), pleP, lw.PLEProj.Rows(), H, len(lw.PostPLENorm), H))
-			}
-			proj = append(proj, projEnt{&hl.pleGate, &lw.PLEGate}, projEnt{&hl.pleProj, &lw.PLEProj})
-			hl.postPLENorm = lw.PostPLENorm
-		}
-		for _, p := range proj {
-			hw, e := planProj(p.src) // validated now, packed into the device buffer at upload
-			if e != nil {
-				return decline(e)
-			}
-			if hw.kind == "q4k" && !actG32 {
-				// gemv_q4k_g32's minimum term reads the per-group activation sums only the per-32
-				// quantizers write; --quant q4k always stamps per-32, so this is defence in depth.
-				return decline(fmt.Errorf("layer %d: a Q4_K weight needs per-32 activations (ActQuantGroup 32)", l))
-			}
-			*p.dst = hw
-		}
-		if hl.g4moe {
-			// Gemma-4 MoE: stack the experts (each ExpertsGateUp is the fused [2*moeInter,hidden]
-			// gate‖up), the f32 router (RouterProjScaled, scale folded), the 5 norms + per-expert
-			// scale + layerScalar. The dense g/u/d were packed above via the proj list.
-			var e error
-			if hl.expGU, e = expertStack(g4b.ExpertsGateUp...); e != nil {
-				return decline(fmt.Errorf("layer %d gemma4 expert gate‖up stack: %w", l, e))
-			}
-			if hl.expDown, e = expertStack(g4b.ExpertsDown...); e != nil {
-				return decline(fmt.Errorf("layer %d gemma4 expert down stack: %w", l, e))
-			}
-			if hl.expGU.kind != "int4" || hl.expDown.kind != "int4" {
-				return decline(fmt.Errorf("layer %d: gemma4 experts are %q/%q — the resident MoE GEMVs are int4-only (load with Quant: \"int4\")", l, hl.expGU.kind, hl.expDown.kind))
-			}
-			if hl.expGU.N != nE*2*moeInter || hl.expDown.N != nE*H {
-				return decline(fmt.Errorf("layer %d: gemma4 stacked rows %d/%d, want %d/%d", l, hl.expGU.N, hl.expDown.N, nE*2*moeInter, nE*H))
-			}
-			hl.router = g4b.RouterProjScaled  // [nE*hidden] f32, routerScale·hidden^-0.5 folded in
-			hl.routerBs = make([]float32, nE) // gemma4 has no router bias (moe_route reads it unconditionally)
-			hl.perExpertScale = g4b.PerExpertScale
-			hl.g4preFFN, hl.g4postFFN1, hl.g4preFFN2, hl.g4postFFN2, hl.g4post =
-				g4b.PreFFNNorm, g4b.PostFFNNorm1, g4b.PreFFNNorm2, g4b.PostFFNNorm2, g4b.PostFFNNorm
-			hl.layerScalar = g4b.LayerScalar
-		}
-		if hl.isMoE {
-			if len(lw.Experts) != nE {
-				return decline(fmt.Errorf("layer %d: %d experts, arch says %d", l, len(lw.Experts), nE))
-			}
-			// The router stays f32 — see cudaResident.moe. It is loaded unquantized (weights.go
-			// uses loadMat, not loadMatQ) precisely so this holds; if that ever changes, decline
-			// rather than quietly quantize the one matrix that must not be.
-			rf, ok := lw.Router.F32()
-			if !ok {
-				return decline(fmt.Errorf("layer %d: router is %q, not f32 — quantizing it would flip "+
-					"experts near a tie, which is a cliff and not a small error", l, lw.Router.Kind()))
-			}
-			if lw.Router.Rows() != nE || lw.Router.Cols() != H {
-				return decline(fmt.Errorf("layer %d: router is %dx%d, want %dx%d", l, lw.Router.Rows(), lw.Router.Cols(), nE, H))
-			}
-			hl.router = rf
-			// bias is read unconditionally by moe_route; zeros when the arch has none.
-			hl.routerBs = lw.RouterBias
-			if hl.routerBs == nil {
-				hl.routerBs = make([]float32, nE)
-			} else if len(hl.routerBs) != nE {
-				return decline(fmt.Errorf("layer %d: router bias len %d != nE %d", l, len(hl.routerBs), nE))
-			}
-			// gate‖up INTERLEAVED per expert (g0,u0,g1,u1,...): one row range of width
-			// 2*moeInter is then exactly expert e's pair, which is what the indexed GEMV +
-			// glu_quant(gOff=0, uOff=moeInter) pair expects.
-			gu := make([]*linalg.WeightMat, 0, 2*nE)
-			dn := make([]*linalg.WeightMat, 0, nE)
-			for e := range lw.Experts {
-				ex := &lw.Experts[e]
-				gu = append(gu, &ex.Gate, &ex.Up)
-				dn = append(dn, &ex.Down)
-			}
-			var e error
-			if hl.expGU, e = expertStack(gu...); e != nil {
-				return decline(fmt.Errorf("layer %d gate/up stack: %w", l, e))
-			}
-			if hl.expDown, e = expertStack(dn...); e != nil {
-				return decline(fmt.Errorf("layer %d down stack: %w", l, e))
-			}
-			// The MoE GEMVs are w4a8 only: they read f16 group scales and unpack nibbles, so an
-			// int8 stack would be read as int4 and return garbage rather than error.
-			if hl.expGU.kind != "int4" || hl.expDown.kind != "int4" {
-				return decline(fmt.Errorf("layer %d: MoE experts are %q/%q — the resident MoE GEMVs are "+
-					"int4-only (load with Quant: \"int4\")", l, hl.expGU.kind, hl.expDown.kind))
-			}
-			if hl.expGU.N != nE*2*moeInter || hl.expDown.N != nE*H {
-				return decline(fmt.Errorf("layer %d: stacked rows %d/%d, want %d/%d — the kernel's "+
-					"rowsPerExpert stride would land on the wrong expert",
-					l, hl.expGU.N, hl.expDown.N, nE*2*moeInter, nE*H))
-			}
-			// Always-on shared expert (ungated). gate‖up concatenated the same way as a routed
-			// expert, so one dense GEMV + the glu_quant offset split covers it.
-			if sharedInter > 0 {
-				se := &lw.SharedExpert
-				if se.Gate.Rows() != sharedInter || se.Down.Cols() != sharedInter {
-					return decline(fmt.Errorf("layer %d: shared expert shape gate %dx%d down %dx%d disagrees with sharedInter=%d",
-						l, se.Gate.Rows(), se.Gate.Cols(), se.Down.Rows(), se.Down.Cols(), sharedInter))
-				}
-				var e error
-				if hl.shGU, e = sharedStack(&se.Gate, &se.Up); e != nil {
-					return decline(fmt.Errorf("layer %d shared gate/up: %w", l, e))
-				}
-				if hl.shDown, e = sharedOne(&se.Down); e != nil {
-					return decline(fmt.Errorf("layer %d shared down: %w", l, e))
-				}
-				if hl.shGU.kind != "int4" || hl.shDown.kind != "int4" {
-					return decline(fmt.Errorf("layer %d: shared expert is %q/%q — int4-only", l, hl.shGU.kind, hl.shDown.kind))
-				}
-				hl.hasShared = true
-				if !sharedUngated {
-					// Qwen-MoE's sigmoid-gated shared expert: out += sigmoid(SharedGate·h)·shared(h), shared_gate_combine's ungated=0
-					// branch; it needs the [1,hidden] SharedGate weight uploaded.
-					if lw.SharedGate.Rows() == 0 {
-						return decline(fmt.Errorf("layer %d: arch declares a GATED shared expert "+
-							"but SharedGate is empty — this loader did not populate it", l))
-					}
-					if hl.shGate, e = sharedOne(&lw.SharedGate); e != nil {
-						return decline(fmt.Errorf("layer %d shared gate: %w", l, e))
-					}
-				}
-			}
-		}
-		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
-		if hl.mixer == decoder.MixerMamba || hl.mixer == decoder.MixerNone {
-			// A single-operation block: its one pre-norm and the weights packed above, no attention geometry, QK-norm or rope table.
-			if len(hl.preNorm) != H {
-				return decline(fmt.Errorf("layer %d: pre-norm has %d values, want hidden %d", l, len(hl.preNorm), H))
-			}
-			hls[l] = hl
-			continue
-		}
-		if !dnetOK || !dnAttnGate {
-			// A gated dnetOK family's softmax layer keeps its QK-norm weights off lw (packed with its projections above). Everyone
-			// else, including a dnetOK family whose softmax layer is not gated (Olmo Hybrid), reads them like an ordinary GQA/MHA
-			// layer's lw.QNorm/KNorm.
-			hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
-		}
-		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
-		// Uniform-rope families hand back the same slice for every layer.
-		if mambaP != nil {
-			// Nemotron-H's attention is NoPE: an all-zero table makes rope_kv the identity rotation (cos 0 = 1, sin 0 = 0), as WebGPU's zeroed invFreq does.
-			hl.invFreq = make([]float32, bv.Layer(l).RotaryDim()/2)
-		} else if hl.mixer != decoder.MixerDeltaNet {
-			hl.invFreq = bv.Layer(l).RopeInvFreq() // Gemma 4: real per-layer table, not the generic one
-		}
-		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
-		if bv.Layer(l).IsLocal() {
-			hl.window = int32(bv.SlidingWindow())
-		}
-		if hl.mixer == decoder.MixerDeltaNet {
-			// A DeltaNet layer has no attention geometry, QK-norm or rope table, which the checks below read; its own shapes are
-			// validated at upload, where the state buffers are sized from dnetParams. postOnly is a model-level flag, but a DeltaNet
-			// layer reaches NormPre2 through NormPlacementLinear: it needs real preNorm/postNorm (checked here) and has no
-			// PostAttnNorm/PostMLPNorm tensors, so that pair is never populated for it.
-			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
-				return decline(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
-			}
-			hls[l] = hl
-			continue
-		}
-		if hl.mixer == decoder.MixerMLA {
-			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
-				return decline(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
-			}
-			hls[l] = hl
-			continue
-		}
-		// Gemma sandwich / Olmo 3 postOnly: both dispatch PostAttnNorm/PostMLPNorm on the sublayer output, so they must be
-		// present when the arch declares either (a missing one would silently drop the norm). Non-DeltaNet layers only (see the
-		// continue above).
-		if sandwich || postOnly {
-			hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
-			if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
-				return decline(fmt.Errorf("layer %d: arch declares sandwich/postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
-					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
-			}
-		}
-		if hdL := bv.Layer(l).HeadDim(); shape.QKNorm {
-			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim, not the model HeadDim, so validate
-			// against the layer's own width. QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the whole q/k vector, so the
-			// weight is nH*hdL / nKV*hdL wide, and the resident launch (one Q block plus one K block, see segA) sizes both blocks
-			// from a single hd, which is correct only when nH==nKV (MHA). Decline rather than mis-normalize a GQA family.
-			wantQ, wantK := hdL, hdL
-			nKVL := bv.Layer(l).KVHeads()
-			if qkNormWhole {
-				if nH != nKVL {
-					return decline(fmt.Errorf("layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, nH, nKVL))
-				}
-				wantQ, wantK = nH*hdL, nKVL*hdL
-			}
-			if bv.Layer(l).KVSrc() != l {
-				wantK = 0 // a KV-shared layer has no k_norm either
-			}
-			if len(hl.qNorm) != wantQ || len(hl.kNorm) != wantK {
-				return decline(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not the expected width (want %d/%d, got %d/%d)",
-					l, wantQ, wantK, len(hl.qNorm), len(hl.kNorm)))
-			}
-		}
-		if !postOnly && len(hl.preNorm) == 0 {
-			return decline(fmt.Errorf("layer %d missing pre-norm", l))
-		}
-		// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — the MLP reuses the
-		// SAME shared input norm the attention branch already computed (segBFFN's r.aq/r.aSc
-		// reuse), so hl.postNorm is legitimately empty for it and must not be required.
-		if hl.ffn && !postOnly && !parallelBlock && len(hl.postNorm) == 0 {
-			return decline(fmt.Errorf("layer %d missing pre-MLP norm", l))
-		}
-		if lw.QBias != nil {
-			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
-		}
-		// Captured independently of QBias: the two travel together in Qwen2 but not in general (GPT-2 carries an o_proj bias
-		// with no q/k/v bias), so folding this into the branch above would silently drop it for the families FeatOutBias exists
-		// for.
-		if lw.OBias != nil {
-			hl.ob, hl.hasOBias = lw.OBias, true
-		}
-		hls[l] = hl
 	}
 	lmSrc := &w.LMHead
 	if w.LMHead.Rows() == 0 {
@@ -941,482 +538,26 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
 	// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
 	// Evidence, path by path: docs/code-notes/cuda.md#BuildResident: device exhaustion.
-	gmod, e := r.compileKV(r.kvPTX8(gemvFwdPTX, gemvFwdKV16PTX, gemvFwdKV8PTX))
-	if e != nil {
+	if e := s.bindGlueKernels(r, bv); e != nil {
 		return e
 	}
-	glmod, e := r.compileKV(r.attnPTX(gluePTX, glueKV16PTX, glueKV8PTX, glueCapPTX, glueKV16CapPTX))
-	if e != nil {
+	if e := s.bindSideKernels(r); e != nil {
 		return e
 	}
-	// The generic quantized GEMVs come from aikit (gpu.QuantGEMVPTX), not gemv_fwd.ptx; gemv_fwd.cu keeps only the
-	// LLM-specific kv_store / rope_kv, and decode stays bit-identical.
-	qgemv, e := r.dev.NewQuantGEMV()
-	if e != nil {
-		return e
-	}
-	r.gemvW4, r.gemvW8 = qgemv.W4A8, qgemv.W8A8
-	// kv_store and rope are not bound: the fused rope_kv below subsumes both (TestPipelineLint_boundKernelsAreLaunched flags
-	// a pipeline bound and never launched). GPT-J pairwise rotation (Cohere/Cohere2/Aya, GLM-OCR) binds the pairwise twin of
-	// rope_kv (cuda/rope_pairwise.cu, same argument list and launch geometry) into the same field, so no launch site
-	// changes. A load failure declines: the NeoX kernel on a pairwise model is silently wrong from position 1, so there is
-	// no fallback.
-	r.pairwiseRoPE = bv.PairwiseRoPE()
-	if r.pairwiseRoPE {
-		pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
-		if pe != nil {
-			return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
-		}
-		if r.ropeKV, e = r.dev.NewComputePipeline(pwmod, "rope_kv_pw"); e != nil {
-			return e
-		}
-	} else if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
-		return e
-	}
-	// kv_store at pos 0 is an exact device copy (copyF32), used by K=V layers to fill vB from kB. It is the one use of kv_store, which the fused rope_kv still subsumes for the KV cache.
-	if r.kvCopy, e = r.dev.NewComputePipeline(gmod, "kv_store"); e != nil {
-		return e
-	}
-	qmod, e2 := r.dev.CompileLibrary(fusedQKVPTX)
-	if e2 != nil {
-		return e2
-	}
-	if r.fQKV, e = r.dev.NewComputePipeline(qmod, "fused_rms_qkv"); e != nil {
-		return e
-	}
-	if r.fGU, e = r.dev.NewComputePipeline(qmod, "fused_rms_gu"); e != nil {
-		return e
-	}
-	if r.fQKN, e = r.dev.NewComputePipeline(qmod, "qk_norm"); e != nil {
-		return e
-	}
-	// rows-per-warp variant of fused_rms_gu (own module; see fused_gu_rows.cu). A load failure only leaves the original kernel in use.
-	if gmod2, ge2 := r.dev.CompileLibrary(fusedGURowsPTX); ge2 == nil {
-		var le error
-		if r.fGURows, le = r.dev.NewComputePipeline(gmod2, "fused_rms_gu_rows"); le != nil {
-			r.fGURows = Pipeline{}
-		}
-	}
-	r.readSMShape() // device shape for wave-sized fused-projection grids (waveRowsPerWarp); unreadable -> zero -> the static rules
-	// rows-per-warp variant of fused_rms_qkv (own module; see fused_qkv_rows.cu). A load failure only leaves the original kernel in use.
-	if rmod, re2 := r.dev.CompileLibrary(fusedQKVRowsPTX); re2 == nil {
-		var le error
-		if r.fQKVRows, le = r.dev.NewComputePipeline(rmod, "fused_rms_qkv_rows"); le != nil {
-			r.fQKVRows = Pipeline{}
-		}
-	}
-	fns := []struct {
-		dst  *Pipeline
-		name string
-	}{
-		{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"},
-		{&r.fAttn, "attention"}, {&r.fSw, "glu_quant"}, {&r.fRes, "residual"},
-		{&r.fLN, "layernorm_quant"},
-	}
-	for _, f := range fns {
-		if *f.dst, e = r.dev.NewComputePipeline(glmod, f.name); e != nil {
-			return e
-		}
-	}
-	// Per-32 activations: bind actgroup.cu's kernels INTO the per-vector pipeline fields. Each has
-	// its per-vector sibling's exact argument list and launch shape, so every launch site runs the
-	// per-32 kernel unedited; the paths that would still read a per-vector scale declined above,
-	// fusion is off, and batched prefill declines (prefillStaticDecline).
-	if r.actG32 {
-		agmod, e3 := r.dev.CompileLibrary(actGroupPTX)
-		if e3 != nil {
-			return fmt.Errorf("actgroup module: %w", e3)
-		}
-		for _, f := range []struct {
-			dst  *Pipeline
-			name string
-		}{
-			{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
-			{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"}, {&r.gemvQ4K, "gemv_q4k_g32"},
-			{&r.gemvQ5K, "gemv_q5k_g32"}, {&r.gemvQ6K, "gemv_q6k_g32"},
-			{&r.fQKVg32, "fused_rms_qkv_g32"}, {&r.fGUg32, "fused_rms_gu_g32"},
-		} {
-			if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
-				return fmt.Errorf("actgroup %s: %w", f.name, e)
-			}
-		}
-	}
-	// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so a kernel fix does not force a glue.ptx
-	// regeneration. moe.ptx, glue.ptx and gemv_fwd.ptx are the audited artifacts, pinned at NVRTC 12.6.85
-	// (cuda/testdata/REGEN.md); every other production PTX, including argmax.ptx, is built at whatever NVRTC was on hand
-	// when it was added. See cuda/argmax.cu.
-	amod, e2 := r.dev.CompileLibrary(argmaxPTX)
-	if e2 != nil {
-		return e2
-	}
-	if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
-		return e
-	}
-	if r.fArgRows, e = r.dev.NewComputePipeline(amod, "argmax_rows"); e != nil {
-		return e
-	}
-	// topk_compact / topk_finish / topk_z: their own module, same isolation as argmax_reduce above.
-	tmod, e2 := r.dev.CompileLibrary(topkPTX)
-	if e2 != nil {
-		return e2
-	}
-	for _, f := range []struct {
-		dst  *Pipeline
-		name string
-	}{{&r.fTopKCompact, "topk_compact"}, {&r.fTopKFinish, "topk_finish"}, {&r.fTopKZ, "topk_z"}} {
-		if *f.dst, e = r.dev.NewComputePipeline(tmod, f.name); e != nil {
-			return e
-		}
-	}
-	// gumbel_stage1/2: own module, same isolation.
-	gumod, e2 := r.dev.CompileLibrary(gumbelPTX)
-	if e2 != nil {
-		return e2
-	}
-	if r.fGumbel1, e = r.dev.NewComputePipeline(gumod, "gumbel_stage1"); e != nil {
-		return e
-	}
-	if r.fGumbel2, e = r.dev.NewComputePipeline(gumod, "gumbel_stage2"); e != nil {
-		return e
-	}
-	// Compute-time LoRA: own module, loaded unconditionally (cheap, and whether an
-	// adapter will arrive is not known here).
-	lmod, e2 := r.dev.CompileLibrary(loraPTX)
-	if e2 != nil {
-		return e2
-	}
-	if r.fLoraDown, e = r.dev.NewComputePipeline(lmod, "lora_delta_down"); e != nil {
-		return e
-	}
-	if r.fLoraUp, e = r.dev.NewComputePipeline(lmod, "lora_delta_up"); e != nil {
-		return e
-	}
-	r.loraT = r.af(loraRMax)
-	// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
-	// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
-	{
-		if pbmod, e3 := r.compileKV(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedKV8PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
-			ok := true
-			load := func(dst *Pipeline, mod gpu.Library, name string) {
-				if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
-					*dst = p
-				} else {
-					ok = false
-				}
-			}
-			if rnmod, e4 := r.dev.CompileLibrary(gemvRNPTX); e4 == nil {
-				load(&r.bRN, rnmod, "gemv_w4a8_rn")
-			} else {
-				ok = false
-			}
-			// int8 batched GEMV: own module, own file; the audited PTX is untouched.
-			if w8mod, e5 := r.dev.CompileLibrary(gemvW8BatchedPTX); e5 == nil {
-				load(&r.bW8, w8mod, "gemv_w8a8_batched")
-			} else {
-				ok = false
-			}
-			load(&r.bRms, pbmod, "rmsnorm_quant_batched")
-			load(&r.bQKN, pbmod, "qk_norm_batched")
-			load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
-			if r.pairwiseRoPE {
-				// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-				if pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
-					load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
-				} else {
-					ok = false
-				}
-			} else {
-				load(&r.bRopeKV, pbmod, "rope_kv_batched")
-			}
-			load(&r.bAttn, pbmod, "attn_batched")
-			// A ragged step's twins of rope_kv_batched and attn_batched (stepAttnRows). Optional: without them every row takes
-			// decode's own gap. The pairwise rope has no ragged twin.
-			if !r.pairwiseRoPE {
-				var e1, e2 error
-				r.bRopeKVRagged, e1 = r.dev.NewComputePipeline(pbmod, "rope_kv_ragged")
-				r.bAttnRagged, e2 = r.dev.NewComputePipeline(pbmod, "attn_ragged")
-				if e1 != nil || e2 != nil {
-					r.bRopeKVRagged, r.bAttnRagged = Pipeline{}, Pipeline{}
-				}
-			}
-			load(&r.bQuant, pbmod, "quant_vec_batched")
-			load(&r.bSw, pbmod, "glu_quant_batched")
-			load(&r.bRes, pbmod, "residual_batched")
-			// The expert-major MoE prefill's fold. Optional: without it that path is ineligible and the per-row loop runs.
-			if fmod, e7 := r.dev.CompileLibrary(moeFoldPTX); e7 == nil {
-				var e8 error
-				if r.bMoeFold, e8 = r.dev.NewComputePipeline(fmod, "moe_fold_wacc"); e8 != nil {
-					r.bMoeFold = Pipeline{}
-				}
-			}
-			// The grouped expert kernels. Optional: without both, expert-major keeps its per-pair launches.
-			if rmod, e7 := r.dev.CompileLibrary(moeRowsPTX); e7 == nil {
-				var e8, e9 error
-				r.bMoeRows, e8 = r.dev.NewComputePipeline(rmod, "gemv_w4a8_moe_rows")
-				r.bGluRows, e9 = r.dev.NewComputePipeline(rmod, "glu_quant_rows")
-				if e8 != nil || e9 != nil {
-					r.bMoeRows, r.bGluRows = Pipeline{}, Pipeline{}
-				}
-			}
-			if lnmod, e6 := r.dev.CompileLibrary(layernormQuantPTX); e6 == nil {
-				load(&r.bLN, lnmod, "layernorm_quant_batched")
-			}
-			r.prefillReady = ok
-		}
-	}
-	// Gemma 3 image-block prefill attention (decoder.ResidentPrefillSubsystem): own module, prefill_batched.ptx untouched. A
-	// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
-	// It depends on r.prefillReady, as L2 does.
-	if r.prefillReady && !r.kvI8 { // no int8 twin: an int8 cache leaves the image and span prefills declined
-		if imod, e8 := r.compileKV(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
-			// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
-			// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
-			// site, matching the loadF/loadG idiom L2/L3 already use below.
-			loadImg := func(dst *Pipeline, name string) {
-				if pl, pe := r.dev.NewComputePipeline(imod, name); pe == nil {
-					*dst = pl
-					r.imgPrefillReady = true
-				}
-			}
-			loadImg(&r.bAttnImg, "attn_img_batched")
-			var pe error
-			if r.bAttnSpan, pe = r.dev.NewComputePipeline(imod, "attn_span_batched"); pe == nil {
-				r.spanPrefillReady = true
-			} else {
-				r.bAttnSpan = Pipeline{}
-			}
-		}
-	}
-	// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentPrefillSubsystem): own module, prefill_batched.ptx untouched. Loaded
-	// only for an m-RoPE model, since it needs the model's MRopeSection for sec0/sec1 (unlike bAttnImg above, which loads
-	// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
-	// CPU-prefill-then-UploadKV bridge.
-	if r.prefillReady {
-		// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
-		// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-		if sec := bv.MRopeSection(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) && !r.kvI8 {
-			// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
-			// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
-			mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
-			if r.pairwiseRoPE { // GLM-OCR, which keeps f32 KV (decoder.CUDAKVF16Decline), so the f32 module's kernel
-				mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
-			}
-			if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
-				loadMRope := func(dst *Pipeline, name string) {
-					if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
-						*dst = pl
-						r.mropePrefillReady = true
-					}
-				}
-				loadMRope(&r.bRopeKVMRoPE, mropeName)
-				if r.mropePrefillReady {
-					r.mropeTakesMode = !r.pairwiseRoPE
-					r.mropeSec0, r.mropeSec1 = int32(sec[0]), int32(sec[0]+sec[1])
-					if bv.MRopeInterleaved() {
-						if r.pairwiseRoPE {
-							// Pairwise rotation over the interleaved layout is a combination no checkpoint registers (decoder.ropeAt),
-							// and rope_kv_mrope_batched_pw has no such mode: decline rather than rotate by the wrong rule.
-							r.mropePrefillReady = false
-						}
-						r.mropeMode, r.mropeSec0, r.mropeSec1 = 1, int32(3*sec[1]), int32(3*sec[2])
-					}
-				}
-			}
-		}
-	}
-	// L2 fused prefill attention: default on above fastPrefillFloor;
-	// GOINFER_CUDA_FAST_PREFILL=0 or Options.ExactPrefill keeps the exact path. Own module, prefill_batched.ptx untouched. A
-	// load failure is not fatal: bAttnFused* stay zero and every selection site falls back to attn_batched, the exact path.
-	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
-	if m.ExactPrefill() { // Options.ExactPrefill: this model's prefill stays on the exact path
-		r.fastAttn, r.fastGemm = false, false
-	}
-	if (r.fastAttn || r.fastGemm) && r.prefillReady {
-		// The tensor-core prefill attention loads its cache's build: f32, f16 or int8 (the _kv8 twins stage K and V as f16 from the int8 cache and
-		// its scales, docs/measurements/cuda-kv-i8-2026-11/s6-registration.md); its launches pass the layer's scale pools (kvScaled).
-		if fmod, e6 := r.compileKV(r.kvPTX8(attnFusedPTX, attnFusedKV16PTX, attnFusedKV8PTX)); r.fastAttn && e6 == nil {
-			loadF := func(dst *Pipeline, name string) {
-				if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
-					*dst = pl
-				}
-			}
-			loadF(&r.bAttnFused64, "attn_fused_hd64")
-			loadF(&r.bAttnFused128, "attn_fused_hd128")
-			if bmod, eb := r.compileKV(r.kvPTX8(attnFusedBMPTX, attnFusedBMKV16PTX, attnFusedBMKV8PTX)); eb == nil {
-				loadF2 := func(dst *Pipeline, name string) {
-					if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
-						*dst = pl
-					}
-				}
-				loadF2(&r.bAttnBM32x64hd64, "attn_fused_bm32_hd64")
-				loadF2(&r.bAttnBM32x64hd128, "attn_fused_bm32_hd128")
-				loadF2(&r.bAttnBM32x32hd64, "attn_fused_bm32n32_hd64")
-				loadF2(&r.bAttnBM32x32hd128, "attn_fused_bm32n32_hd128")
-				loadF2(&r.bAttnBM128hd64, "attn_fused_bm128_hd64")
-				loadF2(&r.bAttnBM128hd128, "attn_fused_bm128_hd128")
-				if v := r.knobValue("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "64x64" {
-					r.attnTile = -1
-				} else if v == "128x64" {
-					r.attnTile = 3
-				} else if v == "32x64" {
-					r.attnTile = 1
-				} else if v == "32x32" {
-					r.attnTile = 2
-				}
-			}
-		}
-		// L3 tensor-core GEMM: own module, own half of the gate. Bound through an &r.<field> loader closure, like every pipeline
-		// here: TestPipelineLint_boundKernelsAreLaunched reads a plain `r.F = pl` as a launch with no binding, i.e. a
-		// nil-pipeline dispatch.
-		if gmod, e7 := r.dev.CompileLibrary(gemmMMAPTX); r.fastGemm && e7 == nil {
-			loadG := func(dst *Pipeline, name string) {
-				if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
-					*dst = pl
-				}
-			}
-			loadG(&r.bGemmMMA, "gemm_w4a8_mma")
-		}
-	}
+	s.bindPrefillKernels(r, bv)
+	s.bindFastPrefill(r, m)
 	// Split-KV decode attention: a high-occupancy, bit-identical alternative to the attn_batched(M=1) decode launch (it
 	// replaces exactly that launch, so it needs prefillReady). Own module. skMinKeys -1 means use the per-geometry table;
 	// set it before the load so a partial split-KV load cannot leave the zero value, which would mean "always split".
 	r.skMinKeys = -1
-	// gpt-oss's clamped interleaved-SwiGLU expert epilogue: own module, so the audited glue.ptx/moe.ptx stay untouched.
-	// Loaded only for that family; launchGluSplitExpert branches on this pipeline being populated. A load failure is not
-	// fatal.
-	if alpha, limit, isGptOss := bv.GptOssAct(); isGptOss {
-		if gmod, ge := r.dev.CompileLibrary(gptOssActPTX); ge == nil {
-			// Loader closure, not a plain assignment: see the pipeline-lint note at the L3 load above.
-			loadG := func(dst *Pipeline, name string) {
-				if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
-					*dst = pl
-				}
-			}
-			loadG(&r.gptOssSw, "glu_quant_gptoss")
-			// gpt-oss's router (route_gptoss): moe_route's "bias" steers expert selection only and takes the weight from the
-			// unbiased score, which is right for DeepSeek/GLM and wrong here, where softmax runs over the selected biased logits.
-			// Running gpt-oss through moe_route gives plausible mixing weights that are not this model's, a silent quality loss.
-			loadG(&r.gptOssRoute, "route_gptoss")
-			r.gptOssAlpha, r.gptOssLimit = alpha, limit
-		}
-	}
-	if r.prefillReady {
-		if skmod, e2 := r.compileKV(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVKV8PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
-			skOK := true
-			loadSK := func(dst *Pipeline, name string) {
-				if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {
-					*dst = p
-				} else {
-					skOK = false
-				}
-			}
-			loadSK(&r.skScores, "splitkv_scores")
-			loadSK(&r.skSoftmax, "splitkv_softmax")
-			loadSK(&r.skVsum, "splitkv_vsum")
-			if skOK {
-				// A ragged step's twins (splitkv_*_ragged). A load failure leaves them zero, so the step's split-KV rows take
-				// decode's own three launches row by row.
-				var e1, e2, e3 error
-				r.skScoresRagged, e1 = r.dev.NewComputePipeline(skmod, "splitkv_scores_ragged")
-				r.skSoftmaxRagged, e2 = r.dev.NewComputePipeline(skmod, "splitkv_softmax_ragged")
-				r.skVsumRagged, e3 = r.dev.NewComputePipeline(skmod, "splitkv_vsum_ragged")
-				if e1 != nil || e2 != nil || e3 != nil {
-					r.skScoresRagged, r.skSoftmaxRagged, r.skVsumRagged = Pipeline{}, Pipeline{}, Pipeline{}
-				}
-				r.skScoreBuf = r.af(r.nH * r.ctxCap)
-				r.skInvBuf = r.af(r.nH)
-				// Flash-decode V-sum SPIKE, NOT bit-identical. Loaded and allocated only when a test
-				// sets vsumSplitForTest, so a stock binary carries neither the pipelines nor the
-				// scratch.
-				if v := vsumSplitForTest; v > 1 {
-					// maxHd comes from the MODEL, not r.layers: r.layers is not populated until
-					// later in BuildResident, so reading it here silently yielded 0 and the
-					// resulting 0-byte allocation panicked the executor and declined the whole
-					// resident path to CPU. And hidden/nH is not a substitute — qwen3_5's
-					// head_dim is 256 where hidden/heads is not.
-					maxHd := 0
-					for l := range nLayers {
-						if h := bv.Layer(l).HeadDim(); h > maxHd {
-							maxHd = h
-						}
-					}
-					if maxHd <= 0 {
-						// Never attempt the allocation on a degenerate size: that is the exact
-						// failure above, and it takes the entire resident path down with it.
-						logs.Warnf("[cuda] the V-sum split is ignored: no positive head dim")
-					} else {
-						loadSK(&r.skVsumPartial, "splitkv_vsum_partial")
-						loadSK(&r.skVsumCombine, "splitkv_vsum_combine")
-						if r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
-							r.skPartialBuf = r.af(r.nH * maxHd * v)
-							r.skVsumSplit = v
-						}
-					}
-				}
-				// Default ON (bit-identical; gated per layer at runtime on the effective attended span
-				// nWin ≥ splitkvThreshold(nH, hd), so geometries and depths it loses on are unaffected).
-				// GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback); GOINFER_SPLITKV_MIN_KEYS
-				// overrides the per-geometry threshold so the crossover is re-measurable without a
-				// rebuild (0 ⇒ always split — the force-on arm).
-				r.splitkvAttn = r.knobValue("GOINFER_SPLITKV_ATTN") != "0"
-				if v, err := strconv.Atoi(r.knobValue("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {
-					r.skMinKeys = v
-				}
-			}
-		}
-	}
+	s.bindGptOss(r, bv)
+	s.bindSplitKV(r, bv, nLayers)
 	if r.prefillReady {
 		r.loadFlashDecode(m, nLayers)
 		r.loadPrefillSplitKV()
 	}
-	// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
-	if r.moe {
-		mmod, e2 := r.dev.CompileLibrary(moePTX)
-		if e2 != nil {
-			return e2
-		}
-		for _, f := range []struct {
-			dst  *Pipeline
-			name string
-		}{
-			{&r.fRoute, "moe_route"}, {&r.fRouterGemv, "gemv_f32_a8"},
-			{&r.fMoEGemv, "gemv_w4a8_moe"}, {&r.fMoEWacc, "gemv_w4a8_moe_wacc"},
-			{&r.fMoEWaccBias, "gemv_w4a8_moe_wacc_bias"},
-			{&r.fSharedCombine, "shared_gate_combine"},
-		} {
-			if *f.dst, e = r.dev.NewComputePipeline(mmod, f.name); e != nil {
-				return e
-			}
-		}
-	}
-	// router_f32 module: Gemma 4's own kernels, kept off the audited moe.ptx. gemma4Dense (any gemma4 checkpoint, not only
-	// enable_moe_block ones) compiles it too: scale_vec (fScaleVec) is segB's dense-tail per-layer-output-scalar kernel,
-	// which every dense gemma4 layer needs. The three router-specific kernels stay gemma4Moe-only.
-	if r.gemma4Moe || r.gemma4Dense {
-		rmod, e2 := r.dev.CompileLibrary(routerF32PTX)
-		if e2 != nil {
-			return e2
-		}
-		if r.fScaleVec, e = r.dev.NewComputePipeline(rmod, "scale_vec"); e != nil {
-			return e
-		}
-		if r.gemma4Moe {
-			for _, f := range []struct {
-				dst  *Pipeline
-				name string
-			}{
-				{&r.fRouterF32, "gemv_f32_f32"}, {&r.fScaleWgt, "scale_wgt_by_expert"},
-				{&r.fRmsNW, "rmsnorm_nw"},
-			} {
-				if *f.dst, e = r.dev.NewComputePipeline(rmod, f.name); e != nil {
-					return e
-				}
-			}
-			if r.g4cap {
-				r.g4capRn, r.g4capWgt = make([][]float32, nLayers), make([][]float32, nLayers)
-				r.g4capX1, r.g4capX2 = make([][]float32, nLayers), make([][]float32, nLayers)
-			}
-		}
+	if e := s.bindMoEKernels(r, nLayers); e != nil {
+		return e
 	}
 	return nil
 }
@@ -1557,8 +698,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 // line, and stops at a layer if the load was aborted. It runs inside the setup job after bindFamilyState and allocates no KV or
 // scratch.
 func (s *buildState) uploadLayers(r *cudaResident) error {
-	m, nLayers, nH, pleP, hls, hlm, hFinal := s.m, s.nLayers, s.nH, s.pleP, s.hls, s.hlm, s.w.FinalNorm
-	bv := m.BackendView()
+	nLayers, hls, hlm, hFinal := s.nLayers, s.hls, s.hlm, s.w.FinalNorm
 	r.layers = make([]cudaLayer, nLayers)
 	endWeights := r.onLine(mem.LineDense)
 	if r.loadAborted() {
@@ -1570,192 +710,212 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 		if r.loadAborted() {
 			return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 		}
-		h := &hls[l]
-		lw, _ := program.DecodeLayerWalk(m.Program().Layers[l], "CUDA")
-		L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l]), walk: lw}
-		if l == prefillStepsEmptyLayerForTest {
-			L.prefillSteps = nil
+		if e := s.uploadLayer(r, l); e != nil {
+			return e
 		}
-		if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
-			// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
-			// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
-			// non-empty above.
-			L.preNorm = r.up32(h.preNorm)
-		}
-		if h.ffn && h.mixer != decoder.MixerNone && ((!r.postOnly && !r.parallelBlock) || h.mixer == decoder.MixerDeltaNet) {
-			// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor (h.postNorm is 0-length, the same Alloc(0) hazard);
-			// segBFFN reuses segA's r.aq/r.aSc as the MLP input (see Model.ParallelBlockResident).
-			L.postNorm = r.up32(h.postNorm)
-		}
-		if h.mixer == decoder.MixerDeltaNet {
-			// Gated-DeltaNet mixer layer: no q/k/v/o, rope table or KV cache. It has two persistent state buffers instead, zeroed at
-			// build and re-zeroed per generation: the recurrence compounds, so unlike a KV cache the next sequence cannot overwrite
-			// it.
-			L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
-			L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
-			L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
-			L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
-			L.dnBetaScale, L.dnGNormEps = h.dnBetaScale, r.eps
-			if h.dnONormEps != 0 {
-				L.dnGNormEps = h.dnONormEps
-			}
-			L.dnWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
-			L.dnState = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
-		} else if h.mixer == decoder.MixerMamba {
-			// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
-			L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
-			L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
-			L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
-			L.mbWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
-			L.mbSSM = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
-		} else if h.mixer == decoder.MixerNone {
-			// A feed-forward-only block has no attention weights to upload (u and d follow below).
-		} else if h.mixer == decoder.MixerMLA {
-			if r.mlaQLoRA > 0 {
-				L.mlaQA = r.upW(h.mlaQA)
-				L.mlaQB = r.upW(h.mlaQB)
-				L.mlaQANorm = r.up32(h.mlaQANorm)
-			} else {
-				L.mlaQ = r.upW(h.mlaQ)
-			}
-			L.mlaKVA = r.upW(h.mlaKVA)
-			L.mlaKVANorm = r.up32(h.mlaKVANorm)
-			L.mlaWUK = r.up32(h.mlaWUK)
-			L.mlaWUV = r.up32(h.mlaWUV)
-			L.o = r.upW(h.o)
-			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.BackendView().Layer(l).RopeMscale())
-		} else {
-			L.q, L.o = r.upW(h.q), r.upW(h.o)
-			if bv.Layer(l).KVSrc() == l {
-				L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
-			}
-			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.BackendView().Layer(l).RopeMscale()) // YaRN attention_factor; 1.0 for every family without it
-			L.qGate = h.qGate
-		}
-		if h.mixer == decoder.MixerNone {
-			L.u, L.d = r.upW(h.u), r.upW(h.d)
-			L.ffnI = L.u.N
-		} else if !h.isMoE && h.ffn {
-			// A routed layer has no dense FFN to upload: its hostW's are empty, and
-			// Alloc(0) is an error rather than a harmless no-op.
-			L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
-			L.ffnI = L.g.N
-			if g4OneFFNWidthForTest && l > 0 {
-				L.ffnI = r.layers[0].ffnI
-			}
-			if pleP > 0 {
-				L.pleGate, L.pleProj, L.postPLENorm = r.upW(h.pleGate), r.upW(h.pleProj), r.up32(h.postPLENorm)
-			}
-			// Gemma 4's per-layer output scalar (out = h*layerScalar after the dense MLP residual add): present on every dense
-			// gemma4 layer (1 when the checkpoint's tensor is absent, decoder/weights.go); g4moe layers override it below with their
-			// bundle's value. Zero, the skip sentinel segB's dense tail checks, for every non-gemma4 family.
-			L.layerScalar = bv.Layer(l).Gemma4DenseScalar()
-		}
-		if (r.sandwich || r.postOnly) && h.mixer != decoder.MixerDeltaNet {
-			// h.mixer == decoder.MixerDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
-			// postAttnNorm/postMLPNorm (see the validation loop's DeltaNet continue).
-			L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
-		}
-		// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
-		// its nil slices would become 0-byte allocations (a hard error, not a no-op).
-		if h.hasBias && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
-			L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
-		}
-		if h.hasOBias && h.mixer != decoder.MixerDeltaNet {
-			L.ob, L.hasOBias = r.up32(h.ob), true
-		}
-		if r.qkNorm && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
-			L.qNorm = r.up32(h.qNorm)
-			if len(h.kNorm) > 0 { // empty on a KV-shared layer, and Alloc(0) is an error
-				L.kNorm = r.up32(h.kNorm)
-			}
-		}
-		if h.isMoE {
-			L.isMoE = true
-			L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
-			L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
-			if h.hasShared {
-				L.hasShared = true
-				L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
-				if h.shGate.N > 0 {
-					L.shGateW = r.upW(h.shGate)
-				}
-			}
-		}
-		if h.g4moe {
-			// Gemma-4 parallel dense‖MoE: router (folded f32 proj) + experts + the 5 norms +
-			// per-expert scale + layerScalar. Dense g/u/d were uploaded via the !h.isMoE branch.
-			L.g4moe = true
-			L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
-			L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
-			L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
-			L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
-			L.perExpertScaleB = r.up32(h.perExpertScale)
-			L.layerScalar = h.layerScalar
-		}
-		L.window = h.window
-		// Per-layer attention geometry, from the same accessors the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer through
-		// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from the Gemma 4 program walk. Uniform
-		// families collapse to the model-level fields; Gemma 4's global layers report the wide head, fewer KV heads and partial
-		// rotary.
-		L.hd, L.nKV, L.rhalf = bv.Layer(l).HeadDim(), bv.Layer(l).KVHeads(), bv.Layer(l).RotaryDim()/2
-		L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
-		if h.mixer == decoder.MixerDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
-			// A recurrent mixer or a feed-forward-only block has no attention geometry to validate or rope table to bind. A non-zero kvDim would
-			// make the KV allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
-			L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
-			r.layers[l] = L
-			continue
-		}
-		if h.mixer == decoder.MixerMLA {
-			L.hd = r.mlaQKHead
-			L.nKV = 1
-			L.rhalf = r.mlaQKRope / 2
-			L.qDim = nH * r.mlaVHead
-			L.kvDim = r.mlaLatDim
-			r.layers[l] = L
-			continue
-		}
-		if src := bv.Layer(l).KVSrc(); src != l {
-			if g4KVSrcOffForTest {
-				// Test defect: the source one OWNING layer of the same attention type earlier (when there is one).
-				for j := src - 1; j >= 0; j-- {
-					if bv.Layer(j).KVSrc() == j && bv.Layer(j).HeadDim() == bv.Layer(src).HeadDim() {
-						src = j
-						break
-					}
-				}
-			}
-			// Gemma 4 E-model KV sharing: this layer reads layer src's cache and owns no K/V. The geometry must be the
-			// source's, or its attention would index the aliased buffers with the wrong stride.
-			so := &r.layers[src]
-			if src > l || so.kvShared || so.hd != L.hd || so.nKV != L.nKV || so.kvDim != L.kvDim {
-				return fmt.Errorf("cuda: layer %d shares layer %d's KV cache but its geometry (hd %d, nKV %d, kvDim %d) is not an owning layer's (hd %d, nKV %d, kvDim %d)",
-					l, src, L.hd, L.nKV, L.kvDim, so.hd, so.nKV, so.kvDim)
-			}
-			L.kvShared, L.kvSrc = true, src
-		}
-		L.kEqV = bv.Layer(l).VFromK() && !L.kvShared
-		// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
-		// non-K=V layers so a test can reproduce the pre-fix numbers.
-		L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
-		if !L.kEqV && !L.kvShared {
-			L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
-		}
-		// Per-layer rope-table invariant: rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
-		// per-layer table must have exactly rhalf entries. Gemma 4's global and local tables differ in length and the generic
-		// finalizeRoPE check cannot see that, so assert it per layer at build.
-		if len(h.invFreq) != L.rhalf {
-			return fmt.Errorf("cuda: layer %d rope table len=%d != rhalf=%d — per-layer invFreq must match the rotated-pair count the kernel indexes", l, len(h.invFreq), L.rhalf)
-		}
-		r.layers[l] = L
 	}
 	r.lmW = r.upW(hlm)
 	r.closeWeightArena() // the final norm is not in the walk that sized it
 	r.finalNorm = r.up32(hFinal)
 	endWeights()
+	return nil
+}
+
+// uploadLayer uploads layer l's planned weights and per-layer state into a cudaLayer, sets its attention geometry
+// (layerGeometry) and stores it in r.layers[l].
+func (s *buildState) uploadLayer(r *cudaResident, l int) error {
+	m, pleP, hls := s.m, s.pleP, s.hls
+	bv := m.BackendView()
+	h := &hls[l]
+	lw, _ := program.DecodeLayerWalk(m.Program().Layers[l], "CUDA")
+	L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l]), walk: lw}
+	if l == prefillStepsEmptyLayerForTest {
+		L.prefillSteps = nil
+	}
+	if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
+		// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
+		// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
+		// non-empty above.
+		L.preNorm = r.up32(h.preNorm)
+	}
+	if h.ffn && h.mixer != decoder.MixerNone && ((!r.postOnly && !r.parallelBlock) || h.mixer == decoder.MixerDeltaNet) {
+		// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor (h.postNorm is 0-length, the same Alloc(0) hazard);
+		// segBFFN reuses segA's r.aq/r.aSc as the MLP input (see Model.ParallelBlockResident).
+		L.postNorm = r.up32(h.postNorm)
+	}
+	if h.mixer == decoder.MixerDeltaNet {
+		// Gated-DeltaNet mixer layer: no q/k/v/o, rope table or KV cache. It has two persistent state buffers instead, zeroed at
+		// build and re-zeroed per generation: the recurrence compounds, so unlike a KV cache the next sequence cannot overwrite
+		// it.
+		L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
+		L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
+		L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
+		L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
+		L.dnBetaScale, L.dnGNormEps = h.dnBetaScale, r.eps
+		if h.dnONormEps != 0 {
+			L.dnGNormEps = h.dnONormEps
+		}
+		L.dnWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+		L.dnState = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
+	} else if h.mixer == decoder.MixerMamba {
+		// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
+		L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
+		L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
+		L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
+		L.mbWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+		L.mbSSM = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
+	} else if h.mixer == decoder.MixerNone {
+		// A feed-forward-only block has no attention weights to upload (u and d follow below).
+	} else if h.mixer == decoder.MixerMLA {
+		if r.mlaQLoRA > 0 {
+			L.mlaQA = r.upW(h.mlaQA)
+			L.mlaQB = r.upW(h.mlaQB)
+			L.mlaQANorm = r.up32(h.mlaQANorm)
+		} else {
+			L.mlaQ = r.upW(h.mlaQ)
+		}
+		L.mlaKVA = r.upW(h.mlaKVA)
+		L.mlaKVANorm = r.up32(h.mlaKVANorm)
+		L.mlaWUK = r.up32(h.mlaWUK)
+		L.mlaWUV = r.up32(h.mlaWUV)
+		L.o = r.upW(h.o)
+		L.invF = r.up32(h.invFreq)
+		L.mscale = float32(m.BackendView().Layer(l).RopeMscale())
+	} else {
+		L.q, L.o = r.upW(h.q), r.upW(h.o)
+		if bv.Layer(l).KVSrc() == l {
+			L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
+		}
+		L.invF = r.up32(h.invFreq)
+		L.mscale = float32(m.BackendView().Layer(l).RopeMscale()) // YaRN attention_factor; 1.0 for every family without it
+		L.qGate = h.qGate
+	}
+	if h.mixer == decoder.MixerNone {
+		L.u, L.d = r.upW(h.u), r.upW(h.d)
+		L.ffnI = L.u.N
+	} else if !h.isMoE && h.ffn {
+		// A routed layer has no dense FFN to upload: its hostW's are empty, and
+		// Alloc(0) is an error rather than a harmless no-op.
+		L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
+		L.ffnI = L.g.N
+		if g4OneFFNWidthForTest && l > 0 {
+			L.ffnI = r.layers[0].ffnI
+		}
+		if pleP > 0 {
+			L.pleGate, L.pleProj, L.postPLENorm = r.upW(h.pleGate), r.upW(h.pleProj), r.up32(h.postPLENorm)
+		}
+		// Gemma 4's per-layer output scalar (out = h*layerScalar after the dense MLP residual add): present on every dense
+		// gemma4 layer (1 when the checkpoint's tensor is absent, decoder/weights.go); g4moe layers override it below with their
+		// bundle's value. Zero, the skip sentinel segB's dense tail checks, for every non-gemma4 family.
+		L.layerScalar = bv.Layer(l).Gemma4DenseScalar()
+	}
+	if (r.sandwich || r.postOnly) && h.mixer != decoder.MixerDeltaNet {
+		// h.mixer == decoder.MixerDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
+		// postAttnNorm/postMLPNorm (see the validation loop's DeltaNet continue).
+		L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
+	}
+	// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
+	// its nil slices would become 0-byte allocations (a hard error, not a no-op).
+	if h.hasBias && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
+		L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
+	}
+	if h.hasOBias && h.mixer != decoder.MixerDeltaNet {
+		L.ob, L.hasOBias = r.up32(h.ob), true
+	}
+	if r.qkNorm && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
+		L.qNorm = r.up32(h.qNorm)
+		if len(h.kNorm) > 0 { // empty on a KV-shared layer, and Alloc(0) is an error
+			L.kNorm = r.up32(h.kNorm)
+		}
+	}
+	if h.isMoE {
+		L.isMoE = true
+		L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
+		L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
+		if h.hasShared {
+			L.hasShared = true
+			L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
+			if h.shGate.N > 0 {
+				L.shGateW = r.upW(h.shGate)
+			}
+		}
+	}
+	if h.g4moe {
+		// Gemma-4 parallel dense‖MoE: router (folded f32 proj) + experts + the 5 norms +
+		// per-expert scale + layerScalar. Dense g/u/d were uploaded via the !h.isMoE branch.
+		L.g4moe = true
+		L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
+		L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
+		L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
+		L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
+		L.perExpertScaleB = r.up32(h.perExpertScale)
+		L.layerScalar = h.layerScalar
+	}
+	L.window = h.window
+	if e := s.layerGeometry(r, l, h, &L); e != nil {
+		return e
+	}
+	r.layers[l] = L
+	return nil
+}
+
+// layerGeometry sets an uploaded layer's attention geometry from the model's per-layer accessors, with its KV sharing, K=V and
+// v_norm, and uploads the v_proj a layer that owns its K/V carries. A recurrent or feed-forward-only layer gets none.
+func (s *buildState) layerGeometry(r *cudaResident, l int, h *hlayer, L *cudaLayer) error {
+	m, nH := s.m, s.nH
+	bv := m.BackendView()
+	// Per-layer attention geometry, from the same accessors the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer through
+	// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from the Gemma 4 program walk. Uniform
+	// families collapse to the model-level fields; Gemma 4's global layers report the wide head, fewer KV heads and partial
+	// rotary.
+	L.hd, L.nKV, L.rhalf = bv.Layer(l).HeadDim(), bv.Layer(l).KVHeads(), bv.Layer(l).RotaryDim()/2
+	L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
+	if h.mixer == decoder.MixerDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
+		// A recurrent mixer or a feed-forward-only block has no attention geometry to validate or rope table to bind. A non-zero kvDim would
+		// make the KV allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
+		L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
+		return nil
+	}
+	if h.mixer == decoder.MixerMLA {
+		L.hd = r.mlaQKHead
+		L.nKV = 1
+		L.rhalf = r.mlaQKRope / 2
+		L.qDim = nH * r.mlaVHead
+		L.kvDim = r.mlaLatDim
+		return nil
+	}
+	if src := bv.Layer(l).KVSrc(); src != l {
+		if g4KVSrcOffForTest {
+			// Test defect: the source one OWNING layer of the same attention type earlier (when there is one).
+			for j := src - 1; j >= 0; j-- {
+				if bv.Layer(j).KVSrc() == j && bv.Layer(j).HeadDim() == bv.Layer(src).HeadDim() {
+					src = j
+					break
+				}
+			}
+		}
+		// Gemma 4 E-model KV sharing: this layer reads layer src's cache and owns no K/V. The geometry must be the
+		// source's, or its attention would index the aliased buffers with the wrong stride.
+		so := &r.layers[src]
+		if src > l || so.kvShared || so.hd != L.hd || so.nKV != L.nKV || so.kvDim != L.kvDim {
+			return fmt.Errorf("cuda: layer %d shares layer %d's KV cache but its geometry (hd %d, nKV %d, kvDim %d) is not an owning layer's (hd %d, nKV %d, kvDim %d)",
+				l, src, L.hd, L.nKV, L.kvDim, so.hd, so.nKV, so.kvDim)
+		}
+		L.kvShared, L.kvSrc = true, src
+	}
+	L.kEqV = bv.Layer(l).VFromK() && !L.kvShared
+	// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
+	// non-K=V layers so a test can reproduce the pre-fix numbers.
+	L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
+	if !L.kEqV && !L.kvShared {
+		L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
+	}
+	// Per-layer rope-table invariant: rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
+	// per-layer table must have exactly rhalf entries. Gemma 4's global and local tables differ in length and the generic
+	// finalizeRoPE check cannot see that, so assert it per layer at build.
+	if len(h.invFreq) != L.rhalf {
+		return fmt.Errorf("cuda: layer %d rope table len=%d != rhalf=%d — per-layer invFreq must match the rotated-pair count the kernel indexes", l, len(h.invFreq), L.rhalf)
+	}
 	return nil
 }
 

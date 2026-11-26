@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // seamPlantForTest plants one defect in a hidden-state seam, so the seams' gates (decoder/seams_test.go) can show they go red.
@@ -293,9 +295,9 @@ func applyNorm(p normParams, dst, src, w, b []float32, dim int) {
 	case normCopy:
 		copy(dst, src)
 	case normLayer:
-		layerNormInto(dst, src, w, b, 1, dim, p.Eps)
+		normact.LayerInto(dst, src, w, b, 1, dim, p.Eps)
 	default:
-		rmsNormInto(dst, src, w, 1, dim, p.Eps, p.AddOne)
+		normact.RMSInto(dst, src, w, 1, dim, p.Eps, p.AddOne)
 	}
 }
 
@@ -341,12 +343,12 @@ func applyQKNorm(p qkNormParams, q, k, qw, kw []float32, nH, nKV, hd int) {
 		return
 	}
 	if p.Whole {
-		rmsNorm(q, qw, 1, nH*hd, p.Eps, p.AddOne)
-		rmsNorm(k, kw, 1, nKV*hd, p.Eps, p.AddOne)
+		normact.RMS(q, qw, 1, nH*hd, p.Eps, p.AddOne)
+		normact.RMS(k, kw, 1, nKV*hd, p.Eps, p.AddOne)
 		return
 	}
-	rmsNorm(q, qw, nH, hd, p.Eps, p.AddOne)
-	rmsNorm(k, kw, nKV, hd, p.Eps, p.AddOne)
+	normact.RMS(q, qw, nH, hd, p.Eps, p.AddOne)
+	normact.RMS(k, kw, nKV, hd, p.Eps, p.AddOne)
 }
 
 // applyRope rotates one position's q and k.
@@ -356,8 +358,8 @@ func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][
 		mlaRope(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
 		return
 	}
-	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
-	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	rope.At(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	rope.At(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys

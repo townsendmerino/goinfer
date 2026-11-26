@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testassets"
 )
 
 const programFingerprintsPath = "../testdata/program_fingerprints.json"
@@ -153,7 +155,7 @@ func TestProgramFingerprint_realCheckpoints(t *testing.T) {
 		if a.Kind != "dir" {
 			continue
 		}
-		dir, err := lookupAsset(a.Env)
+		dir, err := testassets.Lookup(a.Env)
 		if err != nil {
 			continue
 		}

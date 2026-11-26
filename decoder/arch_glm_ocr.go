@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // glmOcrArchitecture expresses the GLM-OCR TEXT decoder (zai-org/GLM-OCR; model_type
@@ -19,7 +21,7 @@ import (
 //   - fused mlp.gate_up_proj, gate rows first, split at load (buildGlmOcrWeights);
 //   - rotary theta 1e4, full width (partial_rotary_factor 1.0), PAIRWISE rotation (ropeInterleave)
 //     with m-RoPE sections [16 24 24] laid out as contiguous t/h/w blocks (MRopeInterleaved false):
-//     applyMRoPEPairwise. For text tokens every position component is equal, so the whole stack
+//     rope.ApplyMRoPEPairwise. For text tokens every position component is equal, so the whole stack
 //     reduces to plain pairwise RoPE;
 //   - an UNTIED lm_head; the multi-token-prediction layer (layers.<NumLayers>) is never loaded.
 //
@@ -31,17 +33,17 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateGlmOcr(hd); err != nil {
 		return nil, nil, err
 	}
-	spec, partial, err := parseRopeFlat(cfg.RopeParameters)
+	spec, partial, err := rope.ParseFlat(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(glm_ocr): %w", err)
 	}
-	if spec.scaling != nil {
+	if spec.Scaling != nil {
 		return nil, nil, fmt.Errorf("decoder(glm_ocr): rope_parameters.rope_type scaling is not supported (default only)")
 	}
 	if partial != 0 && partial != 1 {
 		return nil, nil, fmt.Errorf("decoder(glm_ocr): partial_rotary_factor=%v unsupported (1.0 only: the m-RoPE sections are checked against the full head_dim/2)", partial)
 	}
-	section, interleaved := parseMRopeFlat(cfg.RopeParameters)
+	section, interleaved := rope.ParseMRoPEFlat(cfg.RopeParameters)
 	if section == nil {
 		return nil, nil, fmt.Errorf("decoder(glm_ocr): rope_parameters.mrope_section (3 entries) is required")
 	}
@@ -80,8 +82,8 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		SlidingWindow:    0, // full attention on every layer
 		layerIsGlobal:    nil,
 		layerNoPE:        nil,
-		RoPELocalBase:    spec.base,
-		RoPEGlobalBase:   spec.base,
+		RoPELocalBase:    spec.Base,
+		RoPEGlobalBase:   spec.Base,
 		RotaryDim:        hd, // partial_rotary_factor 1.0: all 128 dims rotate
 		MRopeSection:     section,
 		MRopeInterleaved: false, // contiguous t/h/w blocks (chunk[i%3] over split(mrope_section))

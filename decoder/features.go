@@ -214,7 +214,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 
 // pairwiseRoPE reports whether the generic (non-MLA) scalar rope is GPT-J pairwise (dims 2d, 2d+1)
 // rather than NeoX half-split. MLA carries its own interleave on mlaParams and is gated by FeatMLA;
-// qwen35 passes interleave=false to ropeAt whatever ropeInterleave says (forward_qwen35.go), so it is
+// qwen35 passes interleave=false to rope.At whatever ropeInterleave says (forward_qwen35.go), so it is
 // excluded to match what the CPU path actually runs.
 func (a *Architecture) pairwiseRoPE() bool {
 	return a.ropeInterleave && a.mla == nil && a.qwen35 == nil

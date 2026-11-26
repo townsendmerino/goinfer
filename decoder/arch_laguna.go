@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // lagunaArchitecture expresses Laguna (poolside; model_type "laguna") across all
@@ -45,7 +47,7 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+	full, sliding, err := rope.ParseParameters(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(laguna): %w", err)
 	}
@@ -61,9 +63,9 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// working around it by aligning the top-level field to the SWA value on a cloned
 	// config. The per-layer-type value is therefore the authoritative one; the
 	// top-level field is a fallback for checkpoints that carry only it.
-	partialOf := func(spec *ropeLayerSpec) float64 {
-		if spec != nil && spec.partial > 0 {
-			return spec.partial
+	partialOf := func(spec *rope.LayerSpec) float64 {
+		if spec != nil && spec.Partial > 0 {
+			return spec.Partial
 		}
 		return cfg.PartialRotaryFactor
 	}
@@ -74,10 +76,10 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return 0 // 0 ⇒ full HeadDim
 	}
 
-	localBase, localScaling := full.base, full.scaling // M.1: no sliding layers; keep the tables equal
+	localBase, localScaling := full.Base, full.Scaling // M.1: no sliding layers; keep the tables equal
 	rotaryDimLocal := 0
 	if sliding != nil {
-		localBase, localScaling = sliding.base, sliding.scaling
+		localBase, localScaling = sliding.Base, sliding.Scaling
 		if rl := rotaryOf(partialOf(sliding)); rl != rotaryOf(partialOf(full)) {
 			rotaryDimLocal = rl
 			if rotaryDimLocal == 0 {
@@ -128,9 +130,9 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
 		layerIsGlobal:    cfg.IsGlobalLayer, // from layer_types; absent ⇒ all-global (M.1)
-		RoPEGlobalBase:   full.base,
+		RoPEGlobalBase:   full.Base,
 		RoPELocalBase:    localBase,
-		ropeScaling:      full.scaling,
+		ropeScaling:      full.Scaling,
 		ropeScalingLocal: localScaling,
 		RotaryDim:        rotaryOf(partialOf(full)),
 		RotaryDimLocal:   rotaryDimLocal,
