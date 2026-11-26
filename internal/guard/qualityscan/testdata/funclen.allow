@@ -9,7 +9,6 @@ backend/metal/decode_scratch.go:decodeShape.buffers 202 -- over the ceiling befo
 backend/metal/resident_build.go:residentBuild.buildLayer 346 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_batched.go:Context.DecodeTokenFusedBatched 315 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_fused.go:Context.DecodeTokenFused 216 -- over the ceiling before the ratchet; split it when next changed
-backend/webgpu/internal/kernels/prefillrunner.go:Context.prefillLastRows 785 -- over the ceiling before the ratchet; split it when next changed
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
 decoder/dflash.go:loadDFlashDrafter 223 -- over the ceiling before the ratchet; split it when next changed
 decoder/gguf_build.go:ggufBuild.loadLayers 208 -- over the ceiling before the ratchet; split it when next changed
