@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
@@ -160,7 +161,7 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
-		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
+		m, err := giwcodec.STIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
 		if err != nil {
 			return fmt.Errorf("dspark: %w", err)
 		}

@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // TestValidateShapes_catchesArchMismatch is the break-it-first gate for audit C-06:
@@ -39,7 +40,7 @@ func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 		}
 	}
 	// The honest bundle passes.
-	if e := validateShapes(good(), arch); e != nil {
+	if e := giwcodec.ValidateShapes(good(), arch); e != nil {
 		t.Fatalf("valid bundle rejected: %v", e)
 	}
 	// Each tampered dimension must be caught.
@@ -72,7 +73,7 @@ func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 	} {
 		w := good()
 		tc.mutate(w)
-		e := validateShapes(w, arch)
+		e := giwcodec.ValidateShapes(w, arch)
 		if e == nil {
 			t.Errorf("%s: not rejected", tc.name)
 			continue
@@ -113,7 +114,7 @@ func TestValidateShapes_gemma4PLE(t *testing.T) {
 			PerLayerProjNorm:   make([]float32, pleDim),
 		}
 	}
-	if e := validateShapes(good(), arch); e != nil {
+	if e := giwcodec.ValidateShapes(good(), arch); e != nil {
 		t.Fatalf("valid gemma4 PLE bundle rejected: %v", e)
 	}
 	for _, tc := range []struct {
@@ -127,7 +128,7 @@ func TestValidateShapes_gemma4PLE(t *testing.T) {
 	} {
 		w := good()
 		tc.mutate(w)
-		e := validateShapes(w, arch)
+		e := giwcodec.ValidateShapes(w, arch)
 		if e == nil {
 			t.Errorf("%s: not rejected", tc.name)
 			continue
@@ -158,13 +159,13 @@ type shapeCase struct {
 // requireRefused checks good passes validateShapes and each case fails it with a *SerializeError naming its tensor.
 func requireRefused(t *testing.T, arch *darch.Architecture, good func() *darch.Weights, cases []shapeCase) {
 	t.Helper()
-	if e := validateShapes(good(), arch); e != nil {
+	if e := giwcodec.ValidateShapes(good(), arch); e != nil {
 		t.Fatalf("valid bundle rejected: %v", e)
 	}
 	for _, tc := range cases {
 		w := good()
 		tc.mutate(w)
-		e := validateShapes(w, arch)
+		e := giwcodec.ValidateShapes(w, arch)
 		if e == nil {
 			t.Errorf("%s: not rejected", tc.name)
 			continue

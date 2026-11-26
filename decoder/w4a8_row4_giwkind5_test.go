@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical is L2's round-trip
@@ -201,25 +202,25 @@ func TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only(t *testin
 	wantScales := rows * ((cols + group - 1) / group)
 
 	wr := &giwWriter{}
-	wr.raw([]byte{5}) // kind 5
-	wr.u32(uint32(rows))
-	wr.u32(uint32(cols))
-	wr.u32(uint32(group))
-	wr.raw([]byte{0}) // w8a8
-	wr.alignArray()
-	wr.scales16(make([]uint16, wantScales))
-	wr.alignArray()
-	wr.bytesField(make([]byte, wantQ4))
+	wr.Raw([]byte{5}) // kind 5
+	wr.U32(uint32(rows))
+	wr.U32(uint32(cols))
+	wr.U32(uint32(group))
+	wr.Raw([]byte{0}) // w8a8
+	wr.AlignArray()
+	wr.Scales16(make([]uint16, wantScales))
+	wr.AlignArray()
+	wr.BytesField(make([]byte, wantQ4))
 
-	r := &giwReader{data: wr.buf}
-	wm := r.weightMat()
-	if r.err == nil {
+	r := &giwReader{Reader: giwcodec.Reader{Data: wr.Buf}}
+	wm := r.WeightMat()
+	if r.Err == nil {
 		t.Fatalf("kind-5 tensor with rows=%d (not a multiple of 4) loaded without error — want a decline", rows)
 	}
 	if wm.Rows() != 0 {
 		t.Errorf("declined weightMat should be the zero value, got Rows()=%d", wm.Rows())
 	}
-	got := r.err.Error()
+	got := r.Err.Error()
 	for _, want := range []string{"row4-only", "kind 5", "this core"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("decline error %q does not mention %q", got, want)

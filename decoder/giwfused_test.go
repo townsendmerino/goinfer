@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // v13's fused groups (kind 6) put the nibbles of q,k,v and of gate,up back to back so a Metal fused GEMV
@@ -167,7 +168,7 @@ func TestGIWFused_ineligibleGroupFallsBack(t *testing.T) {
 	}
 	// Scan mode reads the records without the arch check: a llama layer with no V is not a loadable bundle, but the absent
 	// member must still round-trip through the writer's fallback.
-	got, err := walkSerializedWeights(blob, false, nil, nil, true)
+	got, err := giwcodec.WalkSerializedWeights(blob, false, nil, nil, true, giwF32Kind1ForTest, ErrLoadAborted)
 	if err != nil {
 		t.Fatalf("walkSerializedWeights: %v", err)
 	}
@@ -219,28 +220,28 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 				ms[i] = synthInt4(rows, 64, 32, float32(i+1))
 				ptrs[i] = &ms[i]
 			}
-			w := &giwWriter{target: GIWTargetMetal}
-			w.raw(make([]byte, lead))
-			w.fusedGroup(ptrs...)
-			w.raw([]byte{0xAB, 0xCD}) // a trailer: the reader must stop exactly at the group's end
+			w := &giwWriter{Writer: giwcodec.Writer{Target: GIWTargetMetal}}
+			w.Raw(make([]byte, lead))
+			w.FusedGroup(ptrs...)
+			w.Raw([]byte{0xAB, 0xCD}) // a trailer: the reader must stop exactly at the group's end
 
-			r := &giwReader{data: w.buf, off: lead}
+			r := &giwReader{Reader: giwcodec.Reader{Data: w.Buf, Off: lead}}
 			got := make([]linalg.WeightMat, len(shape))
 			gp := make([]*linalg.WeightMat, len(shape))
 			for i := range got {
 				gp[i] = &got[i]
 			}
-			r.fusedGroup(gp...)
-			if r.err != nil {
-				t.Fatalf("shape %v lead %d: %v", shape, lead, r.err)
+			r.FusedGroup(gp...)
+			if r.Err != nil {
+				t.Fatalf("shape %v lead %d: %v", shape, lead, r.Err)
 			}
-			if r.off != len(w.buf)-2 {
-				t.Errorf("shape %v lead %d: reader stopped at %d, group ends at %d", shape, lead, r.off, len(w.buf)-2)
+			if r.Off != len(w.Buf)-2 {
+				t.Errorf("shape %v lead %d: reader stopped at %d, group ends at %d", shape, lead, r.Off, len(w.Buf)-2)
 			}
 			for i := range got {
 				sameMat(t, "member", &ms[i], &got[i])
 				q4 := int4Bytes(t, &got[i])
-				at := int(uintptr(unsafe.Pointer(&q4[0])) - uintptr(unsafe.Pointer(&w.buf[0])))
+				at := int(uintptr(unsafe.Pointer(&q4[0])) - uintptr(unsafe.Pointer(&w.Buf[0])))
 				if at%16 != 0 {
 					t.Errorf("shape %v lead %d member %d: nibbles at blob offset %d, not 16-aligned", shape, lead, i, at)
 				}
@@ -261,7 +262,7 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 						t.Fatalf("shape %v lead %d member %d: scale %d = %#x, want %#x", shape, lead, i, j, f16[j], want[j])
 					}
 				}
-				at16 := int(uintptr(unsafe.Pointer(&f16[0])) - uintptr(unsafe.Pointer(&w.buf[0])))
+				at16 := int(uintptr(unsafe.Pointer(&f16[0])) - uintptr(unsafe.Pointer(&w.Buf[0])))
 				if i == 0 && at16%16 != 0 {
 					t.Errorf("shape %v lead %d: scale block at blob offset %d, not 16-aligned", shape, lead, at16)
 				}

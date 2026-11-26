@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // populated reports whether a LayerWeights field holds anything, for the kinds this struct uses.
@@ -177,7 +178,7 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 				t.Skipf("load: %v", err)
 			}
 			defer m.Close()
-			if e := canSerialize(m.w.Arch); e != nil {
+			if e := giwcodec.CanSerialize(m.w.Arch); e != nil {
 				t.Skipf("refused (a correct answer): %v", e)
 			}
 			blob, err := SerializeWeights(m.w, "census")

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"strings"
 	"testing"
 )
@@ -51,9 +52,9 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 			name      string
 			got, want []float32
 		}{
-			{"inProj", islandF32(&got.InProj), islandF32(&want.InProj)},
+			{"inProj", giwcodec.IslandF32(&got.InProj), giwcodec.IslandF32(&want.InProj)},
 			{"convW", got.ConvW, want.ConvW},
-			{"outProj", islandF32(&got.OutProj), islandF32(&want.OutProj)},
+			{"outProj", giwcodec.IslandF32(&got.OutProj), giwcodec.IslandF32(&want.OutProj)},
 		} {
 			if len(c.got) != len(c.want) {
 				t.Fatalf("layer %d %s: len %d, want %d", l, c.name, len(c.got), len(c.want))

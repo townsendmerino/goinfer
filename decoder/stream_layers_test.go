@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // streamLayersProbe drives streamLayers over n fake layers and reports the order layers were built in and the most that
@@ -20,12 +21,12 @@ import (
 func streamLayersProbe(t *testing.T, n int, arch *darch.Architecture, budget func(layerBytes int64) int64, fail int) (order []int, maxInFlight int, err error) {
 	t.Helper()
 	mk := func(l *darch.LayerWeights) { l.QProj = linalg.WrapF32(make([]float32, 64), 8, 8) }
-	probe := &giwWriter{sink: io.Discard, arch: arch}
+	probe := &giwWriter{Writer: giwcodec.Writer{Sink: io.Discard, Arch: arch}}
 	var one darch.LayerWeights
 	mk(&one)
-	probe.layer(&one)
+	probe.Layer(&one)
 	w := &darch.Weights{Arch: arch, Layers: make([]darch.LayerWeights, n)}
-	sink := &giwWriter{sink: io.Discard, arch: arch, layerBudget: budget(probe.n)}
+	sink := &giwWriter{Writer: giwcodec.Writer{Sink: io.Discard, Arch: arch}, layerBudget: budget(probe.N)}
 	var mu sync.Mutex
 	var inFlight, peak atomic.Int64
 	err = streamLayers(w, arch, sink, func(i int) error {

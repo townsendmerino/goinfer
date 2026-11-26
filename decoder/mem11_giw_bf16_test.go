@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // gbWriteGIW writes m's weights to path as a weights-only .giw, with islands as f32 arrays when f32Form (the form before kind 9).
@@ -53,11 +54,11 @@ func gbRoundIslands(t *testing.T, m *Model) int64 {
 	var bytes int64
 	for _, sc := range gbConvs(m) {
 		for _, w := range []*linalg.WeightMat{&sc.InProj, &sc.OutProj} {
-			f := slices.Clone(islandF32(w))
+			f := slices.Clone(giwcodec.IslandF32(w))
 			for i, x := range f {
 				f[i] = linalg.BF16ToF32(linalg.F32ToBF16(x))
 			}
-			*w = islandMat(f, w.Rows(), w.Cols())
+			*w = giwcodec.IslandMat(f, w.Rows(), w.Cols())
 			if w.Kind() != "bf16" {
 				t.Fatalf("a rounded island is %s", w.Kind())
 			}

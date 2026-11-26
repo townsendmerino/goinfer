@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -139,8 +140,8 @@ func TestQ4K_native56CUDATarget(t *testing.T) {
 		if got := kquantTag(c.quant, c.target); got != want {
 			t.Errorf("kquantTag(%q, %q) = %q, want %q", c.quant, c.target, got, want)
 		}
-		if c.quant == "q4k" && giwCarriesKQuant56(c.target) != c.want {
-			t.Errorf("giwCarriesKQuant56(%q) = %v, want %v", c.target, !c.want, c.want)
+		if c.quant == "q4k" && giwcodec.CarriesKQuant56(c.target) != c.want {
+			t.Errorf("giwcodec.CarriesKQuant56(%q) = %v, want %v", c.target, !c.want, c.want)
 		}
 	}
 	if !linalg.KQuantNative() {

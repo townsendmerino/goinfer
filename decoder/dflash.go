@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -474,7 +475,7 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 			d.rows[dst] = r
 			return nil
 		}
-		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
+		m, err := giwcodec.STIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
 		if err != nil {
 			return fmt.Errorf("dflash: %w", err)
 		}

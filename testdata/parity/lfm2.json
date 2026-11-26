@@ -7,12 +7,12 @@
     "decoder/lfm2.go",
     "decoder/forward_lfm2.go",
     "internal/runtime/families/arch_lfm2.go",
-    "decoder/island.go"
+    "internal/runtime/giwcodec/island.go"
   ],
   "programs": [
     "testdata/lfm2-tiny"
   ],
-  "deps_hash": "sha256:0cf244ce51c5892e7bd5c660d3c2393c765b8da52a1c3e561a5e767be24c5060",
+  "deps_hash": "sha256:8ed8f102804e44e22ac58f51c8805d60bee714e33b6df449066b322abf953dbf",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

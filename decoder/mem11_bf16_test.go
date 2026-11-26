@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -101,7 +102,7 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 		t.Fatal("the fixture has no conv layer")
 	}
 	round := func(w *linalg.WeightMat) []float32 {
-		f := slices.Clone(islandF32(w))
+		f := slices.Clone(giwcodec.IslandF32(w))
 		for i, x := range f {
 			f[i] = linalg.BF16ToF32(linalg.F32ToBF16(x))
 		}
@@ -117,7 +118,7 @@ func TestMEM11_lfm2BF16Islands(t *testing.T) {
 			r, c := sc.InProj.Rows(), sc.InProj.Cols()
 			ro, co := sc.OutProj.Rows(), sc.OutProj.Cols()
 			if on {
-				sc.InProj, sc.OutProj = islandMat(slices.Clone(rounded[i].in), r, c), islandMat(slices.Clone(rounded[i].out), ro, co)
+				sc.InProj, sc.OutProj = giwcodec.IslandMat(slices.Clone(rounded[i].in), r, c), giwcodec.IslandMat(slices.Clone(rounded[i].out), ro, co)
 			} else {
 				sc.InProj, sc.OutProj = linalg.WrapF32(slices.Clone(rounded[i].in), r, c), linalg.WrapF32(slices.Clone(rounded[i].out), ro, co)
 			}
@@ -188,7 +189,7 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 		mk := func(rows, cols int) linalg.WeightMat {
 			f := rnd(rows*cols, 0.08)
 			if bf16 {
-				return islandMat(f, rows, cols)
+				return giwcodec.IslandMat(f, rows, cols)
 			}
 			return linalg.WrapF32(f, rows, cols)
 		}
@@ -250,18 +251,18 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 	st := loadST(t, buildSafetensors(map[string]stTyped{"f32": {"F32", []int{8, 4}, f32Bytes(vals)}, "bf16": {"BF16", []int{8, 4}, raw16}}))
 	defer st.Close()
 	for name, want := range map[string]string{"f32": "f32", "bf16": "bf16"} {
-		m, err := stIsland(st, name, 8, 4)
+		m, err := giwcodec.STIsland(st, name, 8, 4)
 		if err != nil {
-			t.Fatalf("stIsland(%s): %v", name, err)
+			t.Fatalf("giwcodec.STIsland(%s): %v", name, err)
 		}
 		if m.Kind().String() != want {
-			t.Errorf("stIsland(%s) = %s, want %s", name, m.Kind(), want)
+			t.Errorf("giwcodec.STIsland(%s) = %s, want %s", name, m.Kind(), want)
 		}
 		row := make([]float32, 4)
 		for r := range 8 {
 			m.Row(r, row)
 			if !slices.Equal(row, vals[r*4:(r+1)*4]) {
-				t.Fatalf("stIsland(%s) row %d = %v, want %v", name, r, row, vals[r*4:(r+1)*4])
+				t.Fatalf("giwcodec.STIsland(%s) row %d = %v, want %v", name, r, row, vals[r*4:(r+1)*4])
 			}
 		}
 	}
@@ -271,17 +272,17 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 // for a NaN whose payload bf16 would not keep.
 func TestMEM11_islandMatRule(t *testing.T) {
 	exact := []float32{1, -2.5, 0, 3.140625, float32(math.Inf(1)), -0}
-	if k := islandMat(slices.Clone(exact), 2, 3); k.Kind() != "bf16" {
+	if k := giwcodec.IslandMat(slices.Clone(exact), 2, 3); k.Kind() != "bf16" {
 		t.Errorf("bf16-exact values held as %s", k.Kind())
 	}
 	notExact := slices.Clone(exact)
 	notExact[3] = 3.14159
-	if k := islandMat(notExact, 2, 3); k.Kind() != "f32" {
+	if k := giwcodec.IslandMat(notExact, 2, 3); k.Kind() != "f32" {
 		t.Errorf("a value bf16 cannot hold, held as %s", k.Kind())
 	}
 	nan := slices.Clone(exact)
 	nan[0] = math.Float32frombits(0x7fc00001) // a payload in the low 16 bits
-	if k := islandMat(nan, 2, 3); k.Kind() != "f32" {
+	if k := giwcodec.IslandMat(nan, 2, 3); k.Kind() != "f32" {
 		t.Errorf("a NaN with a low payload, held as %s", k.Kind())
 	}
 }

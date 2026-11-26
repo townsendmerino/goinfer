@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/ggufconfig"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -214,7 +215,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 		return 0, err
 	}
 	// canSerialize refuses a family the writer cannot express; it returns nil for every registered family today.
-	if serr := canSerialize(arch); serr != nil {
+	if serr := giwcodec.CanSerialize(arch); serr != nil {
 		return 0, serr
 	}
 	// Every family streams: buildWeightsFromGGUF's sink != nil branch builds, writes and releases one layer at a time, so peak
@@ -226,16 +227,16 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// else in RAM (repackForDecode). abort=nil: this is the cmd/prequant
 	// transcode path, which observes ctx per layer through ctxWriter; the swap tripwire's load-time consumer is scoped to
 	// decoder.Load's resident build only (see Options.LoadAbort).
-	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget(), testHooks: streamTestHooksOf(ctx)}
+	wr := newGIWWriter(out, target, streamLayerBudget(), streamTestHooksOf(ctx))
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
-		return wr.n, err
+		return wr.N, err
 	}
 	var crc [4]byte
-	binary.LittleEndian.PutUint32(crc[:], wr.crc) // running CRC over the streamed body
+	binary.LittleEndian.PutUint32(crc[:], wr.CRC) // running CRC over the streamed body
 	if _, err := out.Write(crc[:]); err != nil {
-		return wr.n, err
+		return wr.N, err
 	}
-	return wr.n + 4, nil
+	return wr.N + 4, nil
 }
 
 // ctxWriter aborts an in-flight streamed transcode: it returns ctx.Err() before each underlying Write once the context is
@@ -358,17 +359,9 @@ func q4kNative56(needCanonical bool, sink *giwWriter) bool {
 		return false
 	}
 	if sink != nil {
-		return giwCarriesKQuant56(sink.target)
+		return giwcodec.CarriesKQuant56(sink.Target)
 	}
 	return !needCanonical
-}
-
-// giwCarriesKQuant56 reports whether a q4k .giw written for target holds the file's Q5_K and Q6_K tensors natively (kinds 11
-// and 12) rather than widened to int8: the cpu-amd64 target, whose CPU kernels read them, and cuda, whose resident uploads them.
-// q4kNative56 also asks for linalg.KQuantNative on the writing host, for the cuda target too: a resident that declines falls back
-// to the CPU on the same weights, and without that kernel a native weight is far slower there than int8.
-func giwCarriesKQuant56(target GIWTarget) bool {
-	return target == GIWTargetCPUAmd64 || target == GIWTargetCUDA
 }
 
 // q4kWiden56ForTest restores the int8 widening of Q5_K and Q6_K on every q4k load, for the test that compares the two.
@@ -643,13 +636,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFi
 	// freed as it loads (below), so the whole model never sits resident.
 	if sink != nil {
 		// The writer gates gemma4's head extras and per-layer tail on arch, exactly as writeBundle does
-		// for the resident path (it sets wr.arch = w.arch); a streaming writer built without it would
+		// for the resident path (it sets wr.Arch = w.arch); a streaming writer built without it would
 		// silently drop both.
-		sink.arch = arch
+		sink.Arch = arch
 		// gemma4's head carries its model-level PLE inputs, which load in its own branch below — so
 		// it writes the head there, once they exist. Every other family's head is complete here.
 		if arch.Gemma4 == nil {
-			if err := sink.writeHeadGlobals(w, id); err != nil {
+			if err := sink.WriteHeadGlobals(w, id); err != nil {
 				return nil, err
 			}
 		}

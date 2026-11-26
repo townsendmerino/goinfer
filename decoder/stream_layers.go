@@ -68,12 +68,12 @@ func streamLayers(w *darch.Weights, arch *darch.Architecture, sink *giwWriter, l
 		}
 		for j := range k {
 			i := at(j)
-			before := sink.n
-			sink.layer(&w.Layers[i])
-			if sink.err != nil {
-				return sink.err
+			before := sink.N
+			sink.Layer(&w.Layers[i])
+			if sink.Err != nil {
+				return sink.Err
 			}
-			largest = max(largest, sink.n-before)
+			largest = max(largest, sink.N-before)
 			w.Layers[i] = darch.LayerWeights{} // release before the next window is built
 		}
 		p += k

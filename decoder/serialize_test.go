@@ -19,6 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -586,7 +587,7 @@ func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
 			t.Errorf("%s: resolveArchitecture: %v", name, err)
 			continue
 		}
-		got := canSerialize(arch)
+		got := giwcodec.CanSerialize(arch)
 		if _, mustRefuse := refused[name]; mustRefuse && got == nil {
 			t.Errorf("%s: canSerialize returned nil, but the .giw writer drops its per-layer state (%s) — it must be refused", name, refused[name])
 		}

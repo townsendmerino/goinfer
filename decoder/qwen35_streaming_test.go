@@ -11,6 +11,7 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/ggufconfig"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // TestQwen35StreamingTranscode_matchesResident is the correctness gate
@@ -109,8 +110,8 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	if _, err := buildWeightsFromGGUF(cfgNew, archNew, gNew, q, false, true, false, wr, "streaming-gate-test", nil); err != nil {
 		t.Fatalf("new path build: %v", err)
 	}
-	wr.u32(crc32.ChecksumIEEE(wr.buf))
-	newBytes := wr.buf
+	wr.U32(crc32.ChecksumIEEE(wr.Buf))
+	newBytes := wr.Buf
 
 	// Both bundles must decode cleanly — this alone validates each buffer's own
 	// trailing CRC, so the byte-span comparison below never needs to look at it.
@@ -131,14 +132,14 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	// and the baked label is correctly left "" to be re-inferred at load time. That is the one designed difference; the gate
 	// below confirms it is the ONLY one and that both resolve to the same label once loaded.
 	splitAtLabel := func(data []byte) (before []byte, label string, after []byte) {
-		r := &giwReader{data: data}
-		r.rawN(len(giwMagic))
-		r.u32()        // version
-		r.str()        // id
-		r.bytesField() // cfgJSON
-		start := r.off
-		label = r.str()
-		return data[:start], label, data[r.off:]
+		r := &giwReader{Reader: giwcodec.Reader{Data: data}}
+		r.RawN(len(giwMagic))
+		r.U32()        // version
+		r.Str()        // id
+		r.BytesField() // cfgJSON
+		start := r.Off
+		label = r.Str()
+		return data[:start], label, data[r.Off:]
 	}
 	oldBefore, oldLabel, oldAfter := splitAtLabel(oldBytes)
 	newBefore, newLabel, newAfter := splitAtLabel(newBytes)

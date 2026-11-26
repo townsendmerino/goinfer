@@ -65,9 +65,9 @@ func TestQ4K_modePlumbing(t *testing.T) {
 	r := rand.New(rand.NewPCG(61, 62))
 	q4 := q4kTestMat(t, r, 3, 256)
 	gw := &giwWriter{}
-	gw.weightMatKind(&q4, false)
-	if gw.err != nil {
-		t.Errorf(".giw writer on a q4k tensor: %v, want kind 8 written", gw.err)
+	gw.WeightMatKind(&q4, false)
+	if gw.Err != nil {
+		t.Errorf(".giw writer on a q4k tensor: %v, want kind 8 written", gw.Err)
 	}
 	if got, want := wmBytes(&q4), int64(3*144); got != want {
 		t.Errorf("wmBytes(q4k 3x256) = %d, want %d", got, want)

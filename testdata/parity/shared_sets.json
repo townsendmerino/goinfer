@@ -140,8 +140,8 @@
     "decoder/fakequant.go",
     "decoder/kquant_native.go",
     "decoder/mlx_safetensors.go",
-    "decoder/w4a8_row4_emit_other.go",
-    "decoder/w4a8_row4_emit_arm64.go",
+    "internal/runtime/giwcodec/w4a8_row4_emit_other.go",
+    "internal/runtime/giwcodec/w4a8_row4_emit_arm64.go",
     "decoder/quant/awq.go",
     "decoder/quant/config.go",
     "decoder/quant/fp8.go",
@@ -153,9 +153,14 @@
   ],
   "serialize": [
     "decoder/serialize.go",
-    "decoder/serialize_writer.go",
-    "decoder/serialize_reader.go",
-    "decoder/serialize_shapes.go",
-    "decoder/arch/serialize.go"
+    "decoder/arch/serialize.go",
+    "internal/runtime/giwcodec/serialize.go",
+    "internal/runtime/giwcodec/serialize_writer.go",
+    "internal/runtime/giwcodec/serialize_reader.go",
+    "internal/runtime/giwcodec/serialize_shapes.go",
+    "internal/runtime/giwcodec/island.go",
+    "internal/runtime/giwcodec/target.go",
+    "internal/runtime/giwcodec/w4a8_row4_emit_arm64.go",
+    "internal/runtime/giwcodec/w4a8_row4_emit_other.go"
   ]
 }

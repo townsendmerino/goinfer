@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/townsendmerino/goinfer/decoder/config"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
 // streamDirSwapForTest writes layers 0 and 1 of a streamed directory transcode in each other's place: the planted
@@ -50,7 +51,7 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	if err != nil {
 		return 0, err
 	}
-	if serr := canSerialize(arch); serr != nil {
+	if serr := giwcodec.CanSerialize(arch); serr != nil {
 		return 0, serr
 	}
 	st, err := openCheckpointMmap(dir)
@@ -60,14 +61,14 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	defer st.Close()
 	// needCanonical=true: the writer chooses what to emit from canonical bytes in RAM, per layer, exactly as
 	// StreamTranscodeGGUF builds them. With a sink the build keeps nothing else in RAM (repackForDecode).
-	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget(), testHooks: streamTestHooksOf(ctx)}
+	wr := newGIWWriter(out, target, streamLayerBudget(), streamTestHooksOf(ctx))
 	if _, err := buildWeightsFromSafetensorsTo(cfg, arch, schema, st, q, embedInt4, true, false, nil, wr, id, nil); err != nil {
-		return wr.n, err
+		return wr.N, err
 	}
 	var crc [4]byte
-	binary.LittleEndian.PutUint32(crc[:], wr.crc)
+	binary.LittleEndian.PutUint32(crc[:], wr.CRC)
 	if _, err := out.Write(crc[:]); err != nil {
-		return wr.n, err
+		return wr.N, err
 	}
-	return wr.n + 4, nil
+	return wr.N + 4, nil
 }
