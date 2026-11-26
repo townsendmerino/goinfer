@@ -152,8 +152,9 @@ def plan(changed, run_for=None):
     run_for = run_for or {}
     tests, skipped = {}, []
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(os.path.join(ROOT, f)))
+    embedfiles = sorted(f for f in changed if f.endswith(".metal") and os.path.exists(os.path.join(ROOT, f)))
     bydir = {}
-    for f in gofiles:
+    for f in gofiles + embedfiles:
         bydir.setdefault(os.path.dirname(f), []).append(f)
     scans = touched_scans.select(changed)
     for d in sorted(set(bydir) | set(scans)):
@@ -167,6 +168,8 @@ def plan(changed, run_for=None):
             tests[key] = None  # the whole package already runs every scan test in it
             continue
         for f in bydir.get(d, []):
+            if not f.endswith(".go"):
+                continue
             tf = f if f.endswith("_test.go") else f[:-3] + "_test.go"
             if os.path.exists(os.path.join(ROOT, tf)):
                 with open(os.path.join(ROOT, tf)) as fh:

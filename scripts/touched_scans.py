@@ -246,6 +246,7 @@ SCANS = [
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go", "backend/webgpu/residency_build.go")),
     # metal module
+    Scan("backend/metal", "TestAttnFABlkIsTheGradedKernel", F("backend/metal/kernels/decode_attention_fa_blk.metal")),
     Scan("backend/metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("backend/metal/moe.go")),
     Scan("backend/metal", "TestLedger_everyMetalAllocationNamesALine", NT("backend/metal", "backend/metal/internal/gpudev")),
     Scan("backend/metal", "TestSwitchGuard_coversEveryAssignedSwitch", NT("backend/metal") + T("backend/metal")),
