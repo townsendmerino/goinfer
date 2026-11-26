@@ -72,7 +72,7 @@ func TestConvWin_qwen35BitIdentical(t *testing.T) {
 			t.Fatal("the fixture does not take the batched Qwen3.5 pass")
 		}
 		if cache.scr == nil {
-			cache.scr = newDecodeScratch(m.w.arch)
+			cache.scr = newDecodeScratch(m.w.arch, cache.knobs)
 		}
 		hn, err := m.runLayersQwen35N(context.Background(), m.embedN(ids), cache)
 		if err != nil {

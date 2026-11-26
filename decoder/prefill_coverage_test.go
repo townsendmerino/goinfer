@@ -50,7 +50,7 @@ func TestPrefillCoverageAudit(t *testing.T) {
 		reason := ""
 		switch {
 		case !ResidentEligible(arch, "cuda"):
-			if !arch.decodeRunnerEligible() {
+			if !decodeRunnerEligible(arch) {
 				reason = "not resident (family class unsupported)"
 			} else {
 				reason = fmt.Sprintf("not resident (%s)", Admit(archAdmitFacts(arch, "cuda")).Why)

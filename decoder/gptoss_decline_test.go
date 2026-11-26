@@ -53,7 +53,7 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 	// precedent): the decline lives at the feature gate (FeatAttnSink, asserted above), not here, so a backend that
 	// implements the sink/clamped-SwiGLU kernels admits through ResidentEligible without this arch predicate needing a
 	// second edit.
-	if !arch.decodeRunnerEligible() {
+	if !decodeRunnerEligible(arch) {
 		t.Errorf("gpt-oss decodeRunnerEligible=false; want true (the decline/admit split lives at FeatAttnSink, not the arch shape)")
 	}
 }

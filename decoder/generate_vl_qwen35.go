@@ -49,7 +49,7 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
-		cache.scr = newDecodeScratch(m.w.arch)
+		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.arch, m.knobs)
 	}
 	n, C := len(ids), len(ids)
 	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {

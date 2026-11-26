@@ -42,9 +42,9 @@ func TestRing_decodeBitExact(t *testing.T) {
 
 	ringC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	ringC.enableRings(W, arch.isGlobalLayer)
-	ringC.scr = newDecodeScratch(arch)
+	ringC.scr = newDecodeScratch(arch, ringC.knobs)
 	fullC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	fullC.scr = newDecodeScratch(arch)
+	fullC.scr = newDecodeScratch(arch, fullC.knobs)
 
 	rng := rand.New(rand.NewSource(11))
 	for pos := range N {

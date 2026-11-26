@@ -987,7 +987,7 @@ func gpuResidentEligible(arch *Architecture) bool {
 // that failed to resolve.
 func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 	t.Helper()
-	// GPUResident derives from arch.decodeRunnerEligible(). Pin EVERY residency env var it could read, so the generated
+	// GPUResident derives from decodeRunnerEligible(arch). Pin EVERY residency env var it could read, so the generated
 	// matrix is a property of the code alone: otherwise a dev/CI job with one exported fails the freshness check for an
 	// unrelated reason, and `-update` bakes an env-on answer into the doc.
 	//

@@ -248,7 +248,7 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 var cpuRingBookkeeping = map[string]bool{"rings.w": true, "rings.stride": true, "rings.count": true, "rings.quant": true, "rings.headDim": true}
 
 // cpuCacheIgnored is what KVCache points at and does not own: a request's counter, the adapter the model holds, and a predicate.
-var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true}
+var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true, "knobs": true}
 
 // PricedDenseVectorBytesForTest is what the plan's dense figure now holds of what a backend's gap table once bounded as vectors, so a table can
 // bound only what is left.

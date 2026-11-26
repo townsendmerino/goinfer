@@ -91,7 +91,7 @@ func (s *decodeScratch) loraBuf(r int) []float32 {
 	return s.loraTmp[:r]
 }
 
-func newDecodeScratch(a *Architecture) *decodeScratch {
+func newDecodeScratch(a *Architecture, knobs *knobSet) *decodeScratch {
 	// aikit's opt-in worker pool (Workspace.SetWorkers) is deliberately not used: it measured neutral-to-slightly-slower than the
 	// spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
 	//
@@ -101,7 +101,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 	// DefaultDecodeParallelThreshold.
 	ws := &linalg.Workspace{}
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	s := &decodeScratch{knobs: a.knobs, ws: ws}
+	s := &decodeScratch{knobs: knobs, ws: ws}
 	for _, r := range decodeScratchRows(a) {
 		*s.row(r.name) = make([]float32, r.elems)
 	}

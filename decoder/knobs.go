@@ -112,7 +112,7 @@ func snapshotKnobs(over map[string]string) *knobSet {
 
 func (k *knobSet) lookup(name string) (string, bool) {
 	if k == nil {
-		return os.LookupEnv(name)
+		return envKnob(name)
 	}
 	knobDrift(k, name)
 	return k.val[name], k.set[name]
@@ -178,13 +178,17 @@ func (k *knobSet) optFwdTempCap() float64 {
 	return optFwdMaxTemp
 }
 
-// bindKnobs gives a freshly constructed model its knob snapshot and shares it with the model's
-// Architecture, which the deep forward helpers receive instead of the Model. Called before
-// withResidency, so a backend that builds or probes during residency already sees the snapshot.
+// bindKnobs gives a freshly constructed model its knob snapshot. The deep forward helpers, which receive a cache instead of
+// the Model, read it from the cache (NewCache copies it there). Called before withResidency, so a backend that builds or
+// probes during residency already sees the snapshot.
 func (m *Model) bindKnobs(over map[string]string) *Model {
 	m.knobs = snapshotKnobs(over)
-	if m.w != nil && m.w.arch != nil {
-		m.w.arch.knobs = m.knobs
-	}
 	return m
 }
+
+// envKnob is a knob's live-environment reading: what a nil snapshot reads.
+func envKnob(name string) (string, bool) { return os.LookupEnv(name) }
+
+// ssmResidentEnv reports whether GOINFER_SSM_RESIDENT is set in the environment (a nil snapshot's reading): the model-free
+// admission's. An Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
+func ssmResidentEnv() bool { v, _ := envKnob(knobSSMResident); return v != "" }

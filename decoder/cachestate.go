@@ -273,6 +273,7 @@ var kvCacheNotState = map[string]string{
 	"costPhase":       "the phase the cost counters charge, set with cost",
 	"rowPad":          "geometry: the row pad the global layers' rows carry, fixed at NewCache; the share paths copy it with the rows",
 	"f16InPlaceReads": "a counter of how decode read the f16 rows, not what the sequence holds",
+	"knobs":           "the owning model's operator-knob snapshot, set at NewCache; configuration the forward reads, not what the sequence holds",
 }
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as

@@ -33,7 +33,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
-		cache.scr = newDecodeScratch(arch)
+		cache.knobs, cache.scr = m.knobs, newDecodeScratch(arch, m.knobs)
 	}
 	scr := cache.scr
 	hidden := arch.HiddenDim
@@ -92,7 +92,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 // text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, the Gemma 4 vision entry).
 func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
-		cache.scr = newDecodeScratch(m.w.arch)
+		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.arch, m.knobs)
 	}
 	return m.walkToken(m.program(), h, pleID, cache)
 }

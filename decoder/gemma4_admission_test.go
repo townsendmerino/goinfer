@@ -11,7 +11,7 @@ import (
 //
 // It asserts the variable is INERT rather than dropping the coverage: a reintroduced read would silently gate a family on an
 // env var with no gate behind it, so this fails if setting or clearing it changes any answer. The matrix's GPUResident
-// column is arch.decodeRunnerEligible() (capability_matrix_test.go), so this also keeps docs/hardware-matrix.md honest.
+// column is decodeRunnerEligible(arch) (capability_matrix_test.go), so this also keeps docs/hardware-matrix.md honest.
 func TestGemma4Admission_unconditional(t *testing.T) {
 	denseArch := func() *Architecture {
 		a, _, err := resolveArchitecture(representativeConfig("gemma4"))
@@ -28,7 +28,7 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	for _, v := range []string{"", "1"} {
 		t.Setenv("GOINFER_GEMMA4_RESIDENT", v)
 		a := denseArch()
-		if !a.decodeRunnerEligible() {
+		if !decodeRunnerEligible(a) {
 			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: dense Gemma 4 NOT admitted — the predicate must no longer read this variable", v)
 		}
 		if !ResidentEligible(a, "cuda") || !ResidentEligible(a, "metal") || !ResidentEligible(a, "webgpu") {
@@ -47,7 +47,7 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	if moe.MoE == nil {
 		t.Fatal("representativeConfig(gemma4_text) is not the enable_moe_block variant")
 	}
-	if !moe.decodeRunnerEligible() {
+	if !decodeRunnerEligible(moe) {
 		t.Error("gemma4_text (enable_moe_block) NOT admitted — Split B landed the resident MoE path, the gate should open")
 	}
 	for _, be := range []string{"cuda", "metal", "webgpu"} {
@@ -80,7 +80,7 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve gemma4_text (MoE, env=%q): %v", v, err)
 		}
-		if !m.decodeRunnerEligible() {
+		if !decodeRunnerEligible(m) {
 			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: gemma4_text (enable_moe_block) NOT admitted — "+
 				"the predicate must no longer read this variable", v)
 		}

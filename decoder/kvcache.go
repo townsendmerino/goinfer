@@ -164,6 +164,10 @@ func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
 //
 // Not goroutine-safe: one cache belongs to one in-flight sequence.
 type KVCache struct {
+	// knobs is the owning model's operator-knob snapshot (knobs.go), which the forward reads through the cache it is given;
+	// nil = read the live environment (a cache built by NewKVCache directly, in a test).
+	knobs *knobSet
+
 	// cost, when set, counts this stream's operations into the phase costPhase (cost_cpu.go); nil is off.
 	cost      *cost.Counter
 	costPhase cost.Phase

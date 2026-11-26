@@ -327,7 +327,7 @@ func (m *Model) residentProjsInt4() bool {
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
-func (a *Architecture) decodeRunnerEligible() bool { return a.runnerShapeDecline() == "" }
+func decodeRunnerEligible(a *Architecture) bool { return runnerShapeDecline(a) == "" }
 
 // Runner-shape decline reasons. The hardware matrix prints them, so they are short and name no backend.
 const (
@@ -340,15 +340,11 @@ const (
 
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
-// reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the arch's knob
-// snapshot, or the environment for an arch built without one.
-func (a *Architecture) runnerShapeDecline() string {
-	return a.runnerShapeDeclineSSM(a.ssmResidentKnob())
+// reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the environment
+// (ssmResidentEnv).
+func runnerShapeDecline(a *Architecture) string {
+	return a.runnerShapeDeclineSSM(ssmResidentEnv())
 }
-
-// ssmResidentKnob reports whether GOINFER_SSM_RESIDENT is set for this arch: its knob snapshot, or the environment for an arch
-// built without one.
-func (a *Architecture) ssmResidentKnob() bool { return a.knobs.get(knobSSMResident) != "" }
 
 // runnerShapeDeclineSSM is runnerShapeDecline with the GOINFER_SSM_RESIDENT knob given (ssmResident), not read: Admit's form.
 func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
@@ -388,7 +384,7 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 	}
 	// Granite-4.0-H resident SSM hybrid: its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Admitted only
-	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentKnob).
+	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentEnv).
 	if a.granite != nil {
 		if !ssmResident {
 			return runnerShapeBringUp

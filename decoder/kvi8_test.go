@@ -41,12 +41,12 @@ func TestKVI8_decodeQuality(t *testing.T) {
 
 	f32 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	f32.enableRings(W, arch.isGlobalLayer)
-	f32.scr = newDecodeScratch(arch)
+	f32.scr = newDecodeScratch(arch, f32.knobs)
 
 	i8 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	i8.setQuant(kvI8, N+1)
 	i8.enableRings(W, arch.isGlobalLayer)
-	i8.scr = newDecodeScratch(arch)
+	i8.scr = newDecodeScratch(arch, i8.knobs)
 
 	rng := rand.New(rand.NewSource(7))
 	worst := map[int]float64{0: 1, 1: 1}
@@ -96,7 +96,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 		c := NewKVCache(nLayers, nKV, hd, W, 16, nil)
 		c.setQuant(kvI8, 16)
 		c.enableRings(W, arch.isGlobalLayer)
-		c.scr = newDecodeScratch(arch)
+		c.scr = newDecodeScratch(arch, c.knobs)
 		return c
 	}
 	rng := rand.New(rand.NewSource(5))

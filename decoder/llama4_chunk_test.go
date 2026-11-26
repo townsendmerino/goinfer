@@ -91,7 +91,7 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 		}
 		c.Append(0, k, v)
 	}
-	c.scr = newDecodeScratch(arch)
+	c.scr = newDecodeScratch(arch, c.knobs)
 
 	attend := func(pos int, a *Architecture) []float32 {
 		ctx := make([]float32, nH*hd)
