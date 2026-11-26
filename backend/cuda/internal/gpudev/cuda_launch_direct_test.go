@@ -73,9 +73,11 @@ func TestCUDA_launchDirect(t *testing.T) {
 
 	errc := make(chan error, 1)
 	go func() {
-		// A pooled thread may still carry a binding from an earlier locked goroutine, so clear it. Never unlocked: the
-		// runtime retires the thread.
+		// A pooled thread may still carry a binding from an earlier locked goroutine, so clear it. Unlock before exit:
+		// CtxSetCurrent(0) leaves the thread unbound, whereas exiting a locked goroutine forces the Go runtime to retire
+		// an OS thread that has called into libcuda.so via purego, which segfaults on Linux.
 		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		dx := NewBufferOf(d, x)
 		if err := cudaresult.CtxSetCurrent(d.cx.Driver(), 0); err != nil {
 			errc <- err
