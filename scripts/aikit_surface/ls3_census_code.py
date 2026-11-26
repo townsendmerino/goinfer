@@ -16,6 +16,7 @@ change to the test on main is seen rather than skipped. A second run changes not
       to elem or were unexported).
 """
 
+import subprocess
 import sys
 
 K3 = "internal/diag/kernelprint/census_test.go"
@@ -188,6 +189,7 @@ def main():
         print(("would change " if check else "changed ") + p)
         if not check:
             open(p, "w").write(out[p])
+            subprocess.run(["gofmt", "-w", p], check=True)  # the edited passages' alignment
     if check and changed:
         sys.exit(1)
 

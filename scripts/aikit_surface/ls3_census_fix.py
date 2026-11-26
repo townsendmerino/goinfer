@@ -21,6 +21,7 @@ changes nothing. --check reports, writes nothing, and exits 1 if anything would 
 import json
 import os
 import re
+import subprocess
 import sys
 
 FLAGS = ["DotProd", "AVX2", "F16C", "AVX512VNNIVL", "AVX512VNNI", "POPCNT", "Q4KAVX2"]
@@ -122,6 +123,8 @@ def main():
             changed.append(path)
             if not check:
                 open(path, "w").write(new)
+                if path.endswith(".go"):
+                    subprocess.run(["gofmt", "-w", path], check=True)  # the re-keyed map's alignment
     for p in changed:
         print(("would change " if check else "changed ") + p)
     if check and changed:
