@@ -41,10 +41,10 @@ CHARS = int(20000 * 3.6)
 HOME = os.path.expanduser("~")
 CELLS = {  # name: (serve -model path, extra flags)
     "cpu:1.5b": (f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", ["-ctx", "32768"]),
-    "metal:1.5b": (f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw", ["-ctx", "32768"]),
-    "metal:e2b": (f"{HOME}/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw", ["-ctx", "32768"]),
-    "metal:7b": (f"{HOME}/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw", ["-ctx", "32768"]),
-    "metal:qwen35-9b": (f"{HOME}/models/Qwen3.5-9B-Q4_K_M.int4.metal.v17.giw", ["-ctx", "32768"]),
+    "metal:1.5b": (f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw", ["-ctx", "32768"]),
+    "metal:e2b": (f"{HOME}/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v18.giw", ["-ctx", "32768"]),
+    "metal:7b": (f"{HOME}/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.v18.giw", ["-ctx", "32768"]),
+    "metal:qwen35-9b": (f"{HOME}/models/Qwen3.5-9B-Q4_K_M.int4.metal.v18.giw", ["-ctx", "32768"]),
     "tower:qwen3vl-2b": (f"{HOME}/models/qwen3-vl-2b-instruct", ["-vision", f"{HOME}/models/qwen3-vl-2b-instruct"]),
 }
 PORT = 18297

@@ -25,8 +25,8 @@ import (
 // the architecture config (metadata) and the weights (dequantized from the mmap, then optionally re-quantized to resident
 // int8/int4 per the quant mode), so no separate config.json or safetensors is needed. Layout quirks against the HF
 // safetensors path are normalized at load: tensors use llama.cpp's blk.N.* names; the q/k projections of NORM-rope archs
-// (llama, mellum) are in llama.cpp's interleaved-RoPE permutation, inverted here to rotate_half order (NEOX-rope archs,
-// qwen and gemma, are left as is; see ggufQKPermuted); and Gemma's (1+w) norm offset, baked into the stored weights by
+// (llama, granite) are in llama.cpp's interleaved-RoPE permutation, inverted here to rotate_half order (NEOX-rope archs,
+// qwen, gemma and mellum, are left as is; see ggufQKPermuted); and Gemma's (1+w) norm offset, baked into the stored weights by
 // llama.cpp, is subtracted back out.
 //
 // Architectures: whatever registry.go's `registry` map carries, not restated here (a short list reads as a limit rather
@@ -712,13 +712,13 @@ func ggufScaledRowDequantizer(g *embed.GGUFFile, name string) ([]int, func(offse
 }
 
 // ggufQKPermuted reports whether llama.cpp's GGUF conversion permuted this architecture's q/k weights (and their per-row
-// biases and head-dim norms). It permutes only for the NORM rope type: llama and its derivatives, including mellum and
-// dense granite (llama.cpp's GraniteModel inherits LlamaModel's undo_permute). The NEOX rope type (qwen2/qwen3/gemma and
-// the other modern families) leaves q/k in HF rotate_half order, so no un-permutation is needed. Unknown archs default to
-// NEOX (no permute), the common modern case.
+// biases and head-dim norms). It permutes only for the NORM rope type: llama and dense granite (llama.cpp's GraniteModel
+// inherits LlamaModel's undo_permute). The NEOX rope type (qwen2/qwen3/gemma, mellum and the other modern families) leaves
+// q/k in HF rotate_half order, so no un-permutation is needed; un-permuting a NEOX file scrambles every head's rotary pairs
+// and the output is fluent-looking garbage, not NaN. Unknown archs default to NEOX (no permute), the common modern case.
 func ggufQKPermuted(archName string) bool {
 	switch archName {
-	case "llama", "mellum", "granite":
+	case "llama", "granite":
 		return true
 	default:
 		return false

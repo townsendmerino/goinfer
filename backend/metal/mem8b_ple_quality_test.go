@@ -31,7 +31,7 @@ func TestPLE_qualityE2BMetal(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")
-	gguf, int8GIW := base+".gguf", base+".int4.metal.v17.giw"
+	gguf, int8GIW := base+".gguf", base+".int4.metal.v18.giw"
 	for _, p := range []string{gguf, int8GIW} {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("no %s: %v", p, err)

@@ -164,7 +164,7 @@ func TestHLRChainAB(t *testing.T) {
 	path := os.Getenv("GOINFER_METAL_HLR_MODEL")
 	if path == "" {
 		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+		path = filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw")
 	}
 	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md): a timing from it measures the disk", path)

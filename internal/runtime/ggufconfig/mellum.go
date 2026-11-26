@@ -16,11 +16,18 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	u := ggufUintReader(g, "mellum.")
 	gf := ggufFloatReader(g, "mellum.")
 	normTopK := true
+	// block_count includes the trailing NextN/MTP block(s) of the -MTP files (nextn_predict_layers), which goinfer does not
+	// run: counted as a trunk layer, the head would be decoded as a 29th layer and the output silently wrong.
+	blocks := u("block_count")
+	numLayers := blocks - u("nextn_predict_layers")
+	if numLayers <= 0 || numLayers > MaxLayers {
+		return nil, fmt.Errorf("decoder(gguf-mellum): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
+	}
 	cfg := &Config{
 		ModelType:           "mellum",
 		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
-		NumLayers:           u("block_count"),
+		NumLayers:           numLayers,
 		NumHeads:            u("attention.head_count"),
 		NumKVHeads:          u("attention.head_count_kv"),
 		HeadDim:             u("attention.key_length"),
@@ -36,11 +43,12 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	// Per-layer attention type: sliding_window_pattern[i] true ⇒ sliding (local),
 	// false ⇒ full (global).
+	// It covers every block, the NextN ones included; the trunk takes the first numLayers.
 	pat, ok := g.Metadata["mellum.attention.sliding_window_pattern"].([]any)
-	if !ok || len(pat) != cfg.NumLayers {
+	if !ok || (len(pat) != blocks && len(pat) != numLayers) {
 		return nil, fmt.Errorf("decoder(gguf-mellum): sliding_window_pattern missing or wrong length")
 	}
-	for _, p := range pat {
+	for _, p := range pat[:numLayers] {
 		if b, _ := p.(bool); b {
 			cfg.LayerTypes = append(cfg.LayerTypes, "sliding_attention")
 		} else {

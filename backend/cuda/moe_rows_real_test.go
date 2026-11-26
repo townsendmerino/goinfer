@@ -64,7 +64,7 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 	if _, err := gc.GetDevice(0); err != nil {
 		t.Skipf("no device: %v", err)
 	}
-	path := modelPath("mellum2.1-thinking.int4.e4h.cuda.v17.giw")
+	path := modelPath("mellum2.1-thinking.int4.e4h.cuda.v18.giw")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}

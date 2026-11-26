@@ -410,7 +410,7 @@ func sb11Median(xs []float64) float64 {
 // a share of the median uncounted decode token, must be under 0.5%. It also reports the on cost (counted ÷ uncounted tokens,
 // the first token of each block dropped), which is not graded. A timed run: hold the timing lock exclusively, on AC.
 //
-//	GOINFER_SB11_OFFCOST_MODEL=~/models/<0.5B>.int4.metal.v17.giw go test -count=1 -tags goinfer_testhooks -run '^TestCost_metalOffCost$' -v ./metal/
+//	GOINFER_SB11_OFFCOST_MODEL=~/models/<0.5B>.int4.metal.v18.giw go test -count=1 -tags goinfer_testhooks -run '^TestCost_metalOffCost$' -v ./metal/
 func TestCost_metalOffCost(t *testing.T) {
 	path := os.Getenv("GOINFER_SB11_OFFCOST_MODEL")
 	if path == "" {
