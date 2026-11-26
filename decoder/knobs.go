@@ -185,3 +185,7 @@ func (m *Model) bindKnobs(over map[string]string) *Model {
 	m.knobs = snapshotKnobs(over)
 	return m
 }
+
+// ssmResidentEnv reports whether GOINFER_SSM_RESIDENT is set in the environment (a nil snapshot's reading): the model-free
+// admission's. An Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
+func ssmResidentEnv() bool { return (*knobSet)(nil).get(knobSSMResident) != "" }

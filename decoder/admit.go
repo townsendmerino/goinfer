@@ -125,7 +125,7 @@ func admitRunner(f AdmitFacts, shape string) string {
 // archAdmitFacts is the facts of a model-free question, from the arch and the backend alone: a load with the default options on
 // a backend that builds residents, and the GOINFER_SSM_RESIDENT knob as the arch reads it.
 func archAdmitFacts(a *Architecture, backend string) AdmitFacts {
-	return AdmitFacts{Arch: a, Backend: backend, Residency: true, SSMResident: a.ssmResidentKnob()}
+	return AdmitFacts{Arch: a, Backend: backend, Residency: true, SSMResident: ssmResidentEnv()}
 }
 
 // admitFacts gathers the facts Admit reads from a loaded model.

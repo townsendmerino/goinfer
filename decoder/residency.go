@@ -341,14 +341,10 @@ const (
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
 // reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the environment
-// (ssmResidentKnob).
+// (ssmResidentEnv).
 func (a *Architecture) runnerShapeDecline() string {
-	return a.runnerShapeDeclineSSM(a.ssmResidentKnob())
+	return a.runnerShapeDeclineSSM(ssmResidentEnv())
 }
-
-// ssmResidentKnob reports whether GOINFER_SSM_RESIDENT is set in the environment: the model-free admission's reading. An
-// Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
-func (a *Architecture) ssmResidentKnob() bool { return (*knobSet)(nil).get(knobSSMResident) != "" }
 
 // runnerShapeDeclineSSM is runnerShapeDecline with the GOINFER_SSM_RESIDENT knob given (ssmResident), not read: Admit's form.
 func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
@@ -388,7 +384,7 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 	}
 	// Granite-4.0-H resident SSM hybrid: its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Admitted only
-	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentKnob).
+	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentEnv).
 	if a.granite != nil {
 		if !ssmResident {
 			return runnerShapeBringUp
