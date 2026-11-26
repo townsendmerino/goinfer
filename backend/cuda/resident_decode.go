@@ -590,3 +590,49 @@ type mlaState struct {
 	mlaQAOut, mlaQAQ, mlaQASc Buffer
 	mlaKVDown, qAbs, wsum     Buffer
 }
+
+// decodeKernels is cudaResident's per-token kernels every model binds: the quantized GEMVs and their per-32 and K-quant twins, the
+// fused projections and their rows-per-warp variants, the glue, argmax, top-k and Gumbel kernels, and the device shape that sizes
+// the fused grids.
+type decodeKernels struct {
+	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
+	fTopKCompact, fTopKFinish, fTopKZ                                                       Pipeline // topk_compact / topk_finish / topk_z
+	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (K=V layers copy raw k into vB instead of projecting twice)
+	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
+	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
+	smCount, smThreads, smSmem                                                              int      // device shape for wave-sized fused-projection grids (zero when unread): SM count, max threads per SM, max shared memory per SM
+	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2
+	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
+	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
+	gemvQ4K Pipeline
+	// gemvQ5K / gemvQ6K are actgroup.cu's gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks and Q6_K planes (q6kPlanes)
+	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), launchgeom.KQuantGemvRows rows a warp. Bound with gemvQ4K.
+	gemvQ5K, gemvQ6K Pipeline
+	// kquantAlt pairs each native weight with its int8 copy when kquantKeepInt8ForTest held at the build; nil otherwise.
+	kquantAlt [][2]cudaWQ
+	// fQKVg32 / fGUg32 are actgroup.cu's fused_rms_qkv_g32 / fused_rms_gu_g32: the per-32 twins of
+	// fQKV / fGU (rmsnorm + per-32 quant redundantly per block + the projection rows, any of int8 /
+	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
+	fQKVg32, fGUg32 Pipeline
+	fuseG32         bool
+	fuseQKV         bool // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
+}
+
+// decodeScratch is cudaResident's per-token device scratch and the pinned logits readback.
+type decodeScratch struct {
+	vNormUnit Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm (Gemma 4: every layer with vNorm). nil unless any layer has vNorm.
+	// per-token scratch (device).
+	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
+	aq, cq, mq, dq, argIdx                                                Buffer
+	argVal                                                                Buffer
+	topkOut                                                               Buffer // topk_finish / topk_z output: ids, logit bits, Z hi/lo bits
+	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
+	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
+	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
+	gbKey, gbIdx, gbOut                                 Buffer // gumbel_stage1 per-block winners, and the drawn id
+	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
+	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an
+	// extra copy. Reused across calls (decode consumes each before the next).
+	logitsPinned *HostBuffer[float32]
+	logitsHost   []float32 // zero-copy view of logitsPinned
+}
