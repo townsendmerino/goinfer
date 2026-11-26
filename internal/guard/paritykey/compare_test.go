@@ -235,12 +235,12 @@ func TestCompare_classes(t *testing.T) {
 
 // TestBuilderFile names the builders and keeps every other file in the key.
 func TestBuilderFile(t *testing.T) {
-	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/arch_llama.go", "decoder/gemma12.go"} {
+	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/arch_llama.go", "decoder/gemma12.go", "decoder/config/config_flint.go"} {
 		if !BuilderFile(p) {
 			t.Errorf("%s is a builder", p)
 		}
 	}
-	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/lfm2.go", "scripts/arch_x.go", "decoder/config/sampling.go", "decoder/config/config_test.go"} {
+	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/lfm2.go", "scripts/arch_x.go", "decoder/config/sampling.go", "decoder/config/config_test.go", "decoder/config/config_flint_test.go"} {
 		if BuilderFile(p) {
 			t.Errorf("%s is not a builder", p)
 		}
