@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // flintArchitecture expresses Flint (RecursiveSI/flint; model_type "flint", GGUF
@@ -40,7 +42,7 @@ func flintArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(flint): %w", err)
 	}

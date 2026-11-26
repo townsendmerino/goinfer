@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // glm4moeArchitecture expresses GLM-4.5/4.6 (model_type glm4_moe): qwen3-like softmax attention (per-head QK-norm, partial RoPE, NO q/k/v
@@ -17,7 +19,7 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	// GLM nests rope_theta + partial_rotary_factor inside rope_parameters
 	// (rope_type "default"); there is no top-level rope_theta.
-	spec, partialRotary, err := parseRopeFlat(cfg.RopeParameters)
+	spec, partialRotary, err := rope.ParseFlat(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(glm4_moe): %w", err)
 	}
@@ -60,9 +62,9 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:      math.Pow(float64(hd), -0.5),
 		SlidingWindow:  0, // full attention
 		layerIsGlobal:  nil,
-		RoPELocalBase:  spec.base,
-		RoPEGlobalBase: spec.base, // single base (rope_parameters.rope_theta)
-		ropeScaling:    spec.scaling,
+		RoPELocalBase:  spec.Base,
+		RoPEGlobalBase: spec.Base, // single base (rope_parameters.rope_theta)
+		ropeScaling:    spec.Scaling,
 		RotaryDim:      rotaryDim, // partial_rotary_factor · head_dim
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

@@ -13,7 +13,7 @@ import (
 //
 //	"rope_parameters": {"rope_theta": 10000.0, "rope_type": "default"}
 //
-// phi3 handled that (parseRopeFlat) and gemma3/mellum handle the per-attention-type nesting (full_attention /
+// phi3 handled that (rope.ParseFlat) and gemma3/mellum handle the per-attention-type nesting (full_attention /
 // sliding_attention), but llama, mistral, qwen2 and qwen3 read ONLY the flat field, so each REJECTED such a checkpoint
 // outright:
 //

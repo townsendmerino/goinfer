@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -31,14 +32,14 @@ func TestQwen35VL_batchedPrefillMatchesPerToken(t *testing.T) {
 	for _, L := range layouts {
 		ids := slices.Concat(slices.Repeat([]int{L.preID}, L.pre), g.InputIDs, slices.Repeat([]int{L.postID}, L.post))
 		imgPos := g.ImageStart + L.pre
-		pos, err := mropePositions(ids, imgTok, g.GridTHW, qwen35VLMerge)
+		pos, err := rope.MRoPEPositions(ids, imgTok, g.GridTHW, qwen35VLMerge)
 		if err != nil {
 			t.Fatalf("%s: %v", L.name, err)
 		}
 		prefill := func(batched bool) ([]float32, *KVCache) {
 			cache := m.NewCache(len(ids) + 8)
 			cache.mropePos = pos
-			cache.mropeDelta = mropeDelta(pos, len(ids))
+			cache.mropeDelta = rope.MRoPEDelta(pos, len(ids))
 			var lg []float32
 			var err error
 			if batched {

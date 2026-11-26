@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // llama4Architecture expresses the Llama 4 (Scout/Maverick) TEXT decoder (model_type llama4_text): the iRoPE stack. Most layers are RoPE GQA
@@ -19,16 +21,16 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// RoPE: safetensors carries the flat rope_parameters; the GGUF path sets a
 	// top-level rope_theta (+ optional rope_scaling). Accept both.
 	var base float64
-	var ropeSc *ropeScaling
+	var ropeSc *rope.Scaling
 	if len(cfg.RopeParameters) > 0 {
-		spec, _, err := parseRopeFlat(cfg.RopeParameters)
+		spec, _, err := rope.ParseFlat(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(llama4): %w", err)
 		}
-		base, ropeSc = spec.base, spec.scaling
+		base, ropeSc = spec.Base, spec.Scaling
 	} else {
 		base = cfg.RoPEGlobalBase
-		sc, err := parseRopeScaling(cfg.RopeScaling)
+		sc, err := rope.ParseScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(llama4): %w", err)
 		}

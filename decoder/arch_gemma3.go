@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // gemma3Architecture expresses Gemma 3 as a descriptor: RMSNorm with (1+w),
@@ -18,15 +20,15 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// from rope_parameters when absent so the adapter + ValidateAssumptions see
 	// populated bases either format.
 	if cfg.RoPEGlobalBase == 0 && len(cfg.RopeParameters) > 0 {
-		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+		full, sliding, err := rope.ParseParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(gemma3): rope_parameters: %w", err)
 		}
 		if full != nil {
-			cfg.RoPEGlobalBase = full.base
+			cfg.RoPEGlobalBase = full.Base
 		}
 		if sliding != nil {
-			cfg.RoPELocalBase = sliding.base
+			cfg.RoPELocalBase = sliding.Base
 		}
 	}
 	// Gemma3TextConfig class defaults. A VL checkpoint's nested text_config (e.g.

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // ministral3Architecture expresses Ministral 3 (model_type "mistral3", the OUTER Mistral3ForConditionalGeneration wrapper's type: loadConfig's
@@ -17,7 +19,7 @@ import (
 //     both at the zero-value no-op.
 //
 // mscale/mscale_all_dim (both 1.0 on the release) are DeepSeek's spelling of the YaRN attention_factor, not the generic `attention_factor`
-// key parseRopeScaling reads. Left unhandled, its default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct 1.0, so it is
+// key rope.ParseScaling reads. Left unhandled, its default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct 1.0, so it is
 // overridden the way deepseekArchitecture does.
 func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// backfillFlatRope BEFORE ValidateLlama: the released checkpoints carry ONLY a nested
@@ -36,13 +38,13 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if base <= 0 {
 		return nil, nil, fmt.Errorf("decoder(mistral3): rope_theta must be >0, got %v", base)
 	}
-	if scaling != nil && scaling.kind == ropeScaleYarn {
+	if scaling != nil && scaling.Kind == rope.ScaleYarn {
 		var y struct {
 			Factor       float64  `json:"factor"`
 			Mscale       *float64 `json:"mscale"`
 			MscaleAllDim *float64 `json:"mscale_all_dim"`
 		}
-		if err := rereadRope("mistral3", cfg.RopeParameters, &y); err != nil {
+		if err := rope.Reread("mistral3", cfg.RopeParameters, &y); err != nil {
 			return nil, nil, err
 		}
 		if y.Mscale != nil || y.MscaleAllDim != nil {
@@ -53,14 +55,14 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			if y.MscaleAllDim != nil {
 				mAll = *y.MscaleAllDim
 			}
-			scaling.mscale = yarnGetMscale(y.Factor, m) / yarnGetMscale(y.Factor, mAll)
+			scaling.Mscale = rope.YarnGetMscale(y.Factor, m) / rope.YarnGetMscale(y.Factor, mAll)
 		}
 	}
 	var attnTemp struct {
 		Beta       float64 `json:"llama_4_scaling_beta"`
 		OrigMaxPos float64 `json:"original_max_position_embeddings"`
 	}
-	if err := rereadRope("mistral3", cfg.RopeParameters, &attnTemp); err != nil {
+	if err := rope.Reread("mistral3", cfg.RopeParameters, &attnTemp); err != nil {
 		return nil, nil, err
 	}
 

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen35Architecture expresses Qwen3.5/3.6-MoE (model_type qwen3_5_moe): a 3:1 hybrid where most layers are Gated DeltaNet (linear attention
@@ -13,7 +15,7 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen35(); err != nil {
 		return nil, nil, err
 	}
-	spec, partialRotary, err := parseRopeFlat(cfg.RopeParameters)
+	spec, partialRotary, err := rope.ParseFlat(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen3_5_moe): %w", err)
 	}
@@ -52,10 +54,10 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
 		layerIsGlobal:    cfg.IsGlobalLayer, // softmax layers are full attention
 		layerIsLinear:    cfg.IsLinearLayer, // Gated DeltaNet layers
-		RoPELocalBase:    spec.base,
-		RoPEGlobalBase:   spec.base, // single base; only the softmax layers use RoPE
-		ropeScaling:      spec.scaling,
-		ropeScalingLocal: spec.scaling,
+		RoPELocalBase:    spec.Base,
+		RoPEGlobalBase:   spec.Base, // single base; only the softmax layers use RoPE
+		ropeScaling:      spec.Scaling,
+		ropeScalingLocal: spec.Scaling,
 		RotaryDim:        rotaryDim, // partial_rotary_factor · head_dim
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
@@ -68,6 +70,6 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			AttnGate:      true, // qwen3_5_moe's own double-width [query‖gate] q_proj
 		},
 	}
-	arch.MRopeSection, arch.MRopeInterleaved = parseMRopeFlat(cfg.RopeParameters)
+	arch.MRopeSection, arch.MRopeInterleaved = rope.ParseMRoPEFlat(cfg.RopeParameters)
 	return arch, &qwen35TensorSchema, nil
 }

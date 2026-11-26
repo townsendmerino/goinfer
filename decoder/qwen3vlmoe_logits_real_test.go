@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -200,12 +201,12 @@ func TestQwen3VLMoe_goinferLogits(t *testing.T) {
 			}
 			ids := append(slices.Clone(s.IDs), s.Path[:len(s.Path)-1]...)
 			spans := spanOf(ids)
-			mp, err := mropePositions(ids, imgTok, [][3]int{im.grid}, merge)
+			mp, err := rope.MRoPEPositions(ids, imgTok, [][3]int{im.grid}, merge)
 			if err != nil {
 				t.Fatal(err)
 			}
 			cache := m.NewCache(len(ids))
-			cache.mropePos, cache.mropeDelta = mp, mropeDelta(mp, len(ids))
+			cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(ids))
 			cache.deepstack = &deepstackRows{spans: spans, rows: im.deep}
 			h := m.embedN(ids)
 			spliceImageSpans(h, spans, im.merged, hidden)
