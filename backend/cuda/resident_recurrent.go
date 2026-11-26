@@ -227,3 +227,28 @@ type captureState struct {
 	subCap                                 bool
 	subAttnC, subMLPC, subCtxC, subMLPpreC [][]float32
 }
+
+// dnetState is the Gated-DeltaNet mixer: its kernels (per token, row-batched and the speculative verify's), the family's
+// parameters, the verify arena and the per-token scratch. Zero for every other family.
+type dnetState struct {
+	// Gated-DeltaNet mixer (deltanet.ptx, its own module). Loaded only for that family; every other model leaves
+	// these zero and never dispatches them.
+	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
+	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
+	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
+	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
+	// The speculative verify's twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
+	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
+	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
+	dnSpec                                            *dnSpecArena
+	dnSpecOn                                          bool
+	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                              *dnetParams
+	// Gated-DeltaNet per-token scratch (allocated only when any layer isDeltaNet). Sized from
+	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
+	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP, dnBt, dnAt, dnZOut, dnCore, dnGated Buffer
+	dnGq, dnGSc                                                                  Buffer // int8 activation + scale for the gated output's out_proj GEMV
+	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
+	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
+}
