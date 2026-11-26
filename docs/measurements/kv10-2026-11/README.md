@@ -11,7 +11,7 @@ Ledger row KV10 (`docs/tasks/task-kv-architecture-2026-10.md`, "Long context and
 
 ## KV10-a: the families with no fused prefill kernel (tier 0, no device)
 
-The rule is in code: `backend/cuda/prefill.go:cudaResident.useAttnFused` serves a layer with the fused kernel only when fast attention is on, there is no attention softcap, the pass has at least `attnFusedMinRows` rows, it is above the fast-prefill floor, and `attnFusedFor` has a pipeline for the layer's head dim, which is **64 or 128** only (`backend/cuda/attn_fused.cu`).
+The rule is in code: `backend/cuda/prefill_kernels.go:cudaResident.useAttnFused` serves a layer with the fused kernel only when fast attention is on, there is no attention softcap, the pass has at least `attnFusedMinRows` rows, it is above the fast-prefill floor, and `attnFusedFor` has a pipeline for the layer's head dim, which is **64 or 128** only (`backend/cuda/attn_fused.cu`).
 Every other layer runs the exact `attn_batched`. The census applies that rule to the `config.json` of every checkpoint under `~/models` (70 configs, 41 groups of model type, head dim and softcap): `fused-census.md`.
 
 | | |

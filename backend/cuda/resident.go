@@ -257,10 +257,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
-	prefillRun
 	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
-	costState
 	line string // the plan line (a mem line) the allocation helpers lease on: onLine sets it
 	// recFloats is each recurrent layer's conv window and state in floats, read from stateSpecsOf when the layer is uploaded; zero on a
 	// layer with none. Every recurrent buffer (live, further slots, checkpoint, reset) and every price of them reads it.
@@ -277,6 +275,55 @@ type cudaResident struct {
 	// Options.Knobs applied, never the live environment.
 	knob func(name string) (string, bool)
 
+	// device state — touched ONLY on the executor thread.
+	dev    *Device
+	stream Queue
+
+	launchN int // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
+	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
+	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
+	launchViaExecutor bool
+	launchErr         error // sticky first launch error within a launchToken call (reset per token)
+	// resetErr holds the last Reset() failure. Reset cannot return one (the cross-backend interface returns nothing),
+	// so Forward/ForwardN surface it.
+	resetErr error
+	setupErr error // first alloc/upload error during BuildResident's setup job
+
+	layers    []cudaLayer
+	lmW       cudaWQ
+	finalNorm Buffer
+
+	// Each subsystem's state, declared in its own file; every field is promoted.
+	modelGeom
+	planState
+	decodeKernels
+	decodeScratch
+	argmaxState
+	kvState
+	kvWindowState
+	flashDecodeState
+	splitKVState
+	prefillKernels
+	prefillRun
+	visionPrefill
+	moeState
+	expertStream
+	gptOssState
+	floatActState
+	mlaState
+	dnetState
+	mambaState
+	ckptState
+	loraBind
+	graphState
+	captureState
+	costState
+	dbgState
+}
+
+// modelGeom is the model-level geometry and numerics cudaResident takes from the architecture at build: the widths, the norm and
+// activation scheme, the softcaps and scales, and the per-family switches. Per-layer geometry is cudaLayer's.
+type modelGeom struct {
 	hidden, nLayers, inter, vocab int
 	// Gemma 4 E-model: pleP is the per-layer-embedding width (0 otherwise), embLen the length of every embedding row a forward
 	// takes (hidden, or hidden+nLayers*pleP), pleG the PLE gate's output scratch. r.x is embLen floats; the PLE inputs are its tail.
@@ -292,103 +339,23 @@ type cudaResident struct {
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
-	flashDecodeState
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
 	// must recompute it per row (position varies within one batched launch, unlike decode's single scalar per call).
 	attnTempBeta, attnTempOrigMaxPos float64
-	prefillKernels
-	vNormUnit   Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm (Gemma 4: every layer with vNorm). nil unless any layer has vNorm.
-	qkNorm      bool   // arch needs per-head Q/K RMSNorm before RoPE
-	qkNormWhole bool   // QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	rmsAddOne   bool   // (1+w) offset — false for Qwen3/Llama
-	act         int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich    bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
-	postOnly    bool   // NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	qkNorm                           bool  // arch needs per-head Q/K RMSNorm before RoPE
+	qkNormWhole                      bool  // QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	rmsAddOne                        bool  // (1+w) offset — false for Qwen3/Llama
+	act                              int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich                         bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	postOnly                         bool  // NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	// Per-32 activation groups, LayerNorm, parallel-block and logit-scale fields (Cohere/Command-R, Cohere2).
 	actG32        bool    // decoder.Options.ActQuantGroup == 32: actgroup.cu's per-32 kernels are bound into fRms/fQ/fSw/gemvW4/gemvW8, and every activation scale buffer holds 2·K/32 floats (actScaleLen: scales, then per-group sums for gemv_q4k_g32)
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
-	expertStream
-	// resetErr holds the last Reset() failure. Reset cannot return one (the cross-backend interface returns nothing),
-	// so Forward/ForwardN surface it.
-	resetErr error
-	argmaxState
-	loraBind
-	graphState
-	captureState
-
-	launchN int // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
-	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
-	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
-	launchViaExecutor bool
-
-	moeState
-
-	// device state — touched ONLY on the executor thread.
-	dev                                                                                     *Device
-	stream                                                                                  Queue
-	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
-	fTopKCompact, fTopKFinish, fTopKZ                                                       Pipeline // topk_compact / topk_finish / topk_z
-	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (K=V layers copy raw k into vB instead of projecting twice)
-	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
-	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
-	smCount, smThreads, smSmem                                                              int      // device shape for wave-sized fused-projection grids (zero when unread): SM count, max threads per SM, max shared memory per SM
-	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2
-	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
-	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
-	gemvQ4K Pipeline
-	// gemvQ5K / gemvQ6K are actgroup.cu's gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks and Q6_K planes (q6kPlanes)
-	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), launchgeom.KQuantGemvRows rows a warp. Bound with gemvQ4K.
-	gemvQ5K, gemvQ6K Pipeline
-	// kquantAlt pairs each native weight with its int8 copy when kquantKeepInt8ForTest held at the build; nil otherwise.
-	kquantAlt [][2]cudaWQ
-	// fQKVg32 / fGUg32 are actgroup.cu's fused_rms_qkv_g32 / fused_rms_gu_g32: the per-32 twins of
-	// fQKV / fGU (rmsnorm + per-32 quant redundantly per block + the projection rows, any of int8 /
-	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
-	fQKVg32, fGUg32 Pipeline
-	fuseG32         bool
-	splitKVState
-	kvState
-
-	planState
-	dnetState
-	mambaState
-
-	gptOssState
-	visionPrefill
-	floatActState
-	pairwiseRoPE bool // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
-	mlaState
-
-	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
-	launchErr error // sticky first launch error within a launchToken call (reset per token)
-	layers    []cudaLayer
-	ckptState
-	lmW       cudaWQ
-	finalNorm Buffer
-
-	// per-token scratch + KV caches (device).
-	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
-	aq, cq, mq, dq, argIdx                                                Buffer
-	argVal                                                                Buffer
-	topkOut                                                               Buffer // topk_finish / topk_z output: ids, logit bits, Z hi/lo bits
-	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
-	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
-	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
-	gbKey, gbIdx, gbOut                                 Buffer // gumbel_stage1 per-block winners, and the drawn id
-
-	kvWindowState
-
-	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
-	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an
-	// extra copy. Reused across calls (decode consumes each before the next).
-	logitsPinned *HostBuffer[float32]
-	logitsHost   []float32 // zero-copy view of logitsPinned
-	setupErr     error     // first alloc/upload error during BuildResident's setup job
-	dbgState
+	pairwiseRoPE  bool    // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
 }
 
 // alloc/upload helpers, called ONLY inside the setup job (r.dev's context current on the executor thread).

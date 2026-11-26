@@ -1053,5 +1053,5 @@ type visionPrefill struct {
 	mropeTakesMode       bool          // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
 	mropeMode            int32         // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
 	mropeSec0, mropeSec1 int32         // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
-	deepPlan             *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
+	deepPlan             *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress; nil otherwise
 }
