@@ -181,7 +181,8 @@ def _argv_is_night_runner(argv):
     exe = os.path.basename(argv[0])
     if exe == "night.py":
         return True
-    return exe.startswith("python") and any(os.path.basename(a) == "night.py" for a in argv[1:])
+    # lower(): macOS framework builds run as .../Python.app/Contents/MacOS/Python.
+    return exe.lower().startswith("python") and any(os.path.basename(a) == "night.py" for a in argv[1:])
 
 
 def _pid_is_runner(pid):
