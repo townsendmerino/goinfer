@@ -112,7 +112,7 @@ func snapshotKnobs(over map[string]string) *knobSet {
 
 func (k *knobSet) lookup(name string) (string, bool) {
 	if k == nil {
-		return os.LookupEnv(name)
+		return envKnob(name)
 	}
 	knobDrift(k, name)
 	return k.val[name], k.set[name]
@@ -186,6 +186,9 @@ func (m *Model) bindKnobs(over map[string]string) *Model {
 	return m
 }
 
+// envKnob is a knob's live-environment reading: what a nil snapshot reads.
+func envKnob(name string) (string, bool) { return os.LookupEnv(name) }
+
 // ssmResidentEnv reports whether GOINFER_SSM_RESIDENT is set in the environment (a nil snapshot's reading): the model-free
 // admission's. An Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
-func ssmResidentEnv() bool { return (*knobSet)(nil).get(knobSSMResident) != "" }
+func ssmResidentEnv() bool { v, _ := envKnob(knobSSMResident); return v != "" }
