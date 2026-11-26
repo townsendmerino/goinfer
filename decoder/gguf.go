@@ -113,12 +113,11 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Ar
 }
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
-// llama.cpp tensor names to the descriptor and un-permuting q/k.
-func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*Weights, error) {
+// llama.cpp tensor names to the descriptor and un-permuting q/k. It records its phases into prof, which may be nil.
+func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}, prof *LoadProfile) (*Weights, error) {
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
-	prof := &LoadProfile{}
 	if n, ok := GGUFFileBytes(path); ok {
 		prof.setBytes(n)
 	}
@@ -143,7 +142,6 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 	}); err != nil {
 		return nil, err
 	}
-	w.prof = prof
 	if len(w.kquant) > 0 {
 		w.kquantFile, w.ggufPath, keep = g, path, true
 	}

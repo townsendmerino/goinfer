@@ -173,10 +173,6 @@ type expertWeights struct {
 // Embed doubles as the LM head (logits = h · Embedᵀ), so there is no
 // separate output projection tensor.
 type Weights struct {
-	// prof records how long each phase of this load took, when the loader instrumented it (the GGUF path does); nil otherwise.
-	// It rides on Weights because that is the value the loader already returns.
-	prof *LoadProfile
-
 	Cfg  Config
 	arch *Architecture // resolved descriptor the forward pass reads
 
@@ -388,7 +384,7 @@ func loadWeights(dir string, o weightLoadOpts) (*Weights, error) {
 	// infer it from an error string (a guard that fires after the allocation still looks correct that way).
 	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4, abort) // quantized llama.cpp checkpoint; LoRA guarded in Load
+		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4, abort, o.prof) // quantized llama.cpp checkpoint; LoRA guarded in Load
 	}
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
@@ -568,6 +564,8 @@ type weightLoadOpts struct {
 	embedInt4, needCanonical, skipRow4 bool
 	lora                               *loraAdapter
 	abort                              <-chan struct{}
+	// prof, when set, receives a GGUF load's phases (LoadProfile); a safetensors load records none.
+	prof *LoadProfile
 }
 
 // errDirNoStream is buildWeightsFromSafetensorsTo's answer, given a sink, for a family whose dedicated builder does not
