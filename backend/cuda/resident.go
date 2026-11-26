@@ -316,6 +316,7 @@ type cudaResident struct {
 	captureState
 	costState
 	dbgState
+	testSeams
 }
 
 // modelGeom is the model-level geometry and numerics cudaResident takes from the architecture at build: the widths, the norm and
@@ -944,7 +945,7 @@ func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
 	if r.cost != nil {
 		r.countLaunch(f)
-		if costPlantForTest == 1 && r.costNamed == 1 { // the planted second launch of the token's first kernel
+		if r.costPlantForTest == 1 && r.costNamed == 1 { // the planted second launch of the token's first kernel
 			r.countLaunch(f)
 			_ = r.stream.Launch(f, cfg, args...)
 		}

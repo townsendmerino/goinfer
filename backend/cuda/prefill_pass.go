@@ -172,12 +172,12 @@ func (p *prefillPass) uploadInputs() error {
 		if a, b := max(ds.start, startPos), min(ds.start+ds.n, startPos+M); a < b {
 			imgOff, imgN := (a-startPos)*hidden, (b-a)*hidden
 			p.dsOff, p.dsN = imgOff, imgN
-			if deepDefectForTest == deepDefectTextRows {
+			if p.r.deepDefectForTest == deepDefectTextRows {
 				p.dsOff, p.dsN = 0, M*hidden
 			}
 			for _, set := range ds.sets {
 				rows := set[(a-ds.start)*hidden : (b-ds.start)*hidden]
-				if deepDefectForTest == deepDefectTextRows { // planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
+				if p.r.deepDefectForTest == deepDefectTextRows { // planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
 					rows = make([]float32, M*hidden)
 					for i := range rows {
 						rows[i] = set[(a-ds.start)*hidden+i%imgN]
@@ -762,9 +762,9 @@ func (p *prefillPass) deepstackAdd(l int) error {
 	r, xB, dsBufs, dsOff, dsN := p.r, p.xB, p.dsBufs, p.dsOff, p.dsN
 	// DeepStack: after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's
 	// hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).
-	if dsN > 0 && deepDefectForTest != deepDefectNotAdded {
+	if dsN > 0 && p.r.deepDefectForTest != deepDefectNotAdded {
 		k := l
-		if deepDefectForTest == deepDefectOneLayerLate {
+		if p.r.deepDefectForTest == deepDefectOneLayerLate {
 			k = l - 1 // set l-1 added after layer l: every set one layer late, set 0 never early
 		}
 		if k >= 0 && k < len(dsBufs) {

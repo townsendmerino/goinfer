@@ -145,10 +145,10 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 		{"(5) added one layer late", deepDefectOneLayerLate},
 		{"(6) added to the text rows too", deepDefectTextRows},
 	} {
-		deepDefectForTest = c.defect
+		r.deepDefectForTest = c.defect
 		r.Reset()
 		newLast, err := r.PrefillMRoPEDeepstackLast(ctx, dsSpliceRows(m, ids, feats, start, nb, hid), 0, mrope, sets, start, nb)
-		deepDefectForTest = 0
+		r.deepDefectForTest = 0
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}

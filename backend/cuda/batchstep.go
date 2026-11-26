@@ -81,13 +81,6 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 	return res, nil
 }
 
-// raggedPlantForTest plants a defect in StepRagged's rows, for its identity test's controls: 1 binds a sequence's second row
-// to the next sequence's slot (a row reading another sequence's tables), 2 gives each row of a sequence its first row's
-// position (a verify row run as a decode row), 3 runs a prefill chunk on the exact kernels (a chunk out of its pass's class),
-// 4 reads the ragged rows' tables with a stride one entry short, so slot s's row reads its table s entries back: a row's table
-// offset off by blocks, inside the tables the device holds. 0 in production. Set by tests only.
-var raggedPlantForTest int
-
 // raggedChunk is a ragged step's prefill chunk while its pass runs (StepRagged sets it, prefillCore reads it): the pass's
 // first rows rows, at pos in slot, of a prompt promptLen long; last when it is the prompt's final pass, whose last row alone
 // is headed; exact when its own pass takes the exact kernels. split holds while the layer stack runs, when bGemvB and the
@@ -128,7 +121,7 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 		}
 	}
 	if s := seqs[order[0]]; s.Prefill != nil {
-		r.stepChunk = raggedChunk{rows: len(s.Embs), pos: s.Pos, slot: s.Slot, promptLen: s.Prefill.PromptLen, last: s.Prefill.Last, exact: raggedPlantForTest == 3}
+		r.stepChunk = raggedChunk{rows: len(s.Embs), pos: s.Pos, slot: s.Slot, promptLen: s.Prefill.PromptLen, last: s.Prefill.Last, exact: r.raggedPlantForTest == 3}
 		defer func() { r.stepChunk = raggedChunk{} }()
 	}
 	var embs [][]float32
@@ -151,9 +144,9 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 		for j, e := range s.Embs {
 			rw := stepRow{slot: s.Slot, pos: s.Pos + j}
 			switch {
-			case raggedPlantForTest == 1 && j == 1:
+			case r.raggedPlantForTest == 1 && j == 1:
 				rw.slot = seqs[(i+1)%len(seqs)].Slot
-			case raggedPlantForTest == 2:
+			case r.raggedPlantForTest == 2:
 				rw.pos = s.Pos
 			}
 			if j == len(s.Embs)-1 {
@@ -442,7 +435,7 @@ func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from i
 	}
 	c := rag.classes[rag.classOf[l]]
 	attnStride := tabStride
-	if raggedPlantForTest == 4 {
+	if r.raggedPlantForTest == 4 {
 		attnStride--
 	}
 	if c.nB > 0 {

@@ -32,9 +32,6 @@ type dnSpecArena struct {
 	pend  int
 }
 
-// dnSpecPlantForTest plants a defect for the speculative verify's identity gate to catch. Set by tests only.
-var dnSpecPlantForTest int
-
 const (
 	dnSpecPlantFoldSkipsConv     = iota + 1 // the fold replays the scan but leaves the conv window where it was
 	dnSpecPlantVerifyWritesState            // the verify commits every row, and the fold does nothing
@@ -179,7 +176,7 @@ func (r *cudaResident) VerifyLastNArgmax(embeddings [][]float32, startPos int) (
 		// A pass from position 0 restarts the recurrence (prefillCore's resetState): there is no committed state to keep.
 		return nil, fmt.Errorf("cuda: a speculative verify at position 0")
 	}
-	r.dnSpecOn = dnSpecPlantForTest != dnSpecPlantVerifyWritesState
+	r.dnSpecOn = r.dnSpecPlantForTest != dnSpecPlantVerifyWritesState
 	defer func() { r.dnSpecOn = false }()
 	ids, err := r.PrefillLastNArgmax(embeddings, startPos)
 	a.bank, a.avail, a.pend = a.bank^1, 0, 0
@@ -200,7 +197,7 @@ func (r *cudaResident) FoldVerified(n int) error {
 		return fmt.Errorf("cuda: fold of %d rows; the last verify left %d", n, a.avail)
 	}
 	a.avail = 0
-	if dnSpecPlantForTest != dnSpecPlantVerifyWritesState {
+	if r.dnSpecPlantForTest != dnSpecPlantVerifyWritesState {
 		a.pend = n
 	}
 	return nil
@@ -233,7 +230,7 @@ func (r *cudaResident) FlushFold() error {
 			s := a.slots[a.bank][l]
 			// The conv output is written back over the row's own, with the same bits: the fold's window starts where the
 			// verify's reads did.
-			if dnSpecPlantForTest != dnSpecPlantFoldSkipsConv {
+			if r.dnSpecPlantForTest != dnSpecPlantFoldSkipsConv {
 				if e := r.launch(r.dnConvRows, g1cfg(dp.convDim, 256),
 					Arg(s.mix), Arg(Ly.dnConvW), Arg(Ly.dnWin), Arg(s.conv),
 					gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK)), gpu.ArgValue(int32(n))); e != nil {

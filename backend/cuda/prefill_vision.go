@@ -228,10 +228,6 @@ type cudaDeepPlan struct {
 // explicitly and restore it. Do not change the default without reading docs/code-notes/cuda.md#cudaDeepstackPrefillOn.
 var cudaDeepstackPrefillOn = true
 
-// deepDefectForTest plants a defect for the DeepStack gate to catch: 1 the sets not added, 2 each set one layer late, 3
-// the sets added to the text rows too.
-var deepDefectForTest int
-
 const (
 	deepDefectNotAdded = iota + 1
 	deepDefectOneLayerLate

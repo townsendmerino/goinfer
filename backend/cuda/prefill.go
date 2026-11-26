@@ -268,7 +268,7 @@ func (r *cudaResident) prefillChunkedRows(ctx context.Context, M int, rows func(
 		pass++
 		var outs [][]float32
 		var err error
-		if pass == prefillDeclinePassForTest {
+		if pass == r.prefillDeclinePassForTest {
 			err = fmt.Errorf("cuda prefill: pass %d declined by the test seam: %w", pass, errPrefillDeclined)
 		} else {
 			outs, _, err = r.prefillCore(ctx, rows(i, i+n), startPos+i, tail, nil, mropePos, nil)
@@ -315,9 +315,6 @@ func prefillPartialAt(startPos, i int, err error) error {
 	}
 	return &decoder.PrefillPartial{Next: startPos + i, Err: err}
 }
-
-// prefillDeclinePassForTest is the 1-based pass of a chunked prefill that declines without running, set by tests only.
-var prefillDeclinePassForTest int
 
 // PrefillLastN is the speculative-decode verify primitive: the same batched pass, returning logits at all M positions
 // (row m predicts position startPos+m+1). The final norm and LM head run per row exactly as in the sequential path, so

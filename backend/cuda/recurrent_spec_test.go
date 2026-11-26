@@ -67,9 +67,9 @@ func loadSpecModel(t *testing.T, m specModel) (*decoder.Model, *cudaResident) {
 
 // withSpecPlant runs fn with a fold-path plant armed, and disarms it however fn ends (t.Fatalf included), so no later test runs
 // planted.
-func withSpecPlant(plant int, fn func()) {
-	dnSpecPlantForTest = plant
-	defer func() { dnSpecPlantForTest = 0 }()
+func withSpecPlant(r *cudaResident, plant int, fn func()) {
+	r.dnSpecPlantForTest = plant
+	defer func() { r.dnSpecPlantForTest = 0 }()
 	fn()
 }
 
@@ -263,7 +263,7 @@ func TestRecurrentSpec_verifyFoldMatchesPrefill(t *testing.T) {
 				plant int
 			}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
 				var fails []string
-				withSpecPlant(p.plant, func() { fails = verifyFoldFailures(t, mc, r) })
+				withSpecPlant(r, p.plant, func() { fails = verifyFoldFailures(t, mc, r) })
 				if len(fails) == 0 {
 					t.Errorf("plant %s passed G1a: the gate cannot see it", p.name)
 				} else {
@@ -394,7 +394,7 @@ func TestRecurrentSpec_scriptedLoop(t *testing.T) {
 				plant int
 			}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
 				var fails []string
-				withSpecPlant(p.plant, func() { fails = scriptedLoopFailures(t, mc, r, maxNew) })
+				withSpecPlant(r, p.plant, func() { fails = scriptedLoopFailures(t, mc, r, maxNew) })
 				if len(fails) == 0 {
 					t.Errorf("plant %s passed G1b: the gate cannot see it", p.name)
 				} else {

@@ -17,7 +17,7 @@ import (
 // not package globals (CLAUDE.md, "Go style and structure"). A count above its figure fails as a regression; a
 // count below it fails until lowered in the commit that removes the hook.
 var forTestGlobalsRatchet = map[string]int{
-	"backend/cuda":                    60,
+	"backend/cuda":                    53,
 	"backend/cuda/internal/gpudev":    2,
 	"backend/metal":                   67,
 	"backend/metal/internal/gpudev":   4,

@@ -64,23 +64,15 @@ func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
 	}
 }
 
-// loraAllocFailAfterForTest, when > 0, makes the Nth LoRA buffer allocation of a bind fail as a device OOM (test seam; zero in
-// production). It counts down as buffers are allocated.
-var loraAllocFailAfterForTest int
-
-// loraPanicAfterForTest, when > 0, makes the Nth LoRA buffer allocation of a bind panic with a value that is not a device allocation
-// failure (test seam; zero in production).
-var loraPanicAfterForTest int
-
 // upLora uploads one LoRA matrix.
 func (r *cudaResident) upLora(v []float32) Buffer {
-	if loraAllocFailAfterForTest > 0 {
-		if loraAllocFailAfterForTest--; loraAllocFailAfterForTest == 0 {
+	if r.loraAllocFailAfterForTest > 0 {
+		if r.loraAllocFailAfterForTest--; r.loraAllocFailAfterForTest == 0 {
 			panic(allocFailureForTest())
 		}
 	}
-	if loraPanicAfterForTest > 0 {
-		if loraPanicAfterForTest--; loraPanicAfterForTest == 0 {
+	if r.loraPanicAfterForTest > 0 {
+		if r.loraPanicAfterForTest--; r.loraPanicAfterForTest == 0 {
 			panic("lora: test seam panic that is not an allocation failure")
 		}
 	}
