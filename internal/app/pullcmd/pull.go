@@ -94,7 +94,9 @@ func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string
 }
 
 // Run executes `pull`. args excludes the program name and the "pull" word. Returns an exit code.
-func Run(args []string) int {
+func Run(args []string) int { return runWithContext(context.Background(), args) }
+
+func runWithContext(baseCtx context.Context, args []string) int {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, pullUsage, self(), pull.CacheHelp()); fs.PrintDefaults() }
 	outDir := fs.String("o", "", "directory to download into (default: <user cache>/goinfer/models/<owner>/<repo>)")
@@ -146,7 +148,7 @@ func Run(args []string) int {
 	// on this path — pull/pull.go
 	// only removes it on a digest mismatch (known-bad bytes); an interrupted-but-otherwise-good
 	// partial is exactly what a re-run resumes from.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(baseCtx, os.Interrupt)
 	defer stop()
 
 	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {

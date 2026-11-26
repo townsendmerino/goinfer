@@ -122,7 +122,7 @@ func TestDownload_redirectDowngradeRefused(t *testing.T) {
 
 	c := newHTTPClient()
 	c.Transport.(*http.Transport).TLSClientConfig = tlsSrv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-	ctx := withHTTPClient(context.Background(), c)
+	ctx := WithHTTPClient(context.Background(), c)
 	dir := t.TempDir()
 	if _, err := Download(ctx, "o/r", File{Path: "m.gguf", Size: 7}, dir, nil); err == nil {
 		t.Fatal("an https -> http redirect was followed")

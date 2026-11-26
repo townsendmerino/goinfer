@@ -247,8 +247,8 @@ func decodeMeta(r io.Reader, v any) error {
 // is how a test substitutes the client (a TLS root, a transport) without a package-level hook or a signature change.
 type clientKey struct{}
 
-// withHTTPClient returns ctx carrying c, which get and getRange use in place of defaultHTTPClient.
-func withHTTPClient(ctx context.Context, c *http.Client) context.Context {
+// WithHTTPClient returns ctx carrying c, which get and getRange use in place of defaultHTTPClient.
+func WithHTTPClient(ctx context.Context, c *http.Client) context.Context {
 	return context.WithValue(ctx, clientKey{}, c)
 }
 
