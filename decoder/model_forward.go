@@ -6,6 +6,8 @@ import (
 	"math"
 	"sync/atomic"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // runLayers advances one decode step for token id at position cache.Pos(): it embeds the token, runs the block stack
@@ -151,10 +153,10 @@ func addResidual2(h, sub, sub2 []float32) {
 // ignored by RMSNorm (and nil for the Sandwich4 post-norms).
 func normalizeInto(arch *Architecture, dst, src, weight, bias []float32, dim int) {
 	if arch.Norm == NormLayer {
-		layerNormInto(dst, src, weight, bias, 1, dim, arch.NormEps)
+		normact.LayerInto(dst, src, weight, bias, 1, dim, arch.NormEps)
 		return
 	}
-	rmsNormInto(dst, src, weight, 1, dim, arch.NormEps, arch.RMSAddOne)
+	normact.RMSInto(dst, src, weight, 1, dim, arch.NormEps, arch.RMSAddOne)
 }
 
 // normalize applies the architecture's normalization in place over one row.

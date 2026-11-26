@@ -543,8 +543,8 @@ The only throughput item, and it is deliberately last.
 
 ## Sources
 
-`internal/app/serveapp/openai_generate.go:loadedModel`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
-check, `drive`) · `internal/app/serveapp/helpers.go:limitInflight` (`-max-inflight`, distinct from the per-model
+`internal/app/serveapp/openai_generate.go:loadedModel`, `internal/app/serveapp/openai_generate.go:loadedModel.tryEnter`,
+`internal/app/serveapp/openai_generate.go:loadedModel.drive` (the queue cap, `tryEnter` with its halt check, `drive`) · `internal/app/serveapp/helpers.go:limitInflight` (`-max-inflight`, distinct from the per-model
 429) · `internal/app/loadflags/loadflags.go:Register`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/app/serveapp/anthropic.go:server.serveMessagesWith` (529 on a full queue) · `internal/app/serveapp/sessions.go:sessionLRU`
 (the session LRU J6 schedules around) · `internal/app/serveapp/embeddings.go:maxEmbedInputs` (the one existing bulk

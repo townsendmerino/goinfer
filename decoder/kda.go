@@ -6,6 +6,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // kdaWeights holds one Bailing Hybrid (Ling 3.0) Kimi Delta Attention layer's parameters,
@@ -55,7 +56,7 @@ func kdaConvStream(x, convW []float32, win [][]float32, K int) []float32 {
 				s += convW[c*K+j] * win[idx][c]
 			}
 		}
-		out[c] = silu(s)
+		out[c] = normact.SiLU(s)
 	}
 	return out
 }
