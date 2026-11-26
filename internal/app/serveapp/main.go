@@ -213,6 +213,68 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 }
 
 func Main() {
+	if dispatchSubcommand() {
+		return
+	}
+	cfg, authKey, addr, tlsCert, tlsKey, versionOnly := parseServeFlags()
+	if versionOnly {
+		return
+	}
+	srv, mux, textCap, closeAdminSock := startServer(cfg, authKey)
+
+	// The timeouts bound slow-header (slowloris), slow-body dribble and idle keep-alive connections. ReadTimeout is the
+	// whole-request read deadline (60s: generous for a 32 MiB vision body on a slow link); it bounds only the request READ,
+	// so a long SSE stream is unaffected. WriteTimeout stays 0 on purpose: a write deadline would truncate a legitimate
+	// stream.
+	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of it, so cancelling it at
+	// shutdown cancels every in-flight generation (drive derives its context from r.Context()). Without that,
+	// httpSrv.Shutdown waits for a long streaming generation but never cancels it, and the shutdown runs past its 30s
+	// timeout. sessMu is held only briefly (around sessions.acquire), so the checkpoint loop does not deadlock on a running
+	// generation, but Shutdown still waits for the handler to return: cancelling is what bounds it. tryLockUntil's deadline
+	// is the remaining bound on sessMu itself.
+	srvCtx, srvCancel := srv.initLifeContext()
+	defer srvCancel(errServerShutdown)
+	httpSrv := &http.Server{
+		Addr:              *addr,
+		Handler:           serveHandler(mux, *addr, authKey, cfg.allowedHosts),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return srvCtx },
+	}
+
+	stopHaltPoll, done := watchShutdown(srv, cfg, httpSrv, srvCancel, closeAdminSock)
+
+	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client.
+	// Separate from the one-shot SIGINT/SIGTERM channel above: these repeat for the life
+	// of the process, so they get their own Notify and a loop. Platform-specific (haltsignal_unix.go /
+	// haltsignal_windows.go): SIGUSR1/SIGUSR2 are undefined identifiers on Windows.
+	startHaltSignalLoop(srv)
+
+	// -halt-file is polled in its own goroutine; stopHaltPoll is closed alongside stopDemote at shutdown. It is best-effort
+	// background work with no result main waits on.
+	if cfg.haltFile != "" {
+		go haltFilePoller(srv, cfg.haltFile, stopHaltPoll)
+	}
+
+	useTLS := *tlsCert != ""
+	printServing(srv, cfg, addr, authKey, useTLS, textCap)
+	var listenErr error
+	if useTLS {
+		listenErr = httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey)
+	} else {
+		listenErr = httpSrv.ListenAndServe()
+	}
+	if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
+		fmt.Fprintf(os.Stderr, "server: %v\n", listenErr)
+		os.Exit(1)
+	}
+	<-done // let the shutdown handler finish checkpointing before we exit
+}
+
+// dispatchSubcommand runs a subcommand named by the first argument and exits, or prints the version. It also installs
+// the help header. It reports whether Main is done; it returns false when the arguments are for a server.
+func dispatchSubcommand() bool {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set. Shares one
 	// implementation with `goinfer-chat pull` (internal/pullcmd) rather than repeating the
 	// flags and error messages — serve users need a model on disk for exactly the same
@@ -274,15 +336,21 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// required flags are absent; it is registered below as well so it appears in --help.
 	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
-		return
+		return true
 	}
+	return false
+}
+
+// parseServeFlags parses and checks the server's command line, exiting 2 on a refusal. It returns the config, the
+// resolved API key and the listen flags; versionOnly reports that --version was printed and Main is done.
+func parseServeFlags() (config, string, *string, *string, *string, bool) {
 	sf := registerFlags(flag.CommandLine)
 	flag.Parse()
 	markGivenFlags(flag.CommandLine, &sf.cfg)
 	cfg, addr, apiKey, tlsCert, tlsKey, showVersion, lf := sf.cfg, sf.addr, sf.apiKey, sf.tlsCert, sf.tlsKey, sf.showVersion, sf.lf
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
-		return
+		return config{}, "", nil, nil, nil, true
 	}
 	if cfg.noSelfTest {
 		decoder.SkipSelfTests() // before the first Load, which is what runs the cpu self-test
@@ -349,7 +417,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.kvShareOff && cfg.kvShare != "off" {
 		fmt.Fprintln(os.Stderr, "KV sharing: off — this server answers the network without -api-key, so one client's time to first token must not reveal what another sent; set -api-key to share a common prompt between conversations")
 	}
+	return cfg, authKey, addr, tlsCert, tlsKey, false
+}
 
+// startServer builds the server, restores its sessions, builds its routes and starts the admin socket if one is
+// set, exiting 1 on a failure. The returned close func is a no-op when -admin-socket is unset.
+func startServer(cfg config, authKey string) (*server, *http.ServeMux, int64, func()) {
 	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr)) // Gemma 3 on CUDA: float32 if the card holds it beside the decoder, else int8, before the plan prices the tower
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -371,28 +444,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 		fmt.Fprintf(os.Stderr, "admin socket: %s (mode 0600, no api-key — file permissions are the auth; /admin/* is NOT registered on the TCP listener while this is set)\n", cfg.adminSocket)
 	}
+	return srv, mux, textCap, closeAdminSock
+}
 
-	// The timeouts bound slow-header (slowloris), slow-body dribble and idle keep-alive connections. ReadTimeout is the
-	// whole-request read deadline (60s: generous for a 32 MiB vision body on a slow link); it bounds only the request READ,
-	// so a long SSE stream is unaffected. WriteTimeout stays 0 on purpose: a write deadline would truncate a legitimate
-	// stream.
-	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of it, so cancelling it at
-	// shutdown cancels every in-flight generation (drive derives its context from r.Context()). Without that,
-	// httpSrv.Shutdown waits for a long streaming generation but never cancels it, and the shutdown runs past its 30s
-	// timeout. sessMu is held only briefly (around sessions.acquire), so the checkpoint loop does not deadlock on a running
-	// generation, but Shutdown still waits for the handler to return: cancelling is what bounds it. tryLockUntil's deadline
-	// is the remaining bound on sessMu itself.
-	srvCtx, srvCancel := srv.initLifeContext()
-	defer srvCancel(errServerShutdown)
-	httpSrv := &http.Server{
-		Addr:              *addr,
-		Handler:           serveHandler(mux, *addr, authKey, cfg.allowedHosts),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return srvCtx },
-	}
-
+// watchShutdown starts the idle-session demoter and the SIGINT/SIGTERM handler that drains and checkpoints the
+// server. It returns the halt-poll stop channel, which the handler closes for the -halt-file poller, and a channel
+// that closes when the checkpoint is written.
+func watchShutdown(srv *server, cfg config, httpSrv *http.Server, srvCancel context.CancelCauseFunc, closeAdminSock func()) (chan struct{}, chan struct{}) {
 	// Tiered KV: a background ticker demotes idle sessions to disk. It takes sessMu, the
 	// lock the request path takes around acquire and checkin, and skips any session a
 	// generation has checked out, so it never touches a running generation's session;
@@ -450,20 +508,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 		srv.checkpointSessions(cfg)
 	}()
+	return stopHaltPoll, done
+}
 
-	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client.
-	// Separate from the one-shot SIGINT/SIGTERM channel above: these repeat for the life
-	// of the process, so they get their own Notify and a loop. Platform-specific (haltsignal_unix.go /
-	// haltsignal_windows.go): SIGUSR1/SIGUSR2 are undefined identifiers on Windows.
-	startHaltSignalLoop(srv)
-
-	// -halt-file is polled in its own goroutine; stopHaltPoll is closed alongside stopDemote at shutdown. It is best-effort
-	// background work with no result main waits on.
-	if cfg.haltFile != "" {
-		go haltFilePoller(srv, cfg.haltFile, stopHaltPoll)
-	}
-
-	useTLS := *tlsCert != ""
+// printServing writes the serving line, the banner, the two security warnings and the body caps to stderr.
+func printServing(srv *server, cfg config, addr *string, authKey string, useTLS bool, textCap int64) {
 	scheme := "http"
 	if useTLS {
 		scheme = "https"
@@ -497,17 +546,6 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	_, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) / %s (batch files) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), humanBytes(fileCap), capSrc)
-	var listenErr error
-	if useTLS {
-		listenErr = httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey)
-	} else {
-		listenErr = httpSrv.ListenAndServe()
-	}
-	if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
-		fmt.Fprintf(os.Stderr, "server: %v\n", listenErr)
-		os.Exit(1)
-	}
-	<-done // let the shutdown handler finish checkpointing before we exit
 }
 
 // newServer loads the configured model(s): a decoder (with tokenizer, chat
