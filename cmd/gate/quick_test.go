@@ -304,7 +304,7 @@ func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 				}
 				base := stripVariant(f[0])
 				files := f[4]
-				if base == pkg || f[1] == pkg {
+				if base == pkg || base == pkg+"_test" {
 					files += "," + f[5] // the package under test and its external test package
 				}
 				for name := range strings.SplitSeq(files, ",") {

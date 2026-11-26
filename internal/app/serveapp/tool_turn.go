@@ -61,6 +61,9 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	var sb, streamed strings.Builder
 	var stopBeat func()
 	if ss != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = ss.cancelOnFail(ctx) // a failed frame ends the turn
+		defer cancel()
 		stopBeat = sseHeartbeat(ss)
 		defer stopBeat()
 	}

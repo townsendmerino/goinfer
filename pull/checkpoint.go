@@ -93,9 +93,9 @@ func AnyLoads(modelType string) (string, error) {
 }
 
 // safeRepoPath reports whether a repo file path is safe to join under a local directory: relative, no ".." or empty
-// segment, no backslash. A tree listing is remote input.
+// segment, no backslash, no NUL byte. A tree listing is remote input.
 func safeRepoPath(p string) bool {
-	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
+	if p == "" || strings.HasPrefix(p, "/") || strings.ContainsAny(p, "\\\x00") {
 		return false
 	}
 	for seg := range strings.SplitSeq(p, "/") {
@@ -117,7 +117,7 @@ func listTree(ctx context.Context, repo string) ([]File, error) {
 		return nil, fmt.Errorf("listing %s: HuggingFace returned %s", repo, resp.Status)
 	}
 	var entries []treeEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := decodeMeta(resp.Body, &entries); err != nil {
 		return nil, fmt.Errorf("parsing file list: %w", err)
 	}
 	var out []File

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -176,4 +177,85 @@ func TestGemma4MoEKV_forwardParity(t *testing.T) {
 		"../testdata/gemma4_moe_kv_forward_golden.json",
 		"../testdata/gemma4-moe-kv-tiny",
 		"scripts/pin_gemma4_moe_kv_forward.py")
+}
+
+// A decode stream reuses its per-token working buffers (Gemma 4's position state and its attention, MoE sub-block, dense-FFN and
+// PLE buffers; the non-gated MLP's activation): the logits must be bit-identical to a stream given a brand-new decode scratch
+// before every token, and a warm token must allocate measurably less than such a fresh one. minSaved is a floor on the
+// allocations a warm token no longer makes, set below what the reuse saves; Nemotron-H's saving (its non-gated MLP's
+// activation) is too small to separate from noise, so it gates bit-identity only. uses names the operations a case is there
+// to cover, and the case fails if its program lacks one.
+func TestDecodeScratch_reuseIsBitIdenticalAndAllocatesLess(t *testing.T) {
+	isMoE := func(o *op) bool { return o.Kind == opGemma4MoE }
+	isPLE := func(o *op) bool { return o.Kind == opPLE }
+	isDense := func(o *op) bool { return o.Kind == opFFN && o.FFN.Form == ffnGemma4Dense }
+	for _, tc := range []struct {
+		ckpt     string
+		minSaved uint64
+		uses     map[string]func(*op) bool
+	}{
+		{"../testdata/gemma4-moe-kv-tiny", 20, map[string]func(*op) bool{"Gemma 4 MoE": isMoE}},
+		// A dense E-model: per-layer embeddings, KV sharing and the double-wide dense FFN.
+		{"../testdata/gemma4-emodel-tiny", 8, map[string]func(*op) bool{"PLE": isPLE, "Gemma 4 dense FFN": isDense}},
+		{"../testdata/nemotron-tiny", 0, nil},
+	} {
+		t.Run(tc.ckpt[len("../testdata/"):], func(t *testing.T) {
+			if _, err := os.Stat(tc.ckpt); errors.Is(err, fs.ErrNotExist) {
+				t.Skipf("no tiny checkpoint at %s", tc.ckpt)
+			}
+			m, err := Load(tc.ckpt, Options{Quant: "f32"})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer m.Close()
+			for name, use := range tc.uses {
+				if !m.program().AnyOp(use) {
+					t.Fatalf("test bug: %s has no %s operation", tc.ckpt, name)
+				}
+			}
+			const steps = 24
+			warm, fresh := m.NewCache(steps+8), m.NewCache(steps+8)
+			vocab := m.w.arch.VocabSize
+			var mWarm, mFresh []uint64
+			for pos := range steps {
+				id := (pos*37 + 11) % vocab
+				fresh.scr = newDecodeScratch(m.w.arch)
+				var got, want []float32
+				mWarm = append(mWarm, mallocsDuring(func() { got, err = m.forward(id, warm) }))
+				if err != nil {
+					t.Fatalf("warm forward: %v", err)
+				}
+				mFresh = append(mFresh, mallocsDuring(func() { want, err = m.forward(id, fresh) }))
+				if err != nil {
+					t.Fatalf("fresh forward: %v", err)
+				}
+				for i := range want {
+					if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
+						t.Fatalf("pos %d: logit %d = %v on the reused scratch, %v on a fresh one", pos, i, got[i], want[i])
+					}
+				}
+			}
+			// The first tokens grow the buffers; judge the steady state by its median.
+			w, f := medianU64(mWarm[steps/2:]), medianU64(mFresh[steps/2:])
+			t.Logf("allocations per token (median of the last %d): %d reused, %d fresh", steps-steps/2, w, f)
+			if w+tc.minSaved > f {
+				t.Errorf("a warm token allocates %d times, a fresh one %d: want at least %d fewer", w, f, tc.minSaved)
+			}
+		})
+	}
+}
+
+// mallocsDuring is the heap allocation count while f runs.
+func mallocsDuring(f func()) uint64 {
+	var a, b runtime.MemStats
+	runtime.ReadMemStats(&a)
+	f()
+	runtime.ReadMemStats(&b)
+	return b.Mallocs - a.Mallocs
+}
+
+func medianU64(xs []uint64) uint64 {
+	s := slices.Clone(xs)
+	slices.Sort(s)
+	return s[len(s)/2]
 }

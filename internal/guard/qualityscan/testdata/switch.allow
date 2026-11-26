@@ -61,7 +61,6 @@ backend/cuda/siglip_vision_test.go 5 -- assignments before the ratchet; move to 
 backend/cuda/tower_attn_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/vramtrace_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/vsum_split_fidelity_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/webgpu/attn_fidelity_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/gemma4_emodel_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/gemma4_moe_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/internal/kernels/context_close_late_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
@@ -79,7 +78,6 @@ backend/webgpu/kv0_invariance_test.go 2 -- assignments before the ratchet; move 
 backend/webgpu/kv3_scratch_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/kv_slots_test.go 19 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/mamba_layersweep_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/webgpu/mrope_fidelity_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/prefill_gemma_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/prefill_int4_test.go 9 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/prefill_mrope_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched
@@ -103,13 +101,11 @@ decoder/deepseek_real_test.go 2 -- assignments before the ratchet; move to testg
 decoder/deepseek_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/deltanet_n_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/embed_slot_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/fitguard_q4k_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/fitguard_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/forkinherit_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/gemma4_12btrace_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/gptoss_expert_batch_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/kvdequant_parallel_test.go 8 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/kv_f16_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+decoder/kv_f16_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/kv_plan_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/kvsnap_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/logger_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
@@ -150,13 +146,10 @@ decoder/selftest_gpu_test.go 4 -- assignments before the ratchet; move to testga
 decoder/selftest_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/sidecar_default_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/sidecar_library_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/sidecar_phases_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/sidecar_written_marker_test.go 16 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+decoder/sidecar_phases_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+decoder/sidecar_written_marker_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/ssm_precision_localize_test.go 28 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/ssm_w8a16_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/stream_embed_test.go 9 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/stream_experts_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/stream_layers_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/stream_norepack_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/suite_main_test.go 1 -- TestMain turns heap-profile sampling off once, for the whole process, before any test runs; there is no test to restore it for
 decoder/w4a8_pre_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched

@@ -84,6 +84,12 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 
 // --- OpenAI: POST /v1/batches, GET /v1/batches/{id}, POST /v1/batches/{id}/cancel ---
 
+// batchBudgetMsg is the refusal for a batch the server-wide line budget (batchStore.create) cannot take now.
+func batchBudgetMsg(limit, n int) string {
+	return fmt.Sprintf("the server is running its limit of batch requests (%d across all batches); this batch of %d does not fit until earlier lines finish: retry later",
+		limit, n)
+}
+
 func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		InputFileID      string `json:"input_file_id"`
@@ -132,6 +138,10 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := s.batches.create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
+	if b == nil {
+		writeErr(w, http.StatusTooManyRequests, batchBudgetMsg(s.batches.maxActiveLines, len(customIDs)))
+		return
+	}
 	runBatchPool(len(reqs), func(i int) { runBatchChatLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 
@@ -236,6 +246,10 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 	}
 
 	b := s.batches.create("anthropic_messages", "/v1/messages", "", "", customIDs)
+	if b == nil {
+		writeAnthropicErr(w, http.StatusTooManyRequests, "rate_limit_error", batchBudgetMsg(s.batches.maxActiveLines, len(customIDs)))
+		return
+	}
 	runBatchPool(len(reqs), func(i int) { runBatchMessageLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 

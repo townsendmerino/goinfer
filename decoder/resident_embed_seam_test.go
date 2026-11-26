@@ -119,9 +119,9 @@ func TestSeam_HiddenLastFallsBackToCPUWhenResidentBusy(t *testing.T) {
 		t.Skip("fixture is not resident-eligible")
 	}
 	ids := []int{1, 2, 3}
-	want, err := m.hiddenLastBatched(ids)
+	want, err := m.hiddenLastBatched(context.Background(), ids)
 	if err != nil {
-		if want, err = m.hiddenLastSequential(ids); err != nil {
+		if want, err = m.hiddenLastSequential(context.Background(), ids); err != nil {
 			t.Fatalf("computing the CPU reference vector: %v", err)
 		}
 	}
@@ -164,9 +164,9 @@ func TestSeam_HiddenLastFallsBackToCPUOnResidentDecline(t *testing.T) {
 	be.rf.fail = true
 
 	ids := []int{1, 2, 3}
-	want, err := m.hiddenLastBatched(ids)
+	want, err := m.hiddenLastBatched(context.Background(), ids)
 	if err != nil {
-		if want, err = m.hiddenLastSequential(ids); err != nil {
+		if want, err = m.hiddenLastSequential(context.Background(), ids); err != nil {
 			t.Fatalf("computing the CPU reference vector: %v", err)
 		}
 	}

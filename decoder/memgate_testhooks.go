@@ -46,7 +46,9 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			continue
 		}
 		h.root(func(path string) mem.LineID {
-			if strings.Contains(path, ".hq") || strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
+			if strings.Contains(path, ".hq") || strings.Contains(path, ".dn.") || strings.HasSuffix(path, ".dn") ||
+				path == "mamba.conv" || path == "mamba.y" ||
+				strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
 				return mem.LineScratch // rewritten every step
 			}
 			if cpuRingBookkeeping[path] {

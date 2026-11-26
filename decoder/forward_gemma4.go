@@ -20,32 +20,40 @@ var g4traceQKV func(layer int, q, k, v []float32)
 // Gemma 4 diverges from the generic layer in per-layer head_dim and KV-head count, scale-less v-norm, cross-layer KV sharing (the
 // last N layers reuse an earlier layer's KV), per-attention-type RoPE (proportional / partial-rotary on the global layers), the
 // Per-Layer-Embedding (PLE) residual branch, and a per-layer output scalar. Its program is Architecture.gemma4LayerOps; the
-// operations below are its own. Buffers are allocated per call (parity-first, not the perf path).
+// operations below are its own. Their buffers live on the position's gemma4Token, which a decode stream reuses.
 
 // gemma4Token is one Gemma 4 position's state across its layers: the quantized activation shared by a layer's q/k/v and by its
-// gate/up, the attention scratch (sized to the widest head_dim and this position's key count), and the PLE inputs.
+// gate/up, the attention scratch (sized to the widest head_dim and this position's key count), the PLE inputs, and the per-layer
+// working buffers (q/k/v/ctx, the dense GeGLU's gate/up, the PLE gate, the MoE sub-block's). A decode stream keeps one
+// (decodeScratch.g4) and newGemma4Token resets it each position; every buffer is written or cleared before it is read.
 type gemma4Token struct {
-	hq       w4a8Act
-	sc       g4attnScratch
-	perLayer []float32
-	pleDim   int
+	hq           w4a8Act
+	sc           g4attnScratch
+	perLayer     []float32
+	pleDim       int
+	q, k, v, ctx []float32
+	gate, up, px []float32
+	moe          gemma4MoEScratch
 }
 
-// newGemma4Token makes position pos's state. The PLE inputs are computed from h, the embedding, so it is made before layer 0.
-func (m *Model) newGemma4Token(prog *layerProgram, h []float32, pleID, pos int) *gemma4Token {
+// newGemma4Token makes position pos's state in t, reusing its buffers (a nil t is a fresh one). The PLE inputs are computed from h,
+// the embedding, so it is made before layer 0.
+func (m *Model) newGemma4Token(prog *layerProgram, h []float32, pleID, pos int, t *gemma4Token) *gemma4Token {
 	arch := m.w.arch
 	g := arch.gemma4
 	nH := arch.NumHeads
 	maxHd := max(g.GlobalHeadDim, arch.HeadDim)
 	nkMax := pos + 1
-	t := &gemma4Token{pleDim: g.HiddenSizePerLayerInput, sc: g4attnScratch{
-		kh:     make([]float32, nkMax*maxHd),
-		vt:     make([]float32, nkMax*maxHd),
-		qstack: make([]float32, nH*maxHd),
-		scores: make([]float32, nH*nkMax),
-		cstack: make([]float32, nH*maxHd),
-	}}
-	t.perLayer = make([]float32, arch.NumLayers*t.pleDim)
+	if t == nil {
+		t = &gemma4Token{}
+	}
+	t.pleDim = g.HiddenSizePerLayerInput
+	t.sc.kh = scratchF32(&t.sc.kh, nkMax*maxHd)
+	t.sc.vt = scratchF32(&t.sc.vt, nkMax*maxHd)
+	t.sc.qstack = scratchF32(&t.sc.qstack, nH*maxHd)
+	t.sc.scores = scratchF32(&t.sc.scores, nH*nkMax)
+	t.sc.cstack = scratchF32(&t.sc.cstack, nH*maxHd)
+	t.perLayer = scratchF32(&t.perLayer, arch.NumLayers*t.pleDim)
 	if prog.Embed.PLE && t.pleDim > 0 {
 		m.gemma4PLEInputs(h, pleID, t.perLayer)
 	}
@@ -61,15 +69,15 @@ func (t *gemma4Token) ple(l int) []float32 { return t.perLayer[l*t.pleDim : (l+1
 func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *LayerWeights, cache *KVCache, l, pos int, t *gemma4Token) {
 	arch, be := m.w.arch, m.be
 	nH, hd, nKV := arch.NumHeads, arch.headDimAt(l), arch.kvHeadsAt(l)
-	q := make([]float32, nH*hd)
+	q := scratchF32(&t.q, nH*hd)
 	t.hq.prepare(be, &lw.QProj, x, 1)
 	matmulPre(be, &lw.QProj, &t.hq, x, q, 1)
 	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
 	applyRoPE(q, nH, hd, pos, p.InvFreq, p.Mscale)
 	if p.OwnsKV {
-		k := make([]float32, nKV*hd)
+		k := scratchF32(&t.k, nKV*hd)
 		matmulPre(be, &lw.KProj, &t.hq, x, k, 1)
-		v := make([]float32, nKV*hd)
+		v := scratchF32(&t.v, nKV*hd)
 		if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
 			copy(v, k)
 		} else {
@@ -87,7 +95,8 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 	}
 	keys, vals := cache.Keys(p.KVSrc), cache.Vals(p.KVSrc)
 	nKeys := len(keys) / (nKV * hd)
-	ctx := make([]float32, nH*hd)
+	ctx := scratchF32(&t.ctx, nH*hd)
+	clear(ctx)
 	start := 0
 	if p.Window > 0 {
 		start = max(pos-p.Window+1, 0)
@@ -107,13 +116,13 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 }
 
 // gemma4DenseFFN is a dense Gemma 4 layer's GeGLU at its own width, x → out, sharing the position's quantized activation.
-func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, width int, hq *w4a8Act) error {
+func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, width int, t *gemma4Token) error {
 	if act != ActGeluTanh {
 		return fmt.Errorf("decoder: Gemma 4's dense FFN is GELU-tanh, not activation %d", act)
 	}
-	be := m.be
-	gate := make([]float32, width)
-	up := make([]float32, width)
+	be, hq := m.be, &t.hq
+	gate := scratchF32(&t.gate, width)
+	up := scratchF32(&t.up, width)
 	hq.prepare(be, &lw.GateProj, x, 1)
 	matmulPre(be, &lw.GateProj, hq, x, gate, 1)
 	matmulPre(be, &lw.UpProj, hq, x, up, 1)
@@ -128,10 +137,11 @@ func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, 
 	return nil
 }
 
-// gemma4PLEBranch adds the per-layer-embedding branch to h: gate → gelu × the layer's PLE input → proj → norm → +residual. sub is
-// scratch of the hidden width.
-func (m *Model) gemma4PLEBranch(h, pl []float32, lw *LayerWeights, ne *normEpsParams, sub []float32) {
-	px := make([]float32, len(pl))
+// gemma4PLEBranch adds layer l's per-layer-embedding branch to h: gate → gelu × the layer's PLE input → proj → norm → +residual.
+// sub is scratch of the hidden width.
+func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *LayerWeights, ne *normEpsParams, sub []float32) {
+	pl := t.ple(l)
+	px := scratchF32(&t.px, len(pl))
 	matmul(m.be, &lw.PLEGate, h, px, 1)
 	parallelElementwise(len(px), func(lo, hi int) {
 		for i := lo; i < hi; i++ {
@@ -176,8 +186,8 @@ func rmsNormNoWeight(x []float32, rows, dim int, eps float64) {
 }
 
 // g4attnScratch holds the batched-over-heads gemma4 attention buffers: the gathered K_head [n,hd] / V_headᵀ [hd,n] for one KV
-// head, the stacked query-head group, its scores, and the context. Allocated once per token (newGemma4Token, sized to the
-// widest head_dim and current key count) and reused across layers.
+// head, the stacked query-head group, its scores, and the context. Sized each token by newGemma4Token (to the widest head_dim
+// and current key count) and reused across layers.
 type g4attnScratch struct {
 	kh, vt, qstack, scores, cstack []float32
 }

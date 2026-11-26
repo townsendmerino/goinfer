@@ -389,20 +389,18 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 			t.Errorf("%s diverges from the CPU: worst cosine %.6f (want >= %.3f), relL2 %.4f (want <= %.2f)", name, w.cos, cosBar, w.rel, relBar)
 		}
 	}
-	kernels.PairwiseNeoXForTest = true
-	t.Cleanup(func() { kernels.PairwiseNeoXForTest = false })
+	testgate.SetForTest(t, &kernels.PairwiseNeoXForTest, true)
 	neox := measure()
-	kernels.PairwiseNeoXForTest = false
+	testgate.SetForTest(t, &kernels.PairwiseNeoXForTest, false)
 	for name, w := range neox {
 		t.Logf("NeoX     %-28s worst cos %.6f relL2 %.4f", name, w.cos, w.rel)
 		if !(w.cos < cosBar) {
 			t.Errorf("the gate is BLIND on %q: with the NeoX kernels it still reads cosine %.6f >= %.3f", name, w.cos, cosBar)
 		}
 	}
-	kernels.PairwiseNeoXStoresForTest = true // only the K-cache stores miswired: every f16 and int8 cache path must read red
-	t.Cleanup(func() { kernels.PairwiseNeoXStoresForTest = false })
+	testgate.SetForTest(t, &kernels.PairwiseNeoXStoresForTest, true) // only the K-cache stores miswired: every f16 and int8 cache path must read red
 	stores := measure()
-	kernels.PairwiseNeoXStoresForTest = false
+	testgate.SetForTest(t, &kernels.PairwiseNeoXStoresForTest, false)
 	for _, kv := range []string{"f16", "i8"} {
 		for _, name := range []string{"text decode, --kv " + kv, "past the image, --kv " + kv} {
 			w, ok := stores[name]

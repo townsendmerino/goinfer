@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // loadTinyGemma4GGUF writes a synthetic Gemma 4 GGUF of variant v and loads it on the CPU at f32.
@@ -189,7 +191,6 @@ func TestLayerCapture_gemma4EModel(t *testing.T) {
 // TestLayerCapture_plantsGoRed: each planted capture defect turns checkLayerCapture red with its own message.
 func TestLayerCapture_plantsGoRed(t *testing.T) {
 	m := loadTinyGemma4GGUF(t, g4EModelNoShare)
-	t.Cleanup(func() { seamPlantForTest = plantNone })
 	global := m.w.arch.NumLayers - 1 // tinyGemma4GGUF's one global layer
 	for _, pl := range []struct {
 		name  string
@@ -201,9 +202,9 @@ func TestLayerCapture_plantsGoRed(t *testing.T) {
 		{"the global layer's context at the model-level width", plantCtxNarrow, fmt.Sprintf("layer %d: Ctx is", global)},
 		{"layer 1's MLP output after its post-norm", plantMLPPreAfterNorm, "layer 1: MLPPre through the post-MLP norm"},
 	} {
-		seamPlantForTest = pl.plant
+		testgate.SetForTest(t, &seamPlantForTest, pl.plant)
 		err := checkLayerCapture(t, m, layerCapturePrompt)
-		seamPlantForTest = plantNone
+		testgate.SetForTest(t, &seamPlantForTest, plantNone)
 		if err == nil || !strings.Contains(err.Error(), pl.want) {
 			t.Errorf("%s: not seen (%v)", pl.name, err)
 		}

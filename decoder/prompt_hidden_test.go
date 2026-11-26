@@ -145,7 +145,7 @@ func TestPromptHidden_batchedMatchesSequential(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want, err := m.hiddenLastSequential(ids)
+				want, err := m.hiddenLastSequential(context.Background(), ids)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -20,6 +20,15 @@ type gemma4Pass struct {
 	rowStride int       // NumLayers*pleDim
 	pleDim    int
 	sc        g4attnScratch
+	moe       gemma4MoEScratch // the MoE sub-block's buffers, reused row after row
+}
+
+// moeScratch is the pass's MoE sub-block scratch; nil (fresh buffers) on a pass without Gemma 4 state.
+func (gp *gemma4Pass) moeScratch() *gemma4MoEScratch {
+	if gp == nil {
+		return nil
+	}
+	return &gp.moe
 }
 
 // newGemma4Pass computes the pass's PLE inputs from h ([K*hidden], the embeddings with image rows spliced) and sizes the attention

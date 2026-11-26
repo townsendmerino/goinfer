@@ -1,6 +1,7 @@
 package whisper
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
 	"os"
@@ -138,14 +139,14 @@ func TestPolicy_avgLogprobCountsTheStopToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	free, err := tr.Dec.generate(enc, gen, prompt, true, 0, nil, -1)
+	free, err := tr.Dec.generate(context.Background(), enc, gen, prompt, true, 0, nil, -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gen.EOS = free.ids[1] // the second token the model writes becomes the stop token: the run ends there
 	for _, defect := range []int{condNone, polAvgNoStop} {
 		tr.Dec.condDefect = defect
-		a, err := tr.Dec.generate(enc, gen, prompt, true, 0, nil, -1)
+		a, err := tr.Dec.generate(context.Background(), enc, gen, prompt, true, 0, nil, -1)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -325,6 +325,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// include_usage needs the real generated-token count (nComp), which no count of emitted chunks can report. Nothing
 		// else is sent before the first token and a CPU image prefill can take minutes, so a heartbeat runs while driveVL
@@ -334,7 +336,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		res, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -461,6 +463,8 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
+		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		defer cancelStream()
 		anthropicEvent(ss, "message_start", map[string]any{
 			"type": "message_start",
 			"message": map[string]any{
@@ -474,7 +478,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, th.push)
 		if th.want {
 			streamMessagesThinking(ss, th, gr, func(onText func(string)) (turnResult, error) {
-				return lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
+				return lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, onText)
 			})
 			return
 		}
@@ -486,7 +490,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		// first token.
 		stopBeat := sseHeartbeat(ss)
 		defer stopBeat()
-		res, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},

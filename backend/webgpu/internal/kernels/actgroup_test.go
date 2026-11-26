@@ -9,6 +9,7 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // actG32Input is a K-wide activation with Phi-3's shape of trouble: unit-scale values and two outliers about 100x the
@@ -143,10 +144,10 @@ func TestActG32_quantizeAndGEMVMatchLinalg(t *testing.T) {
 		t.Errorf("gemv bias: max rel err %.3g, want <= %g", e, bar)
 	}
 
-	ActG32PerVectorScaleForTest = true
+	testgate.SetForTest(t, &ActG32PerVectorScaleForTest, true)
 	c.actG32 = nil
 	err = c.ensureActG32()
-	ActG32PerVectorScaleForTest = false
+	testgate.SetForTest(t, &ActG32PerVectorScaleForTest, false)
 	if err != nil {
 		t.Fatal(err)
 	}

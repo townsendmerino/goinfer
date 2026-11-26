@@ -23,17 +23,24 @@ import (
 // Every family: its layers run through the program walker. TestSeams_gates
 // (gateH) holds the row to the forward's final hidden state, bit for bit.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
-	_, done, err := m.enterCall(context.Background())
+	return m.HiddenLastContext(context.Background(), ids)
+}
+
+// HiddenLastContext is HiddenLast under ctx: a cancelled ctx returns its error, checked before each token on the
+// per-token path, per layer on the batched path, and at the backend's own granularity on a resident one.
+func (m *Model) HiddenLastContext(ctx context.Context, ids []int) ([]float32, error) {
+	parent := ctx
+	ctx, done, err := m.enterCall(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer done()
-	out, err := m.hiddenLast(ids)
-	return out, m.closeErr(context.Background(), err)
+	out, err := m.hiddenLast(ctx, ids)
+	return out, m.closeErr(parent, err)
 }
 
-// hiddenLast is HiddenLast without the lifecycle guard (lifecycle.go).
-func (m *Model) hiddenLast(ids []int) ([]float32, error) {
+// hiddenLast is HiddenLastContext without the lifecycle guard (lifecycle.go).
+func (m *Model) hiddenLast(ctx context.Context, ids []int) ([]float32, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
 	}
@@ -46,10 +53,13 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 	// Generate call.
 	if m.resident != nil {
 		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outHidden}) && m.tryClaimResident() {
-			out, err := m.hiddenLastResident(context.Background(), ids)
+			out, err := m.hiddenLastResident(ctx, ids)
 			atomic.StoreInt32(&m.resBusy, 0)
 			if err == nil {
 				return out, nil
+			}
+			if ctx.Err() != nil {
+				return nil, err
 			}
 			// A resident decline (OOM, cap, backend-specific refusal) is not a request failure —
 			// fall through to the CPU path exactly as if this arch had no resident backend at all.
@@ -59,9 +69,9 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 	// runLayersFromEmbedN does not implement; those keep the per-token loop (hiddenLastSequential). Everything else runs
 	// the whole sequence through the same batched prefill path plain generation's prompt phase uses.
 	if m.canBatchN(len(ids)) {
-		return m.hiddenLastBatched(ids)
+		return m.hiddenLastBatched(ctx, ids)
 	}
-	return m.hiddenLastSequential(ids)
+	return m.hiddenLastSequential(ctx, ids)
 }
 
 // hiddenLastResident runs the resident twin of hiddenLastBatched: embed ids on the host (the
@@ -82,10 +92,10 @@ func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, e
 // sequence via runLayersFromEmbedN, which returns rows already past the final
 // norm (its own doc: "post-final-norm hidden states") — this must NOT normalize
 // again, unlike hiddenLastSequential.
-func (m *Model) hiddenLastBatched(ids []int) ([]float32, error) {
+func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, error) {
 	a := m.w.arch
 	cache := m.NewCache(len(ids))
-	hN, err := m.runLayersFromEmbedN(context.TODO(), m.embedN(ids), cache, false) // never fast: exact HF parity is the point
+	hN, err := m.runLayersFromEmbedN(ctx, m.embedN(ids), cache, false) // never fast: exact HF parity is the point
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +106,14 @@ func (m *Model) hiddenLastBatched(ids []int) ([]float32, error) {
 // hiddenLastSequential is HiddenLast's original path: one runLayers call per
 // token. Kept as the fallback for K==1 and the families canBatchN excludes, and
 // callable directly so a test can compare it against hiddenLastBatched.
-func (m *Model) hiddenLastSequential(ids []int) ([]float32, error) {
+func (m *Model) hiddenLastSequential(ctx context.Context, ids []int) ([]float32, error) {
 	a := m.w.arch
 	cache := m.NewCache(len(ids))
 	var h []float32
 	for _, id := range ids {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var err error
 		if h, err = m.runLayers(id, cache); err != nil {
 			return nil, err
@@ -184,7 +197,7 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 		}
 	}
 	if m.canBatchN(len(prompt)) {
-		return m.hiddenLastBatched(prompt)
+		return m.hiddenLastBatched(ctx, prompt)
 	}
 	a := m.w.arch
 	cache := m.NewCache(len(prompt))

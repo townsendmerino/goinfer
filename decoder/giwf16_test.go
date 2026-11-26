@@ -14,10 +14,9 @@ import (
 
 func f16Fixture(t *testing.T) *Weights {
 	t.Helper()
-	w := fusedFixture(t) // int4 Q/K/V and Gate/Up (fused groups)
-	l := &w.Layers[0]
-	l.OProj = synthInt4(8, 64, 32, 13)    // a single tensor: kind 3
-	l.DownProj = synthInt4(8, 64, 32, 17) // a single tensor: kind 3
+	w := fusedFixture(t)                 // int4 Q/K/V and Gate/Up (fused groups)
+	w.LMHead = synthInt4(16, 64, 32, 13) // a single tensor: kind 3
+	w.Embed = synthInt4(16, 64, 32, 17)  // a single tensor: kind 3
 	return w
 }
 
@@ -61,8 +60,8 @@ func TestGIWF16_metalTargetScalesAreAliasedAndGroupsAreOneRun(t *testing.T) {
 		t.Fatalf("LoadSerializedWeights: %v", err)
 	}
 	sl, l := &src.Layers[0], &got.Layers[0]
-	requireScalesInMapping(t, view, "OProj (single)", &sl.OProj, &l.OProj, true)
-	requireScalesInMapping(t, view, "DownProj (single)", &sl.DownProj, &l.DownProj, true)
+	requireScalesInMapping(t, view, "LMHead (single)", &src.LMHead, &got.LMHead, true)
+	requireScalesInMapping(t, view, "Embed (single)", &src.Embed, &got.Embed, true)
 	q := requireScalesInMapping(t, view, "QProj (group head)", &sl.QProj, &l.QProj, true)
 	k := requireScalesInMapping(t, view, "KProj (group member)", &sl.KProj, &l.KProj, false)
 	v := requireScalesInMapping(t, view, "VProj (group member)", &sl.VProj, &l.VProj, false)
@@ -75,7 +74,7 @@ func TestGIWF16_metalTargetScalesAreAliasedAndGroupsAreOneRun(t *testing.T) {
 		t.Error("the Gate/Up group's scales are not one contiguous run")
 	}
 	for name, p := range map[string][2]*linalg.WeightMat{
-		"OProj": {&sl.OProj, &l.OProj}, "DownProj": {&sl.DownProj, &l.DownProj},
+		"LMHead": {&src.LMHead, &got.LMHead}, "Embed": {&src.Embed, &got.Embed},
 	} {
 		sameMat(t, name, p[0], p[1])
 	}
@@ -86,7 +85,7 @@ func TestGIWF16_metalTargetScalesAreAliasedAndGroupsAreOneRun(t *testing.T) {
 // written and not read.
 func TestGIWF16_metalSingleIsKind3(t *testing.T) {
 	src := alignFixtureWeights(t) // int4 beside int8 and f32: no group is eligible to fuse
-	src.Layers[0].OProj = synthInt4(8, 64, 32, 13)
+	src.LMHead = synthInt4(16, 64, 32, 13)
 	metal, err := SerializeWeightsForTarget(src, "single", GIWTargetMetal)
 	if err != nil {
 		t.Fatal(err)

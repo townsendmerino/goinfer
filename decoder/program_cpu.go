@@ -54,7 +54,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 	var t attnTimer
 	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
 	if arch.gemma4 != nil {
-		g4 = m.newGemma4Token(prog, h, pleID, pos)
+		g4 = m.newGemma4Token(prog, h, pleID, pos, &scr.g4)
 		if g4traceHidden != nil {
 			g4traceHidden(-1, h)
 		}
@@ -84,6 +84,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				m.captureLayer(cache, l, h)
 			}
 			o := &ops[i]
+			if g4 == nil && needsGemma4State(o) {
+				return nil, errNoGemma4State(l, o)
+			}
 			t0 := costStart(cache)
 			switch o.Kind {
 			case opNorm:
@@ -151,12 +154,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				}
 				out := m.reg(o.Out, h, scr)
 				if o.FFN.Form == ffnGemma4Dense {
-					// A model without Gemma 4's per-token state gets an error, never a nil dereference: a recovered access
-					// violation here corrupted the Go heap on some Windows hosts.
-					if g4 == nil {
-						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
-					}
-					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
+					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), g4); err != nil {
 						return nil, err
 					}
 				} else if err := m.ffnToken(&o.FFN, m.reg(o.In, h, scr), out, lw, scr, ld); err != nil {
@@ -170,39 +168,14 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				}
 				lastFFN = true
 			case opResidual:
-				if o.Res.Two {
-					if cache.subCapture {
-						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
-					}
-					addResidual2(h, scr.sub, scr.sub2)
-					break
-				}
-				if cache.subCapture { // the contribution about to reach the residual
-					switch {
-					case lastFFN:
-						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
-						if seamPlantForTest == plantMLPPreAfterNorm && l == 1 {
-							cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
-						}
-					case planted != nil:
-						cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
-					default:
-						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-					}
-				}
-				if o.Res.Scale != 0 {
-					addScaled(h, scr.sub, float32(o.Res.Scale))
-				} else {
-					addResidual(h, scr.sub)
-				}
+				residualToken(o, h, scr, cache, l, lastFFN, planted)
 			case opGemma4Attn:
 				m.gemma4AttnToken(&o.G4, m.reg(o.In, h, scr), m.reg(o.Out, h, scr), lw, cache, l, pos, g4)
 				lastFFN = false
 			case opGemma4MoE:
-				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager))
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager, &g4.moe))
 			case opPLE:
-				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.Norms, scr.sub)
+				m.gemma4PLEBranch(h, l, g4, lw, &o.Norms, scr.sub)
 				if cache.subPLE != nil && !(seamPlantForTest == plantSkipPLECapture && l == 1) { // the contribution just added
 					cache.subPLE[l] = append(cache.subPLE[l][:0], scr.sub...)
 				}
@@ -473,14 +446,45 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		copy(out, m.nemotronMoEWith(x, lw, &p.MoE, arch.HiddenDim))
 		return nil
 	case ffnNonGated:
-		g, err := nonGatedMLPWith(x, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be)
-		if err != nil {
-			return err
+		var mid *[]float32
+		if scr != nil {
+			mid = &scr.ffnMid
 		}
-		copy(out, g)
-		return nil
+		return nonGatedMLPWith(x, out, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be, mid)
 	}
 	return gatedMLPAct(x, out, lw, p.Act, m.be, scr, ld)
+}
+
+// residualToken is opResidual on one position: the sublayer's contribution in scr.sub (and scr.sub2 for a parallel block) added
+// into h, scaled when the op says so, after the sublayer capture records it. lastFFN says which sublayer a single add belongs to;
+// planted is a test seam's stand-in for the attention contribution.
+func residualToken(o *op, h []float32, scr *decodeScratch, cache *KVCache, l int, lastFFN bool, planted []float32) {
+	if o.Res.Two {
+		if cache.subCapture {
+			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
+		}
+		addResidual2(h, scr.sub, scr.sub2)
+		return
+	}
+	if cache.subCapture { // the contribution about to reach the residual
+		switch {
+		case lastFFN:
+			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
+			if seamPlantForTest == plantMLPPreAfterNorm && l == 1 {
+				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
+			}
+		case planted != nil:
+			cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
+		default:
+			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+		}
+	}
+	if o.Res.Scale != 0 {
+		addScaled(h, scr.sub, float32(o.Res.Scale))
+	} else {
+		addResidual(h, scr.sub)
+	}
 }
 
 // attnTimer accumulates decodeTiming's attention counters across the operations of one attention sublayer.
@@ -516,4 +520,24 @@ func (t *attnTimer) attn() {
 		atomic.AddInt64(&dtAttnAll, d)
 		atomic.AddInt64(&dtAttn, d)
 	}
+}
+
+// needsGemma4State reports whether o reads Gemma 4's per-token or per-pass state (PLE inputs, attention and FFN scratch).
+func needsGemma4State(o *op) bool {
+	switch o.Kind {
+	case opGemma4Attn, opGemma4MoE, opPLE:
+		return true
+	case opFFN:
+		return o.FFN.Form == ffnGemma4Dense
+	}
+	return false
+}
+
+// errNoGemma4State is a walker's refusal of an operation needsGemma4State names on a model without that state. The walkers
+// return it rather than dereference the nil state, because a recovered access violation in a walker can corrupt the Go heap.
+func errNoGemma4State(l int, o *op) error {
+	if o.Kind == opFFN {
+		return fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
+	}
+	return fmt.Errorf("decoder: layer %d: Gemma 4 operation %v on a model without Gemma 4 state", l, o.Kind)
 }

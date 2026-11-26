@@ -176,8 +176,15 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
 	cache.AppendLatent(layer, kvDown)
 
+	// The working buffers come from the stream's scratch (a cache built without one gets fresh ones); every element is written
+	// or cleared before it is read, exactly as a fresh make would leave it.
+	sc := &mlaScratch{}
+	if cache.scr != nil {
+		sc = &cache.scr.mla
+	}
+
 	// 3. RoPE the query's rope dims (per head), gathered from the [nope|rope] layout.
-	qRope := make([]float32, H*qkRope)
+	qRope := scratchF32(&sc.qRope, H*qkRope)
 	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
@@ -185,7 +192,8 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 
 	// 4a. Absorb W_UK into the query: qNopeAbs[h] = W_UK_hᵀ · q_nope_h  ([rank] per head).
 	// W_UK_h is the k_nope rows of head h: kv_b_proj rows [h*hRow : h*hRow+qkNope].
-	qNopeAbs := make([]float32, H*rank)
+	qNopeAbs := scratchF32(&sc.qNopeAbs, H*rank)
+	clear(qNopeAbs)
 	for hh := range H {
 		dst := qNopeAbs[hh*rank : (hh+1)*rank]
 		qn := q[hh*qkHead : hh*qkHead+qkNope]
@@ -201,9 +209,9 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	// 4b. Score each cached latent in rank-space — no per-key K reconstruction. cnAll
 	// holds the normalized latents for reuse in the V collapse (step 5).
 	nKeys := len(cache.Latent(layer)) / latDim
-	scores := make([]float32, H*nKeys)
-	cnAll := make([]float32, nKeys*rank)
-	krj := make([]float32, qkRope)
+	scores := scratchF32(&sc.scores, H*nKeys)
+	cnAll := scratchF32(&sc.cnAll, nKeys*rank)
+	krj := scratchF32(&sc.krj, qkRope)
 	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := cnAll[j*rank : (j+1)*rank]
@@ -226,7 +234,8 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	}
 
 	// 5. Per-head softmax, then collapse V to a rank-space weighted latent sum.
-	wsum := make([]float32, H*rank)
+	wsum := scratchF32(&sc.wsum, H*rank)
+	clear(wsum)
 	for hh := range H {
 		row := scores[hh*nKeys : (hh+1)*nKeys]
 		mx := float32(math.Inf(-1))
@@ -252,7 +261,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 
 	// 6. Absorb W_UV: ctx_h = W_UV_h · wsum_h. W_UV_h is the v rows of head h:
 	// kv_b_proj rows [h*hRow+qkNope : h*hRow+hRow].
-	ctx := make([]float32, H*vHead)
+	ctx := scratchF32(&sc.ctx, H*vHead)
 	for hh := range H {
 		acc := wsum[hh*rank : (hh+1)*rank]
 		out := ctx[hh*vHead : (hh+1)*vHead]

@@ -81,6 +81,7 @@
   "serialize": [
     "decoder/serialize.go",
     "decoder/serialize_writer.go",
-    "decoder/serialize_reader.go"
+    "decoder/serialize_reader.go",
+    "decoder/serialize_shapes.go"
   ]
 }

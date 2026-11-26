@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGptOssExpertBatch_tinyLogitsBitIdentical decodes the committed tiny gpt-oss at int4 on the CPU with the expert gate/up
@@ -19,10 +20,8 @@ func TestGptOssExpertBatch_tinyLogitsBitIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	orig := w4a8BatchEnabled
-	t.Cleanup(func() { w4a8BatchEnabled = orig })
 	capture := func(on bool) ([][]float32, int64) {
-		w4a8BatchEnabled = on
+		testgate.SetForTest(t, &w4a8BatchEnabled, on)
 		c0 := gptOssExpertBatchCalls.Load()
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
@@ -85,11 +84,10 @@ func TestGptOssExpertBatch_fanOutBitIdentical(t *testing.T) {
 	p := &ffnParams{Form: ffnGptOss, MoE: MoEConfig{NumExperts: nExp, TopK: topK, IntermediateDim: inter}, Alpha: 1.702, Limit: 7}
 	h := fill(hidden, 1)
 
-	orig := w4a8BatchEnabled
-	t.Cleanup(func() { w4a8BatchEnabled = orig; linalg.SetParallelWidth(0) })
+	t.Cleanup(func() { linalg.SetParallelWidth(0) })
 	linalg.SetParallelWidth(8)
 	run := func(on bool) ([]float32, int64) {
-		w4a8BatchEnabled = on
+		testgate.SetForTest(t, &w4a8BatchEnabled, on)
 		c0 := gptOssExpertBatchCalls.Load()
 		out, err := m.gptOssMoEWith(h, lw, p, hidden, nil)
 		if err != nil {
@@ -153,10 +151,8 @@ func TestGptOssMoEBatch_expertMajorEqualsPerRow(t *testing.T) {
 	if d := gptOssExpertMajorRuns.Load() - r0; d != 1 {
 		t.Fatalf("expert-major ran %d times, want 1", d)
 	}
-	orig := w4a8BatchEnabled
-	t.Cleanup(func() { w4a8BatchEnabled = orig })
 	for _, batch := range []bool{false, true} {
-		w4a8BatchEnabled = batch
+		testgate.SetForTest(t, &w4a8BatchEnabled, batch)
 		for r := range n {
 			want, err := m.gptOssMoEWith(rows[r*hidden:(r+1)*hidden], lw, p, hidden, nil)
 			if err != nil {

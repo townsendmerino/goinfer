@@ -1,11 +1,17 @@
 package serveapp
 
 import (
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 )
+
+// maxServerActiveBatchLines bounds the batch lines admitted and not yet finished across every batch of both dialects. maxBatchLines
+// bounds one batch; without this, concurrent submissions each under that cap still park an unbounded number of lines in memory.
+const maxServerActiveBatchLines = 2 * maxBatchLines
 
 // batchLineResult is one line's outcome, dialect-neutral — each HTTP layer (batches_http.go)
 // translates it into its own dialect's shape (OpenAI's output/error JSONL line, Anthropic's
@@ -40,6 +46,11 @@ type batchRecord struct {
 	Created     time.Time
 	wg          sync.WaitGroup
 
+	// store and reserved return this batch's lines to the store's server-wide budget: reserved starts at the line count, and
+	// lineFinished releases one line to store only while reserved stays non-negative, so no path can release a line twice.
+	store    *batchStore
+	reserved atomic.Int64
+
 	mu           sync.Mutex
 	Status       string // in_progress | finalizing | completed | cancelling | cancelled
 	Results      []batchLineResult
@@ -53,6 +64,14 @@ func (b *batchRecord) isCancelling() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.Status == "cancelling" || b.Status == "cancelled"
+}
+
+// lineFinished returns one line's reservation to the server-wide budget. Every line calls it exactly once, deferred, so it runs
+// on success, refusal, cancellation and panic alike, and before the line's wg.Done, so the budget is back before the batch finalizes.
+func (b *batchRecord) lineFinished() {
+	if b.store != nil && b.reserved.Add(-1) >= 0 {
+		b.store.releaseLines(1)
+	}
 }
 
 // requestCancel is the batch-level analogue of jobs.Store.Cancel: mark cancelling, then cancel every constituent job not
@@ -84,23 +103,52 @@ type batchStore struct {
 	batches map[string]*batchRecord
 	order   []string
 	cap     int
+
+	// activeLines counts lines reserved by create and not yet released by lineFinished, across every batch, under mu; create
+	// refuses a batch that would take it past maxActiveLines, which is fixed at construction. Eviction never touches it: only a
+	// batch whose lines have all finished is evicted, and each line releases its own reservation.
+	activeLines    int
+	maxActiveLines int
+}
+
+// activeLineCount is the number of batch lines currently reserved.
+func (bs *batchStore) activeLineCount() int {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	return bs.activeLines
+}
+
+// releaseLines returns n lines to the server-wide budget.
+func (bs *batchStore) releaseLines(n int) {
+	bs.mu.Lock()
+	bs.activeLines -= n
+	bs.mu.Unlock()
 }
 
 func newBatchStore(cap int) *batchStore {
-	return &batchStore{batches: map[string]*batchRecord{}, cap: cap}
+	return &batchStore{batches: map[string]*batchRecord{}, cap: cap, maxActiveLines: maxServerActiveBatchLines}
 }
 
 // create mints a batch record in "in_progress" (this pass validates synchronously before
 // creating one, so there is no observable "validating" state to represent — see batches_http.go).
+// It reserves every line in the server-wide budget at once, and returns nil, creating nothing, when that would exceed
+// maxActiveLines. Each line of a returned batch must run to its deferred lineFinished.
 func (bs *batchStore) create(kind, endpoint, completionWindow, inputFileID string, customIDs []string) *batchRecord {
 	b := &batchRecord{
 		ID: "batch_" + reqID(), Kind: kind, Endpoint: endpoint, CompletionWindow: completionWindow,
 		InputFileID: inputFileID, CustomIDs: customIDs, JobIDs: make([]string, len(customIDs)),
 		Created: time.Now(), Status: "in_progress", Results: make([]batchLineResult, len(customIDs)),
+		store: bs,
 	}
-	b.wg.Add(len(customIDs))
+	n := len(customIDs)
+	b.reserved.Store(int64(n))
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
+	if bs.activeLines+n > bs.maxActiveLines {
+		return nil
+	}
+	bs.activeLines += n
+	b.wg.Add(n)
 	bs.batches[b.ID] = b
 	bs.order = append(bs.order, b.ID)
 	bs.evictLocked()

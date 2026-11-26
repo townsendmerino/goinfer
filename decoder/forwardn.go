@@ -57,7 +57,7 @@ const attnHeadsParThreshold = 0
 
 // attnGroupedNEONSize is the query-head group size (NumHeads/NumKVHeads) the aikit grouped acc64 kernels
 // (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for. Any other ratio still runs correctly through the Go fallback but
-// slower than separate per-head calls, so attendGroupedHeads is gated to exactly this size rather than trusting the kernel's own
+// slower than separate per-head calls, so kvAttend.groupedHeads is gated to exactly this size rather than trusting the kernel's own
 // dispatch to save a mismatched caller.
 const attnGroupedNEONSize = 6
 
@@ -75,7 +75,7 @@ const attnGroupedMinKeys = 128
 // knobSet.attnGrouped (knobs.go) reports whether the grouped-kernel decode path may run; on unless GOINFER_ATTN_GROUPED=0, which
 // restores the per-head path. The path also needs attnGroupedKernels (a per-architecture default, on for arm64 only).
 
-// attnGroupedRuns counts attendGroupedHeads/attendGroupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
+// attnGroupedRuns counts kvAttend.groupedHeads/groupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
 // that never runs passes every correctness gate), so a test asserts it nonzero above attnGroupedMinKeys and zero below;
 // moeExpertMajorRuns (mlp.go) is the same idiom.
 var attnGroupedRuns int64
@@ -191,7 +191,7 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 
 // attnTask is one unit of work handed to attnWorkerPool: run fn over the
 // caller's own [lo,hi) slice, tagged with worker index w so fn can index its
-// own per-worker scratch (pool[w] in attendGroupedLayer).
+// own per-worker scratch (pool[w] in kvAttend.groupedLayer).
 type attnTask struct {
 	fn        func(w, lo, hi int)
 	w, lo, hi int
@@ -263,7 +263,7 @@ func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 	return attendTileForK(nil, ws, K, nKeys, hd)
 }
 
-// attendTileForK returns how many query rows attendOneHead may process at once with this slot: the cache-sized tile from
+// attendTileForK returns how many query rows kvAttend.oneHead may process at once with this slot: the cache-sized tile from
 // attnRowTileK, clamped to what the slot's buffers hold. The tile is a property of the pool, not of the call: the pool is sized
 // once from maxKeys = startPos+K, but a local layer whose ring has wrapped assembles a shorter window and attnRowTile is inverse
 // in nKeys, so the per-layer tile can exceed the qh the slot was allocated and the Q gather would slice past its length. The
@@ -310,40 +310,23 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
-	kvDim, qDim := nKV*hd, nH*hd
-	group := nH / nKV
-	scale := ap.Scale
-	rs := kvDim
+	a := &kvAttend{q: q, ctx: ctx, keys: keys, vals: vals, keysH: keysH, valsH: valsH, base: base, cache: cache, startPos: startPos,
+		K: K, ap: ap, arch: arch, useAcc64: useAcc64, nH: nH, nKV: nKV, hd: hd, qDim: nH * hd, group: nH / nKV, scale: ap.Scale}
+	a.rs = nKV * hd
 	if rowStride != 0 {
-		rs = rowStride
+		a.rs = rowStride
 	}
-	f16 := keysH != nil
-	if f16 && !useAcc64 {
+	a.f16 = keysH != nil
+	if a.f16 && !useAcc64 {
 		panic("decoder: an f16 cache's rows are read in place only by the acc64 kernels")
 	}
-	nKeys := len(keys) / rs
-	if f16 {
-		nKeys = len(keysH) / rs
+	a.nKeys = len(keys) / a.rs
+	if a.f16 {
+		a.nKeys = len(keysH) / a.rs
 		cache.f16InPlaceReads++
 	}
 	if arch.hasAttnSinks() && ap.Sinks == nil {
 		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
-	}
-	// sinkMax and sinkSum add query head qh's learned sink to a softmax: to the max-shift, then exp(sink − max) to the denominator. They
-	// do nothing when ap.Sinks is nil, so every other family runs the same operations as before.
-	sinkMax := func(qh int, maxS float64) float64 {
-		if ap.Sinks != nil {
-			if sl := float64(ap.Sinks[qh]); sl > maxS {
-				return sl
-			}
-		}
-		return maxS
-	}
-	sinkSum := func(qh int, maxS, sum float64) float64 {
-		if ap.Sinks != nil {
-			return sum + math.Exp(float64(ap.Sinks[qh])-maxS)
-		}
-		return sum
 	}
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
 	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
@@ -352,460 +335,31 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 
 	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask, logit softcap,
 	// or attention sinks. Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0 && ap.Sinks == nil
-	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
-	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
-	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial
-	// arm, the worker's own serial Workspace on the head-parallel arm); it is unused on the acc64 path.
-	attendOneHead := func(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
-		var fs *fusedScratch
-		if fusedOK {
-			fs = ws.fused
-		}
-		kvh := qhead / group
-		qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
-		// Walk the query rows in tiles. Every step below is row-wise, so splitting rows splits independent outputs, which is what
-		// bit-identity permits. No key-dimension split happens here and none may: it would re-associate the softmax denominator and the AV
-		// fold, exactly what acc64 exists to prevent. The point is memory: scores is tile*nKeys, not K*nKeys, so a worker slot stops
-		// growing with the square of the prompt and the pool can still fan out on a long prompt.
-		//
-		// `i` indexes the tile; `gi` is the global row. Positions and masks use `gi` (startPos+gi, treeRowPos[gi], treeMask[gi]), buffers
-		// use `i`. The tile comes from attendTileForK, not attnRowTile: the slot's capacity binds, and recomputing it from this layer's key
-		// count panicked a warm windowed session.
-		tile := attendTileForK(arch.knobs, ws, K, nKeys, hd)
-		for t0 := 0; t0 < K; t0 += tile {
-			kt := min(tile, K-t0)
-			for i := range kt { // gather this tile's Q_head [kt,hd]
-				b := (t0+i)*qDim + qhead*hd
-				copy(qh[i*hd:i*hd+hd], q[b:b+hd])
-			}
-			// The fused schedule, when enabled and applicable, replaces the whole QKᵀ/softmax/scores·V sequence for this tile and keeps the
-			// score block resident instead of materializing kt x nKeys (fusedattn.go). It declines, and falls through, for acc64 (whose
-			// bit-identity it would break) and for tree attention (whose per-(row,column) mask is not the contiguous [lo,hi] bound it handles).
-			if fs != nil {
-				for i := range kt {
-					gi := t0 + i
-					pos := startPos + gi
-					fs.lo[i] = ap.Start(pos) - base
-					fs.hi[i] = cache.attendHi(pos) - base
-				}
-				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
-					fs.sBlk, fs.tmp, fs.acc, fs.mRun, fs.lRun,
-					kt, hd, nKeys, scale, fs.lo[:kt], fs.hi[:kt]) {
-					for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
-						b := (t0+i)*qDim + qhead*hd
-						copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
-					}
-					continue
-				}
-			}
-			// QKᵀ: scores[kt,nKeys] = Q_head[kt,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads keys directly (row stride kvDim, element stride 1),
-			// skipping the kh gather. MatmulQKAcc64 interleaves 8 keys' dot products as concurrent f64 accumulator chains to hide FMA latency;
-			// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
-			// (TestAttendStrided_matchesGatherReference checks it at this stride).
-			if f16 {
-				linalg.MatmulQKAcc64F16(qh[:kt*hd], keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, rs)
-			} else if useAcc64 {
-				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, rs)
-			} else {
-				mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
-			}
-			// Scaled, masked softmax per query row; zero the out-of-range entries
-			// so they contribute nothing to the scores·V matmul below.
-			for i := range kt {
-				gi := t0 + i // global row: positions and masks are indexed by it, buffers by i
-				pos := startPos + gi
-				if cache.treeRowPos != nil {
-					pos = cache.treeRowPos[gi]
-				}
-				rowS := scores[i*nKeys : i*nKeys+nKeys]
-				// TREE attention (05): row i attends to the whole committed prefix
-				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
-				if cache.treeMask != nil {
-					loP := ap.Start(pos) - base
-					batchCol0 := startPos - base
-					allowed := func(s int) bool {
-						if s < batchCol0 {
-							return s >= loP
-						}
-						j := s - batchCol0
-						return j < K && cache.treeMask[gi][j]
-					}
-					maxS := math.Inf(-1)
-					for s := range nKeys {
-						if allowed(s) {
-							sc := softcapScore(float64(rowS[s])*scale, ap.Softcap)
-							rowS[s] = float32(sc)
-							if sc > maxS {
-								maxS = sc
-							}
-						}
-					}
-					maxS = sinkMax(qhead, maxS)
-					var sum float64
-					for s := range nKeys {
-						if allowed(s) {
-							e := math.Exp(float64(rowS[s]) - maxS)
-							rowS[s] = float32(e)
-							sum += e
-						} else {
-							rowS[s] = 0
-						}
-					}
-					sum = sinkSum(qhead, maxS, sum)
-					inv := 1.0 / sum
-					for s := range nKeys {
-						if rowS[s] != 0 {
-							rowS[s] = float32(float64(rowS[s]) * inv)
-						}
-					}
-					continue
-				}
-				// Absolute attend range [start, hi]; map to physical columns by −base
-				// (base = absolute position of column 0). hi is the inclusive upper
-				// key bound: pos for a causal text query, or the image-block end for a
-				// bidirectional image position (so it also attends to the block's
-				// future tokens). Equals pos with no image blocks — inert for text.
-				loP := ap.Start(pos) - base
-				hiP := cache.attendHi(pos) - base
-				if loP < 0 {
-					loP = 0
-				}
-				if hiP >= nKeys {
-					hiP = nKeys - 1
-				}
-				if loP <= hiP {
-					active := rowS[loP : hiP+1]
-					_ = active[len(active)-1]
-					maxS := math.Inf(-1)
-					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, ap.Softcap)
-						active[s] = float32(sc)
-						if sc > maxS {
-							maxS = sc
-						}
-					}
-					maxS = sinkMax(qhead, maxS)
-					var sum float64
-					for s, v := range active {
-						e := math.Exp(float64(v) - maxS)
-						active[s] = float32(e)
-						sum += e
-					}
-					sum = sinkSum(qhead, maxS, sum)
-					inv := 1.0 / sum
-					clear(rowS[:loP])
-					for s, v := range active {
-						active[s] = float32(float64(v) * inv)
-					}
-					clear(rowS[hiP+1 : nKeys])
-				} else {
-					clear(rowS[:nKeys])
-				}
-			}
-			// scores·V: ctx_head[kt,hd] = scores[kt,nKeys] · V_head[nKeys,hd]. Acc64 reads vals directly, "as if transposed" (row stride 1,
-			// element stride kvDim), skipping a vt gather and transpose. MatmulAVAcc64 reads V rows contiguously (keys-outer, dims-inner) into
-			// hd independent f64 accumulators; each dim's accumulator sees the same key-ascending adds as the strided walk, so it is
-			// bit-identical.
-			//
-			// A one-row tile (every K=1 decode) writes this head's context straight into ctx: MatmulAVAcc64 overwrites its destination and the
-			// head's hd floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work. A multi-row
-			// tile's [kt,hd] result is not contiguous in ctx (row stride qDim) and keeps the scatter.
-			direct := useAcc64 && kt == 1
-			if direct && f16 {
-				b := t0*qDim + qhead*hd
-				linalg.MatmulAVAcc64F16(scores[:nKeys], valsH, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, rs)
-			} else if direct {
-				b := t0*qDim + qhead*hd
-				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, rs)
-			} else if f16 {
-				linalg.MatmulAVAcc64F16(scores[:kt*nKeys], valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, rs)
-			} else if useAcc64 {
-				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, rs)
-			} else {
-				mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
-			}
-			if !direct {
-				for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
-					b := (t0+i)*qDim + qhead*hd
-					copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
-				}
-			}
-		}
-	}
-
-	// attendGroupedHeads is the grouped-kernel path: one MatmulQKAcc64Group/MatmulAVAcc64Group pair covers all attnGroupedNEONSize
-	// query heads of one kv head, instead of that many attendOneHead calls re-reading the same K/V rows. The caller must have checked
-	// K==1 (decode; M>1 is not wired), no tree mask (its per-(row,column) mask needs attendOneHead's own branch), and
-	// group == attnGroupedNEONSize.
-	//
-	// Q for these heads is contiguous in q's [K,qDim] layout (and so is ctx), so no gather is needed. Softmax stays per head, row by
-	// row, identical to attendOneHead's non-tree branch: grouping shares the QKᵀ and scores·V loads and folds, never the reduction
-	// inside each head's softmax.
-	attendGroupedHeads := func(kvh int, ws *headWorkerScratch) {
-		qh0 := kvh * group
-		a := q[qh0*hd : qh0*hd+group*hd]
-		gScores := ws.groupScores[:group*nKeys]
-		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, rs)
-		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
-		loP := ap.Start(pos) - base
-		hiP := cache.attendHi(pos) - base
-		if loP < 0 {
-			loP = 0
-		}
-		if hiP >= nKeys {
-			hiP = nKeys - 1
-		}
-		for g := range group {
-			rowS := gScores[g*nKeys : g*nKeys+nKeys]
-			if loP <= hiP {
-				active := rowS[loP : hiP+1]
-				_ = active[len(active)-1]
-				maxS := math.Inf(-1)
-				for s, v := range active {
-					sc := softcapScore(float64(v)*scale, ap.Softcap)
-					active[s] = float32(sc)
-					if sc > maxS {
-						maxS = sc
-					}
-				}
-				maxS = sinkMax(qh0+g, maxS)
-				var sum float64
-				for s, v := range active {
-					e := math.Exp(float64(v) - maxS)
-					active[s] = float32(e)
-					sum += e
-				}
-				sum = sinkSum(qh0+g, maxS, sum)
-				inv := 1.0 / sum
-				clear(rowS[:loP])
-				for s, v := range active {
-					active[s] = float32(float64(v) * inv)
-				}
-				clear(rowS[hiP+1 : nKeys])
-			} else {
-				clear(rowS[:nKeys])
-			}
-		}
-		// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
-		// straight into ctx with no scratch copy.
-		gAvAcc := ws.groupAvAcc[:group*hd]
-		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, rs)
-		atomic.AddInt64(&attnGroupedRuns, 1)
-	}
+	a.fusedOK = !useAcc64 && cache.treeMask == nil && ap.Softcap == 0 && ap.Sinks == nil
 	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
-	// treeMask excludes speculative verify (attendGroupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
+	// treeMask excludes speculative verify (kvAttend.groupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
 	// (not wired); attnGroupedKernels is the per-architecture platform gate.
-	attnGroupedOK := useAcc64 && !f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
-		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
-	// runHeadRange walks qhead across [h0,h1), taking the grouped path for any run of attnGroupedNEONSize heads that starts on a
-	// kv-group boundary and fits inside [h0,h1); a worker whose range splits a kv group uses attendOneHead for that group's heads.
-	runHeadRange := func(ws *headWorkerScratch, h0, h1 int) {
-		qhead := h0
-		for qhead < h1 {
-			if attnGroupedOK && qhead%group == 0 && qhead+group <= h1 {
-				attendGroupedHeads(qhead/group, ws)
-				qhead += group
-				continue
-			}
-			attendOneHead(qhead, ws, nil)
-			qhead++
-		}
-	}
-
-	// attendGroupedLayer is the grouped path for a pool of more than one slot (decode, K==1). Arm A (runHeadRange/attendGroupedHeads)
-	// needs one worker to own a whole kv group's heads and so collapses worker count to nKV; this keeps the pool busy and still uses
-	// the grouped kernel by splitting within each kv head's group: QK by key range, softmax by row, AV by dim range, the three phases
-	// joined in between.
-	//
-	// All three are independent-output splits, not reduction splits (QK reduces over d and is split by key; AV reduces over keys and
-	// is split by dim), so no floating-point combining is needed: each worker's slice lands in a disjoint region of the shared buffer
-	// by plain copy. The result is bit-identical to the per-head path and to Arm A; TestAttendGroupedLayer_manyWorkers is the check.
-	// The softmax phase must stay split: see the note on it below.
-	attendGroupedLayer := func(pool []headWorkerScratch) {
-		splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
-		leader := &pool[0]
-		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom
-			leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
-		}
-		fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
-		fullCtx := ctx[:nKV*group*hd] // kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd]
-
-		runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
-			ws := &pool[w]
-			sliceLen := hi - lo
-			slice := ws.groupScores[:group*sliceLen]
-			for kvh := range nKV {
-				qh0 := kvh * group
-				a := q[qh0*hd : qh0*hd+group*hd]
-				linalg.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*rs, rs)
-				dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-				for g := range group {
-					copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
-				}
-			}
-		})
-
-		pos := startPos
-		loP := ap.Start(pos) - base
-		hiP := cache.attendHi(pos) - base
-		if loP < 0 {
-			loP = 0
-		}
-		if hiP >= nKeys {
-			hiP = nKeys - 1
-		}
-		// Softmax is split by row (one kv head's one query head) across the workers, as the per-head path already does inside each head's
-		// worker. Running it serially on this goroutine was measured slower than not grouping at all; do not collapse it
-		// (docs/code-notes/decoder.md#attendGroupedLayer.softmax).
-		runSplitAligned(splitWorkers, nKV*group, 1, func(w, lo, hi int) {
-			for row := lo; row < hi; row++ {
-				kvh, g := row/group, row%group
-				rowS := fullScores[kvh*group*nKeys+g*nKeys : kvh*group*nKeys+g*nKeys+nKeys]
-				if loP <= hiP {
-					active := rowS[loP : hiP+1]
-					_ = active[len(active)-1]
-					maxS := math.Inf(-1)
-					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, ap.Softcap)
-						active[s] = float32(sc)
-						if sc > maxS {
-							maxS = sc
-						}
-					}
-					maxS = sinkMax(kvh*group+g, maxS)
-					var sum float64
-					for s, v := range active {
-						e := math.Exp(float64(v) - maxS)
-						active[s] = float32(e)
-						sum += e
-					}
-					sum = sinkSum(kvh*group+g, maxS, sum)
-					inv := 1.0 / sum
-					clear(rowS[:loP])
-					for s, v := range active {
-						active[s] = float32(float64(v) * inv)
-					}
-					clear(rowS[hiP+1 : nKeys])
-				} else {
-					clear(rowS[:nKeys])
-				}
-			}
-		})
-
-		runSplitAligned(splitWorkers, hd, attnGroupedNEONBlock, func(w, d0, d1 int) {
-			ws := &pool[w]
-			sliceHd := d1 - d0
-			sliceCtx := ws.groupCtx[:group*sliceHd]
-			sliceAcc := ws.groupAvAcc[:group*sliceHd]
-			for kvh := range nKV {
-				rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-				linalg.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, rs)
-				dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
-				for g := range group {
-					copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])
-				}
-			}
-		})
-
-		atomic.AddInt64(&attnGroupedRuns, int64(nKV))
-	}
+	a.groupedOK = useAcc64 && !a.f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
+		a.group == attnGroupedNEONSize && a.nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
 
 	if !useAcc64 {
-		// f32 path (the default for prefill above fastAttnMinPrompt). gatherKV fills ws's kh/vt for one kv head. It is a pure function of
-		// (keys, vals, kvh), so two workers gathering the same kvh into their own buffers produce identical bytes, which is why the serial
-		// and fan-out arms below are bit-identical, not merely close (TestAttendF32Fanout_bitIdentical).
-		gatherKV := func(ws *headWorkerScratch, kvh int) {
-			// The fused schedule needs V block-major (a key-range slice of the [hd, nKeys]
-			// layout is not contiguous), so the layout is chosen here at gather time rather
-			// than re-transposed per block.
-			if fusedOK && ws.fused != nil {
-				gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, rs, nKeys)
-				return
-			}
-			for s := range nKeys {
-				kvBase := s*rs + kvh*hd
-				copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
-				vrow := vals[kvBase : kvBase+hd]
-				_ = vrow[hd-1]
-				_ = ws.vt[(hd-1)*nKeys+s]
-				for d := range hd {
-					ws.vt[d*nKeys+s] = vrow[d]
-				}
-			}
-		}
-		// Fan out over query heads, as the acc64 path does. Every pool slot already owns a full-size kh/vt pair (prefillAttnWorkersK
-		// budgets 2*nKeys*hd per slot), so a worker gathers into its own buffers and nothing is shared across the group. Heads are
-		// assigned in contiguous runs so a worker walks whole kv groups and re-gathers only when kvh changes: at most nKV + workers
-		// gathers, not nH. MatmulBT already fans out over output columns internally; head-level fan-out is what parallelises the gather,
-		// the softmax and the scatter.
-		workers := 1
-		if len(pool) > 1 && nH > 1 && K*nKeys >= attnHeadsParThreshold {
-			workers = min(len(pool), nH)
-		}
-		if workers <= 1 {
-			// Serial arm: one slot, and the matmul keeps its OWN column-level
-			// fan-out (package-level MatmulBT) since no head-level fan-out is
-			// competing with it. This is the pre-A3 behaviour exactly.
-			ws := &pool[0]
-			for kvh := range nKV {
-				gatherKV(ws, kvh)
-				for g := range group {
-					attendOneHead(kvh*group+g, ws, linalg.MatmulBT)
-				}
-			}
-			return
-		}
-		var wg sync.WaitGroup
-		headsPer := (nH + workers - 1) / workers
-		for w := 1; w < workers; w++ {
-			h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
-			if h0 >= h1 {
-				continue
-			}
-			wg.Go(func() {
-				ws := &pool[w]
-				lastKVH := -1
-				for qhead := h0; qhead < h1; qhead++ {
-					if kvh := qhead / group; kvh != lastKVH {
-						gatherKV(ws, kvh)
-						lastKVH = kvh
-					}
-					// Serial matmul: the fan-out is at the head level here, and
-					// nesting MatmulBT's column fan-out inside it would
-					// oversubscribe. Bit-identical to the column-parallel form
-					// by MatmulBT's width contract.
-					attendOneHead(qhead, ws, ws.mmWS.MatmulBT)
-				}
-			})
-		}
-		h1_0 := min(headsPer, nH)
-		ws0 := &pool[0]
-		lastKVH0 := -1
-		for qhead := range h1_0 {
-			if kvh := qhead / group; kvh != lastKVH0 {
-				gatherKV(ws0, kvh)
-				lastKVH0 = kvh
-			}
-			attendOneHead(qhead, ws0, ws0.mmWS.MatmulBT)
-		}
-		wg.Wait()
+		a.f32Heads(pool)
 		return
 	}
 
-	// With more than one pool slot, Arm B (attendGroupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
+	// With more than one pool slot, Arm B (kvAttend.groupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
 	// the other slots idle. With one slot Arm B has nothing to parallelise and the serial arm below already takes the grouped kernel
 	// (runHeadRange's [0,nH) range spans whole groups), so Arm B is skipped rather than adding fork-join cost.
-	if attnGroupedOK && len(pool) > 1 {
-		attendGroupedLayer(pool)
+	if a.groupedOK && len(pool) > 1 {
+		a.groupedLayer(pool)
 		return
 	}
 
 	// The acc64 path (the one every live caller takes): the nH query heads are independent (disjoint ctx writes, no shared mutable
 	// state; kh/vt are unused here). Below the fan-out floor, or with one pool slot or one head, run serially through pool[0]: a
 	// fork-join costs real time the per-head kernels have already shrunk to a few microseconds a head at shallow depth.
-	if len(pool) <= 1 || nH <= 1 || K*nKeys < attnHeadsParThreshold {
-		runHeadRange(&pool[0], 0, nH)
+	if len(pool) <= 1 || nH <= 1 || K*a.nKeys < attnHeadsParThreshold {
+		a.runHeadRange(&pool[0], 0, nH)
 		return
 	}
 	workers := min(len(pool), nH)
@@ -817,11 +371,431 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 			continue
 		}
 		wg.Go(func() {
-			runHeadRange(&pool[w], h0, h1)
+			a.runHeadRange(&pool[w], h0, h1)
 		})
 	}
 	h1_0 := min(headsPer, nH)
-	runHeadRange(&pool[0], 0, h1_0)
+	a.runHeadRange(&pool[0], 0, h1_0)
+	wg.Wait()
+}
+
+// kvAttend is one attendBatchedHeadsKV call: its inputs and the shapes derived from them, shared read-only by the head workers.
+// rs is the key row stride, nKeys the keys attended, f16 whether keysH/valsH carry the rows.
+type kvAttend struct {
+	q, ctx, keys, vals              []float32
+	keysH, valsH                    []uint16
+	rs, base, startPos, K           int
+	cache                           *KVCache
+	ap                              attentionParams
+	arch                            *Architecture
+	useAcc64, f16                   bool
+	fusedOK, groupedOK              bool
+	nH, nKV, hd, qDim, group, nKeys int
+	scale                           float64
+}
+
+// sinkMax and sinkSum add query head qh's learned sink to a softmax: to the max-shift, then exp(sink − max) to the denominator. They
+// do nothing when ap.Sinks is nil, so every other family runs the same operations as before.
+func (a *kvAttend) sinkMax(qh int, maxS float64) float64 {
+	if a.ap.Sinks != nil {
+		if sl := float64(a.ap.Sinks[qh]); sl > maxS {
+			return sl
+		}
+	}
+	return maxS
+}
+
+func (a *kvAttend) sinkSum(qh int, maxS, sum float64) float64 {
+	if a.ap.Sinks != nil {
+		return sum + math.Exp(float64(a.ap.Sinks[qh])-maxS)
+	}
+	return sum
+}
+
+// attendRange is the physical key columns [loP, hiP] a query at absolute position pos attends, clamped to the keys present.
+//
+// Absolute attend range [start, hi]; map to physical columns by −base (base = absolute position of column 0). hi is the inclusive
+// upper key bound: pos for a causal text query, or the image-block end for a bidirectional image position (so it also attends to
+// the block's future tokens). Equals pos with no image blocks — inert for text.
+func (a *kvAttend) attendRange(pos int) (loP, hiP int) {
+	loP = a.ap.Start(pos) - a.base
+	hiP = a.cache.attendHi(pos) - a.base
+	if loP < 0 {
+		loP = 0
+	}
+	if hiP >= a.nKeys {
+		hiP = a.nKeys - 1
+	}
+	return loP, hiP
+}
+
+// softmaxRow is query head qh's scaled, soft-capped softmax over one score row's columns [loP, hiP], with the out-of-range entries
+// zeroed so they contribute nothing to the scores·V matmul.
+func (a *kvAttend) softmaxRow(qh int, rowS []float32, loP, hiP int) {
+	nKeys := a.nKeys
+	if loP > hiP {
+		clear(rowS[:nKeys])
+		return
+	}
+	active := rowS[loP : hiP+1]
+	_ = active[len(active)-1]
+	maxS := math.Inf(-1)
+	for s, v := range active {
+		sc := softcapScore(float64(v)*a.scale, a.ap.Softcap)
+		active[s] = float32(sc)
+		if sc > maxS {
+			maxS = sc
+		}
+	}
+	maxS = a.sinkMax(qh, maxS)
+	var sum float64
+	for s, v := range active {
+		e := math.Exp(float64(v) - maxS)
+		active[s] = float32(e)
+		sum += e
+	}
+	sum = a.sinkSum(qh, maxS, sum)
+	inv := 1.0 / sum
+	clear(rowS[:loP])
+	for s, v := range active {
+		active[s] = float32(float64(v) * inv)
+	}
+	clear(rowS[hiP+1 : nKeys])
+}
+
+// softmaxTreeRow is softmaxRow for TREE attention (05): global row gi at position pos attends to the whole committed prefix
+// [loP, batchCol0) plus only its ancestor batch columns (treeMask[gi][j]).
+func (a *kvAttend) softmaxTreeRow(qhead, gi, pos int, rowS []float32) {
+	cache, nKeys := a.cache, a.nKeys
+	loP := a.ap.Start(pos) - a.base
+	batchCol0 := a.startPos - a.base
+	allowed := func(s int) bool {
+		if s < batchCol0 {
+			return s >= loP
+		}
+		j := s - batchCol0
+		return j < a.K && cache.treeMask[gi][j]
+	}
+	maxS := math.Inf(-1)
+	for s := range nKeys {
+		if allowed(s) {
+			sc := softcapScore(float64(rowS[s])*a.scale, a.ap.Softcap)
+			rowS[s] = float32(sc)
+			if sc > maxS {
+				maxS = sc
+			}
+		}
+	}
+	maxS = a.sinkMax(qhead, maxS)
+	var sum float64
+	for s := range nKeys {
+		if allowed(s) {
+			e := math.Exp(float64(rowS[s]) - maxS)
+			rowS[s] = float32(e)
+			sum += e
+		} else {
+			rowS[s] = 0
+		}
+	}
+	sum = a.sinkSum(qhead, maxS, sum)
+	inv := 1.0 / sum
+	for s := range nKeys {
+		if rowS[s] != 0 {
+			rowS[s] = float32(float64(rowS[s]) * inv)
+		}
+	}
+}
+
+// oneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently across heads
+// and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is unchanged and its ctx
+// write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial arm, the worker's own
+// serial Workspace on the head-parallel arm); it is unused on the acc64 path.
+func (a *kvAttend) oneHead(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
+	var fs *fusedScratch
+	if a.fusedOK {
+		fs = ws.fused
+	}
+	K, hd, qDim, nKeys := a.K, a.hd, a.qDim, a.nKeys
+	kvh := qhead / a.group
+	qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
+	// Walk the query rows in tiles. Every step below is row-wise, so splitting rows splits independent outputs, which is what
+	// bit-identity permits. No key-dimension split happens here and none may: it would re-associate the softmax denominator and the AV
+	// fold, exactly what acc64 exists to prevent. The point is memory: scores is tile*nKeys, not K*nKeys, so a worker slot stops
+	// growing with the square of the prompt and the pool can still fan out on a long prompt.
+	//
+	// `i` indexes the tile; `gi` is the global row. Positions and masks use `gi` (startPos+gi, treeRowPos[gi], treeMask[gi]), buffers
+	// use `i`. The tile comes from attendTileForK, not attnRowTile: the slot's capacity binds, and recomputing it from this layer's key
+	// count panicked a warm windowed session.
+	tile := attendTileForK(a.arch.knobs, ws, K, nKeys, hd)
+	for t0 := 0; t0 < K; t0 += tile {
+		kt := min(tile, K-t0)
+		for i := range kt { // gather this tile's Q_head [kt,hd]
+			b := (t0+i)*qDim + qhead*hd
+			copy(qh[i*hd:i*hd+hd], a.q[b:b+hd])
+		}
+		// The fused schedule, when enabled and applicable, replaces the whole QKᵀ/softmax/scores·V sequence for this tile and keeps the
+		// score block resident instead of materializing kt x nKeys (fusedattn.go). It declines, and falls through, for acc64 (whose
+		// bit-identity it would break) and for tree attention (whose per-(row,column) mask is not the contiguous [lo,hi] bound it handles).
+		if fs != nil {
+			for i := range kt {
+				gi := t0 + i
+				pos := a.startPos + gi
+				fs.lo[i] = a.ap.Start(pos) - a.base
+				fs.hi[i] = a.cache.attendHi(pos) - a.base
+			}
+			if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
+				fs.sBlk, fs.tmp, fs.acc, fs.mRun, fs.lRun,
+				kt, hd, nKeys, a.scale, fs.lo[:kt], fs.hi[:kt]) {
+				for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
+					b := (t0+i)*qDim + qhead*hd
+					copy(a.ctx[b:b+hd], ch[i*hd:i*hd+hd])
+				}
+				continue
+			}
+		}
+		// QKᵀ: scores[kt,nKeys] = Q_head[kt,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads keys directly (row stride kvDim, element stride 1),
+		// skipping the kh gather. MatmulQKAcc64 interleaves 8 keys' dot products as concurrent f64 accumulator chains to hide FMA latency;
+		// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
+		// (TestAttendStrided_matchesGatherReference checks it at this stride).
+		if a.f16 {
+			linalg.MatmulQKAcc64F16(qh[:kt*hd], a.keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
+		} else if a.useAcc64 {
+			linalg.MatmulQKAcc64(qh[:kt*hd], a.keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
+		} else {
+			mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
+		}
+		// Scaled, masked softmax per query row; zero the out-of-range entries
+		// so they contribute nothing to the scores·V matmul below.
+		for i := range kt {
+			gi := t0 + i // global row: positions and masks are indexed by it, buffers by i
+			pos := a.startPos + gi
+			if a.cache.treeRowPos != nil {
+				pos = a.cache.treeRowPos[gi]
+			}
+			rowS := scores[i*nKeys : i*nKeys+nKeys]
+			if a.cache.treeMask != nil {
+				a.softmaxTreeRow(qhead, gi, pos, rowS)
+				continue
+			}
+			loP, hiP := a.attendRange(pos)
+			a.softmaxRow(qhead, rowS, loP, hiP)
+		}
+		// scores·V: ctx_head[kt,hd] = scores[kt,nKeys] · V_head[nKeys,hd]. Acc64 reads vals directly, "as if transposed" (row stride 1,
+		// element stride kvDim), skipping a vt gather and transpose. MatmulAVAcc64 reads V rows contiguously (keys-outer, dims-inner) into
+		// hd independent f64 accumulators; each dim's accumulator sees the same key-ascending adds as the strided walk, so it is
+		// bit-identical.
+		//
+		// A one-row tile (every K=1 decode) writes this head's context straight into ctx: MatmulAVAcc64 overwrites its destination and the
+		// head's hd floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work. A multi-row
+		// tile's [kt,hd] result is not contiguous in ctx (row stride qDim) and keeps the scatter.
+		direct := a.useAcc64 && kt == 1
+		if direct && a.f16 {
+			b := t0*qDim + qhead*hd
+			linalg.MatmulAVAcc64F16(scores[:nKeys], a.valsH, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
+		} else if direct {
+			b := t0*qDim + qhead*hd
+			linalg.MatmulAVAcc64(scores[:nKeys], a.vals, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
+		} else if a.f16 {
+			linalg.MatmulAVAcc64F16(scores[:kt*nKeys], a.valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
+		} else if a.useAcc64 {
+			linalg.MatmulAVAcc64(scores[:kt*nKeys], a.vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
+		} else {
+			mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
+		}
+		if !direct {
+			for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
+				b := (t0+i)*qDim + qhead*hd
+				copy(a.ctx[b:b+hd], ch[i*hd:i*hd+hd])
+			}
+		}
+	}
+}
+
+// groupedHeads is the grouped-kernel path: one MatmulQKAcc64Group/MatmulAVAcc64Group pair covers all attnGroupedNEONSize query
+// heads of one kv head, instead of that many oneHead calls re-reading the same K/V rows. The caller must have checked K==1 (decode;
+// M>1 is not wired), no tree mask (its per-(row,column) mask needs oneHead's own branch), and group == attnGroupedNEONSize.
+//
+// Q for these heads is contiguous in q's [K,qDim] layout (and so is ctx), so no gather is needed. Softmax stays per head, row by
+// row, identical to oneHead's non-tree branch: grouping shares the QKᵀ and scores·V loads and folds, never the reduction inside each
+// head's softmax.
+func (a *kvAttend) groupedHeads(kvh int, ws *headWorkerScratch) {
+	group, hd, nKeys := a.group, a.hd, a.nKeys
+	qh0 := kvh * group
+	q := a.q[qh0*hd : qh0*hd+group*hd]
+	gScores := ws.groupScores[:group*nKeys]
+	linalg.MatmulQKAcc64Group(q, a.keys, gScores, group, hd, nKeys, kvh*hd, a.rs)
+	loP, hiP := a.attendRange(a.startPos) // K==1 is a precondition, so this call's only row is gi=0
+	for g := range group {
+		a.softmaxRow(qh0+g, gScores[g*nKeys:g*nKeys+nKeys], loP, hiP)
+	}
+	// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
+	// straight into ctx with no scratch copy.
+	gAvAcc := ws.groupAvAcc[:group*hd]
+	linalg.MatmulAVAcc64Group(gScores, a.vals, a.ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, a.rs)
+	atomic.AddInt64(&attnGroupedRuns, 1)
+}
+
+// runHeadRange walks qhead across [h0,h1), taking the grouped path for any run of attnGroupedNEONSize heads that starts on a
+// kv-group boundary and fits inside [h0,h1); a worker whose range splits a kv group uses oneHead for that group's heads.
+func (a *kvAttend) runHeadRange(ws *headWorkerScratch, h0, h1 int) {
+	qhead := h0
+	for qhead < h1 {
+		if a.groupedOK && qhead%a.group == 0 && qhead+a.group <= h1 {
+			a.groupedHeads(qhead/a.group, ws)
+			qhead += a.group
+			continue
+		}
+		a.oneHead(qhead, ws, nil)
+		qhead++
+	}
+}
+
+// groupedLayer is the grouped path for a pool of more than one slot (decode, K==1). Arm A (runHeadRange/groupedHeads) needs one
+// worker to own a whole kv group's heads and so collapses worker count to nKV; this keeps the pool busy and still uses the grouped
+// kernel by splitting within each kv head's group: QK by key range, softmax by row, AV by dim range, the three phases joined in
+// between.
+//
+// All three are independent-output splits, not reduction splits (QK reduces over d and is split by key; AV reduces over keys and
+// is split by dim), so no floating-point combining is needed: each worker's slice lands in a disjoint region of the shared buffer
+// by plain copy. The result is bit-identical to the per-head path and to Arm A; TestAttendGroupedLayer_manyWorkers is the check.
+// The softmax phase must stay split: see the note on it below.
+func (a *kvAttend) groupedLayer(pool []headWorkerScratch) {
+	nKV, group, hd, nKeys := a.nKV, a.group, a.hd, a.nKeys
+	splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
+	leader := &pool[0]
+	if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom
+		leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
+	}
+	fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
+	fullCtx := a.ctx[:nKV*group*hd] // kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd]
+
+	runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
+		ws := &pool[w]
+		sliceLen := hi - lo
+		slice := ws.groupScores[:group*sliceLen]
+		for kvh := range nKV {
+			qh0 := kvh * group
+			qg := a.q[qh0*hd : qh0*hd+group*hd]
+			linalg.MatmulQKAcc64Group(qg, a.keys, slice, group, hd, sliceLen, kvh*hd+lo*a.rs, a.rs)
+			dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
+			for g := range group {
+				copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
+			}
+		}
+	})
+
+	loP, hiP := a.attendRange(a.startPos)
+	// Softmax is split by row (one kv head's one query head) across the workers, as the per-head path already does inside each head's
+	// worker. Running it serially on this goroutine was measured slower than not grouping at all; do not collapse it
+	// (docs/code-notes/decoder.md#attendGroupedLayer.softmax).
+	runSplitAligned(splitWorkers, nKV*group, 1, func(w, lo, hi int) {
+		for row := lo; row < hi; row++ {
+			kvh, g := row/group, row%group
+			rowS := fullScores[kvh*group*nKeys+g*nKeys : kvh*group*nKeys+g*nKeys+nKeys]
+			a.softmaxRow(kvh*group+g, rowS, loP, hiP)
+		}
+	})
+
+	runSplitAligned(splitWorkers, hd, attnGroupedNEONBlock, func(w, d0, d1 int) {
+		ws := &pool[w]
+		sliceHd := d1 - d0
+		sliceCtx := ws.groupCtx[:group*sliceHd]
+		sliceAcc := ws.groupAvAcc[:group*sliceHd]
+		for kvh := range nKV {
+			rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
+			linalg.MatmulAVAcc64Group(rows, a.vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, a.rs)
+			dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
+			for g := range group {
+				copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])
+			}
+		}
+	})
+
+	atomic.AddInt64(&attnGroupedRuns, int64(nKV))
+}
+
+// gatherKV fills ws's kh/vt for one kv head on the f32 path. It is a pure function of (keys, vals, kvh), so two workers gathering
+// the same kvh into their own buffers produce identical bytes, which is why f32Heads's serial and fan-out arms are bit-identical,
+// not merely close (TestAttendF32Fanout_bitIdentical).
+func (a *kvAttend) gatherKV(ws *headWorkerScratch, kvh int) {
+	keys, vals, hd, rs, nKeys := a.keys, a.vals, a.hd, a.rs, a.nKeys
+	// The fused schedule needs V block-major (a key-range slice of the [hd, nKeys]
+	// layout is not contiguous), so the layout is chosen here at gather time rather
+	// than re-transposed per block.
+	if a.fusedOK && ws.fused != nil {
+		gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, rs, nKeys)
+		return
+	}
+	for s := range nKeys {
+		kvBase := s*rs + kvh*hd
+		copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
+		vrow := vals[kvBase : kvBase+hd]
+		_ = vrow[hd-1]
+		_ = ws.vt[(hd-1)*nKeys+s]
+		for d := range hd {
+			ws.vt[d*nKeys+s] = vrow[d]
+		}
+	}
+}
+
+// f32Heads is the f32 path (the default for prefill above fastAttnMinPrompt).
+func (a *kvAttend) f32Heads(pool []headWorkerScratch) {
+	nH, nKV, group := a.nH, a.nKV, a.group
+	// Fan out over query heads, as the acc64 path does. Every pool slot already owns a full-size kh/vt pair (prefillAttnWorkersK
+	// budgets 2*nKeys*hd per slot), so a worker gathers into its own buffers and nothing is shared across the group. Heads are
+	// assigned in contiguous runs so a worker walks whole kv groups and re-gathers only when kvh changes: at most nKV + workers
+	// gathers, not nH. MatmulBT already fans out over output columns internally; head-level fan-out is what parallelises the gather,
+	// the softmax and the scatter.
+	workers := 1
+	if len(pool) > 1 && nH > 1 && a.K*a.nKeys >= attnHeadsParThreshold {
+		workers = min(len(pool), nH)
+	}
+	if workers <= 1 {
+		// Serial arm: one slot, and the matmul keeps its OWN column-level
+		// fan-out (package-level MatmulBT) since no head-level fan-out is
+		// competing with it. This is the pre-A3 behaviour exactly.
+		ws := &pool[0]
+		for kvh := range nKV {
+			a.gatherKV(ws, kvh)
+			for g := range group {
+				a.oneHead(kvh*group+g, ws, linalg.MatmulBT)
+			}
+		}
+		return
+	}
+	var wg sync.WaitGroup
+	headsPer := (nH + workers - 1) / workers
+	for w := 1; w < workers; w++ {
+		h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
+		if h0 >= h1 {
+			continue
+		}
+		wg.Go(func() {
+			ws := &pool[w]
+			lastKVH := -1
+			for qhead := h0; qhead < h1; qhead++ {
+				if kvh := qhead / group; kvh != lastKVH {
+					a.gatherKV(ws, kvh)
+					lastKVH = kvh
+				}
+				// Serial matmul: the fan-out is at the head level here, and
+				// nesting MatmulBT's column fan-out inside it would
+				// oversubscribe. Bit-identical to the column-parallel form
+				// by MatmulBT's width contract.
+				a.oneHead(qhead, ws, ws.mmWS.MatmulBT)
+			}
+		})
+	}
+	h1_0 := min(headsPer, nH)
+	ws0 := &pool[0]
+	lastKVH0 := -1
+	for qhead := range h1_0 {
+		if kvh := qhead / group; kvh != lastKVH0 {
+			a.gatherKV(ws0, kvh)
+			lastKVH0 = kvh
+		}
+		a.oneHead(qhead, ws0, ws0.mmWS.MatmulBT)
+	}
 	wg.Wait()
 }
 

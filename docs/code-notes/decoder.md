@@ -5547,6 +5547,8 @@ floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scat
 
 ## attendGroupedLayer
 
+This code is now `kvAttend.groupedLayer` in `decoder/forwardn.go`; the heading keeps the earlier name, which comments link to.
+
 Moved from `decoder/forwardn.go` (the comment above `attendGroupedLayer`) on 2026-10-09.
 
 ```text
@@ -5601,6 +5603,8 @@ docs/measurements/r13-served-decode-2026-09-20.md.
 ```
 
 ## attendGroupedLayer.softmax
+
+This code is now `the softmax step of kvAttend.groupedLayer` in `decoder/forwardn.go`; the heading keeps the earlier name, which comments link to.
 
 Moved from `decoder/forwardn.go` (the comment above `attendGroupedLayer.softmax`) on 2026-10-09.
 
@@ -6681,6 +6685,8 @@ record captured[ci], or a capture against a sparse-MoE target (the since-removed
 
 ## attendBatchedHeads.attendOneHead
 
+This code is now `kvAttend.oneHead` in `decoder/forwardn.go`; the heading keeps the earlier name, which comments link to.
+
 Moved from `decoder/forwardn.go` (the comment the comment above `attendOneHead` in `attendBatchedHeads`) on 2026-10-09.
 
 ```text
@@ -6700,6 +6706,8 @@ ws.fused — never a shared one, since each gathers a different kv head's V.
 ```
 
 ## attendGroupedHeads
+
+This code is now `kvAttend.groupedHeads` in `decoder/forwardn.go`; the heading keeps the earlier name, which comments link to.
 
 Moved from `decoder/forwardn.go` (the comment above `attendGroupedHeads`) on 2026-10-09.
 
@@ -6735,6 +6743,8 @@ excludes prefill/batched M>1 (not wired yet).
 ```
 
 ## attendBatchedHeads.runHeadRange
+
+This code is now `kvAttend.runHeadRange` in `decoder/forwardn.go`; the heading keeps the earlier name, which comments link to.
 
 Moved from `decoder/forwardn.go` (the comment the comment above `runHeadRange` in `attendBatchedHeads`) on 2026-10-09.
 

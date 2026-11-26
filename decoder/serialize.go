@@ -449,61 +449,24 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 // attention/FFN projection dims are checked per layer through the per-layer accessors, so gemma-4's per-layer geometry
 // (FFNPerLayer, two-geom head dims) is covered without a model-level dim that would false-reject it.
 func validateShapes(w *Weights, arch *Architecture) *SerializeError {
-	eq := func(name string, got, want int) *SerializeError {
-		if got != want {
-			return &SerializeError{fmt.Sprintf("%s: %d rows, arch expects %d", name, got, want)}
-		}
-		return nil
-	}
-	// vec checks a per-layer f32 vector (bias / norm weight) whose length the blob controls but the forward indexes at an
-	// arch-derived width: addBias iterates over the projection output and rmsNorm indexes weight[0:dim], so a short vector
-	// slice-panics in the decode goroutine and a long one is silently mis-consumed. 0 = absent (a family that omits it),
-	// allowed.
-	vec := func(name string, got, want int) *SerializeError {
-		if got != 0 && got != want {
-			return &SerializeError{fmt.Sprintf("%s: len %d, arch expects %d", name, got, want)}
-		}
-		return nil
-	}
-	// req is vec for a vector the family's forward dereferences unconditionally, where "absent" is not a family that omits it
-	// but a bundle that is missing it. vec's `got == 0 => allowed` is what would let a pre-v6 gpt-oss sidecar through: it is
-	// within giwMinReadV, "fresh" by mtime, reads AttnSinks as nil, passes validateShapes, and panics at forward_gptoss.go's
-	// `lw.AttnSinks[qh]` on the first request. Same shape as the LFM2 conv presence check below.
-	req := func(name string, got, want int) *SerializeError {
-		if got == 0 {
-			return &SerializeError{fmt.Sprintf("%s: absent, arch requires len %d — the bundle "+
-				"predates this field (rewrite the .giw sidecar; mtime freshness cannot see a "+
-				"missing tensor)", name, want)}
-		}
-		return vec(name, got, want)
-	}
-	// cols checks a table's row width. The embedding lookup widens one row into a HiddenDim-sized scratch (WeightMat.Row), so a
-	// table the blob declares wider than that is refused here, by name, instead of reaching the kernel; the LM head is
-	// multiplied against a HiddenDim activation, and a gpt-2 position row is added to one.
-	cols := func(name string, got, want int) *SerializeError {
-		if got != want {
-			return &SerializeError{fmt.Sprintf("%s: %d cols, arch expects %d", name, got, want)}
-		}
-		return nil
-	}
 	if w.Embed.Rows() > 0 {
-		if e := eq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
+		if e := shapeEq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
 			return e
 		}
-		if e := cols("Embed", w.Embed.Cols(), arch.HiddenDim); e != nil {
+		if e := shapeCols("Embed", w.Embed.Cols(), arch.HiddenDim); e != nil {
 			return e
 		}
 	}
 	if w.LMHead.Rows() > 0 { // 0 = tied (validated via Embed above)
-		if e := eq("LMHead", w.LMHead.Rows(), arch.VocabSize); e != nil {
+		if e := shapeEq("LMHead", w.LMHead.Rows(), arch.VocabSize); e != nil {
 			return e
 		}
-		if e := cols("LMHead", w.LMHead.Cols(), arch.HiddenDim); e != nil {
+		if e := shapeCols("LMHead", w.LMHead.Cols(), arch.HiddenDim); e != nil {
 			return e
 		}
 	}
 	if w.PosEmbed.Rows() > 0 {
-		if e := cols("PosEmbed", w.PosEmbed.Cols(), arch.HiddenDim); e != nil {
+		if e := shapeCols("PosEmbed", w.PosEmbed.Cols(), arch.HiddenDim); e != nil {
 			return e
 		}
 	}
@@ -513,231 +476,20 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		return &SerializeError{fmt.Sprintf("layer count: blob has %d, arch expects %d", len(w.Layers), arch.NumLayers)}
 	}
 	// The per-layer accessors (headDimAt/kvHeadsAt/ffnAt) collapse to the uniform Architecture fields for every non-gemma-4
-	// family, so one per-layer check set covers all families, gemma-4 included. Each check is guarded by Rows()>0, so a family
-	// that legitimately omits a projection (a routed layer's empty dense FFN, gemma-4's MLP living in the MoE sub-block) is
-	// not false-rejected.
+	// family, so one per-layer check set covers all families, gemma-4 included. A projection is mandatory only where the
+	// layer's program multiplies by it (needsAt), so a family that legitimately omits one (a routed layer's empty dense FFN,
+	// gemma-4's MLP living in the MoE sub-block, a KV-shared layer's k/v) is not false-rejected.
 	for i := range w.Layers {
 		lw := &w.Layers[i]
-		hd := arch.headDimAt(i)
-		// headsAt(i), not NumHeads: some families (Laguna) vary the query head count per layer, so a uniform NumHeads would
-		// reject a correctly written bundle. headDimAt/kvHeadsAt/ffnAt are per-layer here too.
-		qDim, kvDim, ffn := arch.headsAt(i)*hd, arch.kvHeadsAt(i)*hd, arch.ffnAt(i)
-		for _, c := range []struct {
-			name string
-			got  int
-			want int
-		}{
-			{"QProj", lw.QProj.Rows(), qDim},
-			{"KProj", lw.KProj.Rows(), kvDim},
-			{"VProj", lw.VProj.Rows(), kvDim},
-			{"OProj", lw.OProj.Rows(), arch.HiddenDim},
-			{"GateProj", lw.GateProj.Rows(), ffn},
-			{"UpProj", lw.UpProj.Rows(), ffn},
-			{"DownProj", lw.DownProj.Rows(), arch.HiddenDim},
-		} {
-			if c.got > 0 {
-				if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
-					return e
-				}
-			}
+		n := needsAt(w, arch, i)
+		if e := validateLayerAttnShapes(lw, arch, i, n); e != nil {
+			return e
 		}
-		// GProj (Laguna's attention output gate) is legal at EITHER width — per-head (one scalar per
-		// query head) or per-element (the full qDim) — and which one ships is decided by the tensor,
-		// not the config (XS.2 declares per-element and ships per-head). So both are accepted and
-		// anything else is rejected, rather than leaving the field unchecked.
-		if g := lw.GProj.Rows(); g > 0 && g != arch.headsAt(i) && g != qDim {
-			return &SerializeError{fmt.Sprintf("layer %d GProj: %d rows, arch expects %d (per-head) or %d (per-element)",
-				i, g, arch.headsAt(i), qDim)}
+		if e := validateLayerMLPShapes(lw, arch, i, n); e != nil {
+			return e
 		}
-		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed rmsNorm at their consumed width
-		// (QK-norm is per-head-dim hd normally, but the whole projected width when the family sets QKNormWhole: olmo3's
-		// whole-vector QK-norm, which reuses rmsNorm at rows=1/dim=qDim; the block norms are hidden). The blob controls their
-		// length; the forward indexes an arch width with no check.
-		qNormWant, kNormWant := hd, hd
-		if arch.QKNormWhole {
-			qNormWant, kNormWant = qDim, kvDim
-		}
-		for _, c := range []struct {
-			name string
-			got  int
-			want int
-		}{
-			{"QBias", len(lw.QBias), qDim}, {"KBias", len(lw.KBias), kvDim},
-			{"VBias", len(lw.VBias), kvDim}, {"OBias", len(lw.OBias), arch.HiddenDim},
-			{"QNorm", len(lw.QNorm), qNormWant}, {"KNorm", len(lw.KNorm), kNormWant},
-			{"PreAttnNorm", len(lw.PreAttnNorm), arch.HiddenDim}, {"PostAttnNorm", len(lw.PostAttnNorm), arch.HiddenDim},
-			{"PreMLPNorm", len(lw.PreMLPNorm), arch.HiddenDim}, {"PostMLPNorm", len(lw.PostMLPNorm), arch.HiddenDim},
-			{"UpBias", len(lw.UpBias), ffn}, {"DownBias", len(lw.DownBias), arch.HiddenDim},
-		} {
-			if e := vec(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
-				return e
-			}
-		}
-		// LFM2's short-conv mixer. Its three tensors are flat f32 slices the forward indexes at arch-derived widths, so a short one
-		// slice-panics in the decode goroutine, as for the bias vectors. The presence check is the load-bearing half: a conv layer
-		// whose mixer is absent is what a pre-v8 .giw hands back, and the panic it produces at the first forward is the defect
-		// this validation converts into a refusal at load.
-		if arch.lfm2 != nil {
-			cd, k := arch.lfm2.ConvDim, arch.lfm2.ConvLCache
-			isConv := lw.QProj.Rows() == 0 // a conv layer loads no attention projections
-			switch {
-			case isConv && lw.shortConv == nil:
-				return &SerializeError{fmt.Sprintf("layer %d: lfm2 conv layer has no short-conv "+
-					"mixer — the bundle was written before the v8 tail and would nil-deref at the "+
-					"first forward", i)}
-			case lw.shortConv == nil:
-			default:
-				c := lw.shortConv
-				for _, ck := range []struct {
-					name string
-					got  int
-					want int
-				}{
-					{"shortConv.inProj", c.inProj.Rows() * c.inProj.Cols(), 3 * cd * arch.HiddenDim},
-					{"shortConv.convW", len(c.convW), cd * k},
-					{"shortConv.outProj", c.outProj.Rows() * c.outProj.Cols(), arch.HiddenDim * cd},
-				} {
-					if e := eq(fmt.Sprintf("layer %d %s", i, ck.name), ck.got, ck.want); e != nil {
-						return e
-					}
-				}
-			}
-		}
-		// gemma-4 per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm rmsNorm'd at fixed widths; a
-		// wrong-rows blob OOB-panics or silently truncates the PLE activation.
-		if arch.gemma4 != nil {
-			if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
-				if lw.PLEGate.Rows() > 0 {
-					if e := eq(fmt.Sprintf("layer %d PLEGate", i), lw.PLEGate.Rows(), pleDim); e != nil {
-						return e
-					}
-				}
-				if lw.PLEProj.Rows() > 0 {
-					if e := eq(fmt.Sprintf("layer %d PLEProj", i), lw.PLEProj.Rows(), arch.HiddenDim); e != nil {
-						return e
-					}
-				}
-			}
-			if e := vec(fmt.Sprintf("layer %d PostPLENorm", i), len(lw.PostPLENorm), arch.HiddenDim); e != nil {
-				return e
-			}
-		}
-		// gemma-4 dense||MoE sub-block (l.gemma4moe): the standard Router/Experts are empty for gemma-4, so the arch.MoE block
-		// below never validates it. The router feeds make([]float32, nE) and each expert index runs to nE: a short router
-		// mis-routes silently, a long one or ne != NumExperts panics in the decode goroutine. Cross-check against the arch.
-		if mo := lw.gemma4moe; mo != nil && arch.MoE != nil {
-			nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
-			if e := eq(fmt.Sprintf("layer %d gemma4moe router", i), mo.routerProj.Rows(), nE); e != nil {
-				return e
-			}
-			if len(mo.expertsGateUp) != nE || len(mo.expertsDown) != nE {
-				return &SerializeError{fmt.Sprintf("layer %d gemma4moe expert count: gate|up %d / down %d, arch expects %d", i, len(mo.expertsGateUp), len(mo.expertsDown), nE)}
-			}
-			if e := vec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
-				return e
-			}
-			// routerScale scales the [hidden] router input; the three branch norms rmsNorm at hidden. A short slice OOB-panics in the
-			// decode goroutine.
-			for _, c := range []struct {
-				name string
-				got  int
-			}{
-				{"gemma4moe routerScale", len(mo.routerScale)},
-				{"gemma4moe postFFNNorm1", len(mo.postFFNNorm1)},
-				{"gemma4moe preFFNNorm2", len(mo.preFFNNorm2)},
-				{"gemma4moe postFFNNorm2", len(mo.postFFNNorm2)},
-			} {
-				if e := vec(fmt.Sprintf("layer %d %s", i, c.name), c.got, arch.HiddenDim); e != nil {
-					return e
-				}
-			}
-			for xe := range mo.expertsGateUp {
-				if e := eq(fmt.Sprintf("layer %d gemma4moe expert %d gate|up", i, xe), mo.expertsGateUp[xe].Rows(), 2*moeInter); e != nil {
-					return e
-				}
-				if e := eq(fmt.Sprintf("layer %d gemma4moe expert %d down", i, xe), mo.expertsDown[xe].Rows(), arch.HiddenDim); e != nil {
-					return e
-				}
-			}
-		}
-		if arch.MoE != nil {
-			// RouterBias is addBias'd over the [NumExperts] router logits; the shared expert's Gate/Up write SharedIntermediateDim
-			// scratch, Down writes hidden, and SharedGate is the scalar sigmoid gate (1 row). A short blob panics; validate them.
-			if e := vec(fmt.Sprintf("layer %d RouterBias", i), len(lw.RouterBias), arch.MoE.NumExperts); e != nil {
-				return e
-			}
-			for _, c := range []struct {
-				name string
-				got  int
-				want int
-			}{
-				{"SharedExpert Gate", lw.SharedExpert.Gate.Rows(), arch.MoE.SharedIntermediateDim},
-				{"SharedExpert Up", lw.SharedExpert.Up.Rows(), arch.MoE.SharedIntermediateDim},
-				{"SharedExpert Down", lw.SharedExpert.Down.Rows(), arch.HiddenDim},
-				{"SharedGate", lw.SharedGate.Rows(), 1},
-			} {
-				if c.got > 0 {
-					if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
-						return e
-					}
-				}
-			}
-			// Router feeds moeMLP's make([]float32, NumExperts) — the exploit the audit names.
-			if lw.Router.Rows() > 0 {
-				if e := eq(fmt.Sprintf("layer %d Router", i), lw.Router.Rows(), arch.MoE.NumExperts); e != nil {
-					return e
-				}
-			}
-			// Per-expert Gate/Up (moe intermediate width) and Down (hidden) — same config-sized-scratch
-			// write class as the dense projections. Empty for families that stack experts elsewhere.
-			for xe := range lw.Experts {
-				ex := &lw.Experts[xe]
-				for _, c := range []struct {
-					name string
-					got  int
-					want int
-				}{
-					{"Gate", ex.Gate.Rows(), arch.MoE.IntermediateDim},
-					{"Up", ex.Up.Rows(), arch.MoE.IntermediateDim},
-					{"Down", ex.Down.Rows(), arch.HiddenDim},
-				} {
-					if c.got > 0 {
-						if e := eq(fmt.Sprintf("layer %d expert %d %s", i, xe, c.name), c.got, c.want); e != nil {
-							return e
-						}
-					}
-				}
-			}
-		}
-
-		// The v6 completeness tail. forward_gptoss.go and the generic sink attention path index AttnSinks[qh] for every head, and
-		// addBias iterates every expert bias with no nil check, so for these families they are required, not optional; a sidecar
-		// written before v6 is sink-free, within giwMinReadV, and judged fresh by mtime.
-		if arch.hasAttnSinks() {
-			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.headsAt(i)); e != nil {
-				return e
-			}
-		}
-		if arch.gptoss != nil {
-			for xe := range lw.Experts {
-				ex := &lw.Experts[xe]
-				if ex.Gate.Rows() == 0 {
-					continue // an expert the bundle stacks elsewhere; its biases live there too
-				}
-				for _, c := range []struct {
-					name string
-					got  int
-					want int
-				}{
-					{"GateBias", len(ex.GateBias), arch.MoE.IntermediateDim},
-					{"UpBias", len(ex.UpBias), arch.MoE.IntermediateDim},
-					{"DownBias", len(ex.DownBias), arch.HiddenDim},
-				} {
-					if e := req(fmt.Sprintf("layer %d expert %d %s", i, xe, c.name), c.got, c.want); e != nil {
-						return e
-					}
-				}
-			}
+		if e := validateLayerHybridShapes(lw, arch, i, n); e != nil {
+			return e
 		}
 	}
 
@@ -749,7 +501,7 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 	// Rows() is pleTotal, not HiddenDim.
 	if arch.gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
 		pleTotal := arch.NumLayers * arch.gemma4.HiddenSizePerLayerInput
-		if e := eq("PerLayerModelProj", w.PerLayerModelProj.Rows(), pleTotal); e != nil {
+		if e := shapeEq("PerLayerModelProj", w.PerLayerModelProj.Rows(), pleTotal); e != nil {
 			return e
 		}
 		if got := w.PerLayerModelProj.Cols(); got != arch.HiddenDim {
@@ -757,12 +509,12 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		// PerLayerTokenEmbed rows are pleTotal wide (gguf.go builds it as embMat(..., VocabSize, pleTotal)); the lookup widens one
 		// into a pleTotal-sized scratch.
-		if e := cols("PerLayerTokenEmbed", w.PerLayerTokenEmbed.Cols(), pleTotal); e != nil {
+		if e := shapeCols("PerLayerTokenEmbed", w.PerLayerTokenEmbed.Cols(), pleTotal); e != nil {
 			return e
 		}
 		// PerLayerProjNorm is sized HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
 		// HiddenDim; gguf.go's vnorm and forward_gemma4.go's normalize agree.
-		if e := req("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.gemma4.HiddenSizePerLayerInput); e != nil {
+		if e := shapeReq("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.gemma4.HiddenSizePerLayerInput); e != nil {
 			return e
 		}
 	}

@@ -190,6 +190,11 @@ jobs:
       - name: vet
         run: go vet -tags goinfer_testhooks ./...
 
+      # The source ratchets (function length, receiver unpacking, test-switch assignments, raw heavy-gate reads, ...): each
+      # allowlist in internal/guard/qualityscan/testdata may only shrink, so a new site fails here, on the PR.
+      - name: quality scan
+        run: go test -count=1 -tags quality_scan ./internal/guard/qualityscan/
+
       # The release parity sweep builds with `-tags realckpt`, and CI never did — so a
       # realckpt-only compile error reached main and broke the sweep before it could run a
       # single gate (f49be07: two incompatible `envOr` in one package, untagged vet clean).

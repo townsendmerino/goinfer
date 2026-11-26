@@ -40,7 +40,6 @@ backend/cuda/kv2_cost_test.go 1 -- raw reads before the ratchet; move to testgat
 backend/cuda/kv2_schedule_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv3_digest_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv3_longprefill_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/cuda/kv3_tiled_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv4b_gate_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv4b_groups_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv_slots_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched

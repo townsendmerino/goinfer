@@ -443,8 +443,13 @@ func topK(xs []float32, k int) ([]int, []float32) {
 //
 //	mid = act(UpProj·h + UpBias)      // [inter]
 //	out = DownProj·mid + DownBias     // [hidden]
-func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden int, be Backend) ([]float32, error) {
-	mid := make([]float32, inter)
+//
+// out[:hidden] is overwritten. mid comes from *midBuf, grown on demand (nil: a fresh one), and is fully rewritten each call.
+func nonGatedMLPWith(h, out []float32, lw *LayerWeights, act ActKind, inter, hidden int, be Backend, midBuf *[]float32) error {
+	if midBuf == nil {
+		midBuf = new([]float32)
+	}
+	mid := scratchF32(midBuf, inter)
 	matmul(be, &lw.UpProj, h, mid, 1)
 	if lw.UpBias != nil {
 		addBias(mid, lw.UpBias)
@@ -463,14 +468,14 @@ func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden i
 			mid[i] = relu2(mid[i])
 		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)
+		return fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)
 	}
-	out := make([]float32, hidden)
+	out = out[:hidden]
 	matmul(be, &lw.DownProj, mid, out, 1)
 	if lw.DownBias != nil {
 		addBias(out, lw.DownBias)
 	}
-	return out, nil
+	return nil
 }
 
 // gatedMLPAct runs one block's gated MLP for the current position into out, with the gate activation given (the caller applies

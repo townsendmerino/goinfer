@@ -8,8 +8,8 @@ import (
 )
 
 // syntheticGroupedArch returns an Architecture whose GQA ratio is exactly attnGroupedNEONSize (6), the group
-// size aikit's NEON port covers, so a test against it exercises attendGroupedHeads rather than silently falling
-// back to attendOneHead (bit-identity would hide a dispatch that never happened).
+// size aikit's NEON port covers, so a test against it exercises kvAttend.groupedHeads rather than silently falling
+// back to kvAttend.oneHead (bit-identity would hide a dispatch that never happened).
 func syntheticGroupedArch(hd int) *Architecture {
 	return &Architecture{
 		NumHeads:   attnGroupedNEONSize * 2, // two kv heads' worth
@@ -144,7 +144,7 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 				groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 			}
 		}
-		// Arm B (attendGroupedLayer) uses pool[0] as the "leader" slot holding
+		// Arm B (kvAttend.groupedLayer) uses pool[0] as the "leader" slot holding
 		// the full-width combined buffers every worker's slice scatters into
 		// — see headWorkerScratch's own doc. Only slot 0 needs them.
 		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
@@ -170,7 +170,7 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 	}
 }
 
-// TestAttendGroupedLayer_manyWorkers exercises Arm B (attendGroupedLayer)
+// TestAttendGroupedLayer_manyWorkers exercises Arm B (kvAttend.groupedLayer)
 // with a full-size worker pool (maxAttnWorkers=6) and shapes that do NOT
 // divide evenly by the worker count (nKeys=203, hd=97), so the QK key-range
 // and AV dim-range splits both have a ragged last slice — exactly where an

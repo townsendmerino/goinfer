@@ -33,7 +33,7 @@ func TestWalkBatchPlant_qwen35GateSkipped(t *testing.T) {
 	for i := range ids {
 		ids[i] = (i*37 + 11) % m.w.arch.VocabSize
 	}
-	want, err := m.hiddenLastSequential(ids)
+	want, err := m.hiddenLastSequential(context.Background(), ids)
 	if err != nil {
 		t.Fatal(err)
 	}

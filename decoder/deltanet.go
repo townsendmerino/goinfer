@@ -130,9 +130,10 @@ func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []flo
 // truncatable (why qwen3_5_moe falls back from prefix reuse / speculative; see
 // ).
 type deltaState struct {
-	convWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
-	s       []float32   // [numV * head_k_dim * head_v_dim]
-	hq      w4a8Act     // h quantized once for in_proj_qkv and in_proj_z; rewritten every step
+	convWin [][]float32             // up to K-1 prior mixed_qkv vectors, oldest first
+	s       []float32               // [numV * head_k_dim * head_v_dim]
+	hq      w4a8Act                 // h quantized once for in_proj_qkv and in_proj_z; rewritten every step
+	dn      hybridattn.DeltaScratch // the step's working buffers; rewritten every step, never copied with the state
 }
 
 func newDeltaState(p qwen35Params) *deltaState {
@@ -154,7 +155,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 		return matvecWM(be, wm, x)
 	}
-	return hybridattn.GatedDeltaNetStep(
+	return st.dn.Step(
 		proj, h,
 		&w.inProjQKV, &w.inProjZ, &w.outProj,
 		w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW,
@@ -167,7 +168,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 // outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
 // delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)).
 func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
-	hybridattn.DeltaNetCore(
+	st.dn.Core(
 		core, mixed, bt, at, z,
 		w.convW, w.dtBias, w.negExpA, w.normW,
 		p.deltaNetParams(), eps,
@@ -176,7 +177,7 @@ func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35
 }
 
 func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {
-	hybridattn.DeltaNetRecurrence(
+	st.dn.Recurrence(
 		core, conv, at, bt,
 		w.dtBias, w.negExpA,
 		p.deltaNetParams(),

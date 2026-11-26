@@ -352,13 +352,13 @@ func TestS12MRoPEFidelity(t *testing.T) {
 			return l, mA.ResidentUploadPrefillForTest(cA)
 		})
 		if defect {
-			kernels.PrefillDefectForTest = 13
+			testgate.SetForTest(t, &kernels.PrefillDefectForTest, 13)
 		}
 		line.Candidate = arm(func() ([]float32, error) {
 			l, _, err := mA.ResidentMRoPEPrefillForTest(ctx, rd, ids, feats[key], start, nImg, mrope)
 			return l, err
 		})
-		kernels.PrefillDefectForTest = 0
+		testgate.SetForTest(t, &kernels.PrefillDefectForTest, 0)
 		b, _ := json.Marshal(line)
 		if _, err := live.Write(append(b, '\n')); err != nil {
 			t.Fatal(err)
@@ -703,10 +703,9 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 			if !(mean >= 0.99 && worst >= 0.90 && real == 0) {
 				t.Errorf("%s: mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, worst, real)
 			}
-			kernels.PairwiseNeoXForTest = true
-			t.Cleanup(func() { kernels.PairwiseNeoXForTest = false })
+			testgate.SetForTest(t, &kernels.PairwiseNeoXForTest, true)
 			nm, nw, _, _ := measure()
-			kernels.PairwiseNeoXForTest = false
+			testgate.SetForTest(t, &kernels.PairwiseNeoXForTest, false)
 			t.Logf("NeoX     %s: mean cos %.6f, worst %.6f", name, nm, nw)
 			if !(nm < 0.99 || nw < 0.90) {
 				t.Errorf("%s: the gate is BLIND: with the NeoX kernels it reads mean %.6f, worst %.6f", name, nm, nw)

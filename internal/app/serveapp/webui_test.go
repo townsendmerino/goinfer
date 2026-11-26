@@ -610,23 +610,30 @@ func TestWebUI_pageRoutesExistOnlyUnderWebFlag(t *testing.T) {
 // the user's disk. Mirrors sameOrigin in demo/agent/cmd/agent-web/main.go.
 func TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone(t *testing.T) {
 	called := false
-	h := sameOrigin(func(w http.ResponseWriter, r *http.Request) { called = true })
+	h := sameOriginGuard([]string{"llm.example.com"})(func(w http.ResponseWriter, r *http.Request) { called = true })
 
 	for _, tc := range []struct {
-		name     string
-		origin   string
-		wantCode int
-		wantCall bool
+		name      string
+		origin    string
+		fetchSite string
+		wantCode  int
+		wantCall  bool
 	}{
-		{"no Origin header (curl, a same-origin form post outside a browser)", "", http.StatusOK, true},
-		{"matching Origin", "http://127.0.0.1:8080", http.StatusOK, true},
-		{"foreign Origin (the CSRF-style attack)", "https://evil.example", http.StatusForbidden, false},
+		{"no Origin header (curl, a same-origin form post outside a browser)", "", "", http.StatusOK, true},
+		{"matching Origin", "http://127.0.0.1:8080", "", http.StatusOK, true},
+		{"foreign Origin (the CSRF-style attack)", "https://evil.example", "", http.StatusForbidden, false},
+		{"Origin null", "null", "", http.StatusForbidden, false},
+		{"Sec-Fetch-Site cross-site", "", "cross-site", http.StatusForbidden, false},
+		{"an -allowed-hosts name behind a proxy that rewrites Host", "https://llm.example.com", "same-origin", http.StatusOK, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called = false
 			r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/web/models/pull", strings.NewReader("{}"))
 			if tc.origin != "" {
 				r.Header.Set("Origin", tc.origin)
+			}
+			if tc.fetchSite != "" {
+				r.Header.Set("Sec-Fetch-Site", tc.fetchSite)
 			}
 			w := httptest.NewRecorder()
 			h(w, r)
