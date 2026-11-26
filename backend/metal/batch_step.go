@@ -194,8 +194,6 @@ func (s *stepEnc) attnRows(l int, L *residLayer) {
 	r, b, e, B, seqs := s.r, s.b, s.e, s.B, s.seqs
 	H, nHhd, pack := r.H, b.nHhd, b.packRows
 	const tgb = batchTGBytes
-	rowsQKV, w8AttnRows, w8Attn, pq, nq := s.rowsQKV, s.w8AttnRows, s.w8Attn, s.pq, s.nq
-	faRow, nPlain, nFA, maxS, faRows := s.faRow, s.nPlain, s.nFA, s.maxS, s.faRows
 	g := L.geom
 	// the per-row kernels run as one dispatch over all B rows (batch_rows.go): norm+quant, RoPE, ctx quant,
 	// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
@@ -204,13 +202,13 @@ func (s *stepEnc) attnRows(l int, L *residLayer) {
 		r.q4kStepGemv(e, B, L.qkvSegs, L.qkvBias, b.axB, H, b.qkvB, b.qkvRows, r.uH)
 	} else {
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-		if w8AttnRows {
+		if s.w8AttnRows {
 			e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
-		} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 && !w8Attn { // the adjacency kernels read int4
-			e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
-		} else if rowsQKV {
+		} else if s.rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 && !s.w8Attn { // the adjacency kernels read int4
+			e.DispatchTG(r.pSABiasRowsAdj, B*s.nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
+		} else if s.rowsQKV {
 			for m := range B {
-				e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), bufRow(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
+				e.DispatchTG(s.pq, s.nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), bufRow(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
 			}
 		} else {
 			pack(e, b.aqB, H, r.uH)
@@ -229,15 +227,15 @@ func (s *stepEnc) attnRows(l int, L *residLayer) {
 	} else {
 		e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, g.uKvDim, b.posB, b.uQKV, b.uM, r.kvTabOf(l), b.tabOffB)
 	}
-	if faRows {
+	if s.faRows {
 		shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-		e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcPool, vcPool, b.faPartB, g.uNKV, r.uAttnFAG,
-			b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.tabOffB, b.uQKV, b.uPartStride, b.uMaxS, r.kvTabOf(l))
-		e.Dispatch(r.pAttnFACombineRows, nFA*r.nH*g.hd, g.hd, b.faPartB, b.ctxB, r.uAttnFAG, g.uHd, b.nSplitB, r.uNH,
-			b.uCount[nFA], b.rowmapFA, b.uPartStride, g.uNHhd)
+		e.DispatchTG(r.pAttnFARows, s.nFA*g.nKV*s.maxS*128, 128, shmBytes, b.qkvB, kcPool, vcPool, b.faPartB, g.uNKV, r.uAttnFAG,
+			b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[s.nFA], b.rowmapFA, b.tabOffB, b.uQKV, b.uPartStride, b.uMaxS, r.kvTabOf(l))
+		e.Dispatch(r.pAttnFACombineRows, s.nFA*r.nH*g.hd, g.hd, b.faPartB, b.ctxB, r.uAttnFAG, g.uHd, b.nSplitB, r.uNH,
+			b.uCount[s.nFA], b.rowmapFA, b.uPartStride, g.uNHhd)
 	}
 	for m, q := range seqs {
-		if !faRow[m] || faRows {
+		if !s.faRow[m] || s.faRows {
 			continue
 		}
 		nSplit := r.attnFASplitFor(q.pos+1, g.nKV)
@@ -246,20 +244,20 @@ func (s *stepEnc) attnRows(l int, L *residLayer) {
 			g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m], r.kvSlotKT(l, q.slot))
 		e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, bufRow(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 	}
-	if nPlain > 0 && r.kvI8 {
-		e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0),
-			b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, r.kvTabOf(l), b.tabOffB)
-	} else if nPlain > 0 {
-		e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, b.ctxB, r.uNH, g.uNKV, g.uHd,
-			b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvTabOf(l), b.uCount[nPlain], b.rowmapB, b.tabOffB)
+	if s.nPlain > 0 && r.kvI8 {
+		e.Dispatch(r.pAttnI8Rows, s.nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0),
+			b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[s.nPlain], b.rowmapB, r.kvTabOf(l), b.tabOffB)
+	} else if s.nPlain > 0 {
+		e.Dispatch(r.pAttnRows, s.nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, b.ctxB, r.uNH, g.uNKV, g.uHd,
+			b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvTabOf(l), b.uCount[s.nPlain], b.rowmapB, b.tabOffB)
 	}
 	if r.q4kLane { // o-proj + residual reads the f32 ctx rows directly
 		r.q4kStepGemv(e, B, L.oSegs, Buffer{}, b.ctxB, nHhd, b.xB, H, g.uNHhd, true)
 	} else {
 		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
-		if w8AttnRows {
+		if s.w8AttnRows {
 			e.Dispatch(r.pW8Rows[B], H*32, 32, L.oW, L.oS, b.cqB, b.cScB, b.xB, g.uNHhd, r.uH, b.uCount[B], b.noBias, b.uMode[2])
-		} else if w8Attn { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
+		} else if s.w8Attn { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
 			for m := range B {
 				e.DispatchTG(r.pSAResid, H*32, 256, nHhd*2, L.oW, L.oS, b.cqB.At(m*nHhd), b.cScB.At(4*m), bufRow(b.xB, m, H), g.uNHhd)
 			}
@@ -275,7 +273,6 @@ func (s *stepEnc) ffnRows(L *residLayer) {
 	r, b, e, B := s.r, s.b, s.e, s.B
 	H, I, pack := r.H, r.I, b.packRows
 	const tgb = batchTGBytes
-	rowsGU, w8Rows, pg, ng := s.rowsGU, s.w8Rows, s.pg, s.ng
 	if r.q4kLane { // norm, fused gate|up, SwiGLU, down + residual, all f32
 		e.Dispatch(r.pRmsF32OutRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.axB, r.uH, r.uEps, r.uAddOne)
 		r.q4kStepGemv(e, B, L.guSegs, Buffer{}, b.axB, H, b.guB, 2*I, r.uH)
@@ -284,20 +281,20 @@ func (s *stepEnc) ffnRows(L *residLayer) {
 		return
 	}
 	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
-	if w8Rows {
+	if s.w8Rows {
 		e.Dispatch(r.pW8Rows[B], 2*I*32, 32, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B], b.noBias, b.uMode[0])
-	} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 && !r.w8 {
-		e.DispatchTG(r.pSARowsAdj, B*ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B])
-	} else if rowsGU {
+	} else if s.rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 && !r.w8 {
+		e.DispatchTG(r.pSARowsAdj, B*s.ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B])
+	} else if s.rowsGU {
 		for m := range B {
-			e.DispatchTG(pg, ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), bufRow(b.guB, m, 2*I), r.uH)
+			e.DispatchTG(s.pg, s.ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), bufRow(b.guB, m, 2*I), r.uH)
 		}
 	} else {
 		pack(e, b.mqB, H, r.uH)
 		e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
 	}
 	e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, r.uI, r.uAct)
-	if w8Rows {
+	if s.w8Rows {
 		e.Dispatch(r.pW8Rows[B], H*32, 32, L.dW, L.dS, b.dqB, b.dScB, b.xB, r.uI, r.uH, b.uCount[B], b.noBias, b.uMode[2])
 	} else if r.w8 { // int8 slice 3: decode's down-proj + residual (gemv_w8a8_body_resid) once per row
 		for m := range B {
