@@ -29,7 +29,7 @@ func TestParityManifest_adapterFilesOwned(t *testing.T) {
 
 	// Every top-level function in decoder's non-test files, by name, with its file and declaration.
 	fset := token.NewFileSet()
-	paths, err := filepath.Glob("*.go")
+	paths, err := filepath.Glob("../internal/runtime/families/*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestParityManifest_adapterFilesOwned(t *testing.T) {
 		}
 		for _, d := range f.Decls {
 			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Body != nil {
-				declFile[fd.Name.Name] = "decoder/" + p
+				declFile[fd.Name.Name] = "internal/runtime/families/" + filepath.Base(p)
 				decls[fd.Name.Name] = fd
 			}
 		}
@@ -87,7 +87,7 @@ func TestParityManifest_adapterFilesOwned(t *testing.T) {
 		file, _ := fn.FileLine(fn.Entry())
 		name := fn.Name()[strings.LastIndex(fn.Name(), ".")+1:]
 		covered := familyDepFiles(&m, fp)
-		need := append([]string{"decoder/" + filepath.Base(file)}, reach(name)...)
+		need := append([]string{"internal/runtime/families/" + filepath.Base(file)}, reach(name)...)
 		for _, f := range need {
 			if !slices.Contains(covered, f) {
 				t.Errorf("%s: %s reaches %s, which the family's key does not cover (add it to its own list)", fam, name, f)

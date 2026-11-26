@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"testing"
 )
 
@@ -21,8 +22,8 @@ func TestGlm4Moe_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &glm4moeTensorSchema {
-		t.Fatalf("schema = %p, want glm4moeTensorSchema", schema)
+	if schema != &families.Glm4MoETensorSchema {
+		t.Fatalf("schema = %p, want families.Glm4MoETensorSchema", schema)
 	}
 	if arch.MoE == nil {
 		t.Fatal("MoE descriptor nil")

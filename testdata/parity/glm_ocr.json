@@ -7,12 +7,12 @@
   "own": [
     "decoder/glm_ocr_test.go",
     "scripts/pin_glm_ocr_tiny.py",
-    "decoder/arch_glm_ocr.go"
+    "internal/runtime/families/arch_glm_ocr.go"
   ],
   "programs": [
     "testdata/glm-ocr-tiny"
   ],
-  "deps_hash": "sha256:b221fd1a2c8c176f1ddba34ed8b3689a5061a6d7f620332df860b8f60e53ea85",
+  "deps_hash": "sha256:401c65786f1056f8123f8301ba971436464b46cbfaa1a75ecbfacf80907dafc6",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

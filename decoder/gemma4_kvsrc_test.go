@@ -2,6 +2,7 @@ package decoder
 
 import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 )
 
 import "testing"
@@ -34,9 +35,9 @@ func TestGemma4KVSrcAt_handDerived(t *testing.T) {
 		LayerTypes:       []string{"sliding_attention", "full_attention", "sliding_attention", "full_attention"},
 		SharedKVLayers:   2,
 	}
-	arch, _, err := gemma4Architecture(cfg)
+	arch, _, err := families.Gemma4Architecture(cfg)
 	if err != nil {
-		t.Fatalf("gemma4Architecture: %v", err)
+		t.Fatalf("families.Gemma4Architecture: %v", err)
 	}
 	want := []int{0, 1, 0, 1}
 	for i, w := range want {
@@ -68,9 +69,9 @@ func TestGemma4KVSrcAt_noSharing(t *testing.T) {
 		LayerTypes:       []string{"sliding_attention", "full_attention", "sliding_attention", "full_attention"},
 		SharedKVLayers:   0,
 	}
-	arch, _, err := gemma4Architecture(cfg)
+	arch, _, err := families.Gemma4Architecture(cfg)
 	if err != nil {
-		t.Fatalf("gemma4Architecture: %v", err)
+		t.Fatalf("families.Gemma4Architecture: %v", err)
 	}
 	for i := range 4 {
 		if got := arch.Gemma4KVSrcAt(i); got != i {

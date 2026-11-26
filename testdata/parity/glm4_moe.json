@@ -6,13 +6,13 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_glm4_moe.go"
+    "internal/runtime/families/arch_glm4_moe.go"
   ],
   "programs": [
     "testdata/glm-tiny",
     "testdata/glm-tiny-bias"
   ],
-  "deps_hash": "sha256:64f5ec11dc4422f197dc7cd9fa8efafd5ae26b602b7ade3750d4dba713c7c602",
+  "deps_hash": "sha256:370533950a4c813357b3b35f6a6745712f21836534145d399e8c4560824538dc",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

@@ -90,10 +90,10 @@ SCANS = [
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
                                                                 "decoder/selftestdata/*", "internal/vision/testdata/*")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
-    Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity/*.json")),
+    Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder", "internal/runtime/families") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
     Scan("decoder", "TestParityManifest_coreClosed", NT("decoder") + F("testdata/parity/*.json")),
-    Scan("decoder", "TestParityManifest_loadersClosed", NT("decoder", "decoder/quant", "decoder/config") + F("testdata/parity/*.json")),
+    Scan("decoder", "TestParityManifest_loadersClosed", NT("decoder", "decoder/quant", "decoder/config", "internal/runtime/families") + F("testdata/parity/*.json")),
     # A record that hashes a test file running through textParity hashes the helper too.
     Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
@@ -123,7 +123,7 @@ SCANS = [
     Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json", "testdata/parity_key.json") + NT("internal/guard/paritykey", "decoder")),
     # Both keys of every family over the working tree, from the tables they read.
     Scan("internal/guard/paritykey", "TestKey_onTheTree", F("testdata/parity/*.json", "testdata/parity_key.json", "testdata/program_fingerprints.json", "testdata/loader_identity.json", "testdata/kernel_fingerprints.json")),
-    Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
+    Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder", "internal/runtime/families")),
     # decoder's config tests exercise decoder/config through decoder's wrappers (loadConfig, resolveEOSIDs) and real fixtures, so an
     # edit in decoder/config runs them; touched.py alone would run only decoder/config's own tests (where Config's validator tests live).
     *[Scan("decoder", n, NT("decoder/config")) for n in (

@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_phi3.go"
+    "internal/runtime/families/arch_phi3.go"
   ],
   "programs": [
     "testdata/phi3-tiny"
   ],
-  "deps_hash": "sha256:dbd2fab8a4653cdc998f4090d9401ca9f7278a34917f5e27fa0891ce5b4cf51b",
+  "deps_hash": "sha256:cbae6ea9a6533215e4a9851a9130a96b24373f3cb9689e214e2f58565cea563d",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

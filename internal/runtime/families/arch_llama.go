@@ -1,0 +1,53 @@
+package families
+
+import (
+	"fmt"
+	"math"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+)
+
+// llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset, Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE,
+// no embed scale) but WITHOUT QK-norm: Llama's attention applies RoPE to raw q/k. head_dim is derived (EffectiveHeadDim()) since many Llama configs
+// omit it. The LM head is tied on the small text models and untied on 8B+, finalized from lm_head.weight presence at load. ValidateLlama
+// rejects attention bias, so reaching here implies a plain checkpoint; linear and llama3 rope scaling are parsed below.
+func llamaArchitecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
+	if err := backfillFlatRope(cfg, "llama"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.ValidateLlama(); err != nil {
+		return nil, nil, err
+	}
+	scaling, err := rope.ParseScaling(cfg.RopeScaling) // linear + llama3; unsupported types error here
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(llama): %w", err)
+	}
+	hd := cfg.EffectiveHeadDim()
+	return &darch.Architecture{
+		Name:            "llama",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            darch.NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
+		QKNorm:          false, // the one knob that differs from Qwen3
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   0,                  // Llama dense: full attention
+		LayerIsGlobal:   nil,                // all-global
+		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RotaryDim:       cfg.RotaryDim(), // 0 = full head_dim (Llama); partial for Phi
+		RoPEScaling:     scaling,         // llama3 (3.1+/3.2) / linear; nil = none
+		EmbedScale:      0,               // none
+		TiedLMHead:      false,           // finalized from lm_head.weight presence at load
+	}, &LlamaTensorSchema, nil
+}

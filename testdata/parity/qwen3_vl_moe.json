@@ -7,14 +7,14 @@
   "own": [
     "decoder/qwen3vlmoe_test.go",
     "scripts/pin_qwen3vlmoe_tiny.py",
-    "decoder/arch_qwen3_vl_moe.go",
-    "decoder/arch_qwen3_moe.go",
-    "decoder/arch_qwen3_vl.go"
+    "internal/runtime/families/arch_qwen3_vl_moe.go",
+    "internal/runtime/families/arch_qwen3_moe.go",
+    "internal/runtime/families/arch_qwen3_vl.go"
   ],
   "programs": [
     "testdata/qwen3vlmoe-tiny"
   ],
-  "deps_hash": "sha256:5aedee010879185c4b0e6ed5f5172ff3445b658333340c94a59154ed214489a4",
+  "deps_hash": "sha256:97de3c5cf625ab5959e1f3207d02eed75d1bec507fb017cee6bd9ac596092fce",
   "status": "experimental",
   "validated_at": "936d2f49",
   "date": "2026-10-09",

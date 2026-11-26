@@ -2,6 +2,7 @@ package decoder
 
 import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
 func modelTypes(t *testing.T) []string {
 	t.Helper()
 	var out []string
-	for mt := range strings.SplitSeq(knownModelTypes(), ", ") {
+	for mt := range strings.SplitSeq(families.KnownModelTypes(), ", ") {
 		if representativeConfig(mt) != nil {
 			out = append(out, mt)
 		}
@@ -49,7 +50,7 @@ func modelTypes(t *testing.T) []string {
 func recurrentModelTypes(t *testing.T) []string {
 	t.Helper()
 	var out []string
-	for mt := range strings.SplitSeq(knownModelTypes(), ", ") {
+	for mt := range strings.SplitSeq(families.KnownModelTypes(), ", ") {
 		cfg := representativeConfig(mt)
 		if cfg == nil {
 			continue

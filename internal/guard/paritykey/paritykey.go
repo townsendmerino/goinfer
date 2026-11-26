@@ -294,14 +294,14 @@ const ProgramTypesFile = "internal/runtime/program/program.go"
 func BuilderFile(path string) bool {
 	switch path {
 	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go",
-		"decoder/gemma12.go", // gemma's and gemma2's adapters, under another name
+		"decoder/gemma12.go", "internal/runtime/families/registry.go", "internal/runtime/families/gemma12.go",
 		ProgramTypesFile:
 		return true
 	}
 	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 		return false
 	}
-	return strings.HasPrefix(path, "decoder/arch_") || strings.HasPrefix(path, "decoder/config/config_") // config_<family>.go: config.go's per-family methods
+	return strings.HasPrefix(path, "decoder/arch_") || strings.HasPrefix(path, "internal/runtime/families/arch_") || strings.HasPrefix(path, "decoder/config/config_") // config_<family>.go: config.go's per-family methods
 }
 
 // ReadProgramTable reads src's program fingerprint table, or nil in a tree from before it.

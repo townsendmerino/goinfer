@@ -5,13 +5,13 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen2_5_vl.go",
-    "decoder/arch_qwen2.go"
+    "internal/runtime/families/arch_qwen2_5_vl.go",
+    "internal/runtime/families/arch_qwen2.go"
   ],
   "programs": [
     "testdata/qwen25vl-tiny"
   ],
-  "deps_hash": "sha256:f7c261fbcbbce251f8f7ea6b16fd405a0b888d59cfdd8e0f6d68e598d9d06f3f",
+  "deps_hash": "sha256:34145236540abe24c20963fbf6e786163434a6ab3f11723c66b1a5d308ef4773",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
