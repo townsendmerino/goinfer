@@ -211,7 +211,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 // (docs/multimodal.md), where decode past the (already-resident) image block needs pos+mropeDelta for the rotation, not plain
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
-func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, rope.MRoPEDelta int) ([]float32, error) {
+func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {
 	from = m.prefillSeedFrom(prompt, from)
 	var sr stepResult
 	var err error
@@ -221,7 +221,7 @@ func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from
 			return nil, err
 		}
 		row[0] = m.embedResident(prompt[i])
-		if sr, err = m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: i, RopePos: i + rope.MRoPEDelta}); err != nil {
+		if sr, err = m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: i, RopePos: i + mropeDelta}); err != nil {
 			return nil, err
 		}
 	}
