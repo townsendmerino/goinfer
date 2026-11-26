@@ -57,6 +57,22 @@
       "why": "decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included."
     },
     {
+      "name": "ggufconfig-leaf",
+      "from": [
+        "internal/runtime/ggufconfig"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/ggufconfig": [
+          "decoder/config"
+        ]
+      },
+      "why": "internal/runtime/ggufconfig reads a GGUF's metadata into a Config, one reader per architecture, so the readers and their fuzz target test without compiling decoder. It sits below decoder, which calls Read: it imports decoder/config and no other goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -318,6 +334,7 @@
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
+      "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
@@ -500,6 +517,9 @@
       "decoder",
       "internal/runtime/logs",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/ggufconfig": [
+      "decoder/config"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
@@ -684,6 +704,7 @@
       "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
+      "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",

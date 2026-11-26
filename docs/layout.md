@@ -43,6 +43,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `decoder/fit/` | the types the fit guard and the placement planner hand their callers (`Plan`, `PlanRequest`, `Placement`, `FitAnswer`, `FitDeclineError`); a leaf over `internal/runtime/mem` |
 | `decoder/resident/` | the contract a resident backend implements: the four subsystem interfaces, `SubsystemProvider`, `Forward` (the base every resident implements), the drafter host and the small data their signatures carry; a leaf over `internal/cost` and `internal/runtime/adapter`, aliased from `decoder` as `decoder.Resident*` |
 | `decoder/quant/` | safetensors checkpoint quantization config parsing and weight reconstruction (`Reconstructor`, `RowStreamReconstructor` for FP8, GPTQ, AWQ, NVFP4, MLX); a leaf over `aikit/embed` (its `SafetensorsFile`; it imports no goinfer package, rule `quant-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/ggufconfig/` | a GGUF's metadata read into a `Config`, one reader per `general.architecture` in a file per family, with the file's recommended sampling (`Read`, `ValidateDims`, the metadata ceilings); a leaf over `decoder/config` and `aikit/embed` that `decoder`'s GGUF loader calls (rule `ggufconfig-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
