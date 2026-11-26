@@ -27,4 +27,3 @@ decoder/weights.go:buildWeightsFromSafetensorsTo 256 -- over the ceiling before 
 internal/app/chatapp/batch.go:session.batchLine 269 -- over the ceiling before the ratchet; split it when next changed
 internal/app/chatapp/main.go:Main 327 -- over the ceiling before the ratchet; split it when next changed
 internal/app/serveapp/main.go:Main 297 -- over the ceiling before the ratchet; split it when next changed
-internal/clef/head.go:Head.Forward 205 -- over the ceiling before the ratchet; split it when next changed
