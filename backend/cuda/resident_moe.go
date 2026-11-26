@@ -364,3 +364,62 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 	}
 	return r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))) // x *= layerScalar
 }
+
+// moeState is cudaResident's mixture-of-experts geometry, its per-token scratch and kernels: the sparse router, the routed and
+// shared experts, Gemma 4's parallel dense||MoE branch and the expert-major prefill's row kernels. Zero on a dense model.
+type moeState struct {
+	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4: its output steers a
+	// DISCRETE choice, so a quantization error near a tie does not perturb the result slightly, it runs a DIFFERENT
+	// expert and the output is unrelated (the Granite SSM expert-flip class; docs/code-notes/cuda.md#cudaResident.moe).
+	// This is the one place in this backend where the cheap precision is not worth it.
+	moe                     bool
+	nE, topK, moeInter      int
+	moeSigmoid, moeNormTopK int32
+	moeScale                float32
+	nGroup, topkGroup       int
+	// Gemma-4 parallel dense||MoE (any layer g4moe: JIT router_f32, alloc g4 scratch, take gemma4MoeMLP). g4cap
+	// (GOINFER_G4_CAPTURE) is a DEBUG readback of the four MoE-layer buffers (rn / wgt / x1 / x2) so a whole-forward
+	// miss localizes to router vs dense vs expert vs join in ONE run.
+	gemma4Moe bool
+	// gemma4Dense is true for ANY gemma4 checkpoint (dense or MoE), broader than gemma4Moe (enable_moe_block layers).
+	// It gates compiling fScaleVec, the dense per-layer-output-scalar kernel (segB's dense tail), which has nothing
+	// router-specific about it.
+	gemma4Dense                                             bool
+	sharedInter                                             int      // width of the always-on shared expert (0 ⇒ none)
+	bMoeFold                                                Pipeline // moe_fold_wacc (moe_fold.cu); zero when it did not load
+	bMoeRows, bGluRows                                      Pipeline // gemv_w4a8_moe_rows, glu_quant_rows (moe_rows.cu); zero when they did not load
+	moeRowsOff                                              bool     // test seam: run the expert-major path's per-pair launches (the A/B and identity reference)
+	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
+	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
+	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
+	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
+	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
+	// reusing gO/uO/dq here would overrun on some archs and silently under-read on others.
+	rLogits, rWgt, moeGU, moeSc, moeScr Buffer
+	rIdx                                Buffer
+	moeQ                                Buffer
+	// Gemma-4 MoE branch scratch [hidden] (allocated only when gemma4Moe). x1 = dense branch, x2 =
+	// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE from r.x
+	// because the join norms (x1+x2) BEFORE adding the residual h — the experts can't wacc into the
+	// residual stream the way the generic moeMLP does.
+	g4x1, g4x2, g4rn Buffer
+	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
+	// which is its own width — distinct from both the dense inter and the routed moeInter.
+	shGUout, shSc, shScr, shDownOut Buffer
+	shGl                            Buffer // [1] the Qwen-MoE shared-gate logit; unused when ungated
+	shQ                             Buffer
+}
+
+// gptOssState is gpt-oss's own kernels and per-layer tables: the clamped SwiGLU epilogue, the biased router, the attention sinks
+// and the expert biases. Zero for every other family.
+type gptOssState struct {
+	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the kernels stay bit-identical): the
+	// clamped interleaved-SwiGLU expert epilogue, plus the per-layer attention sinks and the per-expert gate‖up bias
+	// table it needs.
+	gptOssSw                 Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
+	gptOssRoute              Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)
+	gptOssAlpha, gptOssLimit float32
+	gptOssSinks              []Buffer // [layer] → [nH] learned per-head attention sink logits
+	gptOssDownBias           []Buffer // [layer] → [nExpert*hidden] per-expert down-projection bias
+	gptOssExpBias            []Buffer // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
+}
