@@ -9,5 +9,4 @@ backend/metal/batch.go 1702 -- over the ceiling before the ratchet; split it whe
 backend/metal/kernels/kernels_msl.go 2721 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/kernels/prefill_msl.go 1597 -- over the ceiling before the ratchet; split it when next changed
 cmd/gate/quick_select.go 1600 -- over the ceiling before the ratchet; split it when next changed
-decoder/gguf.go 1980 -- over the ceiling before the ratchet; split it when next changed
 decoder/model.go 1728 -- over the ceiling before the ratchet; split it when next changed
