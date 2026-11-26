@@ -297,7 +297,7 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
 // (WindowStart/attendHi), mapped to physical columns by s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, arch.attnParamsFor(cache, global), arch, useAcc64, pool)
+	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, attnParamsFor(arch, cache, global), arch, useAcc64, pool)
 }
 
 // attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
