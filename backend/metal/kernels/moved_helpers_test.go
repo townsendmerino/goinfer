@@ -7,7 +7,6 @@ import "github.com/townsendmerino/goinfer/internal/runtime/f16"
 // The names package metal's kernel tests used for this package's MSL sources and packers (metal/msl.go, metal/pack.go),
 // kept for the tests that moved here so their bodies are unchanged.
 const (
-	allKernels         = AllKernels
 	batchKernelsHeader = BatchKernelsHeader
 	batchKernels       = BatchKernels
 	deltaNetKernels    = DeltaNetKernels
@@ -21,7 +20,11 @@ const (
 	moeKernels         = MoeKernels
 	moeBatchKernels    = MoeBatchKernels
 	pagedFenceSrc      = PagedFenceSrc
-	prefillKernels     = PrefillKernels
+)
+
+var (
+	allKernels     = AllKernels
+	prefillKernels = PrefillKernels
 )
 
 func packW4A8Row(row []float32) (words []uint32, scales []float32) { return PackW4A8Row(row) }

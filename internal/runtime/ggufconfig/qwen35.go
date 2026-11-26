@@ -1,0 +1,171 @@
+package ggufconfig
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/townsendmerino/aikit/embed"
+)
+
+// ggufQwen35Config synthesizes a qwen3_5_moe Config from the qwen35moe.* GGUF
+// metadata. It sets ModelType "qwen3_5_moe" so resolveArchitecture reuses the
+// exact same adapter + forward as the safetensors path. Two GGUF-specific
+// recoveries: NumLayers excludes the trailing NextN/MTP block
+// (block_count − nextn_predict_layers), and layer_types is rebuilt from
+// full_attention_interval (every interval-th layer, 1-indexed, is full attention;
+// the rest are Gated DeltaNet linear-attention).
+func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("qwen35moe." + k)
+		return int(v)
+	}
+	blocks := u("block_count")
+	numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)
+	// Bound before the per-layer append loop below: a hostile block_count would grow LayerTypes unboundedly (a fatal OOM
+	// that recover cannot catch) before ValidateDims runs.
+	if numLayers <= 0 || numLayers > MaxLayers {
+		return nil, fmt.Errorf("decoder(gguf-qwen35): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
+	}
+	headDim := u("attention.key_length")
+	numV := u("ssm.time_step_rank") // linear_num_value_heads
+	valueHeadDim := 0
+	if numV > 0 {
+		valueHeadDim = u("ssm.inner_size") / numV // inner_size = value_head_dim · num_value_heads
+	}
+	interval := u("full_attention_interval")
+	if interval <= 0 {
+		interval = 4
+	}
+	cfg := &Config{
+		ModelType:                    "qwen3_5_moe", // reuse the safetensors adapter + forward
+		MaxPositions:                 u("context_length"),
+		HiddenDim:                    u("embedding_length"),
+		NumLayers:                    numLayers,
+		NumHeads:                     u("attention.head_count"),
+		NumKVHeads:                   u("attention.head_count_kv"),
+		HeadDim:                      headDim,
+		MoeIntermediateSize:          u("expert_feed_forward_length"),
+		SharedExpertIntermediateSize: u("expert_shared_feed_forward_length"),
+		NumExperts:                   u("expert_count"),
+		NumExpertsPerTok:             u("expert_used_count"),
+		LinearConvKernelDim:          u("ssm.conv_kernel"),
+		LinearKeyHeadDim:             u("ssm.state_size"),  // per-head key/query dim
+		LinearValueHeadDim:           valueHeadDim,         // derived from inner_size
+		LinearNumKeyHeads:            u("ssm.group_count"), // linear_num_key_heads
+		LinearNumValueHeads:          numV,
+		HiddenAct:                    "silu",
+		VocabSize:                    ggufVocabSize(g),
+	}
+	if eps, ok := g.Float("qwen35moe.attention.layer_norm_rms_epsilon"); ok {
+		cfg.RMSNormEps = eps
+	}
+	for i := range numLayers {
+		if (i+1)%interval == 0 {
+			cfg.LayerTypes = append(cfg.LayerTypes, "full_attention")
+		} else {
+			cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")
+		}
+	}
+	// rope_parameters: the text decoder uses standard partial-rotary RoPE; the m-RoPE
+	// split (rope.dimension_sections) is carried too, so an image turn can rotate image
+	// tokens by (t, h, w) (ggufMRopeJSON). Synthesize the flat form parseRopeFlat and
+	// parseMRopeFlat expect from the GGUF rope metadata.
+	base := 1e7
+	if b, ok := g.Float("qwen35moe.rope.freq_base"); ok {
+		base = b
+	}
+	partial := 0.25
+	if dc := u("rope.dimension_count"); dc > 0 && headDim > 0 {
+		partial = float64(dc) / float64(headDim)
+	}
+	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g%s}`, base, partial, ggufMRopeJSON(g, "qwen35moe")))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufQwen35DenseConfig reads the dense hybrid (llama.cpp arch "qwen35"), the sibling of "qwen35moe" above: the same
+// Gated-DeltaNet/softmax 3:1 interleave and SSM geometry keys; the only structural difference is a plain SwiGLU where
+// the MoE sibling has a router, so the expert keys are replaced by feed_forward_length. It resolves to the qwen3_5
+// adapter, the dense descriptor.
+func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("qwen35." + k)
+		return int(v)
+	}
+	blocks := u("block_count")
+	// Same MTP tail as the MoE sibling: block_count counts the NextN/multi-token-prediction block
+	// this decoder does not run, so subtract it or every per-layer loop walks off the end.
+	numLayers := blocks - u("nextn_predict_layers")
+	if numLayers <= 0 || numLayers > MaxLayers {
+		return nil, fmt.Errorf("decoder(gguf-qwen35-dense): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
+	}
+	headDim := u("attention.key_length")
+	numV := u("ssm.time_step_rank") // linear_num_value_heads
+	valueHeadDim := 0
+	if numV > 0 {
+		valueHeadDim = u("ssm.inner_size") / numV
+	}
+	interval := u("full_attention_interval")
+	if interval <= 0 {
+		interval = 4
+	}
+	cfg := &Config{
+		ModelType:           "qwen3_5", // the DENSE adapter (qwen35DenseArchitecture)
+		MaxPositions:        u("context_length"),
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           numLayers,
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		HeadDim:             headDim,
+		IntermediateDim:     u("feed_forward_length"), // dense SwiGLU width; load-bearing for this adapter
+		LinearConvKernelDim: u("ssm.conv_kernel"),
+		LinearKeyHeadDim:    u("ssm.state_size"),
+		LinearValueHeadDim:  valueHeadDim,
+		LinearNumKeyHeads:   u("ssm.group_count"),
+		LinearNumValueHeads: numV,
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+	}
+	if eps, ok := g.Float("qwen35.attention.layer_norm_rms_epsilon"); ok {
+		cfg.RMSNormEps = eps
+	}
+	// layer_types is COMPUTED here, exactly as in qwen3_next: llama.cpp writes
+	// full_attention_interval rather than a per-layer list.
+	for i := range numLayers {
+		if (i+1)%interval == 0 {
+			cfg.LayerTypes = append(cfg.LayerTypes, "full_attention")
+		} else {
+			cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")
+		}
+	}
+	base := 1e7
+	if b, ok := g.Float("qwen35.rope.freq_base"); ok {
+		base = b
+	}
+	partial := 0.25
+	if dc := u("rope.dimension_count"); dc > 0 && headDim > 0 {
+		partial = float64(dc) / float64(headDim)
+	}
+	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split. For text the three position components are identical, so
+	// interleaved m-RoPE reduces exactly to standard partial RoPE and ropeAt never reads the split without image
+	// positions; it is carried (ggufMRopeJSON) so a GGUF text model can take an image turn with an mmproj tower, as the
+	// safetensors config does (docs/multimodal.md).
+	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g%s}`, base, partial, ggufMRopeJSON(g, "qwen35")))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufMRopeJSON is the rope_parameters fragment for a Qwen3.5+ GGUF's m-RoPE split, read from
+// <arch>.rope.dimension_sections (llama.cpp writes four, the fourth 0): `,"mrope_section":[a,b,c],
+// "mrope_interleaved":true`, the form a Qwen3.5 safetensors config carries (every Qwen3.5/3.6
+// checkpoint has mrope_interleaved true). Empty when the key is absent or not three nonnegative
+// sections and a zero, so such a model stays text-only and an image turn is refused by name.
+func ggufMRopeJSON(g *embed.GGUFFile, arch string) string {
+	sec := ggufIntArray(g.Metadata[arch+".rope.dimension_sections"])
+	if len(sec) != 4 || sec[0] < 0 || sec[1] < 0 || sec[2] < 0 || sec[3] != 0 || sec[0]+sec[1]+sec[2] == 0 {
+		return ""
+	}
+	return fmt.Sprintf(`,"mrope_section":[%d,%d,%d],"mrope_interleaved":true`, sec[0], sec[1], sec[2])
+}

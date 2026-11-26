@@ -293,3 +293,14 @@ func (r *cudaResident) copyCheckpointNow(copies []gpu.DeviceCopy) error {
 	}
 	return gpu.CopyDeviceBatch(copies)
 }
+
+// ckptState is cudaResident's recurrent checkpoint.
+type ckptState struct {
+	// The recurrent checkpoint (recurrent_checkpoint.go): its device bytes (0: none kept), the copies that save and restore it, and
+	// why a load kept none.
+	ckptBytes             int64
+	ckptSave, ckptRestore []gpu.DeviceCopy
+	ckptDeclined          string
+	ckptCopies            []ckptCopy
+	ckptSaves             uint64
+}

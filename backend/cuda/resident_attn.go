@@ -260,3 +260,18 @@ func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	}
 	return nil
 }
+
+// splitKVState is the split-KV decode attention (decode_splitkv.cu): its kernels and ragged twins, scratch, routing settings,
+// the flash-decode V-sum spike, and its launch counter.
+type splitKVState struct {
+	skScores, skSoftmax, skVsum  Pipeline // split-KV decode attention (high-occupancy, bit-identical)
+	skScoreBuf, skInvBuf         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	skVsumPartial, skVsumCombine Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
+	skPartialBuf                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
+	skVsumSplit                  int      // vsumSplitForTest at build; 0 = off (the shipped path)
+	skLaunches                   int      // split-KV decode attention passes, so a test can prove that path ran
+	splitkvAttn                  bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the single-block attn_batched(M=1))
+	skMinKeys                    int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
+	// skScoresRagged, skSoftmaxRagged and skVsumRagged are split-KV's ragged twins (decode_splitkv.cu); zero when not loaded.
+	skScoresRagged, skSoftmaxRagged, skVsumRagged Pipeline
+}
