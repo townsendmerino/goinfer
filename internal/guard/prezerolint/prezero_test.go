@@ -214,9 +214,9 @@ func TestPreZero_noDeadZeroingBeforeOverwriteKernels(t *testing.T) {
 		}
 	}
 	// A floor against a scan that reads nothing; the sentinels above already prove the contracts are there. The
-	// linalg surface rework (aikit LS2, LS6) unexported several writers, so the exported count fell from 60-odd to 56.
-	if len(writers) < 50 {
-		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 50", len(writers))
+	// linalg surface rework (aikit LS2, LS6) unexported several writers, so the exported count fell from 60-odd to 47 (v1.80.0).
+	if len(writers) < 40 {
+		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 40", len(writers))
 	}
 	root, err := filepath.Abs("../../..")
 	if err != nil {

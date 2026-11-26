@@ -56,7 +56,7 @@ moved symbol; those are edited by hand.
   `python3 scripts/aikit_surface/ls3_census_code.py` makes the code edits that go with it (K3's packages, its `Has*`
   predicate map and a `cpufeat.HasX` selector in its evaluator, the moved packages' qualifiers; hwcensus reading the
   go.work aikit and matching `Has<X>`; prezerolint reading the kernel packages' output contracts, with exported
-  sentinels and a floor of 50 writers), each an exact passage that fails by name if main changed it. By hand: the
+  sentinels and a floor of 40 writers), each an exact passage that fails by name if main changed it. By hand: the
   JSON's `files` lists (informational). hwcensus reads go.mod's pin when no go.work is in effect, so it is red on the
   released aikit until the bump, and green against the branch.
 
