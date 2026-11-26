@@ -4,11 +4,8 @@ backend/metal/batch.go:resident.forwardMultiOut 417 -- over the ceiling before t
 backend/webgpu/internal/kernels/decodetoken_batched.go:Context.DecodeTokenFusedBatched 315 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_fused.go:Context.DecodeTokenFused 216 -- over the ceiling before the ratchet; split it when next changed
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
-decoder/dflash.go:loadDFlashDrafter 223 -- over the ceiling before the ratchet; split it when next changed
 decoder/gguf_build.go:ggufBuild.loadLayers 208 -- over the ceiling before the ratchet; split it when next changed
 decoder/gguf.go:buildWeightsFromGGUF 302 -- over the ceiling before the ratchet; split it when next changed
-decoder/kvsnapshot.go:Model.LoadSession 216 -- over the ceiling before the ratchet; split it when next changed
-decoder/model.go:Load 245 -- over the ceiling before the ratchet; split it when next changed
 decoder/model.go:Model.generateInto 245 -- over the ceiling before the ratchet; split it when next changed
 decoder/program_cpu_n.go:Model.walkBatch 273 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratchet; split it when next changed
