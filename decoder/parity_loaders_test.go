@@ -21,10 +21,10 @@ var loaderRootFuncs = map[string]bool{"loadWeights": true, "loadGGUFWeights": tr
 // loadersExempt lists files the load path reaches that the parity key deliberately omits, each with its reason. A file
 // that changes what a loader reads, decodes or lays out belongs in a shared set or a family's own list instead.
 var loadersExempt = map[string]string{
-	"decoder/config/sampling.go":      "reads recommended sampling defaults from generation_config.json; no tensor or forward numerics",
-	"decoder/recommended_sampling.go": "GGUF sampling-default metadata; no tensor or forward numerics",
-	"decoder/load_errors.go":          "classifies a load failure for the caller; changes no loaded value",
-	"decoder/loadprofile.go":          "load-time byte counters for diagnostics; changes no loaded value",
+	"decoder/config/sampling.go":              "reads recommended sampling defaults from generation_config.json; no tensor or forward numerics",
+	"internal/runtime/ggufconfig/sampling.go": "GGUF sampling-default metadata; no tensor or forward numerics",
+	"decoder/load_errors.go":                  "classifies a load failure for the caller; changes no loaded value",
+	"decoder/loadprofile.go":                  "load-time byte counters for diagnostics; changes no loaded value",
 }
 
 // TestParityManifest_loadersClosed is the loader twin of TestParityManifest_coreClosed: every function reachable by a

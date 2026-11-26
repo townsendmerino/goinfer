@@ -355,7 +355,7 @@ func (b *stBuild) finish() (*Weights, error) {
 	loadLayer := b.loadLayer
 	var err error
 	// Gemma 4 per-layer FFN width: a safetensors checkpoint can vary intermediate_size by layer, but config.json carries one
-	// scalar (GGUF stores an explicit per-layer array: ggufIntArray -> cfg.FFNPerLayer). The forward calls arch.ffnAt(i) per
+	// scalar (GGUF stores an explicit per-layer array: ggufconfig's ggufIntArray -> cfg.FFNPerLayer). The forward calls arch.ffnAt(i) per
 	// layer, so it is seeded here, sequentially, before the parallel loop above reads it: each layer's width comes from its
 	// own GateProj tensor's on-disk shape (a header lookup; Tensor() does not decode data), not from a rule guessed from the
 	// KV-shared boundary, which is correlated on one checkpoint but is not something the config asserts.
@@ -411,7 +411,7 @@ func (b *stBuild) finish() (*Weights, error) {
 			}
 		}
 		// Record it only when it genuinely varies: FeatGemma4EModel (features.go) reads "FFNPerLayer is non-empty" as "this
-		// checkpoint declared real per-layer FFN metadata", as GGUF's ggufIntArray does only for a checkpoint that carries the
+		// checkpoint declared real per-layer FFN metadata", as ggufconfig's ggufIntArray does only for a checkpoint that carries the
 		// key. Setting it unconditionally would make every safetensors gemma4 checkpoint, including a uniform-width dense or MoE
 		// fixture, report FeatGemma4EModel.
 		if varies {

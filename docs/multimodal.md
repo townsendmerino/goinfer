@@ -1185,7 +1185,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 ## What already exists to build on
 
 *(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/completed/task-code-comments-2026-10.md`);
-before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `decoder/gguf_qwen35.go:ggufQwen35Config` no longer at what they described.)*
+before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` no longer at what they described.)*
 
 - **VL config flattening** — `decoder/config.go:loadConfig` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
@@ -1193,7 +1193,7 @@ before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shard
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,
   `qwen3_5_moe` (the Qwen3.6-VL text side is already loaded, ignoring
   `model.visual.*` / MTP — `decoder/weights.go:shardIndexFile`).
-- **m-RoPE stubs** — `decoder/gguf_qwen35.go:ggufQwen35Config` already notes the image/video mrope
+- **m-RoPE stubs** — `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` already notes the image/video mrope
   sections (currently unused).
 - **Serve content-array parsing** — `contentText`/`responseInputToMessages`
   already walk OpenAI message content parts; extend to extract `image_url`.
