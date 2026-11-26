@@ -1,8 +1,7 @@
-package decoder
+package testassets
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,21 +16,6 @@ import (
 // `-e`; GOINFER_QWEN35_GOLDEN needs a readable manifest.json INSIDE its directory). The two implementations
 // are checked against each other by TestAssetRegistry_agreesWithPreflight rather than assumed to match.
 
-// assetPath is what gates call. It SKIPS when the asset is absent, exactly as the hand-written
-// resolutions it replaces did, but with the reason the predicate produced rather than a bare
-// "no model at <path>".
-func assetPath(tb testing.TB, env string) string {
-	tb.Helper()
-	p, err := lookupAsset(env)
-	if errors.Is(err, errRegistryUnreadable) {
-		tb.Fatalf("asset %s: %v", env, err)
-	}
-	if err != nil {
-		tb.Skipf("asset %s: %v", env, err)
-	}
-	return p
-}
-
 // ---------------------------------------------------------------------------------------------
 // The registry's own gates.
 // ---------------------------------------------------------------------------------------------
@@ -39,7 +23,7 @@ func assetPath(tb testing.TB, env string) string {
 func goTestFiles(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	err := filepath.Walk(repoRoot, func(p string, fi os.FileInfo, err error) error {
+	err := filepath.Walk(assetRoot(), func(p string, fi os.FileInfo, err error) error {
 		if err != nil || fi.IsDir() || !strings.HasSuffix(p, "_test.go") {
 			return nil
 		}
@@ -114,8 +98,8 @@ func TestAssetRegistry_noDirectReads(t *testing.T) {
 // necessarily exists twice; what makes that acceptable is this test, not good intentions.
 func TestAssetRegistry_agreesWithPreflight(t *testing.T) {
 	// No cmd.Dir: the script path is already relative to the test's working directory, and setting
-	// Dir would apply repoRoot twice. The script locates the registry from its own __file__.
-	cmd := exec.Command("python3", filepath.Join(repoRoot, "scripts/asset_registry.py"), "verdicts")
+	// Dir would apply the root twice. The script locates the registry from its own __file__.
+	cmd := exec.Command("python3", filepath.Join(assetRoot(), "scripts/asset_registry.py"), "verdicts")
 	out, err := cmd.Output()
 	if err != nil {
 		t.Skipf("cannot run scripts/asset_registry.py (%v) — the two predicates are UNCOMPARED on "+
@@ -142,7 +126,7 @@ func TestAssetRegistry_agreesWithPreflight(t *testing.T) {
 			t.Errorf("%s: python produced no verdict", a.Env)
 			continue
 		}
-		p, gerr := lookupAsset(a.Env)
+		p, gerr := Lookup(a.Env)
 		if (gerr == nil) != v.OK {
 			t.Errorf("%s: PREDICATES DISAGREE — python ok=%v (%s), Go ok=%v (%v)",
 				a.Env, v.OK, v.Source, gerr == nil, gerr)
@@ -162,12 +146,12 @@ func TestAssetRegistry_agreesWithPreflight(t *testing.T) {
 }
 
 // TestAssetRegistry_resolvesFromEveryCallerDir — every directory with a test that asks the registry for an asset (AssetPathForTest,
-// lookupAsset) finds testdata/assets.json from its own working directory, and a $REPO/ candidate resolves to a directory that
+// Lookup) finds testdata/assets.json from its own working directory, and a $REPO/ candidate resolves to a directory that
 // exists. A caller two levels down (backend/cuda) used to open "../testdata/assets.json", fail, and skip, printing ok.
 func TestAssetRegistry_resolvesFromEveryCallerDir(t *testing.T) {
 	callers := map[string]bool{}
 	for p, src := range goTestFiles(t) {
-		if strings.Contains(src, "AssetPathForTest(") || strings.Contains(src, "lookupAsset(") {
+		if strings.Contains(src, "AssetPathForTest(") || strings.Contains(src, "Lookup(") {
 			abs, err := filepath.Abs(filepath.Dir(p))
 			if err != nil {
 				t.Fatal(err)
@@ -176,7 +160,7 @@ func TestAssetRegistry_resolvesFromEveryCallerDir(t *testing.T) {
 		}
 	}
 	// The checkout root itself: a run from there must not look above it.
-	root, err := filepath.Abs(repoRoot)
+	root, err := filepath.Abs(assetRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -73,6 +73,17 @@
       "why": "internal/runtime/ggufconfig reads a GGUF's metadata into a Config, one reader per architecture, so the readers and their fuzz target test without compiling decoder. It sits below decoder, which calls Read: it imports decoder/config and no other goinfer package, decoder included."
     },
     {
+      "name": "testassets-leaf",
+      "from": [
+        "internal/testassets"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/testassets resolves heavy test assets through testdata/assets.json, the one predicate for whether an asset is present. It imports no goinfer package and not testing, so a backend's tests can reach it without importing decoder."
+    },
+    {
       "name": "normact-leaf",
       "from": [
         "internal/runtime/normact"
@@ -356,6 +367,7 @@
       "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
+      "internal/testassets",
       "tokenizer"
     ],
     "decoder/fit": [
@@ -725,6 +737,7 @@
       "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
+      "internal/testassets",
       "internal/testgate",
       "internal/vision",
       "multimodal",
