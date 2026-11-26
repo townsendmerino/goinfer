@@ -1,8 +1,8 @@
-package decoder
+package normact
 
 import "math"
 
-// rmsNorm applies RMSNorm in place over each row of x ([rows, dim]).
+// RMS applies RMSNorm in place over each row of x ([rows, dim]).
 //
 //	rms      = sqrt(mean(x²) + eps)
 //	x[i]     = (x[i] / rms) * scale[i]
@@ -10,23 +10,23 @@ import "math"
 // addOne selects the scale: Gemma stores weights as deviations from 1.0 and
 // scales by (1 + weight); Llama/Qwen scale by weight directly. Using the wrong
 // one silently zeroes/shifts every layer — it's a per-family knob
-// (Architecture.RMSAddOne), one of the package's carry-over invariants (doc.go).
+// (Architecture.RMSAddOne), one of decoder's carry-over invariants (decoder/doc.go).
 //
 // Accumulate the sum of squares in float64 — the dim can be small (640) but
 // the f32 round-off still matters at the ≥1−1e-4 parity bar, mirroring the
 // float64-accumulation discipline embed/ and encoder/ already rely on.
-func rmsNorm(x, weight []float32, rows, dim int, eps float64, addOne bool) {
-	rmsNormInto(x, x, weight, rows, dim, eps, addOne)
+func RMS(x, weight []float32, rows, dim int, eps float64, addOne bool) {
+	RMSInto(x, x, weight, rows, dim, eps, addOne)
 }
 
-// rmsNormInto applies RMSNorm from src into dst over each row ([rows, dim]).
+// RMSInto applies RMSNorm from src into dst over each row ([rows, dim]).
 // It supports dst == src (in place) as well as dst != src (out of place).
 //
 // The sum-of-squares reduction below is four parallel partial sums (ss0..ss3),
 // not one sequential accumulator — this changes the floating-point addition
 // order and is therefore NOT bit-identical to a strictly sequential sum,
 // though it is within the ≥1−1e-4 parity bar every family test enforces.
-func rmsNormInto(dst, src, weight []float32, rows, dim int, eps float64, addOne bool) {
+func RMSInto(dst, src, weight []float32, rows, dim int, eps float64, addOne bool) {
 	if dim <= 0 {
 		return
 	}
@@ -91,7 +91,7 @@ func rmsNormInto(dst, src, weight []float32, rows, dim int, eps float64, addOne 
 	}
 }
 
-// layerNorm applies LayerNorm in place over each row of x ([rows, dim]) — the
+// Layer applies LayerNorm in place over each row of x ([rows, dim]) — the
 // GPT-2/NeoX/Cohere normalization. Unlike RMSNorm it subtracts the mean, and
 // adds a bias when present:
 //
@@ -101,18 +101,18 @@ func rmsNormInto(dst, src, weight []float32, rows, dim int, eps float64, addOne 
 //
 // bias is nil for bias-free LayerNorm families (Cohere/Command-R); GPT-2 passes
 // its ln_1/ln_2 bias. Mean and variance accumulate in float64, matching
-// rmsNorm's parity discipline.
-func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {
-	layerNormInto(x, x, weight, bias, rows, dim, eps)
+// RMS's parity discipline.
+func Layer(x, weight, bias []float32, rows, dim int, eps float64) {
+	LayerInto(x, x, weight, bias, rows, dim, eps)
 }
 
-// layerNormInto applies LayerNorm from src into dst over each row ([rows, dim]).
+// LayerInto applies LayerNorm from src into dst over each row ([rows, dim]).
 // It supports dst == src (in place) as well as dst != src (out of place).
 //
 // Mean and variance below use the same four-way parallel-partial-sum pattern
-// as rmsNormInto's ss reduction (see its comment) — not bit-identical to a
+// as RMSInto's ss reduction (see its comment) — not bit-identical to a
 // sequential sum, within tolerance.
-func layerNormInto(dst, src, weight, bias []float32, rows, dim int, eps float64) {
+func LayerInto(dst, src, weight, bias []float32, rows, dim int, eps float64) {
 	if dim <= 0 {
 		return
 	}
@@ -198,35 +198,35 @@ func layerNormInto(dst, src, weight, bias []float32, rows, dim int, eps float64)
 	}
 }
 
-// silu is x·sigmoid(x), the SwiGLU activation Llama/Mistral/Qwen use (computed
-// in float64 like geluTanh for parity). Gemma uses geluTanh; this is here for
+// SiLU is x·sigmoid(x), the SwiGLU activation Llama/Mistral/Qwen use (computed
+// in float64 like GELUTanh for parity). Gemma uses GELUTanh; this is here for
 // the SwiGLU families.
-func silu(x float32) float32 {
+func SiLU(x float32) float32 {
 	x64 := float64(x)
 	return float32(x64 / (1 + math.Exp(-x64)))
 }
 
-// relu2 is ReLU-squared (relu(x)²), Nemotron-H's non-gated MLP activation.
-func relu2(x float32) float32 {
+// ReLU2 is ReLU-squared (relu(x)²), Nemotron-H's non-gated MLP activation.
+func ReLU2(x float32) float32 {
 	if x <= 0 {
 		return 0
 	}
 	return x * x
 }
 
-// geluErf is the exact GELU, x·Φ(x) with the true Gaussian CDF: HF's "gelu" (ACT2FN["gelu"]). It is a different function
-// from geluTanh, not a spelling of it: they differ by up to 4.73e-4 (worst at x ≈ -2.7), small enough to hide under int8
-// quantization error, so a checkpoint asking for the exact function must not be run through geluTanh. Computed in
-// float64 like geluTanh, for parity with the reference implementation.
-func geluErf(x float32) float32 {
+// GELUErf is the exact GELU, x·Φ(x) with the true Gaussian CDF: HF's "gelu" (ACT2FN["gelu"]). It is a different function
+// from GELUTanh, not a spelling of it: they differ by up to 4.73e-4 (worst at x ≈ -2.7), small enough to hide under int8
+// quantization error, so a checkpoint asking for the exact function must not be run through GELUTanh. Computed in
+// float64 like GELUTanh, for parity with the reference implementation.
+func GELUErf(x float32) float32 {
 	v := float64(x)
 	return float32(0.5 * v * (1 + math.Erf(v/math.Sqrt2)))
 }
 
-// geluTanh is the tanh-approximate GELU Gemma's GeGLU MLP uses ("gelu_pytorch_tanh").
+// GELUTanh is the tanh-approximate GELU Gemma's GeGLU MLP uses ("gelu_pytorch_tanh").
 //
 //	0.5 * x * (1 + tanh( sqrt(2/π) * (x + 0.044715 x³) ))
-func geluTanh(x float32) float32 {
+func GELUTanh(x float32) float32 {
 	const c = 0.7978845608028654 // sqrt(2/π)
 	x64 := float64(x)
 	inner := c * (x64 + 0.044715*x64*x64*x64)

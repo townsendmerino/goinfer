@@ -201,7 +201,9 @@ layers:
 
 func TestSeams_gates(t *testing.T) {
 	fx := programFixtures(t)
+	ran := 0
 	eachFixture(t, fx, func(t *testing.T, f programFixture) {
+		ran++
 		ids := programPrompt(f.m)
 		if err := gateH(t, f.m, ids); err != nil {
 			t.Errorf("H %s: %v", f.name, err)
@@ -223,7 +225,7 @@ func TestSeams_gates(t *testing.T) {
 			t.Logf("S %s: %d layers rebuilt, %d skipped", f.name, checked, skipped)
 		}
 	})
-	t.Logf("H, C, S over %d fixtures", len(fx))
+	t.Logf("H, C, S over %d of %d fixtures", ran, len(fx))
 }
 
 // TestSeams_subCaptureRefusedWhereGateSCannotRun pins the owner's condition (2026-10-16): ForwardSubCapture, and its bisect hook,
@@ -272,6 +274,13 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 	}
 }
 
+// plantedGate runs gate on f with plant set, and clears the plant however the gate returns, a FailNow included.
+func plantedGate(t *testing.T, f programFixture, plant seamPlant, gate func(*testing.T, programFixture, []int) error) error {
+	seamPlantForTest = plant
+	defer func() { seamPlantForTest = plantNone }()
+	return gate(t, f, programPrompt(f.m))
+}
+
 // TestSeams_plantsGoRed: each planted defect turns its gate red on at least one fixture.
 func TestSeams_plantsGoRed(t *testing.T) {
 	fx := programFixtures(t)
@@ -296,10 +305,7 @@ func TestSeams_plantsGoRed(t *testing.T) {
 				continue // refused, not run: its error is not the plant being seen
 			}
 			ran[i]++
-			seamPlantForTest = pl.plant
-			err := pl.gate(t, f, programPrompt(f.m))
-			seamPlantForTest = plantNone
-			if err != nil {
+			if err := plantedGate(t, f, pl.plant, pl.gate); err != nil {
 				red[i] = append(red[i], f.name)
 			}
 		}
