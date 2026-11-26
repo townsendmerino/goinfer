@@ -120,7 +120,8 @@ func wpackHashes(t *testing.T) map[string]string {
 					s16[i] = uint16(rng.Uint32())&0x83ff | 0x0400*uint16(rng.IntN(30)+1)
 				}
 			}
-			return linalg.WrapInt4F16(q4, s16, N, K, 32)
+			wm4, _ := linalg.WrapInt4(q4, s16, N, K, 32, linalg.LayoutCanonical)
+			return wm4
 		},
 		"int8":     func(N, K int) linalg.WeightMat { return linalg.QuantizeInt8(floats(N*K, 3), N, K, false) },
 		"int8w8a8": func(N, K int) linalg.WeightMat { return linalg.QuantizeInt8(floats(N*K, 3), N, K, true) },

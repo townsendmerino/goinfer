@@ -1,0 +1,6 @@
+# LS4 move 3 (aikit linalg-surface-2026-11): the binary-vector kernels move from linalg to linalg/bitvec.
+package bitvec github.com/townsendmerino/aikit/linalg/bitvec
+linalg.HammingRows -> bitvec.HammingRows
+linalg.PackSignBits -> bitvec.PackSignBits
+linalg.PackSignBitsRow -> bitvec.PackSignBitsRow
+linalg.PackedWords -> bitvec.PackedWords

@@ -1,0 +1,9 @@
+# LS6 step 1: the int4 constructors that map one to one onto aikit's WrapInt4 / RepackInt4InPlace / PreferredInt4Layout.
+# One gofmt -r rule a line, applied in order by int4_layout_fix.py (the negated predicate before the plain one, so
+# `!linalg.Int4Row4Usable(...)` becomes `!=` rather than `!(... == ...)`).
+!linalg.Int4Row4Usable(a, b, c) -> linalg.PreferredInt4Layout(a, b, c) != linalg.LayoutRow4
+linalg.Int4Row4Usable(a, b, c) -> linalg.PreferredInt4Layout(a, b, c) == linalg.LayoutRow4
+linalg.WrapInt4Row4OnlyF16(a, b, c, d, e) -> linalg.WrapInt4(a, b, c, d, e, linalg.LayoutRow4)
+linalg.WrapInt4SplitHalfOnlyF16(a, b, c, d, e) -> linalg.WrapInt4(a, b, c, d, e, linalg.LayoutSplitHalf)
+linalg.RepackInt4Row4InPlaceF16(a, b, c, d, e) -> linalg.RepackInt4InPlace(a, b, c, d, e, linalg.LayoutRow4)
+linalg.RepackInt4SplitHalfInPlaceF16(a, b, c, d, e) -> linalg.RepackInt4InPlace(a, b, c, d, e, linalg.LayoutSplitHalf)

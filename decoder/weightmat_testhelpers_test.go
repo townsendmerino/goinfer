@@ -25,9 +25,6 @@ func int4Row4F32(w *linalg.WeightMat) (packed4 []byte, scales4 []float32, ok boo
 }
 
 func wrapInt4F32(q4 []byte, q4s []float32, rows, cols, group int) linalg.WeightMat {
-	return linalg.WrapInt4F16(q4, linalg.F32ToF16Scales(q4s), rows, cols, group)
-}
-
-func wrapInt4Row4F32(q4 []byte, q4s []float32, rows, cols, group int, q4Row4 []byte, q4Row4Scales []float32) linalg.WeightMat {
-	return linalg.WrapInt4Row4F16(q4, linalg.F32ToF16Scales(q4s), rows, cols, group, q4Row4, linalg.F32ToF16Scales(q4Row4Scales))
+	wm4, _ := linalg.WrapInt4(q4, linalg.F32ToF16Scales(q4s), rows, cols, group, linalg.LayoutCanonical)
+	return wm4
 }

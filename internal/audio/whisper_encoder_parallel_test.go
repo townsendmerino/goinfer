@@ -1,13 +1,12 @@
 package audio
 
 import (
+	"github.com/townsendmerino/aikit/linalg/elem"
 	"math"
 	"math/rand/v2"
 	"slices"
 	"sync/atomic"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // parallelRows must hand every index to exactly one block, whatever the core count or n.
@@ -39,7 +38,7 @@ func TestWhisperGeluInto_isTheKernelAndKeepsTheDefect(t *testing.T) {
 		src[i] = float32(rng.NormFloat64()) * 3
 	}
 	want := make([]float32, len(src))
-	linalg.GELUContractInto(want, src)
+	elem.GELUContractInto(want, src)
 	e := &WhisperEncoder{}
 	got := slices.Clone(src)
 	e.geluInto(got)

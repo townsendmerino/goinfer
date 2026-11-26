@@ -6,8 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // TestDecodeToken_parity validates the full one-fence decode token (all layers'
@@ -62,39 +60,39 @@ func TestDecodeToken_parity(t *testing.T) {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
 		q := make([]float32, qDim)
-		linalg.MatmulBTW8A8(xn, L.qBQ, L.qS, q, 1, hidden, qDim)
+		aikitMatmulW8A8(xn, L.qBQ, L.qS, q, 1, hidden, qDim)
 		k := make([]float32, kvDim)
-		linalg.MatmulBTW8A8(xn, L.kBQ, L.kS, k, 1, hidden, kvDim)
+		aikitMatmulW8A8(xn, L.kBQ, L.kS, k, 1, hidden, kvDim)
 		v := make([]float32, kvDim)
-		linalg.MatmulBTW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
+		aikitMatmulW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
 		refRoPE(q, nH, hd, pos, invFreq)
 		refRoPE(k, nKV, hd, pos, invFreq)
 		kFull := slices.Concat(L.priorK, k)
 		vFull := slices.Concat(L.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		ao := make([]float32, hidden)
-		linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)
+		aikitMatmulW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)
 		for i := range x {
 			x[i] += ao[i]
 		}
 		xn2 := refRMSNorm(x, L.mn, hidden, eps, false)
 		gate := make([]float32, inter)
-		linalg.MatmulBTW8A8(xn2, L.gBQ, L.gS, gate, 1, hidden, inter)
+		aikitMatmulW8A8(xn2, L.gBQ, L.gS, gate, 1, hidden, inter)
 		up := make([]float32, inter)
-		linalg.MatmulBTW8A8(xn2, L.uBQ, L.uS, up, 1, hidden, inter)
+		aikitMatmulW8A8(xn2, L.uBQ, L.uS, up, 1, hidden, inter)
 		mid := make([]float32, inter)
 		for i := range mid {
 			mid[i] = silu(gate[i]) * up[i]
 		}
 		down := make([]float32, hidden)
-		linalg.MatmulBTW8A8(mid, L.dBQ, L.dS, down, 1, inter, hidden)
+		aikitMatmulW8A8(mid, L.dBQ, L.dS, down, 1, inter, hidden)
 		for i := range x {
 			x[i] += down[i]
 		}
 	}
 	xnf := refRMSNorm(x, fnorm, hidden, eps, false)
 	refLogits := make([]float32, vocab)
-	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
+	aikitMatmulW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU DecodeToken ---
 	var own closers

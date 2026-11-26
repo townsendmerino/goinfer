@@ -27,9 +27,9 @@ func TestInt4MixMode(t *testing.T) {
 		}
 	}
 	int4Tensor := func(name string, w interface {
-		Int4() ([]byte, []float32, int, bool)
+		Int4F16() ([]byte, []uint16, int, bool)
 	}) {
-		if _, _, _, ok := w.Int4(); !ok {
+		if _, _, _, ok := w.Int4F16(); !ok {
 			t.Errorf("%s should be int4 in mix mode", name)
 		}
 	}

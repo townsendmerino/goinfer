@@ -1,0 +1,4 @@
+# LS6 step 3, as narrowed on 2026-11-24 (aikit linalg-surface-2026-11): the S-05 fold's A/B toggle becomes a test hook.
+package linalg github.com/townsendmerino/aikit/linalg
+linalg.SetW4A8RowFold -> linalg.SetW4A8RowFoldForTest
+linalg.W4A8RowFold -> linalg.W4A8RowFoldForTest

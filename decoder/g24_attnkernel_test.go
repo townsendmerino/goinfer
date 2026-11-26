@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/aikit/linalg/attn"
 )
 
 func sqrt(f float64) float64 { return math.Sqrt(f) }
@@ -78,7 +80,7 @@ func TestG24AttnKernelRatio(t *testing.T) {
 	{
 		accOut := make([]float32, kt*nKeys)
 		f32Out := make([]float32, kt*nKeys)
-		linalg.MatmulQKAcc64(qh[:kt*hd], keys, accOut, kt, hd, nKeys, 0, kvDim)
+		attn.MatmulQKAcc64(qh[:kt*hd], keys, accOut, kt, hd, nKeys, 0, kvDim)
 		for sIdx := range nKeys {
 			copy(kh[sIdx*hd:sIdx*hd+hd], keys[sIdx*kvDim:sIdx*kvDim+hd])
 		}
@@ -104,7 +106,7 @@ func TestG24AttnKernelRatio(t *testing.T) {
 	}
 
 	qkAcc := timeIt("QK acc64 (direct strided read)", func() {
-		linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, 0, kvDim)
+		attn.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, 0, kvDim)
 	})
 	qkF32 := timeIt("QK f32 + kh gather", func() {
 		for s := range nKeys { // the gather acc64 skips
@@ -113,7 +115,7 @@ func TestG24AttnKernelRatio(t *testing.T) {
 		linalg.MatmulBT(qh[:kt*hd], kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
 	})
 	avAcc64 := timeIt("AV acc64 (direct strided read)", func() {
-		linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, 0, kvDim)
+		attn.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, 0, kvDim)
 	})
 	avF32 := timeIt("AV f32 + vt gather/transpose", func() {
 		for s := range nKeys { // the gather+transpose acc64 skips

@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // GLM-OCR vision tower — aikit's fourth ViT family (GlmOcrVisionModel, zai-org/GLM-OCR). It is
@@ -445,7 +446,7 @@ func gatedSiLUMLPInto(dst, x []float32, gatew linalg.WeightMat, gateb []float32,
 	addBias(up, upb, rows, inner)
 	parallelChunks(len(gate), func(lo, hi int) {
 		g := gate[lo:hi]
-		linalg.SiLUContractInto(g, g)
+		elem.SiLUContractInto(g, g)
 		u := up[lo:hi]
 		for i := range g {
 			g[i] *= u[i]

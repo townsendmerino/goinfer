@@ -256,7 +256,7 @@ func (m *Model) gptOssMoEBatch(rows []float32, n int, lw *LayerWeights, p *ffnPa
 // gate at gateUp[2j*inter:], its up right after), one expert's output, the combined output, and the batch's ops.
 type gptOssScratch struct {
 	logits, gateUp, expOut, out []float32
-	ops                         []linalg.W4A8Op
+	ops                         []linalg.BatchOp
 }
 
 // size makes s's buffers fit nExp experts, k chosen, inter and hidden; a call with the same shape allocates nothing.
@@ -272,7 +272,7 @@ func (s *gptOssScratch) size(nExp, k, inter, hidden int) {
 	s.expOut = grow(s.expOut, hidden)
 	s.out = grow(s.out, hidden)
 	if cap(s.ops) < 2*k {
-		s.ops = make([]linalg.W4A8Op, 2*k)
+		s.ops = make([]linalg.BatchOp, 2*k)
 	}
 	s.ops = s.ops[:2*k]
 }
@@ -280,7 +280,7 @@ func (s *gptOssScratch) size(nExp, k, inter, hidden int) {
 // gptOssExpertBatchCalls counts the layers whose expert gate and up ran as one batch, so a test can see the path was taken.
 var gptOssExpertBatchCalls atomic.Int64
 
-// gptOssExpertBatch runs the chosen experts' gate and up projections as one linalg.MatmulBTW4A8Batch into s.gateUp and
+// gptOssExpertBatch runs the chosen experts' gate and up projections as one linalg.MatmulBTBatchInto into s.gateUp and
 // reports true, or does nothing and reports false. It runs only under w4a8BatchEnabled and only when every one of the 2k
 // weights takes the CPU W4A8 kernel (cpuW4A8) with the same K, weight group and activation group, so a staged backend's
 // per-matmul consult and every other weight kind keep the per-expert path. M is 1, which is what makes a repacked-only
@@ -318,7 +318,7 @@ func (m *Model) gptOssExpertBatch(lw *LayerWeights, idx []int, h []float32, s *g
 	}
 	ws.SetThreshold(int4ParThreshold)
 	ws.SetActQuantGroup(actGroup)
-	linalg.MatmulBTW4A8Batch(ws, h, 1, K, group, s.ops)
+	linalg.MatmulBTBatchInto(ws, h, 1, s.ops)
 	gptOssExpertBatchCalls.Add(1)
 	return true
 }

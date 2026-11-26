@@ -6,6 +6,8 @@ import (
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // towerWeights is one CPU tower block's weights, by the names a program uses.
@@ -243,7 +245,7 @@ func siluMulInto(g, u []float32) {
 	_ = u[len(g)-1]
 	parallelChunks(len(g), func(lo, hi int) {
 		gc := g[lo:hi]
-		linalg.SiLUContractInto(gc, gc)
+		elem.SiLUContractInto(gc, gc)
 		uc := u[lo:hi]
 		for i := range gc {
 			gc[i] *= uc[i]

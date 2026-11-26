@@ -71,8 +71,8 @@ func gbIslands(m *Model) (kind string, aliased int64) {
 	for i, sc := range gbConvs(m) {
 		for _, w := range []*linalg.WeightMat{&sc.inProj, &sc.outProj} {
 			if i == 0 && kind == "" {
-				kind = w.Kind()
-			} else if w.Kind() != kind {
+				kind = w.Kind().String()
+			} else if w.Kind().String() != kind {
 				kind = "mixed"
 			}
 			aliased += mmapAliasedBytes(m, w)

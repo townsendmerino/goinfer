@@ -17,22 +17,22 @@ type fakeBatchBackend4 struct {
 func (f *fakeBatchBackend4) Name() string                              { return "fake" }
 func (f *fakeBatchBackend4) MatmulBT(a, b, dst []float32, M, K, N int) {}
 func (f *fakeBatchBackend4) Close() error                              { return nil }
-func (f *fakeBatchBackend4) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool {
+func (f *fakeBatchBackend4) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.BatchOp) bool {
 	f.called = true
 	return f.accept
 }
 
 // TestMatmulW4A8Batch_routesThroughQuantBatchBackend4 is P-16's wiring gate (audit-2026-09-10):
 // matmulW4A8Batch must route through a QuantBatchBackend4 when the active Backend implements it,
-// and fall back to the CPU kernel (linalg.MatmulBTW4A8Batch) when it does not, or when the
+// and fall back to the CPU kernel (linalg.MatmulBTBatchInto) when it does not, or when the
 // backend itself declines — the same contract matmulW8A8Batch already has, extended to int4.
 // A fake backend proves the ROUTING decision directly, independent of any real GPU kernel (that
 // numeric correctness is gpu/backend_w4a8_batch_test.go's job, on real hardware).
 func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 	const N, K, group = 4, 64, 32
-	nGroups := K / group
 	a := make([]float32, K)
-	op := linalg.W4A8Op{W4: make([]byte, N*K/2), Scales: make([]float32, N*nGroups), Dst: make([]float32, N), N: N}
+	wm := linalg.QuantizeInt4(make([]float32, N*K), N, K, group)
+	op := linalg.BatchOp{W: &wm, Dst: make([]float32, N)}
 
 	t.Run("backend accepts: CPU kernel must NOT also run", func(t *testing.T) {
 		be := &fakeBatchBackend4{accept: true}
@@ -43,7 +43,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.BatchOp{op}, 0)
 		if !be.called {
 			t.Fatal("QuantBatchBackend4.MatmulW4A8Batch was never called — matmulW4A8Batch did not " +
 				"check the interface at all")
@@ -62,7 +62,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.BatchOp{op}, 0)
 		if !be.called {
 			t.Fatal("QuantBatchBackend4.MatmulW4A8Batch was never called")
 		}
@@ -83,7 +83,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.BatchOp{op}, 0)
 		allSentinel := true
 		for _, v := range op.Dst {
 			if v != -999 {

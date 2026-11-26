@@ -124,7 +124,7 @@ func TestBatchGEMV_microbench(t *testing.T) {
 	aq, aScales := linalg.QuantizeRowsInt8(act, 1, K)
 	rms := make([]*ResidentW8A8, len(qkvShapes))
 	runners := make([]*GEMVRunner, len(qkvShapes))
-	ops := make([]linalg.W8A8Op, len(qkvShapes))
+	ops := make([]linalg.BatchOp, len(qkvShapes))
 	bqs := make([][]int8, len(qkvShapes))
 	bss := make([][]float32, len(qkvShapes))
 	for i, sh := range qkvShapes {
@@ -137,7 +137,8 @@ func TestBatchGEMV_microbench(t *testing.T) {
 		r, _ := ctx.NewGEMVRunner(rm)
 		defer r.Release()
 		runners[i] = r
-		ops[i] = linalg.W8A8Op{BQ: bq, Scales: bScales, Dst: make([]float32, sh.N), N: sh.N}
+		wm := linalg.WrapInt8(bq, bScales, sh.N, K, true)
+		ops[i] = linalg.BatchOp{W: &wm, Dst: make([]float32, sh.N)}
 	}
 
 	dw := make([]DecodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16)
@@ -172,7 +173,7 @@ func TestBatchGEMV_microbench(t *testing.T) {
 	var ws linalg.Workspace
 	t2 := time.Now()
 	for range iters {
-		linalg.MatmulBTW8A8Batch(&ws, act, 1, K, ops)
+		linalg.MatmulBTBatchInto(&ws, act, 1, ops)
 	}
 	cpu := time.Since(t2) / iters
 

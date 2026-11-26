@@ -6,8 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // mlaRopeRef mirrors decoder.mlaRope: optional de-interleave (V3 GPT-J pairwise) then
@@ -185,13 +183,13 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
 		// q: q_a → norm → q_b LoRA bottleneck.
 		qa := make([]float32, qLoRA)
-		linalg.MatmulBTW8A8(xn, L.qaBQ, L.qaS, qa, 1, hidden, qLoRA)
+		aikitMatmulW8A8(xn, L.qaBQ, L.qaS, qa, 1, hidden, qLoRA)
 		qan := refRMSNorm(qa, L.qaNorm, qLoRA, eps, false)
 		q := make([]float32, nH*qkHead)
-		linalg.MatmulBTW8A8(qan, L.qbBQ, L.qbS, q, 1, qLoRA, nH*qkHead)
+		aikitMatmulW8A8(qan, L.qbBQ, L.qbS, q, 1, qLoRA, nH*qkHead)
 		// kv-down → latent ‖ rope-key; store normalized+roped at pos.
 		kvDown := make([]float32, latDim)
-		linalg.MatmulBTW8A8(xn, L.kvaBQ, L.kvaS, kvDown, 1, hidden, latDim)
+		aikitMatmulW8A8(xn, L.kvaBQ, L.kvaS, kvDown, 1, hidden, latDim)
 		curLat := make([]float32, latDim)
 		cn := refRMSNorm(kvDown[:rank], L.kvaNorm, rank, eps, false)
 		copy(curLat[:rank], cn)
@@ -256,47 +254,47 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 			}
 		}
 		ao := make([]float32, hidden)
-		linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, nH*vHead, hidden)
+		aikitMatmulW8A8(cv, L.oBQ, L.oS, ao, 1, nH*vHead, hidden)
 		for i := range x {
 			x[i] += ao[i]
 		}
 		// DeepSeekMoE FFN (group-limited routing + ungated shared expert).
 		xn2 := refRMSNorm(x, L.mn, hidden, eps, false)
 		logits := make([]float32, nE)
-		linalg.MatmulBTW8A8(xn2, L.rBQ, L.rS, logits, 1, hidden, nE)
+		aikitMatmulW8A8(xn2, L.rBQ, L.rS, logits, 1, hidden, nE)
 		idx, wts := routeRef(logits, L.rBias)
 		for j, e := range idx {
 			gate := make([]float32, inter)
-			linalg.MatmulBTW8A8(xn2, L.gBQ[e], L.gS[e], gate, 1, hidden, inter)
+			aikitMatmulW8A8(xn2, L.gBQ[e], L.gS[e], gate, 1, hidden, inter)
 			up := make([]float32, inter)
-			linalg.MatmulBTW8A8(xn2, L.uBQ[e], L.uS[e], up, 1, hidden, inter)
+			aikitMatmulW8A8(xn2, L.uBQ[e], L.uS[e], up, 1, hidden, inter)
 			mid := make([]float32, inter)
 			for i := range mid {
 				mid[i] = silu(gate[i]) * up[i]
 			}
 			down := make([]float32, hidden)
-			linalg.MatmulBTW8A8(mid, L.dBQ[e], L.dS[e], down, 1, inter, hidden)
+			aikitMatmulW8A8(mid, L.dBQ[e], L.dS[e], down, 1, inter, hidden)
 			for i := range x {
 				x[i] += wts[j] * down[i]
 			}
 		}
 		sgate := make([]float32, sInter)
-		linalg.MatmulBTW8A8(xn2, L.sgBQ, L.sgS, sgate, 1, hidden, sInter)
+		aikitMatmulW8A8(xn2, L.sgBQ, L.sgS, sgate, 1, hidden, sInter)
 		sup := make([]float32, sInter)
-		linalg.MatmulBTW8A8(xn2, L.suBQ, L.suS, sup, 1, hidden, sInter)
+		aikitMatmulW8A8(xn2, L.suBQ, L.suS, sup, 1, hidden, sInter)
 		smid := make([]float32, sInter)
 		for i := range smid {
 			smid[i] = silu(sgate[i]) * sup[i]
 		}
 		sdown := make([]float32, hidden)
-		linalg.MatmulBTW8A8(smid, L.sdBQ, L.sdS, sdown, 1, sInter, hidden)
+		aikitMatmulW8A8(smid, L.sdBQ, L.sdS, sdown, 1, sInter, hidden)
 		for i := range x {
 			x[i] += sdown[i]
 		}
 	}
 	xnf := refRMSNorm(x, fnorm, hidden, eps, false)
 	refLogits := make([]float32, vocab)
-	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
+	aikitMatmulW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU resident MLA runner ---
 	var own closers

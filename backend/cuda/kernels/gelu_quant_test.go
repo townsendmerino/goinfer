@@ -3,15 +3,14 @@
 package kernels
 
 import (
+	"github.com/townsendmerino/aikit/linalg/elem"
+	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
-	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// TestGeluQuantBatched_matchesCPUReference pins gelu_quant_batched against linalg.GELUTanhInto
+// TestGeluQuantBatched_matchesCPUReference pins gelu_quant_batched against elem.GELUTanhInto
 // (aikit's own reference — never reimplemented here), at SigLIP so400m's real intermediate
 // width (4304) so the kernel's real N/4 packing path is exercised, not just a round number.
 func TestGeluQuantBatched_matchesCPUReference(t *testing.T) {
@@ -33,7 +32,7 @@ func TestGeluQuantBatched_matchesCPUReference(t *testing.T) {
 		x[i] = float32(math.Sin(float64(i)*0.023)) * 15.0
 	}
 	ref := slices.Clone(x)
-	linalg.GELUTanhInto(ref, ref)
+	elem.GELUTanhInto(ref, ref)
 
 	q := dev.NewCommandQueue()
 	xb := gpu.NewBufferLenOf[float32](dev, len(x))

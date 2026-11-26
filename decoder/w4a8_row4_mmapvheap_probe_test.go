@@ -12,23 +12,25 @@ import (
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
-// heapifyRow4 replaces wm's row4 bytes/scales with fresh heap allocations holding the
-// SAME values, leaving canonical q4/q4s untouched. Correctness is unaffected --
-// MatmulBTW4A8Into reads only q4Row4/q4Row4Scales when present, and those values are
-// byte-identical to what mmap held, just backed by a new []byte the runtime allocated
-// on the heap instead of a page from the mmap'd file.
+// heapifyRow4 replaces wm with a row4-only WeightMat over fresh heap copies of its row4
+// bytes/scales: the SAME values, backed by memory the runtime allocated instead of a page
+// of the mmap'd file. Correctness is unaffected -- MatmulBTW4A8Into reads only
+// q4Row4/q4Row4Scales when present, so dropping the canonical bytes changes nothing the
+// timed call reads.
 func heapifyRow4(wm *linalg.WeightMat) bool {
-	q4, q4s, group, ok := Int4F32(wm)
+	_, _, group, ok := wm.Int4F16()
 	if !ok {
 		return false
 	}
-	row4, row4Scales, ok := int4Row4F32(wm)
+	row4, row4Scales, ok := wm.Int4Row4F16()
 	if !ok {
 		return false
 	}
-	heapRow4 := slices.Clone(row4)
-	heapScales := slices.Clone(row4Scales)
-	*wm = wrapInt4Row4F32(q4, q4s, wm.Rows(), wm.Cols(), group, heapRow4, heapScales)
+	heap, ok := linalg.WrapInt4(slices.Clone(row4), slices.Clone(row4Scales), wm.Rows(), wm.Cols(), group, linalg.LayoutRow4)
+	if !ok {
+		return false
+	}
+	*wm = heap
 	return true
 }
 

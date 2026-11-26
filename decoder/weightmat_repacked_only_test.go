@@ -51,7 +51,7 @@ func TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly(t *testing.T) {
 }
 
 // syntheticEmbedF32 builds a deterministic, non-trivial [rows,cols] f32 matrix — large enough
-// (rows=8, cols=64) to satisfy Int4Row4Usable's rows%4==0/cols%group==0 shape gate on a core that
+// (rows=8, cols=64) to satisfy PreferredInt4Layout's rows%4==0/cols%group==0 shape gate on a core that
 // supports it at all, small enough to keep the test fast.
 func syntheticEmbedF32(rows, cols int) []float32 {
 	f32 := make([]float32, rows*cols)
@@ -69,7 +69,7 @@ func syntheticEmbedF32(rows, cols int) []float32 {
 // needCanonical=true must produce the existing canonical(+row4) "both" policy unchanged.
 func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 	const rows, cols = 8, 64
-	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod) — nothing to test here")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
@@ -105,7 +105,7 @@ func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 // only and canonical(+row4) constructions of the identical source data.
 func TestQuantizeEmbedWM_repackedOnlyMatchesCanonical(t *testing.T) {
 	const rows, cols = 8, 64
-	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
@@ -164,13 +164,13 @@ func TestQuantizeEmbedWM_repackedOnlyMatchesCanonical(t *testing.T) {
 	}
 }
 
-// TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical: a shape Int4Row4Usable rejects (rows
+// TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical: a shape PreferredInt4Layout rejects (rows
 // not a multiple of 4) must still produce a WORKING WeightMat via the existing
 // repackW4A8IfEligible policy even when needCanonical is false — no silent data loss, matching
 // what every other int4 tensor already gets from quantizeWM.
 func TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical(t *testing.T) {
 	const rows, cols = 6, 64 // 6 is not a multiple of 4
-	if linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) == linalg.LayoutRow4 {
 		t.Fatal("test setup: this shape is supposed to be row4-ineligible")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
@@ -194,7 +194,7 @@ func TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical(t *testing.T) {
 // two construction sites) actually carries the right value rather than silently dropping it.
 func TestLoad_embedInt4RepackedOnlyEndToEnd(t *testing.T) {
 	const fixture = "testdata/gptoss_tiny.gguf"
-	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {
+	if linalg.PreferredInt4Layout(4, int4GroupSize, int4GroupSize) != linalg.LayoutRow4 {
 		// A crude but sufficient proxy for "this core can do row4 at all" — the real shape check
 		// runs inside Load on the fixture's actual embedding dims.
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
@@ -219,7 +219,7 @@ func TestLoad_embedInt4RepackedOnlyEndToEnd(t *testing.T) {
 // bypasses this gate by calling wmW4A8Op/matmulW4A8Batch directly — this closes that gap.
 func TestIsW4A8_trueForRepackedOnly(t *testing.T) {
 	const rows, cols = 8, 64
-	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	wm := quantizeBatchedProjWM(linalg.WrapF32(syntheticEmbedF32(rows, cols), rows, cols), quantInt4, false, false)
@@ -238,7 +238,7 @@ func TestIsW4A8_trueForRepackedOnly(t *testing.T) {
 // WeightMat; needCanonical=true must keep the existing canonical(+row4) "both" policy.
 func TestQuantizeBatchedProjWM_repackedOnlyWhenEligible(t *testing.T) {
 	const rows, cols = 8, 64
-	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
@@ -285,7 +285,7 @@ func TestIsBatchedProjTensor_matchesOnlyTheStandardNames(t *testing.T) {
 // whether the three fused ops are repacked-only or canonical(+row4).
 func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 	const rows, cols = 8, 64
-	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
+	if linalg.PreferredInt4Layout(rows, cols, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	be, err := NewBackend("")
@@ -312,7 +312,7 @@ func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 	}
 	run := func(wms []linalg.WeightMat) []float32 {
 		dst := make([]float32, 3*rows)
-		ops := make([]linalg.W4A8Op, 3)
+		ops := make([]linalg.BatchOp, 3)
 		var group int
 		for i := range wms {
 			ops[i], group = wmW4A8Op(&wms[i], dst[i*rows:(i+1)*rows])
@@ -345,7 +345,7 @@ func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 // repacked-only, proving the full mat/streamMatBatched/loadProj/quantizeBatchedProjWM wiring.
 func TestLoad_qkvGateUpRepackedOnlyEndToEnd(t *testing.T) {
 	const fixture = "testdata/gptoss_tiny.gguf"
-	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {
+	if linalg.PreferredInt4Layout(4, int4GroupSize, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	m, err := Load(fixture, Options{Quant: "int4", Backend: "cpu"})
@@ -388,7 +388,7 @@ func TestLoad_qkvGateUpRepackedOnlyEndToEnd(t *testing.T) {
 // the existing canonical(+row4) policy untouched.
 func TestBackendReport_int4LayoutVisible(t *testing.T) {
 	const fixture = "testdata/gptoss_tiny.gguf"
-	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {
+	if linalg.PreferredInt4Layout(4, int4GroupSize, int4GroupSize) != linalg.LayoutRow4 {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	promised, err := Load(fixture, Options{Quant: "int4", EmbedInt4: true, Backend: "cpu"})

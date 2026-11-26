@@ -53,30 +53,30 @@ type QuantBackend4 interface {
 // backend keeps each op's weight resident keyed by &op.BQ[0]. Returns false to
 // decline (the caller uses the CPU batch kernel).
 type QuantBatchBackend interface {
-	MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8Op) bool
+	MatmulW8A8Batch(a []float32, M, K int, ops []linalg.BatchOp) bool
 }
 
 // matmulW8A8Batch routes a shared-activation W8A8 batch through a
 // QuantBatchBackend (one GPU submit) when available, else the CPU batch kernel.
 // actGroup is the ops' weights' activation group (they share one activation); a per-group batch
 // skips the staged GPU consult, which reads per-vector activation scales only.
-func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, ops []linalg.W8A8Op, actGroup int) {
+func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, ops []linalg.BatchOp, actGroup int) {
 	if qb, ok := be.(QuantBatchBackend); ok && actGroup == 0 && qb.MatmulW8A8Batch(a, M, K, ops) {
 		return
 	}
 	ws.SetActQuantGroup(actGroup)
-	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
+	linalg.MatmulBTBatchInto(ws, a, M, ops)
 }
 
 // QuantBatchBackend4 is QuantBatchBackend's int4 (W4A8) counterpart, with the same decline contract: false falls back
 // to the CPU batch kernel.
 type QuantBatchBackend4 interface {
-	MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool
+	MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.BatchOp) bool
 }
 
 // matmulW4A8Batch routes a shared-activation W4A8 batch through a QuantBatchBackend4 (one GPU
 // submit) when available, else the CPU batch kernel — the int4 twin of matmulW8A8Batch above.
-func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op, actGroup int) {
+func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.BatchOp, actGroup int) {
 	if int4FloatActForTest {
 		int4FloatActMissed.Add(1)
 	}
@@ -84,7 +84,7 @@ func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group 
 		return
 	}
 	ws.SetActQuantGroup(actGroup)
-	linalg.MatmulBTW4A8Batch(ws, a, M, K, group, ops)
+	linalg.MatmulBTBatchInto(ws, a, M, ops)
 }
 
 var (

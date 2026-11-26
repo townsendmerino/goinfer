@@ -25,16 +25,16 @@ func cpuMLP(x, rmsW []float32, gBQ, uBQ, dBQ []int8, gS, uS, dS []float32, H, I 
 		xn[i] = x[i] * inv * w
 	}
 	gate := make([]float32, I)
-	linalg.MatmulBTW8A8(xn, gBQ, gS, gate, 1, H, I)
+	aikitMatmulW8A8(xn, gBQ, gS, gate, 1, H, I)
 	up := make([]float32, I)
-	linalg.MatmulBTW8A8(xn, uBQ, uS, up, 1, H, I)
+	aikitMatmulW8A8(xn, uBQ, uS, up, 1, H, I)
 	mid := make([]float32, I)
 	for i := range mid {
 		g := gate[i]
 		mid[i] = (g / (1 + float32(math.Exp(float64(-g))))) * up[i]
 	}
 	down := make([]float32, H)
-	linalg.MatmulBTW8A8(mid, dBQ, dS, down, 1, I, H)
+	aikitMatmulW8A8(mid, dBQ, dS, down, 1, I, H)
 	out := make([]float32, H)
 	for i := range out {
 		out[i] = x[i] + down[i]

@@ -15,6 +15,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/attn"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // Config is the dispatch configuration a fingerprint holds for: two builds that agree on it run the same kernels.
@@ -190,13 +192,13 @@ func int4Layouts(w []float32, N, K int) []int4Layout {
 	heap := linalg.QuantizeInt4(w, N, K, group)
 	heapOK := heap.RepackInt4Row4()
 	q4, q4s := int4F16(w, N, K)
-	inPlace, inPlaceOK := linalg.RepackInt4Row4InPlaceF16(q4, q4s, N, K, group)
+	inPlace, inPlaceOK := linalg.RepackInt4InPlace(q4, q4s, N, K, group, linalg.LayoutRow4)
 	// The .giw reader wraps what the emit repacked (row4Emit), and declines a shape or core that cannot run row4.
 	q4g, q4sg := int4F16(w, N, K)
-	if linalg.Int4Row4Usable(N, K, group) {
+	if linalg.PreferredInt4Layout(N, K, group) == linalg.LayoutRow4 {
 		q4g, q4sg = row4Emit(q4g, q4sg, N, K, group)
 	}
-	giw, giwOK := linalg.WrapInt4Row4OnlyF16(q4g, q4sg, N, K, group)
+	giw, giwOK := linalg.WrapInt4(q4g, q4sg, N, K, group, linalg.LayoutRow4)
 	split := linalg.QuantizeInt4(w, N, K, group)
 	splitOK := split.RepackInt4SplitHalf()
 	return []int4Layout{{"canonical", canon, true}, {"row4-heap", heap, heapOK}, {"row4-inplace", inPlace, inPlaceOK}, {"row4-giw", giw, giwOK}, {"split-half", split, splitOK}}
@@ -398,7 +400,7 @@ var suite = []kernel{
 				a := g.vec(M*K, 1)
 				q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
 				dst := make([]float32, M*N)
-				linalg.MatmulBTQ8Into(workspace(thr, 0), a, q, sc, dst, M, K, N)
+				aikitMatmulQ8Into(workspace(thr, 0), a, q, sc, dst, M, K, N)
 				s.tag("mm", thr, M, K, N)
 				s.f32(dst)
 			})
@@ -409,7 +411,7 @@ var suite = []kernel{
 			a := g.vec(M*K, 1)
 			q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
 			dst := make([]float32, M*N)
-			linalg.MatmulBTQ8(a, q, sc, dst, M, K, N)
+			aikitMatmulQ8(a, q, sc, dst, M, K, N)
 			s.tag("mm", M, K, N)
 			s.f32(dst)
 		})
@@ -425,7 +427,7 @@ var suite = []kernel{
 					a := g.vec(M*K, 1)
 					q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
 					dst := make([]float32, M*N)
-					linalg.MatmulBTW8A8Into(workspace(thr, group), a, q, sc, dst, M, K, N)
+					aikitMatmulW8A8Into(workspace(thr, group), a, q, sc, dst, M, K, N)
 					s.tag("mm", group, thr, M, K, N)
 					s.f32(dst)
 				})
@@ -437,7 +439,7 @@ var suite = []kernel{
 			a := g.vec(M*K, 1)
 			q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
 			dst := make([]float32, M*N)
-			linalg.MatmulBTW8A8(a, q, sc, dst, M, K, N)
+			aikitMatmulW8A8(a, q, sc, dst, M, K, N)
 			s.tag("mm", M, K, N)
 			s.f32(dst)
 		})
@@ -448,12 +450,13 @@ var suite = []kernel{
 				for _, K := range kG32 {
 					for _, M := range mLarge {
 						a := g.vec(M*K, 1)
-						var ops []linalg.W8A8Op
+						var ops []linalg.BatchOp
 						for _, N := range []int{8, 4, 12} {
 							q, sc := linalg.QuantizeRowsInt8(g.mat(N, K, 0.25), N, K)
-							ops = append(ops, linalg.W8A8Op{BQ: q, Scales: sc, Dst: make([]float32, M*N), N: N})
+							wm := linalg.WrapInt8(q, sc, N, K, true)
+							ops = append(ops, linalg.BatchOp{W: &wm, Dst: make([]float32, M*N)})
 						}
-						linalg.MatmulBTW8A8Batch(workspace(thr, group), a, M, K, ops)
+						linalg.MatmulBTBatchInto(workspace(thr, group), a, M, ops)
 						s.tag("batch", group, thr, M, K)
 						for _, op := range ops {
 							s.f32(op.Dst)
@@ -583,17 +586,15 @@ var suite = []kernel{
 					for _, M := range mLarge {
 						a := g.vec(M*K, 1)
 						for _, repack := range []bool{false, true} {
-							var ops []linalg.W4A8Op
+							var ops []linalg.BatchOp
 							for _, N := range []int{8, 4, 12} {
 								wm := linalg.QuantizeInt4(g.mat(N, K, 0.25), N, K, 32)
 								if repack {
 									wm.RepackInt4Row4()
 								}
-								q4, q4s, _, _ := wm.Int4F16()
-								row4, row4s, _ := wm.Int4Row4F16()
-								ops = append(ops, linalg.W4A8Op{W4: q4, ScalesF16: q4s, Row4: row4, Row4ScalesF16: row4s, Dst: make([]float32, M*N), N: N})
+								ops = append(ops, linalg.BatchOp{W: &wm, Dst: make([]float32, M*N)})
 							}
-							linalg.MatmulBTW4A8Batch(workspace(thr, group), a, M, K, 32, ops)
+							linalg.MatmulBTBatchInto(workspace(thr, group), a, M, ops)
 							s.tag("batch", group, thr, M, K)
 							s.ok(repack)
 							for _, op := range ops {
@@ -672,7 +673,7 @@ var suite = []kernel{
 				for _, M := range []int{1, 2, 5, 17} {
 					kvDim := 2*hd + 3
 					a, keys, dst := g.vec(M*hd, 1), g.vec(nKeys*kvDim, 1), make([]float32, M*nKeys)
-					linalg.MatmulQKAcc64(a, keys, dst, M, hd, nKeys, hd, kvDim)
+					attn.MatmulQKAcc64(a, keys, dst, M, hd, nKeys, hd, kvDim)
 					s.tag("qk", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -686,7 +687,7 @@ var suite = []kernel{
 					kvDim := 2*hd + 3
 					a, keys, dst := g.vec(M*hd, 1), make([]uint16, nKeys*kvDim), make([]float32, M*nKeys)
 					linalg.F32ToF16Slice(keys, g.vec(nKeys*kvDim, 1))
-					linalg.MatmulQKAcc64F16(a, keys, dst, M, hd, nKeys, hd, kvDim)
+					attn.MatmulQKAcc64F16(a, keys, dst, M, hd, nKeys, hd, kvDim)
 					s.tag("qk16", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -699,7 +700,7 @@ var suite = []kernel{
 				for _, G := range []int{1, 2, 4, 6, 8} {
 					kvDim := 2*hd + 3
 					a, keys, dst := g.vec(G*hd, 1), g.vec(nKeys*kvDim, 1), make([]float32, G*nKeys)
-					linalg.MatmulQKAcc64Group(a, keys, dst, G, hd, nKeys, hd, kvDim)
+					attn.MatmulQKAcc64Group(a, keys, dst, G, hd, nKeys, hd, kvDim)
 					s.tag("qk", hd, nKeys, G)
 					s.f32(dst)
 				}
@@ -713,7 +714,7 @@ var suite = []kernel{
 					kvDim := 2*hd + 3
 					scores, vals := g.probs(M, nKeys), g.vec(nKeys*kvDim, 1)
 					dst, acc := make([]float32, M*hd), make([]float64, hd)
-					linalg.MatmulAVAcc64(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
+					attn.MatmulAVAcc64(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
 					s.tag("av", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -728,7 +729,7 @@ var suite = []kernel{
 					scores, vals := g.probs(M, nKeys), make([]uint16, nKeys*kvDim)
 					linalg.F32ToF16Slice(vals, g.vec(nKeys*kvDim, 1))
 					dst, acc := make([]float32, M*hd), make([]float64, hd)
-					linalg.MatmulAVAcc64F16(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
+					attn.MatmulAVAcc64F16(scores, vals, dst, acc, M, nKeys, hd, hd, kvDim)
 					s.tag("av16", hd, nKeys, M)
 					s.f32(dst)
 				}
@@ -742,7 +743,7 @@ var suite = []kernel{
 					kvDim := 2*hd + 3
 					scores, vals := g.probs(G, nKeys), g.vec(nKeys*kvDim, 1)
 					dst, acc := make([]float32, G*hd), make([]float64, G*hd)
-					linalg.MatmulAVAcc64Group(scores, vals, dst, acc, G, nKeys, hd, hd, kvDim)
+					attn.MatmulAVAcc64Group(scores, vals, dst, acc, G, nKeys, hd, hd, kvDim)
 					s.tag("av", hd, nKeys, G)
 					s.f32(dst)
 				}
@@ -759,11 +760,11 @@ var suite = []kernel{
 					}
 				}
 				dst := make([]float32, n)
-				linalg.SoftmaxRowContractInto(dst, src)
+				elem.SoftmaxRowContractInto(dst, src)
 				s.tag("sm", n, masked)
 				s.f32(dst)
 				// In place, as internal/whisper calls it.
-				linalg.SoftmaxRowContractInto(src, src)
+				elem.SoftmaxRowContractInto(src, src)
 				s.f32(src)
 			}
 		}
@@ -773,25 +774,25 @@ var suite = []kernel{
 			for _, scale := range []float32{1, 0.125} {
 				src := g.vec(n, 4)
 				dst := make([]float32, n)
-				linalg.SoftmaxRowScaledContractInto(dst, src, scale)
+				elem.SoftmaxRowScaledContractInto(dst, src, scale)
 				s.tag("sms", n)
 				s.f32(dst)
 				// In place, as internal/audio's Whisper encoder calls it.
-				linalg.SoftmaxRowScaledContractInto(src, src, scale)
+				elem.SoftmaxRowScaledContractInto(src, src, scale)
 				s.f32(src)
 			}
 		}
 	}},
-	{"linalg.SiLUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "silu", linalg.SiLUContractInto) }},
-	{"linalg.GELUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelu", linalg.GELUContractInto) }},
-	{"linalg.GELUTanhContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelutanh", linalg.GELUTanhContractInto) }},
+	{"linalg.SiLUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "silu", elem.SiLUContractInto) }},
+	{"linalg.GELUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelu", elem.GELUContractInto) }},
+	{"linalg.GELUTanhContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelutanh", elem.GELUTanhContractInto) }},
 	{"linalg.GatherVBlockMajor", func(s *sink, g *gen) {
 		for _, hd := range []int{16, 64} {
 			for _, nKeys := range []int{1, 5, 512, 513, 1100} {
 				kvDim := 2 * hd
 				keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 				kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-				linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 1, hd, kvDim, nKeys)
+				attn.GatherVBlockMajor(kh, vBlk, keys, vals, 1, hd, kvDim, nKeys)
 				s.tag("g", hd, nKeys)
 				s.f32(kh)
 				s.f32(vBlk)
@@ -809,7 +810,7 @@ var suite = []kernel{
 						kvDim := hd
 						keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 						kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-						linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
+						attn.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
 						qh, ch := g.vec(kt*hd, 1), make([]float32, kt*hd)
 						lo, hi := make([]int, kt), make([]int, kt)
 						for i := range kt {
@@ -818,7 +819,7 @@ var suite = []kernel{
 								lo[i] = max(0, hi[i]-window)
 							}
 						}
-						ok := linalg.AttendTileFused(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
+						ok := attn.AttendTileFused(linalg.MatmulBT, qh, kh, vBlk, ch, attn.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
 						s.tag("fa", hd, nKeys, kt, window)
 						s.ok(ok)
 						s.f32(ch)
@@ -838,7 +839,7 @@ var suite = []kernel{
 						kvDim := hd
 						keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
 						kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
-						linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
+						attn.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
 						qh, ch := g.vec(kt*hd, 1), make([]float32, kt*hd)
 						lo, hi := make([]int, kt), make([]int, kt)
 						for i := range kt {
@@ -847,7 +848,7 @@ var suite = []kernel{
 								lo[i] = max(0, hi[i]-window)
 							}
 						}
-						ok := linalg.AttendTileFusedContractExp(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
+						ok := attn.AttendTileFusedContractExp(linalg.MatmulBT, qh, kh, vBlk, ch, attn.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
 						s.tag("fac", hd, nKeys, kt, window)
 						s.ok(ok)
 						s.f32(ch)

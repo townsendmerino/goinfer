@@ -77,8 +77,8 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 	ws := &ps.ws
 	hq := &ps.hq
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	var qkvOps [3]linalg.W8A8Op
-	var guOps [2]linalg.W8A8Op
+	var qkvOps [3]linalg.BatchOp
+	var guOps [2]linalg.BatchOp
 	gbuf := ps.gbuf
 	defer func() { ps.gbuf = gbuf }()
 
@@ -137,9 +137,9 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 			case opProjQKV:
 				x := reg(o.In)
 				if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
-					qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
-					qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
-					qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
+					qkvOps[0] = linalg.BatchOp{W: &lw.QProj, Dst: q}
+					qkvOps[1] = linalg.BatchOp{W: &lw.KProj, Dst: k}
+					qkvOps[2] = linalg.BatchOp{W: &lw.VProj, Dst: v}
 					matmulW8A8Batch(be, ws, x, K, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
 				} else {
 					hq.prepareWS(be, ws, &lw.QProj, x, K)
@@ -300,7 +300,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 // ffnBatch writes the feed-forward output of K rows of x into out. A MoE layer (gpt-oss's included) runs its experts per row (the
 // router picks per token) or expert-major in chunks, its buffers in the pass scratch; a dense layer runs gate/up at M=K.
 func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *LayerWeights, K int, ws *linalg.Workspace, hq *w4a8Act,
-	gate, up []float32, guOps *[2]linalg.W8A8Op, ps *prefillPassScratch) error {
+	gate, up []float32, guOps *[2]linalg.BatchOp, ps *prefillPassScratch) error {
 	arch, be := m.w.arch, m.be
 	hidden := arch.HiddenDim
 	switch p.Form {
@@ -362,8 +362,8 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 		return errNotImplemented // canBatchN keeps a non-gated family on the per-token walker
 	}
 	if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
-		guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
-		guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
+		guOps[0] = linalg.BatchOp{W: &lw.GateProj, Dst: gate}
+		guOps[1] = linalg.BatchOp{W: &lw.UpProj, Dst: up}
 		matmulW8A8Batch(be, ws, x, K, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
 	} else {
 		hq.prepareWS(be, ws, &lw.GateProj, x, K)
@@ -437,13 +437,13 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 	}
 	var ws linalg.Workspace
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	var qkvOps [3]linalg.W8A8Op
-	var guOps [2]linalg.W8A8Op
+	var qkvOps [3]linalg.BatchOp
+	var guOps [2]linalg.BatchOp
 	var ws4 linalg.Workspace // the fused W4A8 calls, at the threshold matmul() gives int4 weights
 	var hq w4a8Act           // the B-row normed block for the matmul fallbacks, quantized once per projection group
 	ws4.SetThreshold(int4ParThreshold)
-	var qkvOps4 [3]linalg.W4A8Op
-	var guOps4 [2]linalg.W4A8Op
+	var qkvOps4 [3]linalg.BatchOp
+	var guOps4 [2]linalg.BatchOp
 	reg := func(r opReg) []float32 {
 		switch r {
 		case regX:
@@ -471,9 +471,9 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 			case opProjQKV:
 				x := reg(o.In)
 				if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
-					qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
-					qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
-					qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
+					qkvOps[0] = linalg.BatchOp{W: &lw.QProj, Dst: q}
+					qkvOps[1] = linalg.BatchOp{W: &lw.KProj, Dst: k}
+					qkvOps[2] = linalg.BatchOp{W: &lw.VProj, Dst: v}
 					matmulW8A8Batch(be, &ws, x, B, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
 				} else if group, ag, ok := w4a8FusedOps(qkvOps4[:], []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}, [][]float32{q, k, v}); ok {
 					matmulW4A8Batch(be, &ws4, x, B, lw.QProj.Cols(), group, qkvOps4[:], ag) // q‖k‖v in one fork/join
@@ -543,8 +543,8 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 				}
 				x, out := reg(o.In), reg(o.Out)
 				if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
-					guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
-					guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
+					guOps[0] = linalg.BatchOp{W: &lw.GateProj, Dst: gate}
+					guOps[1] = linalg.BatchOp{W: &lw.UpProj, Dst: up}
 					matmulW8A8Batch(be, &ws, x, B, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
 				} else if group, ag, ok := w4a8FusedOps(guOps4[:], []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}, [][]float32{gate, up}); ok {
 					matmulW4A8Batch(be, &ws4, x, B, lw.GateProj.Cols(), group, guOps4[:], ag) // gate‖up in one fork/join

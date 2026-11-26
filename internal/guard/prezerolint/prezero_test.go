@@ -36,7 +36,7 @@ const lookAhead = 6
 func writerNames(t *testing.T, aikitDir string) map[string]string {
 	t.Helper()
 	names := map[string]string{}
-	for _, sub := range []string{"linalg", "embed", "encoder"} {
+	for _, sub := range []string{"linalg", "linalg/attn", "linalg/elem", "linalg/bitvec", "embed", "encoder"} {
 		paths, _ := filepath.Glob(filepath.Join(aikitDir, sub, "*.go"))
 		for _, p := range paths {
 			if strings.HasSuffix(p, "_test.go") {
@@ -208,13 +208,15 @@ func c(x, dst, other []float32) {
 func TestPreZero_noDeadZeroingBeforeOverwriteKernels(t *testing.T) {
 	writers := writerNames(t, aikitDir(t))
 	// If the pinned aikit predates the contract docs (v1.56.1), the set is empty or tiny and the check would pass vacuously.
-	for _, must := range []string{"MatmulBT", "MatmulBTW4A8Into", "SoftmaxRowInto", "ExpF32Into", "QuantizeActivationsInto", "DequantizeRowInt4"} {
+	for _, must := range []string{"MatmulBT", "MatmulBTW4A8F16Into", "SoftmaxRowContractInto", "ExpContractInto", "QuantizeActivationsGroupedInto", "DequantizeRowInt4"} {
 		if writers[must] == "" {
 			t.Fatalf("pinned aikit has no `Output contract:` line on %s (%d writers found): it predates v1.56.1, so this check would pass vacuously", must, len(writers))
 		}
 	}
-	if len(writers) < 60 {
-		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 60", len(writers))
+	// A floor against a scan that reads nothing; the sentinels above already prove the contracts are there. The
+	// linalg surface rework (aikit LS2, LS6) unexported several writers, so the exported count fell from 60-odd to 47 (v1.80.0).
+	if len(writers) < 40 {
+		t.Fatalf("only %d writers with an overwrite/zeroes contract found in the pinned aikit; expected at least 40", len(writers))
 	}
 	root, err := filepath.Abs("../../..")
 	if err != nil {

@@ -36,13 +36,15 @@ import (
 // defeats the census: a record names a machine, a date, how it ran, both commits, and the gate that ran.
 //
 // WHAT IS SCANNED. goinfer's whole tree (all five modules, the CUDA and Metal device queries in cuda/internal/gpudev and
-// metal/internal/gpudev included) and aikit's root module at the version go.mod pins, where the CPU feature predicates
-// live in linalg. A pinned module that cannot be found FAILS the test rather than skipping it: a census that silently left
-// aikit out would cover nothing, the citation lint's rule for the same situation. go/scanner tokenizes each file, so a
+// metal/internal/gpudev included) and aikit's root module: the checkout a go.work in effect uses, or else the version
+// go.mod pins (CI's case). aikit's CPU feature predicates live in internal/cpufeat, and embed keeps its own hasAVX2. A
+// pinned module that cannot be found FAILS the test rather than skipping it: a census that silently left aikit out would
+// cover nothing, the citation lint's rule for the same situation. go/scanner tokenizes each file, so a
 // comment never counts and a string literal (an objc selector, a sysctl name, a /proc path) does.
 //
 // THE PREDICATES ARE DERIVED, NOT LISTED, so a new one enters the census without anyone remembering to add it here:
-//   - cpu:<name>   a package-level `var has<X> = ...` (aikit's dispatch flags: hasAVX2, hasDotProd, hasF16C, ...)
+//   - cpu:<name>   a package-level `var has<X> = ...` or `var Has<X> = ...` (aikit's dispatch flags: cpufeat's HasAVX2,
+//     HasDotProd, HasF16C, ..., and embed's own hasAVX2)
 //   - cuda:<name>  any DeviceAttribute<X> identifier (a CUDA device-attribute query)
 //   - metal:<sel>  an objc selector registered with RegisterName whose name reads as a device capability or limit
 //     (max*, supports*, recommended*, has*, threadExecutionWidth, currentAllocatedSize, registryID)
@@ -57,7 +59,7 @@ import (
 const censusPath = "../../../docs/hardware-coverage.json"
 
 var (
-	cpuFlag      = regexp.MustCompile(`^has[A-Z][A-Za-z0-9]*$`)
+	cpuFlag      = regexp.MustCompile(`^[Hh]as[A-Z][A-Za-z0-9]*$`)
 	cudaAttr     = regexp.MustCompile(`^DeviceAttribute[A-Z][A-Za-z0-9]*$`)
 	metalDevSel  = regexp.MustCompile(`^(max[A-Z][A-Za-z0-9]*|supports[A-Z][A-Za-z0-9]*:?|recommended[A-Z][A-Za-z0-9]*|has[A-Z][A-Za-z0-9]*|threadExecutionWidth|currentAllocatedSize|registryID)$`)
 	memProbeStr  = regexp.MustCompile(`^(hw\.memsize|hw\.physmem|hw\.usermem|vm\.swapusage|/proc/meminfo|/sys/fs/cgroup/.*memory.*)$`)
@@ -237,7 +239,7 @@ func moduleDir(t *testing.T, root, mod, ver string) string {
 	return j.Dir
 }
 
-// discover scans goinfer and the pinned aikit modules.
+// discover scans goinfer and aikit: the go.work checkout when one is in effect, else every version go.mod pins.
 func discover(t *testing.T) map[string][]string {
 	t.Helper()
 	root, err := filepath.Abs("../../..")
@@ -246,10 +248,36 @@ func discover(t *testing.T) map[string][]string {
 	}
 	found := map[string][]string{}
 	scanTree(t, root, "goinfer", found)
+	if dir := workspaceModuleDir(t, root, "github.com/townsendmerino/aikit"); dir != "" {
+		scanTree(t, dir, "aikit", found)
+		return found
+	}
 	for _, v := range pinned(t, root, "github.com/townsendmerino/aikit", "go.mod") {
 		scanTree(t, moduleDir(t, root, "github.com/townsendmerino/aikit", v), "aikit", found)
 	}
 	return found
+}
+
+// workspaceModuleDir is the directory of mod when a go.work in effect at root uses a checkout of it (the build then
+// compiles that tree, not go.mod's pin), or "" when none does.
+func workspaceModuleDir(t *testing.T, root, mod string) string {
+	t.Helper()
+	cmd := exec.Command("go", "env", "GOWORK")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go env GOWORK: %v", err)
+	}
+	if w := strings.TrimSpace(string(out)); w == "" || w == "off" {
+		return ""
+	}
+	cmd = exec.Command("go", "list", "-m", "-f", "{{if .Main}}{{.Dir}}{{end}}", mod)
+	cmd.Dir = root
+	out, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("go list -m %s: %v", mod, err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // census is docs/hardware-coverage.json.
@@ -371,6 +399,7 @@ func TestScanSource(t *testing.T) {
 	src := []byte(`package x
 // var hasInComment = detect()   (a comment: not a predicate)
 var hasAVX9 = detectAVX9()
+var HasAVX10 = detectAVX10() // an exported flag, as internal/cpufeat declares them
 var (
 	hasBlockFlag = detect()
 	other        = 1
@@ -390,7 +419,7 @@ func f() {
 	got := scanSource(src, "goinfer/x.go")
 	slices.Sort(got)
 	want := []string{
-		"cpu:hasAVX9", "cpu:hasBlockFlag", "cuda:DeviceAttributeWarpSize",
+		"cpu:HasAVX10", "cpu:hasAVX9", "cpu:hasBlockFlag", "cuda:DeviceAttributeWarpSize",
 		"mem:/proc/meminfo@goinfer/x.go", "mem:MemInfo@goinfer/x.go", "mem:hw.memsize@goinfer/x.go", "mem:probe:tpu@goinfer/x.go",
 		"metal:maxTotalThreadsPerThreadgroup",
 	}

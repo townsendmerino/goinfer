@@ -101,13 +101,14 @@ func containedOffset(raw []byte, base, end uintptr) (off int64, n int, ok bool) 
 func (f *expertField) wrap(dst []byte) (linalg.WeightMat, error) {
 	switch f.kind {
 	case fieldInt4Row4Only:
-		wm, ok := linalg.WrapInt4Row4OnlyF16(dst, f.scales16, f.rows, f.cols, f.group)
+		wm, ok := linalg.WrapInt4(dst, f.scales16, f.rows, f.cols, f.group, linalg.LayoutRow4)
 		if !ok {
 			return linalg.WeightMat{}, fmt.Errorf("WrapInt4Row4Only rejected rows=%d cols=%d group=%d", f.rows, f.cols, f.group)
 		}
 		return wm, nil
 	case fieldInt4Canonical:
-		return linalg.WrapInt4F16(dst, f.scales16, f.rows, f.cols, f.group), nil
+		wm4, _ := linalg.WrapInt4(dst, f.scales16, f.rows, f.cols, f.group, linalg.LayoutCanonical)
+		return wm4, nil
 	case fieldInt8:
 		q8 := unsafe.Slice((*int8)(unsafe.Pointer(&dst[0])), len(dst))
 		return linalg.WrapInt8(q8, f.scales, f.rows, f.cols, f.w8a8), nil

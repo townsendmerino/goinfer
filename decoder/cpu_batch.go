@@ -128,17 +128,17 @@ func cpuBatchCacheEligible(c *KVCache) error {
 }
 
 // cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as one batched W4A8 call over
-// the B rows instead of one matmul per projection. The kernel (linalg.MatmulBTW4A8Batch) is numerically identical to
+// the B rows instead of one matmul per projection. The kernel (linalg.MatmulBTBatchInto) is numerically identical to
 // calling MatmulBTW4A8Into once per op, so this changes only how many fork/joins a step pays. A package variable, not
 // an environment read: the measurement flips it in-process to
 // interleave its arms.
 var cpuBatchFusedW4A8 = true
 
-// w4a8FusedOps fills ops with one linalg.W4A8Op per weight for a fused batched W4A8 call and reports whether the group
+// w4a8FusedOps fills ops with one linalg.BatchOp per weight for a fused batched W4A8 call and reports whether the group
 // qualifies: fusion on, every weight int4 with its canonical bytes present (wmW4A8Op passes no split-half layout), one
 // weight-group size, one K, and one activation-quant group. It returns that group size and activation-quant group.
 // Anything else keeps the per-projection matmul calls.
-func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32) (group, actGroup int, ok bool) {
+func w4a8FusedOps(ops []linalg.BatchOp, ws []*linalg.WeightMat, dsts [][]float32) (group, actGroup int, ok bool) {
 	if !cpuBatchFusedW4A8 {
 		return 0, 0, false
 	}

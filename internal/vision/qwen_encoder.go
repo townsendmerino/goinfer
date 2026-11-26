@@ -12,6 +12,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/linalg/attn"
+	"github.com/townsendmerino/aikit/linalg/elem"
 )
 
 // Qwen2.5-VL vision tower — aikit's second ViT family (after SigLIP / encoder.go),
@@ -488,7 +490,7 @@ func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, scale fl
 
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head, start, n int) error {
 		off := head * hd
-		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, k[start*hidden:], v[start*hidden:], head, hd, hidden, n)
+		attn.GatherVBlockMajor(ws.kh, ws.vBlk, k[start*hidden:], v[start*hidden:], head, hd, hidden, n)
 		for i := range n {
 			gi := start + i
 			copy(ws.qh[i*hd:(i+1)*hd], q[gi*hidden+off:gi*hidden+off+hd])
@@ -496,7 +498,7 @@ func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, scale fl
 		for i := range n {
 			ws.hi[i] = n - 1 // full bidirectional attention within this segment
 		}
-		if !linalg.AttendTileFusedContractExp(mm, ws.qh[:n*hd], ws.kh[:n*hd], ws.vBlk[:n*hd], ws.ch[:n*hd], ws.fused, n, hd, n, scale, s.loFull[:n], ws.hi[:n]) {
+		if !attn.AttendTileFusedContractExp(mm, ws.qh[:n*hd], ws.kh[:n*hd], ws.vBlk[:n*hd], ws.ch[:n*hd], ws.fused, n, hd, n, scale, s.loFull[:n], ws.hi[:n]) {
 			return fmt.Errorf("vision: AttendTileFused declined for n=%d hd=%d — scratch sizing invariant violated", n, hd)
 		}
 		for i := range n {
@@ -614,7 +616,7 @@ func (e *QwenVisionEncoder) mlpInto(down, x []float32, b *qwenBlock, seq int, s 
 	n := len(gate)
 	parallelChunks(n, func(lo, hi int) {
 		g := gate[lo:hi]
-		linalg.SiLUContractInto(g, g)
+		elem.SiLUContractInto(g, g)
 		u := up[lo:hi]
 		k := len(g)
 		if k > 0 {
@@ -831,6 +833,6 @@ func rmsNormRows(out, x, w []float32, start, end, dim int) {
 // (distinct from SigLIP's gelu-tanh).
 func geluErf(x []float32) {
 	parallelChunks(len(x), func(lo, hi int) {
-		linalg.GELUContractInto(x[lo:hi], x[lo:hi])
+		elem.GELUContractInto(x[lo:hi], x[lo:hi])
 	})
 }

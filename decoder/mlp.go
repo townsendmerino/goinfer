@@ -504,8 +504,8 @@ func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, sc
 	if fusedAct {
 		// gate/up + activation already done in one fork/join
 	} else if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
-		scr.gateUpOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
-		scr.gateUpOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
+		scr.gateUpOps[0] = linalg.BatchOp{W: &lw.GateProj, Dst: gate}
+		scr.gateUpOps[1] = linalg.BatchOp{W: &lw.UpProj, Dst: up}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), scr.gateUpOps[:], lw.GateProj.ActQuantGroup()) // gate/up in one dispatch (GPU: one submit)
 	} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {
 		// Fused gate/up W4A8, mirroring the W8A8 batch above.

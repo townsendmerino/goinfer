@@ -1,9 +1,8 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/aikit/linalg/attn"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // BenchmarkAttnDistinctBytes asks whether the real GQA layout (nKV distinct KV heads, each read by nH/nKV query
@@ -68,8 +67,8 @@ func benchAttnDistinctBytesArm(b *testing.B, nH, nKV, hd, group, nKeys int, gqa 
 			}
 			qh := q[head*hd : (head+1)*hd]
 			ch := ctx[head*hd : (head+1)*hd]
-			linalg.MatmulQKAcc64(qh, keys, scores, 1, hd, nKeys, off, rowWidth)
-			linalg.MatmulAVAcc64(scores, vals, ch, acc, 1, nKeys, hd, off, rowWidth)
+			attn.MatmulQKAcc64(qh, keys, scores, 1, hd, nKeys, off, rowWidth)
+			attn.MatmulAVAcc64(scores, vals, ch, acc, 1, nKeys, hd, off, rowWidth)
 		}
 	}
 	b.StopTimer()

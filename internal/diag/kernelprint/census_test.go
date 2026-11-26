@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -28,8 +29,9 @@ const (
 	censusPath  = "../../../docs/hardware-coverage.json"
 )
 
-// censusPackages are the aikit packages whose kernels the suite runs.
-var censusPackages = []string{"linalg", "embed"}
+// censusPackages are the aikit packages whose kernels the suite runs, and internal/cpufeat, whose tier switches
+// (DisableTopTier) name the predicates too.
+var censusPackages = []string{"linalg", "linalg/attn", "linalg/elem", "linalg/bitvec", "internal/cpufeat", "embed"}
 
 // uncalled lists aikit functions holding census sites that goinfer's production code never reaches, keyed
 // package.Function, with the exported entry points they are reached through. The test checks that goinfer's non-test
@@ -38,72 +40,68 @@ var uncalled = map[string]struct {
 	via    []string
 	reason string
 }{
-	"linalg.dotPartials16":                 {[]string{"MatmulBTGGUFQ4K", "MatmulBTGGUFQ6K"}, "the k-quant integer dot behind MatmulBTGGUFQ4K/Q6K; goinfer's Q4_K weights run WeightMat(q4k).MatmulBTInto"},
-	"linalg.WrapInt4Row4F16":               {[]string{"WrapInt4Row4F16"}, "goinfer wraps row4 weights with WrapInt4Row4OnlyF16 or repacks with RepackInt4Row4"},
-	"linalg.WrapInt4Row4Only":              {[]string{"WrapInt4Row4Only"}, "the f32-scale form; goinfer's int4 scales are binary16 (WrapInt4Row4OnlyF16)"},
-	"linalg.RepackInt4Row4InPlace":         {[]string{"RepackInt4Row4InPlace"}, "the f32-scale form; goinfer calls RepackInt4Row4InPlaceF16"},
-	"linalg.dotNEON8x4":                    {[]string{"Dot8x4", "MatmulBTQ8Fused", "MatmulBTQ8FusedInto"}, "backs Dot8x4, which off arm64 only the fused Q8 matmul calls (the f32 packed path is arm64-gated); goinfer calls neither"},
-	"linalg.dotI8x8":                       {[]string{"DotI8x8"}, "goinfer's int8 dots go through DotI8 and the W8A8 matmuls"},
-	"linalg.expContractImpl":               {[]string{"ExpContractInto"}, "goinfer's only contract-exp call is SoftmaxRowContractInto"},
-	"linalg.measureFMAPeak":                {[]string{"MeasuredFMAPeakGFLOPS"}, "a hardware probe, not a kernel goinfer runs"},
-	"linalg.hammingRows":                   {[]string{"HammingRows"}, "binary-embedding search; goinfer runs no Hamming kernel"},
-	"linalg.RepackInt4SplitHalfInPlaceF16": {[]string{"RepackInt4SplitHalfInPlace", "RepackInt4SplitHalfInPlaceF16"}, "goinfer builds split-half only through (*WeightMat).RepackInt4SplitHalf"},
-	"linalg.RepackInt4SplitHalfInPlace":    {[]string{"RepackInt4SplitHalfInPlace", "RepackInt4SplitHalfInPlaceF16"}, "as RepackInt4SplitHalfInPlaceF16"},
-	"linalg.WrapInt4SplitHalfOnlyF16":      {[]string{"WrapInt4SplitHalfOnly", "WrapInt4SplitHalfOnlyF16"}, "as RepackInt4SplitHalfInPlaceF16"},
-	"linalg.WrapInt4SplitHalfOnly":         {[]string{"WrapInt4SplitHalfOnly", "WrapInt4SplitHalfOnlyF16"}, "as RepackInt4SplitHalfInPlaceF16"},
+	"linalg.dotPartials16":              {[]string{"MatmulBTGGUFQ4K", "MatmulBTGGUFQ6K"}, "the k-quant integer dot behind MatmulBTGGUFQ4K/Q6K; goinfer's Q4_K weights run WeightMat(q4k).MatmulBTInto"},
+	"linalg.dotNEON8x4":                 {[]string{"Dot8x4", "MatmulBTQ8Fused", "MatmulBTQ8FusedInto"}, "backs Dot8x4, which off arm64 only the fused Q8 matmul calls (the f32 packed path is arm64-gated); goinfer calls neither"},
+	"linalg.dotI8x8":                    {[]string{"DotI8x8"}, "goinfer's int8 dots go through DotI8 and the W8A8 matmuls"},
+	"linalg/elem.expContractImpl":       {[]string{"ExpContractInto"}, "goinfer's only contract-exp call is SoftmaxRowContractInto"},
+	"linalg.measureFMAPeak":             {[]string{"MeasuredFMAPeakGFLOPS"}, "a hardware probe, not a kernel goinfer runs"},
+	"linalg/bitvec.hammingRows":         {[]string{"HammingRows"}, "binary-embedding search; goinfer runs no Hamming kernel"},
+	"linalg.repackInt4SplitHalfInPlace": {[]string{"LayoutSplitHalf"}, "RepackInt4InPlace's split-half form: goinfer asks WrapInt4 and RepackInt4InPlace for the canonical and row4 layouts only, and builds split-half through (*WeightMat).RepackInt4SplitHalf"},
+	"linalg.wrapInt4SplitHalfOnly":      {[]string{"LayoutSplitHalf"}, "WrapInt4's split-half form, as repackInt4SplitHalfInPlace"},
 }
 
 const (
 	repair        = "SelfCheck's repair: it runs only when a kernel disagrees with its reference at goinfer's startup self-test"
 	noSplitHalf   = "reached only through a split-half layout, which RepackInt4SplitHalf builds only where splitHalfUsable (AVX2 without VNNI+VL); with AVX2 off nothing has one"
+	row4Refusal   = "the DotProd refusal of the four row4 W4A8 matmuls aikit v1.80.0 unexported (matmulBTW4A8Row4Into and its Tile, Prefetch and Deshared forms); only aikit's own tests call them, and WeightMat reaches the row4 kernels without them, so goinfer enters it in no configuration"
 	canonicalOnly = "goinfer repacks only canonical int4 weights (decoder's repackW4A8IfEligible), so q4 is never nil there; with the predicate decided the early return is required"
 )
 
 // unreachableSide lists census sites whose required side goinfer cannot reach in the configurations where the site
 // reads as the verdict named, keyed file|function|condition|verdict. Each reason says why.
 var unreachableSide = map[string]string{
-	"linalg/kernels_arm64.go|disableTopTier|hasDotProd|true here":                                                                    repair,
-	"linalg/kernels_arm64.go|disableTopTier|hasDotProd|false here":                                                                   repair,
-	"linalg/kernels_amd64.go|disableTopTier|hasAVX2|true here":                                                                       repair,
-	"linalg/kernels_amd64.go|disableTopTier|hasAVX2|false here":                                                                      repair,
-	"linalg/kernels_amd64.go|disableTopTier|hasAVX512VNNI || hasAVX512VNNIVL|true here":                                              repair,
-	"linalg/kernels_amd64.go|disableTopTier|hasAVX512VNNI || hasAVX512VNNIVL|false here":                                             repair,
-	"linalg/weightmat_row4_arm64.go|(*WeightMat).RepackInt4Row4|w.q4 == nil || !hasDotProd|undecided here":                           canonicalOnly,
-	"linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !hasAVX2 || hasAVX512VNNIVL|undecided here": canonicalOnly,
-	"linalg/attn_acc64_amd64.go|qkAcc64Keys16|!hasAVX2 || K == 0 || K%4 != 0|undecided here":                                         "a head dim is never 0 and always a multiple of 4, so with AVX2 on the 16-key kernel always takes the call",
-	"linalg/attn_acc64_amd64.go|qkAcc64Keys16|!hasAVX2 || K == 0 || K%4 != 0|true here":                                              "its only caller, qkAcc64KeysSplit, returns before calling it when AVX2 is off, so under aikit_noavx2 the 16-key kernel is never entered",
-	"linalg/attn_acc64_amd64.go|qkAcc64Keys16F16|!hasAVX2 || !hasF16C || K == 0 || K%4 != 0 || N < 16|true here":                     "its only caller, qkAcc64KeysSplitF16, returns before calling it when AVX2 is off, as qkAcc64Keys16",
-	"linalg/attn_acc64_amd64.go|avAcc64BlocksF16|!hasAVX2 || !hasF16C || nKeys == 0|undecided here":                                  "as avAcc64Blocks: an attention row always has at least one key",
-	"linalg/attn_acc64_amd64.go|avAcc64Blocks|!hasAVX2 || nKeys == 0|undecided here":                                                 "an attention row always has at least one key (a query attends to itself), so nKeys is never 0",
-	"linalg/exp_contract_amd64.go|softmaxContractWithMaxImpl|!hasAVX2 || len(src) == 0|undecided here":                               "internal/runtime/whisper's softmax rows are attention rows over at least one key, never empty",
-	"linalg/q4k_dot_amd64.go|dotQ4K|hasQ4KAVX2 && K >= qkK|undecided here":                                                           "a Q4_K row is whole 256-element super-blocks (WrapQ4K refuses other cols), so K >= qkK always",
-	"linalg/q56k_dot_amd64.go|dotQ5K|hasQ4KAVX2 && K >= qkK|undecided here":                                                          "a Q5_K row is whole 256-element super-blocks (WrapQ5K refuses other cols), so K >= qkK always",
-	"linalg/q56k_dot_amd64.go|dotQ6K|hasQ4KAVX2 && K >= qkK|undecided here":                                                          "a Q6_K row is whole 256-element super-blocks (WrapQ6K refuses other cols), so K >= qkK always",
-	"linalg/dot_i8_scaled_amd64.go|w8a8GroupedSpan|hasAVX2 && nG > 0|undecided here":                                                 "its callers (matmulW8A8Grouped and the grouped batch) take it only for K a positive multiple of 32, so nG >= 1",
-	"linalg/quant.go|w4a8BatchOp|op.SplitHalf != nil && splitHalfUsable() && M == 1 && group == 32 && K%group == 0|undecided here":   "goinfer's batch ops (decoder's wmW4A8Op) never set SplitHalf",
-	"linalg/weightmat_splithalf_amd64.go|w4a8GroupedFastRowsQ|l.sh == nil || !splitHalfUsable()|true here":                           noSplitHalf,
-	"linalg/matmul_w4a8_splithalf_tile_amd64.go|w4a8SplitHalfTileRows|!hasAVX2 || hasAVX512VNNIVL || M < 4 || K < 32|true here":      noSplitHalf,
-	"linalg/weightmat_splithalf_amd64.go|w4a8GroupedFastRowsQ|l.sh == nil || !splitHalfUsable()|undecided here":                      "its one caller (the grouped W4A8 path) calls it only with l.sh or l.r4 set, and amd64 builds no row4 layout, so l.sh is never nil there",
+	"internal/cpufeat/kernels_arm64.go|DisableTopTier|HasDotProd|true here":                                                                          repair,
+	"internal/cpufeat/kernels_arm64.go|DisableTopTier|HasDotProd|false here":                                                                         repair,
+	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX2|true here":                                                                             repair,
+	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX2|false here":                                                                            repair,
+	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX512VNNI || HasAVX512VNNIVL|true here":                                                    repair,
+	"internal/cpufeat/kernels_amd64.go|DisableTopTier|HasAVX512VNNI || HasAVX512VNNIVL|false here":                                                   repair,
+	"linalg/weightmat_row4_arm64.go|requireRow4DotProd|!row4Usable()|false here":                                                                     row4Refusal,
+	"linalg/weightmat_row4_arm64.go|requireRow4DotProd|!row4Usable()|true here":                                                                      row4Refusal,
+	"linalg/weightmat_row4_arm64.go|(*WeightMat).RepackInt4Row4|w.q4 == nil || !cpufeat.HasDotProd|undecided here":                                   canonicalOnly,
+	"linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !cpufeat.HasAVX2 || cpufeat.HasAVX512VNNIVL|undecided here": canonicalOnly,
+	"linalg/attn/attn_acc64_amd64.go|qkAcc64Keys16|!cpufeat.HasAVX2 || K == 0 || K%4 != 0|undecided here":                                            "a head dim is never 0 and always a multiple of 4, so with AVX2 on the 16-key kernel always takes the call",
+	"linalg/attn/attn_acc64_amd64.go|qkAcc64Keys16|!cpufeat.HasAVX2 || K == 0 || K%4 != 0|true here":                                                 "its only caller, qkAcc64KeysSplit, returns before calling it when AVX2 is off, so under aikit_noavx2 the 16-key kernel is never entered",
+	"linalg/attn/attn_acc64_amd64.go|qkAcc64Keys16F16|!cpufeat.HasAVX2 || !cpufeat.HasF16C || K == 0 || K%4 != 0 || N < 16|true here":                "its only caller, qkAcc64KeysSplitF16, returns before calling it when AVX2 is off, as qkAcc64Keys16",
+	"linalg/attn/attn_acc64_amd64.go|avAcc64BlocksF16|!cpufeat.HasAVX2 || !cpufeat.HasF16C || nKeys == 0|undecided here":                             "as avAcc64Blocks: an attention row always has at least one key",
+	"linalg/attn/attn_acc64_amd64.go|avAcc64Blocks|!cpufeat.HasAVX2 || nKeys == 0|undecided here":                                                    "an attention row always has at least one key (a query attends to itself), so nKeys is never 0",
+	"linalg/elem/exp_contract_amd64.go|softmaxContractWithMaxImpl|!cpufeat.HasAVX2 || len(src) == 0|undecided here":                                  "internal/runtime/whisper's softmax rows are attention rows over at least one key, never empty",
+	"linalg/q4k_dot_amd64.go|dotQ4K|cpufeat.HasQ4KAVX2 && K >= qkK|undecided here":                                                                   "a Q4_K row is whole 256-element super-blocks (WrapQ4K refuses other cols), so K >= qkK always",
+	"linalg/q56k_dot_amd64.go|dotQ5K|cpufeat.HasQ4KAVX2 && K >= qkK|undecided here":                                                                  "a Q5_K row is whole 256-element super-blocks (WrapQ5K refuses other cols), so K >= qkK always",
+	"linalg/q56k_dot_amd64.go|dotQ6K|cpufeat.HasQ4KAVX2 && K >= qkK|undecided here":                                                                  "a Q6_K row is whole 256-element super-blocks (WrapQ6K refuses other cols), so K >= qkK always",
+	"linalg/dot_i8_scaled_amd64.go|w8a8GroupedSpan|cpufeat.HasAVX2 && nG > 0|undecided here":                                                         "its callers (matmulW8A8Grouped and the grouped batch) take it only for K a positive multiple of 32, so nG >= 1",
+	"linalg/quant.go|w4a8BatchOp|op.SplitHalf != nil && splitHalfUsable() && M == 1 && group == 32 && K%group == 0|undecided here":                   "goinfer's batch ops (decoder's wmW4A8Op) never set SplitHalf",
+	"linalg/weightmat_splithalf_amd64.go|w4a8GroupedFastRowsQ|l.sh == nil || !splitHalfUsable()|true here":                                           noSplitHalf,
+	"linalg/matmul_w4a8_splithalf_tile_amd64.go|w4a8SplitHalfTileRows|!cpufeat.HasAVX2 || cpufeat.HasAVX512VNNIVL || M < 4 || K < 32|true here":      noSplitHalf,
+	"linalg/weightmat_splithalf_amd64.go|w4a8GroupedFastRowsQ|l.sh == nil || !splitHalfUsable()|undecided here":                                      "its one caller (the grouped W4A8 path) calls it only with l.sh or l.r4 set, and amd64 builds no row4 layout, so l.sh is never nil there",
 }
 
 // predicateValue maps each census predicate to its value in package pkg under this configuration. A census predicate
-// missing here fails the test: a new dispatch flag needs a line saying which tier it follows. embed keeps its own
-// hasAVX2 (x/sys/cpu), which no aikit_* tag forces, so it follows the detected CPU, not the active tiers.
+// missing here fails the test: a new dispatch flag needs a line saying which tier it follows. The kernel packages read
+// internal/cpufeat's Has* flags (a condition names them as cpufeat.HasX; the site scan matches the identifier). embed
+// keeps its own hasAVX2 (x/sys/cpu), which no aikit_* tag forces, so it follows the detected CPU, not the active tiers.
 func predicateValue(pkg string, k linalg.Kernels) map[string]bool {
 	on := func(tier string) bool { return slices.Contains(k.Active, tier) }
-	v := map[string]bool{
-		"hasDotProd":      on("dotprod"),
-		"hasAVX2":         on("avx2"),
-		"hasF16C":         on("f16c"),
-		"hasAVX512VNNI":   on("avx512vnni"),
-		"hasAVX512VNNIVL": on("avx512vnni+vl"),
-		"hasPOPCNT":       on("popcnt"),
-		"hasQ4KAVX2":      on("avx2") && on("f16c"),
+	return map[string]bool{
+		"HasDotProd":      on("dotprod"),
+		"HasAVX2":         on("avx2"),
+		"HasF16C":         on("f16c"),
+		"HasAVX512VNNI":   on("avx512vnni"),
+		"HasAVX512VNNIVL": on("avx512vnni+vl"),
+		"HasPOPCNT":       on("popcnt"),
+		"HasQ4KAVX2":      on("avx2") && on("f16c"),
+		"hasAVX2":         pkg == "embed" && slices.Contains(k.Detected, "avx2"),
 	}
-	if pkg == "embed" {
-		v["hasAVX2"] = slices.Contains(k.Detected, "avx2")
-	}
-	return v
 }
 
 // validated are the configurations K3's exclusions were written against (docs/measurements/vk1-2026-10.md). Elsewhere
@@ -199,7 +197,9 @@ func TestCompute_reachesCensus(t *testing.T) {
 
 // checkUncalled fails when goinfer's production code names an entry point uncalled says it does not.
 func checkUncalled(t *testing.T) {
-	ref := regexp.MustCompile(`\b(linalg|embed)\.([A-Z][A-Za-z0-9_]*)\b`)
+	// A moved package may be imported under aikit<name> (the surface rewrite's qualifier where goinfer already has
+	// an identifier of that name).
+	ref := regexp.MustCompile(`\b(?:aikit)?(linalg|attn|elem|bitvec|embed)\.([A-Z][A-Za-z0-9_]*)\b`)
 	named := map[string]bool{}
 	err := filepath.WalkDir("../../..", func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -232,6 +232,7 @@ func checkUncalled(t *testing.T) {
 	}
 	for fn, u := range uncalled {
 		pkg, _, _ := strings.Cut(fn, ".")
+		pkg = path.Base(pkg)
 		for _, v := range u.via {
 			if named[pkg+"."+v] {
 				t.Errorf("uncalled says goinfer never reaches %s, but its production code names %s.%s", fn, pkg, v)
@@ -566,6 +567,11 @@ func eval(e ast.Expr, vals map[string]bool, derived map[string]ast.Expr) tri {
 				return triTrue
 			}
 			return triFalse
+		}
+	case *ast.SelectorExpr:
+		// A kernel package names a flag as cpufeat.HasX.
+		if pkg, ok := x.X.(*ast.Ident); ok && pkg.Name == "cpufeat" {
+			return eval(x.Sel, vals, derived)
 		}
 	case *ast.UnaryExpr:
 		if x.Op == token.NOT {

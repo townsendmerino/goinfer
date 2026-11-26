@@ -6,8 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 // TestDecodeRunnerPerLayerRoPE_parity pins the resident runner binding a DIFFERENT RoPE table +
@@ -84,39 +82,39 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 		Lw := &layers[l]
 		xn := refRMSNorm(x, Lw.an, hidden, eps, false)
 		q := make([]float32, qDim)
-		linalg.MatmulBTW8A8(xn, Lw.qBQ, Lw.qS, q, 1, hidden, qDim)
+		aikitMatmulW8A8(xn, Lw.qBQ, Lw.qS, q, 1, hidden, qDim)
 		k := make([]float32, kvDim)
-		linalg.MatmulBTW8A8(xn, Lw.kBQ, Lw.kS, k, 1, hidden, kvDim)
+		aikitMatmulW8A8(xn, Lw.kBQ, Lw.kS, k, 1, hidden, kvDim)
 		v := make([]float32, kvDim)
-		linalg.MatmulBTW8A8(xn, Lw.vBQ, Lw.vS, v, 1, hidden, kvDim)
+		aikitMatmulW8A8(xn, Lw.vBQ, Lw.vS, v, 1, hidden, kvDim)
 		scaledRoPE(q, nH, invFreq[l], ropeScale[l])
 		scaledRoPE(k, nKV, invFreq[l], ropeScale[l])
 		kFull := slices.Concat(Lw.priorK, k)
 		vFull := slices.Concat(Lw.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		ao := make([]float32, hidden)
-		linalg.MatmulBTW8A8(cv, Lw.oBQ, Lw.oS, ao, 1, qDim, hidden)
+		aikitMatmulW8A8(cv, Lw.oBQ, Lw.oS, ao, 1, qDim, hidden)
 		for i := range x {
 			x[i] += ao[i]
 		}
 		xn2 := refRMSNorm(x, Lw.mn, hidden, eps, false)
 		gate := make([]float32, inter)
-		linalg.MatmulBTW8A8(xn2, Lw.gBQ, Lw.gS, gate, 1, hidden, inter)
+		aikitMatmulW8A8(xn2, Lw.gBQ, Lw.gS, gate, 1, hidden, inter)
 		up := make([]float32, inter)
-		linalg.MatmulBTW8A8(xn2, Lw.uBQ, Lw.uS, up, 1, hidden, inter)
+		aikitMatmulW8A8(xn2, Lw.uBQ, Lw.uS, up, 1, hidden, inter)
 		mid := make([]float32, inter)
 		for i := range mid {
 			mid[i] = silu(gate[i]) * up[i]
 		}
 		down := make([]float32, hidden)
-		linalg.MatmulBTW8A8(mid, Lw.dBQ, Lw.dS, down, 1, inter, hidden)
+		aikitMatmulW8A8(mid, Lw.dBQ, Lw.dS, down, 1, inter, hidden)
 		for i := range x {
 			x[i] += down[i]
 		}
 	}
 	xnf := refRMSNorm(x, fnorm, hidden, eps, false)
 	refLogits := make([]float32, vocab)
-	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
+	aikitMatmulW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU resident runner (per-layer rope) ---
 	var own closers
