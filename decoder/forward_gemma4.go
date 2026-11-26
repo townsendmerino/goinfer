@@ -6,6 +6,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // g4traceHidden, when non-nil, receives the residual stream after each layer
@@ -74,7 +75,7 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 	t.hq.prepare(be, &lw.QProj, x, 1)
 	matmulPre(be, &lw.QProj, &t.hq, x, q, 1)
 	normact.RMS(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
-	applyRoPE(q, nH, hd, pos, p.InvFreq, p.Mscale)
+	rope.Apply(q, nH, hd, pos, p.InvFreq, p.Mscale)
 	if p.OwnsKV {
 		k := scratchF32(&t.k, nKV*hd)
 		matmulPre(be, &lw.KProj, &t.hq, x, k, 1)
@@ -85,7 +86,7 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 			matmulPre(be, &lw.VProj, &t.hq, x, v, 1)
 		}
 		normact.RMS(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
-		applyRoPE(k, nKV, hd, pos, p.InvFreq, p.Mscale)
+		rope.Apply(k, nKV, hd, pos, p.InvFreq, p.Mscale)
 		rmsNormNoWeight(v, nKV, hd, p.Eps) // scale-less v_norm, no RoPE
 		cache.Append(l, k, v)
 		if g4traceQKV != nil {
@@ -158,7 +159,7 @@ func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *LayerWei
 // rotaryDim == headDim and the result is headDim/2 entries. For proportional
 // (partial) rotary, rotaryDim < headDim: the first rotaryDim/2 entries are the
 // real frequencies (spaced by 1/headDim, NOT 1/rotaryDim) and the rest are zero,
-// so applyRoPE (which rotates len(invFreq) pairs split at headDim/2) leaves the
+// so rope.Apply (which rotates len(invFreq) pairs split at headDim/2) leaves the
 // trailing dims unrotated — matching HF's "proportional" RoPE.
 func gemma4InvFreq(headDim, rotaryDim int, base float64) []float64 {
 	half := headDim / 2

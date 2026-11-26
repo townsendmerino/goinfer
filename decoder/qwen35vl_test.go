@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -99,7 +100,7 @@ func TestQwen35VL_loaderSetsMRope(t *testing.T) {
 
 func TestQwen35VL_positions(t *testing.T) {
 	_, g := loadQwen35VLTiny(t)
-	got, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, qwen35VLMerge)
+	got, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, qwen35VLMerge)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestQwen35VL_positions(t *testing.T) {
 			}
 		}
 	}
-	if d := mropeDelta(got, len(g.InputIDs)); d != g.RopeDelta {
+	if d := rope.MRoPEDelta(got, len(g.InputIDs)); d != g.RopeDelta {
 		t.Errorf("mropeDelta %d, HF rope_deltas %d", d, g.RopeDelta)
 	}
 }
@@ -119,7 +120,7 @@ func TestQwen35VL_positions(t *testing.T) {
 // logits and the continuation.
 func qwen35VLDecode(t *testing.T, m *Model, g qwen35VLGold, feats []float32) ([]float32, []int) {
 	t.Helper()
-	pos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, qwen35VLMerge)
+	pos, err := rope.MRoPEPositions(g.InputIDs, g.ImageToken, g.GridTHW, qwen35VLMerge)
 	if err != nil {
 		t.Fatal(err)
 	}

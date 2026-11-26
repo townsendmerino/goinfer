@@ -6,6 +6,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3): Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed to a shared
@@ -296,7 +297,7 @@ var mlaForceNaive bool
 // mlaRope rotates the rope-carrying dims of a [heads, ropeDim] vector at absolute
 // position pos. DeepSeek's rope_interleave (V3 default) lays the rotary dims out as
 // adjacent pairs (x0,x1),(x2,x3),…; de-interleaving each head into [evens|odds] and then
-// applying the standard NeoX rotate_half (applyRoPE) yields a layout P(interleaved-RoPE),
+// applying the standard NeoX rotate_half (rope.Apply) yields a layout P(interleaved-RoPE),
 // and since the SAME permutation P hits both query and key, the q·k dot product is
 // identical to HF's interleaved RoPE. rope_interleave=false skips the de-interleave (plain
 // NeoX). The rotary table (invFreq) is sized to ropeDim via Architecture.RotaryDim.
@@ -319,5 +320,5 @@ func mlaRope(vec []float32, heads, ropeDim, pos int, invFreq []float64, scale fl
 			copy(src, tmp)
 		}
 	}
-	applyRoPE(vec, heads, ropeDim, pos, invFreq, scale)
+	rope.Apply(vec, heads, ropeDim, pos, invFreq, scale)
 }

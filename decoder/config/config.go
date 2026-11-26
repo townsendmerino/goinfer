@@ -223,7 +223,7 @@ type Config struct {
 	FullAttentionInterval int `json:"full_attention_interval"`
 
 	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / ...); plain Llama-3.0 and Qwen3 leave it null. Kept raw
-	// and decoded by parseRopeScaling. omitempty: a nil RawMessage marshals to the literal `null`, which on a .giw round-trip
+	// and decoded by rope.ParseScaling. omitempty: a nil RawMessage marshals to the literal `null`, which on a .giw round-trip
 	// (json.Marshal(Cfg), then reload) would make a len()>0 "present" check fire on an absent config.
 	RopeScaling json.RawMessage `json:"rope_scaling,omitempty"`
 
@@ -238,7 +238,7 @@ type Config struct {
 
 	// RopeParameters is the newer per-attention-type RoPE config (Mellum):
 	// {"full_attention": {...}, "sliding_attention": {...}}, each a rope_theta +
-	// a rope_scaling-style object. Decoded by parseRopeParameters. omitempty: see
+	// a rope_scaling-style object. Decoded by rope.ParseParameters. omitempty: see
 	// RopeScaling (nil must not round-trip through .giw as `null`).
 	RopeParameters json.RawMessage `json:"rope_parameters,omitempty"`
 
