@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // g4traceHidden, when non-nil, receives the residual stream after each layer
@@ -72,7 +73,7 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 	q := scratchF32(&t.q, nH*hd)
 	t.hq.prepare(be, &lw.QProj, x, 1)
 	matmulPre(be, &lw.QProj, &t.hq, x, q, 1)
-	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
+	normact.RMS(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
 	applyRoPE(q, nH, hd, pos, p.InvFreq, p.Mscale)
 	if p.OwnsKV {
 		k := scratchF32(&t.k, nKV*hd)
@@ -83,7 +84,7 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 		} else {
 			matmulPre(be, &lw.VProj, &t.hq, x, v, 1)
 		}
-		rmsNorm(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
+		normact.RMS(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
 		applyRoPE(k, nKV, hd, pos, p.InvFreq, p.Mscale)
 		rmsNormNoWeight(v, nKV, hd, p.Eps) // scale-less v_norm, no RoPE
 		cache.Append(l, k, v)
@@ -145,11 +146,11 @@ func (m *Model) gemma4PLEBranch(h []float32, l int, t *gemma4Token, lw *LayerWei
 	matmul(m.be, &lw.PLEGate, h, px, 1)
 	parallelElementwise(len(px), func(lo, hi int) {
 		for i := lo; i < hi; i++ {
-			px[i] = geluTanh(px[i]) * pl[i]
+			px[i] = normact.GELUTanh(px[i]) * pl[i]
 		}
 	})
 	matmul(m.be, &lw.PLEProj, px, sub, 1)
-	rmsNormInto(sub, sub, lw.PostPLENorm, 1, len(h), ne.Eps, ne.AddOne)
+	normact.RMSInto(sub, sub, lw.PostPLENorm, 1, len(h), ne.Eps, ne.AddOne)
 	addResidual(h, sub)
 }
 

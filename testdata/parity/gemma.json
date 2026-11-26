@@ -10,7 +10,7 @@
   "programs": [
     "testdata/gemma1-tiny"
   ],
-  "deps_hash": "sha256:33ce4894b66dde64321fcb533d6b2c7695e513c2f1403c12c750dcc492f8ee4c",
+  "deps_hash": "sha256:0dbfe9c164c8c391bd6d026d95a6c9cca002197fade15a8244d2c3efb71b2ca0",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
