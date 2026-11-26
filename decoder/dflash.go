@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -481,11 +482,11 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 
 	theta := c.RopeTheta
 	if len(c.RopeParameters) > 0 {
-		spec, _, perr := parseRopeFlat(c.RopeParameters)
+		spec, _, perr := rope.ParseFlat(c.RopeParameters)
 		if perr != nil {
 			return nil, fmt.Errorf("dflash: rope_parameters: %w", perr)
 		}
-		theta = spec.base
+		theta = spec.Base
 	}
 	if theta <= 0 {
 		return nil, fmt.Errorf("dflash: rope_theta must be >0, got %v", theta)
@@ -507,7 +508,7 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	d := &DFlashDrafter{
 		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
 		inter: c.IntermediateSize, normEps: c.RMSNormEps,
-		invFreq:   computeInvFreq(theta, hd, nil),
+		invFreq:   rope.ComputeInvFreq(theta, hd, nil),
 		layers:    make([]dflashLayer, c.NumHiddenLayers),
 		blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
@@ -725,7 +726,7 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 			matmul(be, &l.k, row, k, 1)
 			matmul(be, &l.v, row, v, 1)
 			rmsNorm(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
-			applyRoPE(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
+			rope.Apply(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
 			ctx.k[li] = append(ctx.k[li], k)
 			ctx.v[li] = append(ctx.v[li], v)
 		}
@@ -858,7 +859,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 		matmul(be, &l.k, xb[j-nCtx], k, 1)
 		matmul(be, &l.v, xb[j-nCtx], v, 1)
 		rmsNorm(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
-		applyRoPE(k, d.nKV, hd, j, d.invFreq, 1)         // V is NOT roped and NOT normed
+		rope.Apply(k, d.nKV, hd, j, d.invFreq, 1)        // V is NOT roped and NOT normed
 		keys[j], vals[j] = k, v
 	}
 
@@ -870,7 +871,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 		q := make([]float32, qDim)
 		matmul(be, &l.q, xb[i], q, 1)
 		rmsNorm(q, l.qNorm, d.nHeads, hd, d.normEps, false)
-		applyRoPE(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
+		rope.Apply(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
 
 		// Non-causal: every block query attends every context key AND every block key,
 		// including positions after itself. No mask, by construction.

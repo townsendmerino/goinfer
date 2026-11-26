@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // mellumArchitecture expresses JetBrains Mellum2 (a 12B-A2.5B code model): the
@@ -17,7 +19,7 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateMellum(); err != nil {
 		return nil, nil, err
 	}
-	full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+	full, sliding, err := rope.ParseParameters(cfg.RopeParameters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(mellum): %w", err)
 	}
@@ -53,10 +55,10 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
 		layerIsGlobal:    cfg.IsGlobalLayer, // from layer_types (3:1 sliding/full)
-		RoPEGlobalBase:   full.base,         // full_attention layers
-		RoPELocalBase:    sliding.base,      // sliding_attention layers (same theta, plain)
-		ropeScaling:      full.scaling,      // YaRN on full layers
-		ropeScalingLocal: sliding.scaling,   // nil (plain) on sliding layers
+		RoPEGlobalBase:   full.Base,         // full_attention layers
+		RoPELocalBase:    sliding.Base,      // sliding_attention layers (same theta, plain)
+		ropeScaling:      full.Scaling,      // YaRN on full layers
+		ropeScalingLocal: sliding.Scaling,   // nil (plain) on sliding layers
 		RotaryDim:        cfg.RotaryDim(),
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load

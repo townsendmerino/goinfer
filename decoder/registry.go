@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // archAdapter resolves a parsed config.json into the family-agnostic
@@ -42,7 +43,7 @@ var registry = map[string]archAdapter{
 	// InternLM3 is llama-shaped to the tensor name: self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj,
 	// input_layernorm/post_attention_layernorm, embed_tokens/lm_head, no biases, no QK-norm. Its only
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
-	// window (see parseRopeScaling). So it is a registry ALIAS, not an adapter — the honest expression
+	// window (see rope.ParseScaling). So it is a registry ALIAS, not an adapter — the honest expression
 	// of "this is a llama". InternLM2 is NOT an alias: it renames every tensor and fuses qkv.
 	"internlm3":        llamaArchitecture,         // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
 	"internlm2":        internlm2Architecture,     // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
@@ -126,7 +127,7 @@ func (a *Architecture) validateResolved() error {
 		return fmt.Errorf("decoder(%s): NormEps=%v must be >0 (adapter omitted it, or read the wrong config key)", a.Name, a.NormEps)
 	}
 
-	// Position information must come from somewhere. finalizeRoPE treats RoPEGlobalBase <= 0 as "no tables" and applyRoPE is a silent no-op on
+	// Position information must come from somewhere. finalizeRoPE treats RoPEGlobalBase <= 0 as "no tables" and rope.Apply is a silent no-op on
 	// an empty table, so an adapter that never reads rope_theta loads clean and generates fluent, position-blind text (and drops YaRN with it).
 	// transformers >= 5.10 nests rope_theta under rope_parameters, so an adapter that reads only the flat key fails silently.
 	//
@@ -261,14 +262,14 @@ func backfillFlatRope(cfg *Config, arch string) error {
 	if cfg.RoPEGlobalBase != 0 || len(cfg.RopeParameters) == 0 {
 		return nil // already flat (older config, or a GGUF) — nothing to backfill
 	}
-	spec, _, err := parseRopeFlat(cfg.RopeParameters)
+	spec, _, err := rope.ParseFlat(cfg.RopeParameters)
 	if err != nil {
 		return fmt.Errorf("decoder(%s): rope_parameters: %w", arch, err)
 	}
-	cfg.RoPEGlobalBase = spec.base
+	cfg.RoPEGlobalBase = spec.Base
 	// Scaling may now live inside rope_parameters; hand it to the flat field the caller's
-	// parseRopeScaling already understands. Never clobber an explicit rope_scaling.
-	if spec.scaling != nil && len(cfg.RopeScaling) == 0 {
+	// rope.ParseScaling already understands. Never clobber an explicit rope_scaling.
+	if spec.Scaling != nil && len(cfg.RopeScaling) == 0 {
 		cfg.RopeScaling = cfg.RopeParameters
 	}
 	return nil
@@ -281,15 +282,15 @@ func backfillFlatRope(cfg *Config, arch string) error {
 // the nested object. deepseekArchitecture and phi3Architecture inline this if/else; they
 // are left alone deliberately — converting them is a no-op refactor that would re-run two
 // validated families' oracles for no behaviour change.
-func ropeBaseFlatOrNested(cfg *Config, arch string) (base float64, scaling *ropeScaling, err error) {
+func ropeBaseFlatOrNested(cfg *Config, arch string) (base float64, scaling *rope.Scaling, err error) {
 	if len(cfg.RopeParameters) > 0 {
-		spec, _, perr := parseRopeFlat(cfg.RopeParameters)
+		spec, _, perr := rope.ParseFlat(cfg.RopeParameters)
 		if perr != nil {
 			return 0, nil, fmt.Errorf("decoder(%s): %w", arch, perr)
 		}
-		return spec.base, spec.scaling, nil
+		return spec.Base, spec.Scaling, nil
 	}
-	sc, perr := parseRopeScaling(cfg.RopeScaling)
+	sc, perr := rope.ParseScaling(cfg.RopeScaling)
 	if perr != nil {
 		return 0, nil, fmt.Errorf("decoder(%s): %w", arch, perr)
 	}

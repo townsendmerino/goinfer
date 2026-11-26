@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen2MoeArchitecture expresses Qwen-MoE / Qwen2-MoE (Qwen1.5-MoE-A2.7B,
@@ -16,7 +18,7 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen2Moe(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen2_moe): %w", err)
 	}

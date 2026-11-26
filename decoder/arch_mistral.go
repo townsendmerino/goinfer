@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // mistralArchitecture expresses Mistral dense: the llama descriptor (RMS
@@ -18,7 +20,7 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(mistral): %w", err)
 	}

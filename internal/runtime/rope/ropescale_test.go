@@ -1,4 +1,4 @@
-package decoder
+package rope
 
 import (
 	"math"
@@ -7,11 +7,11 @@ import (
 )
 
 // TestComputeInvFreq_default: with no scaling the table is exactly the classic
-// base^(-2d/dim) RoPE frequencies — the formula the old per-call applyRoPE used,
+// base^(-2d/dim) RoPE frequencies — the formula the old per-call Apply used,
 // so the refactor can't have moved Gemma/Qwen3/Llama numbers.
 func TestComputeInvFreq_default(t *testing.T) {
 	const base, dim = 10000.0, 8
-	got := computeInvFreq(base, dim, nil)
+	got := ComputeInvFreq(base, dim, nil)
 	if len(got) != dim/2 {
 		t.Fatalf("len = %d, want %d", len(got), dim/2)
 	}
@@ -26,8 +26,8 @@ func TestComputeInvFreq_default(t *testing.T) {
 // TestComputeInvFreq_linear: every frequency is divided by the factor.
 func TestComputeInvFreq_linear(t *testing.T) {
 	const base, dim, factor = 10000.0, 8, 4.0
-	plain := computeInvFreq(base, dim, nil)
-	scaled := computeInvFreq(base, dim, &ropeScaling{kind: ropeScaleLinear, factor: factor})
+	plain := ComputeInvFreq(base, dim, nil)
+	scaled := ComputeInvFreq(base, dim, &Scaling{Kind: ScaleLinear, Factor: factor})
 	for d := range plain {
 		if math.Abs(scaled[d]-plain[d]/factor) > 1e-12 {
 			t.Errorf("linear[%d] = %v, want %v", d, scaled[d], plain[d]/factor)
@@ -42,15 +42,15 @@ func TestComputeInvFreq_linear(t *testing.T) {
 func TestComputeInvFreq_llama3(t *testing.T) {
 	const base = 500000.0
 	const dim = 64 // Llama-3.2-1B head_dim
-	sc := &ropeScaling{
-		kind: ropeScaleLlama3, factor: 32,
-		lowFreqFactor: 1, highFreqFactor: 4, origMaxPosition: 8192,
+	sc := &Scaling{
+		Kind: ScaleLlama3, Factor: 32,
+		LowFreqFactor: 1, HighFreqFactor: 4, OrigMaxPosition: 8192,
 	}
-	plain := computeInvFreq(base, dim, nil)
-	got := computeInvFreq(base, dim, sc)
+	plain := ComputeInvFreq(base, dim, nil)
+	got := ComputeInvFreq(base, dim, sc)
 
-	lowWavelen := sc.origMaxPosition / sc.lowFreqFactor
-	highWavelen := sc.origMaxPosition / sc.highFreqFactor
+	lowWavelen := sc.OrigMaxPosition / sc.LowFreqFactor
+	highWavelen := sc.OrigMaxPosition / sc.HighFreqFactor
 	sawHigh, sawLow, sawMid := false, false, false
 	for d, f := range plain {
 		wavelen := 2 * math.Pi / f
@@ -59,10 +59,10 @@ func TestComputeInvFreq_llama3(t *testing.T) {
 		case wavelen < highWavelen:
 			want, sawHigh = f, true
 		case wavelen > lowWavelen:
-			want, sawLow = f/sc.factor, true
+			want, sawLow = f/sc.Factor, true
 		default:
-			s := (sc.origMaxPosition/wavelen - sc.lowFreqFactor) / (sc.highFreqFactor - sc.lowFreqFactor)
-			want, sawMid = (1-s)*(f/sc.factor)+s*f, true
+			s := (sc.OrigMaxPosition/wavelen - sc.LowFreqFactor) / (sc.HighFreqFactor - sc.LowFreqFactor)
+			want, sawMid = (1-s)*(f/sc.Factor)+s*f, true
 		}
 		if math.Abs(got[d]-want) > 1e-12 {
 			t.Errorf("llama3[%d] = %v, want %v (wavelen %.1f)", d, got[d], want, wavelen)
@@ -86,8 +86,8 @@ func TestApplyRoPE_partialRotary(t *testing.T) {
 	vec := []float32{1, 2, 3, 4, 5, 6, 7, 8} // one head
 	orig := slices.Clone(vec)
 
-	inv := computeInvFreq(base, rotaryDim, nil)
-	applyRoPE(vec, 1, headDim, pos, inv, 1.0)
+	inv := ComputeInvFreq(base, rotaryDim, nil)
+	Apply(vec, 1, headDim, pos, inv, 1.0)
 
 	// Trailing headDim-rotaryDim dims unchanged.
 	for d := rotaryDim; d < headDim; d++ {

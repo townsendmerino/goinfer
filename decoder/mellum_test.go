@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"testing"
 )
@@ -152,4 +153,21 @@ func loadMellumRopeGolden(t *testing.T) *mellumRopeGolden {
 		t.Fatalf("parse golden: %v", err)
 	}
 	return &g
+}
+
+func closeVec(t *testing.T, name string, got, want []float64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s: len %d, want %d", name, len(got), len(want))
+	}
+	for i := range want {
+		// Relative tolerance: the values span ~7 orders of magnitude.
+		den := math.Abs(want[i])
+		if den == 0 {
+			den = 1
+		}
+		if rel := math.Abs(got[i]-want[i]) / den; rel > 1e-12 {
+			t.Errorf("%s[%d] = %.17g, want %.17g (rel %.2e)", name, i, got[i], want[i], rel)
+		}
+	}
 }

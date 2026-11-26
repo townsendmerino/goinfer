@@ -9,7 +9,7 @@ import (
 // head_dim: Qwen3VLTextAttention, not Qwen2's shape that qwen2_5_vlArchitecture aliases) whose RoPE config lives under the same nested
 // rope_parameters {mrope_section, rope_theta} convention qwen2_5_vlArchitecture parses. For text, m-RoPE degenerates to standard scalar RoPE
 // as for Qwen2.5-VL, so the text path is exactly Qwen3. Qwen3-VL's mrope_section maps frequency index to component through an INTERLEAVED
-// formula, unlike Qwen2.5-VL's contiguous blocks (mropeComponentInterleaved vs mropeComponent, decoder/rope.go): irrelevant for a degenerate
+// formula, unlike Qwen2.5-VL's contiguous blocks (rope.MRoPEComponentInterleaved vs rope.MRoPEComponent, internal/runtime/rope): irrelevant for a degenerate
 // text position, load-bearing once an image path runs, so it is wired here. vision_config/deepstack_visual_indexes are ignored: no vision
 // tower and no DeepStack injection in this adapter.
 func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
@@ -28,7 +28,7 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 }
 
 // qwen3VLMRopeSection reads a Qwen3-VL text_config's m-RoPE section (and rope_theta, when nested) for the family name, and
-// clears rope_scaling of it (m-RoPE is not a parseRopeScaling kind). Shared by qwen3_vl and qwen3_vl_moe.
+// clears rope_scaling of it (m-RoPE is not a rope.ParseScaling kind). Shared by qwen3_vl and qwen3_vl_moe.
 func qwen3VLMRopeSection(cfg *Config, name string) ([]int, error) {
 	// Same extraction qwen2_5_vlArchitecture uses: mrope_section + rope_theta live under
 	// EITHER the nested rope_parameters (the common transformers-5.x shape) OR the older
@@ -62,9 +62,9 @@ func qwen3VLMRopeSection(cfg *Config, name string) ([]int, error) {
 			if section == nil {
 				section = rs.MRopeSection
 			}
-			// m-RoPE is not a parseRopeScaling kind — clear it defensively, mirroring
+			// m-RoPE is not a rope.ParseScaling kind — clear it defensively, mirroring
 			// qwen2_5_vlArchitecture, even though qwen3Architecture doesn't currently
-			// call parseRopeScaling at all.
+			// call rope.ParseScaling at all.
 			cfg.RopeScaling = nil
 		}
 	}

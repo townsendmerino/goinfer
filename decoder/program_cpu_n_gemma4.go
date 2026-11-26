@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // batchRows is what a batched pass knows about its rows beyond their embeddings: the token id behind each row and the prompt's
@@ -115,7 +117,7 @@ func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *Layer
 	matmulPre(be, &lw.QProj, hq, x, q, K)
 	rmsNorm(q, lw.QNorm, K*nH, hd, p.Eps, p.AddOne)
 	for row := range K {
-		applyRoPE(q[row*nH*hd:(row+1)*nH*hd], nH, hd, startPos+row, p.InvFreq, p.Mscale)
+		rope.Apply(q[row*nH*hd:(row+1)*nH*hd], nH, hd, startPos+row, p.InvFreq, p.Mscale)
 	}
 	if p.OwnsKV {
 		k := make([]float32, K*nKV*hd)
@@ -130,7 +132,7 @@ func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *Layer
 		rmsNormNoWeight(v, K*nKV, hd, p.Eps) // scale-less v_norm, no RoPE
 		for row := range K {
 			kRow := k[row*nKV*hd : (row+1)*nKV*hd]
-			applyRoPE(kRow, nKV, hd, startPos+row, p.InvFreq, p.Mscale)
+			rope.Apply(kRow, nKV, hd, startPos+row, p.InvFreq, p.Mscale)
 			cache.Append(l, kRow, v[row*nKV*hd:(row+1)*nKV*hd])
 		}
 	}

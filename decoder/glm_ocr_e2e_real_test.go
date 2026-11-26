@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -232,9 +233,9 @@ func glmOcrRun(t *testing.T, g *glmOcrGolden, pv []float32, grid [3]int, tag str
 	}
 	t.Logf("[%s] tower %.0fs for %d patches -> %d image tokens", tag, time.Since(t0).Seconds(), len(pv)/1176, g.NImgTokens)
 
-	// Stage: positions are the caller's (mropePositions), with the model's own image id and merge.
+	// Stage: positions are the caller's (rope.MRoPEPositions), with the model's own image id and merge.
 	const imageToken = 59280
-	mropePos, err := mropePositions(g.InputIDs, imageToken, [][3]int{grid}, pp.MergeSize)
+	mropePos, err := rope.MRoPEPositions(g.InputIDs, imageToken, [][3]int{grid}, pp.MergeSize)
 	if err != nil {
 		t.Fatal(err)
 	}

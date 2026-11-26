@@ -239,7 +239,7 @@ type Config struct {
 	FullAttentionInterval int `json:"full_attention_interval"`
 
 	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / ...); plain Llama-3.0 and Qwen3 leave it null. Kept raw
-	// and decoded by parseRopeScaling. omitempty: a nil RawMessage marshals to the literal `null`, which on a .giw round-trip
+	// and decoded by rope.ParseScaling. omitempty: a nil RawMessage marshals to the literal `null`, which on a .giw round-trip
 	// (json.Marshal(Cfg), then reload) would make a len()>0 "present" check fire on an absent config.
 	RopeScaling json.RawMessage `json:"rope_scaling,omitempty"`
 
@@ -254,7 +254,7 @@ type Config struct {
 
 	// RopeParameters is the newer per-attention-type RoPE config (Mellum):
 	// {"full_attention": {...}, "sliding_attention": {...}}, each a rope_theta +
-	// a rope_scaling-style object. Decoded by parseRopeParameters. omitempty: see
+	// a rope_scaling-style object. Decoded by rope.ParseParameters. omitempty: see
 	// RopeScaling (nil must not round-trip through .giw as `null`).
 	RopeParameters json.RawMessage `json:"rope_parameters,omitempty"`
 
@@ -560,7 +560,7 @@ func (c *Config) ValidateGemma4MoE() error {
 // ValidateGptOss pins the gpt-oss assumptions: a valid sparse MoE on every layer
 // (num_local_experts / num_experts_per_tok / expert width) and a sliding window for
 // the alternating local layers. The attention (GQA + biases + per-head sinks) and
-// YaRN RoPE are validated by the generic head-dim checks + parseRopeScaling at
+// YaRN RoPE are validated by the generic head-dim checks + rope.ParseScaling at
 // resolve time.
 func (c *Config) ValidateGptOss() error {
 	nExperts := c.NumLocalExperts
@@ -1121,7 +1121,7 @@ func (c *Config) ValidateCohere2() error {
 
 // ValidateLlama pins the assumptions the llama forward path makes (dense, SwiGLU, GQA, single-base RoPE, no QK-norm). It
 // differs from ValidateQwen3 by allowing head_dim to be derived (EffectiveHeadDim()). RoPE scaling is handled by the adapter via
-// parseRopeScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
+// rope.ParseScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
 func (c *Config) ValidateLlama() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:

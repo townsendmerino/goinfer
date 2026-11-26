@@ -58,7 +58,7 @@ type DecodeSubsystem interface {
 
 	// MRoPEDecodeAvailable is an OPTIONAL Forward extension: a resident backend whose rotation kernel takes a
 	// rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
-	// an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
+	// an image block needs it: internal/runtime/rope's CPU reference rotates by pos+rope.MRoPEDelta while storage and
 	// attention still use plain pos. A new capability rather than a Forward signature change, since only Qwen-VL
 	// decode needs the split. ForwardMRoPE(emb, pos, pos) must equal Forward(emb, pos) exactly. Without it
 	// GenerateQwenVL's resident path declines to the CPU/staged decode.
@@ -213,7 +213,7 @@ type PrefillSubsystem interface {
 
 	// MRoPEPrefillAvailable is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
 	// positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike MRoPEDecodeAvailable (decode's single ropePos
-	// split) it needs every row's own position up front: mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
+	// split) it needs every row's own position up front: mropePos is rope.MRoPEPositions' output (internal/runtime/rope), one (t,h,w)
 	// triple per ABSOLUTE position over the WHOLE prompt, which GenerateQwenVL already computes, so a backend must not
 	// re-derive it. embeddings are the ALREADY-SPLICED vectors (ImagePrefillAvailable's convention). Unlike it,
 	// implementations MAY chunk: Qwen's image tokens attend causally and each row's rotation is independent. Without it

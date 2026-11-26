@@ -1170,7 +1170,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 }
 
 // residentPrefillSeedMRoPE is residentPrefillSeed's m-RoPE-aware sibling, used by GenerateQwenVL's image-reuse fast path
-// (docs/multimodal.md), where decode past the (already-resident) image block needs pos+mropeDelta for the rotation, not plain
+// (docs/multimodal.md), where decode past the (already-resident) image block needs pos+rope.MRoPEDelta for the rotation, not plain
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
 func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {

@@ -78,8 +78,8 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	// rope_parameters: the text decoder uses standard partial-rotary RoPE; the m-RoPE
 	// split (rope.dimension_sections) is carried too, so an image turn can rotate image
-	// tokens by (t, h, w) (ggufMRopeJSON). Synthesize the flat form parseRopeFlat and
-	// parseMRopeFlat expect from the GGUF rope metadata.
+	// tokens by (t, h, w) (ggufMRopeJSON). Synthesize the flat form rope.ParseFlat and
+	// rope.ParseMRoPEFlat expect from the GGUF rope metadata.
 	base := 1e7
 	if b, ok := g.Float("qwen35moe.rope.freq_base"); ok {
 		base = b
@@ -158,7 +158,7 @@ func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
 		partial = float64(dc) / float64(headDim)
 	}
 	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split. For text the three position components are identical, so
-	// interleaved m-RoPE reduces exactly to standard partial RoPE and ropeAt never reads the split without image
+	// interleaved m-RoPE reduces exactly to standard partial RoPE and rope.At never reads the split without image
 	// positions; it is carried (ggufMRopeJSON) so a GGUF text model can take an image turn with an mmproj tower, as the
 	// safetensors config does (docs/multimodal.md).
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(

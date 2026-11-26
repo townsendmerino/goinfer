@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // gptOssArchitecture expresses the gpt-oss sparse-MoE family (model_type gpt_oss, GGUF arch gpt-oss). It marks the family with a gptoss
@@ -15,7 +17,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateGptOss(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(gpt-oss): %w", err)
 	}

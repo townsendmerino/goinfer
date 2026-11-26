@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen2Architecture expresses Qwen2/Qwen2.5 dense: identical to the llama
@@ -17,7 +19,7 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen2(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling) // linear + llama3 (Qwen2.5 leaves it null)
+	scaling, err := rope.ParseScaling(cfg.RopeScaling) // linear + llama3 (Qwen2.5 leaves it null)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen2): %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // seamPlantForTest plants one defect in a hidden-state seam, so the seams' gates (decoder/seams_test.go) can show they go red.
@@ -356,8 +357,8 @@ func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][
 		mlaRope(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
 		return
 	}
-	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
-	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	rope.At(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	rope.At(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys
