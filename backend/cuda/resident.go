@@ -320,63 +320,11 @@ type cudaResident struct {
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
-	cacheExperts  bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	// unpinnedExperts (MoEExpertsUnpinned) packs each expert stack into an unlinked, read-only file mapping under unpinnedDir instead of pinned
-	// host memory, so the slots upload from pageable pages; pageableStacks counts the stacks it built that way.
-	unpinnedExperts bool
-	unpinnedDir     string
-	pageableStacks  int
-	// overlap (GOINFER_MOE_DMA_OVERLAP, default on with C′; off under graphs): the C′ round trip no longer drains the
-	// stream. The host waits on evRoute (recorded right after the router), the misses are copied on dmaQ, a second
-	// stream, while the kernels issued after the router keep running, and segC's rank loop waits device-side only
-	// before a rank that missed. Everything keeps its launch order and arithmetic, so the output is bit-identical to
-	// the draining path; only the idle time moves. Ceiling and decision rule:
-	// docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md.
-	overlap     bool
-	dmaQ        Queue
-	evRoute     gpu.Event
-	evMiss      []gpu.Event        // per miss of one call (≤ topK): recorded on dmaQ after that miss's two copies
-	missEv      []int              // per rank: index into evMiss, or -1 for a hit
-	slotIdxHost *HostBuffer[uint8] // pinned source of the per-token slot-id upload (UploadAsync needs pinned)
-	cacheProf   bool               // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
-	profStall   time.Duration
-	profHost    time.Duration
-	profDMA     time.Duration
-	// The expert DMA is split into the BIG weight copy and the TINY scale copy, with bytes and call counts for each:
-	// if a small scale upload costs about as much as a large weight upload, the path is per-call-overhead bound and
-	// the fix is batching. Zero cost when cacheProf is off.
-	profWBytes, profSBytes uint64
-	profWCalls, profSCalls uint64
-	// expBatch queues one layer's host-to-device copies, issued together by one gpu.UploadBatch (appendExpertSlot).
-	// profWCalls/profSCalls count logical COPIES, so the per-token copy count stays comparable across the batching;
-	// profSyncCalls counts the SYNCHRONIZES, which is what batching moves. There is no per-kind timing: the copies
-	// are appended here and issued together later, so a "weight upload took Xµs" figure would name something that no
-	// longer happens.
-	expBatch []gpu.HostCopy
-	// pendingAdmits are the slot claims loadRoutedExperts made before its DMA, rolled back if the upload fails so the
-	// cache cannot assert residency for bytes never copied.
-	pendingAdmits []pendingAdmit
+	expertStream
 	// resetErr holds the last Reset() failure. Reset cannot return one (the cross-backend interface returns nothing),
 	// so Forward/ForwardN surface it.
-	resetErr      error
-	profBatchTime time.Duration
-	profSyncCalls uint64
-	profCalls     uint64
-	// Per-class decode timing for a g4moe token, sync-bounded (profMark), same cacheProf gate. It
-	// exists to size the compute/DMA overlap ceiling: only dense (independent of the routing) and
-	// the hit-expert prefix of segC can run under a miss DMA, so those two are the classes that
-	// bound any overlap design. Sync-to-sync, so each class includes its own launch latency and
-	// the token is slower with the profiler on; the numbers are upper bounds on class cost.
-	headProf *headArgProf
-	// The batched head tails' argmax runs on the device (fArgRows, M ints back) unless hostArgmaxPath forces the
-	// M×vocab download + host loop (the A/B's do-nothing arm). argCheck additionally runs the host loop on the same
-	// logits and counts agreement.
-	fArgRows                                                               Pipeline
-	hostArgmaxPath                                                         bool
-	argCheck                                                               bool
-	argChecks                                                              int
-	profT0                                                                 time.Time
-	profAttn, profDense, profRouter, profClear, profRT, profSegC, profHead time.Duration
+	resetErr error
+	argmaxState
 	loraBind
 	graphState
 	captureState
@@ -385,34 +333,8 @@ type cudaResident struct {
 	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
 	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
 	launchViaExecutor bool
-	cacheSlots        int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
-	slotIdx           Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
-	hostIdx           []uint32 // C′: scratch for the per-layer rIdx device→host readback
-	hostSlot          []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
 
-	// cacheSlotsAsked is the slot count the load asked for, before allocSlots capped it to free VRAM: the ceiling a resize grows to.
-	cacheSlotsAsked int
-
-	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4: its output steers a
-	// DISCRETE choice, so a quantization error near a tie does not perturb the result slightly, it runs a DIFFERENT
-	// expert and the output is unrelated (the Granite SSM expert-flip class; docs/code-notes/cuda.md#cudaResident.moe).
-	// This is the one place in this backend where the cheap precision is not worth it.
-	moe                     bool
-	nE, topK, moeInter      int
-	moeSigmoid, moeNormTopK int32
-	moeScale                float32
-	nGroup, topkGroup       int
-
-	// Gemma-4 parallel dense||MoE (any layer g4moe: JIT router_f32, alloc g4 scratch, take gemma4MoeMLP). g4cap
-	// (GOINFER_G4_CAPTURE) is a DEBUG readback of the four MoE-layer buffers (rn / wgt / x1 / x2) so a whole-forward
-	// miss localizes to router vs dense vs expert vs join in ONE run.
-	gemma4Moe bool
-	// gemma4Dense is true for ANY gemma4 checkpoint (dense or MoE), broader than gemma4Moe (enable_moe_block layers).
-	// It gates compiling fScaleVec, the dense per-layer-output-scalar kernel (segB's dense tail), which has nothing
-	// router-specific about it.
-	gemma4Dense bool
-
-	sharedInter int // width of the always-on shared expert (0 ⇒ none)
+	moeState
 
 	// device state — touched ONLY on the executor thread.
 	dev                                                                                     *Device
@@ -441,9 +363,6 @@ type cudaResident struct {
 	// GEMV; the rest are the M=1 glue kernels with an M dimension, each bit-identical per row. Loaded once at build
 	// (small module).
 	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
-	bMoeFold                                     Pipeline // moe_fold_wacc (moe_fold.cu); zero when it did not load
-	bMoeRows, bGluRows                           Pipeline // gemv_w4a8_moe_rows, glu_quant_rows (moe_rows.cu); zero when they did not load
-	moeRowsOff                                   bool     // test seam: run the expert-major path's per-pair launches (the A/B and identity reference)
 	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
 	// The per-32 rows GEMVs (prefill_g32.cu), bound with the per-32 quantizers into bRms/bQuant/bSw under actG32;
 	// prefillG32Ready says all of them loaded, and without it a per-32 load's prefill declines.
@@ -514,35 +433,22 @@ type cudaResident struct {
 	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
 	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
 
-	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the kernels stay bit-identical): the
-	// clamped interleaved-SwiGLU expert epilogue, plus the per-layer attention sinks and the per-expert gate‖up bias
-	// table it needs.
-	gptOssSw                 Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
-	gptOssRoute              Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)
-	gptOssAlpha, gptOssLimit float32
-	gptOssSinks              []Buffer // [layer] → [nH] learned per-head attention sink logits
-	gptOssDownBias           []Buffer // [layer] → [nExpert*hidden] per-expert down-projection bias
-	gptOssExpBias            []Buffer // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
-	splitkvAttn              bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the single-block attn_batched(M=1))
-	skMinKeys                int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
-	prefillReady             bool     // batched kernels loaded; PrefillLast usable
-	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
-	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	// floatAct: a Gemma 4 MoE decode step reads every int4 projection's activation as f32 (gemv_w4f32.cu), not int8; set at
-	// build by floatActDecline. xF holds the normed f32 input (attention, then the dense branch, then the experts), dF the
-	// dense GLU output, moeGLUF an expert's.
-	floatAct                                  bool
-	fW4F32, fMoEGemvF32, fMoEWaccF32, fGluF32 Pipeline
-	xF, dF, moeGLUF                           Buffer
-	bAttnSpan                                 Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
-	spanPrefillReady                          bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
-	spanPass                                  bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
-	bRopeKVMRoPE                              Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
-	pairwiseRoPE                              bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
-	mropePrefillReady                         bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	mropeTakesMode                            bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
-	mropeMode                                 int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
-	mropeSec0, mropeSec1                      int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
+	gptOssState
+	splitkvAttn     bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the single-block attn_batched(M=1))
+	skMinKeys       int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
+	prefillReady    bool     // batched kernels loaded; PrefillLast usable
+	bAttnImg        Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
+	imgPrefillReady bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	floatActState
+	bAttnSpan            Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
+	spanPrefillReady     bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
+	spanPass             bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
+	bRopeKVMRoPE         Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
+	pairwiseRoPE         bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.BackendView().PairwiseRoPE() at build
+	mropePrefillReady    bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	mropeTakesMode       bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
+	mropeMode            int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
+	mropeSec0, mropeSec1 int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
 	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a row-count knob to
 	// shrink: prefillChunked (retries the SAME pass smaller and stores whatever width worked) and PrefillImageLast
 	// (cannot retry a bidirectional image block smaller, since an image OOM is a function of that block's own M, but
@@ -600,13 +506,10 @@ type cudaResident struct {
 	faCombineRagged Pipeline
 	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
 	// loaded, when a step's rows take decode's own gap.
-	bRopeKVRagged, bAttnRagged                              Pipeline
-	exactAttnLaunches                                       int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
-	tile128Launches                                         int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
-	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
-	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
-	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
-	fMlaStore, fMlaHeadMV, fMlaQRope, fMlaAttn              Pipeline // MLA (mla module, FeatMLA)
+	bRopeKVRagged, bAttnRagged                 Pipeline
+	exactAttnLaunches                          int      // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
+	tile128Launches                            int      // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
+	fMlaStore, fMlaHeadMV, fMlaQRope, fMlaAttn Pipeline // MLA (mla module, FeatMLA)
 
 	// MLA (DeepSeek / Kimi, FeatMLA) geometry & params
 	isMLA         bool
@@ -700,12 +603,6 @@ type cudaResident struct {
 	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
 	kvBases  []int
 
-	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
-	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
-	// reusing gO/uO/dq here would overrun on some archs and silently under-read on others.
-	rLogits, rWgt, moeGU, moeSc, moeScr Buffer
-	rIdx                                Buffer
-
 	// Gated-DeltaNet per-token scratch (allocated only when any layer isDeltaNet). Sized from
 	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
 	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
@@ -713,42 +610,18 @@ type cudaResident struct {
 	dnGq, dnGSc                                                                  Buffer // int8 activation + scale for the gated output's out_proj GEMV
 	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
 	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
-	moeQ                                                                         Buffer
 
 	// MLA per-token scratch (allocated only when isMLA).
 	mlaQAOut, mlaQAQ, mlaQASc Buffer
 	mlaKVDown, qAbs, wsum     Buffer
-
-	// Gemma-4 MoE branch scratch [hidden] (allocated only when gemma4Moe). x1 = dense branch, x2 =
-	// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE from r.x
-	// because the join norms (x1+x2) BEFORE adding the residual h — the experts can't wacc into the
-	// residual stream the way the generic moeMLP does.
-	g4x1, g4x2, g4rn Buffer
-
-	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
-	// which is its own width — distinct from both the dense inter and the routed moeInter.
-	shGUout, shSc, shScr, shDownOut Buffer
-	shGl                            Buffer // [1] the Qwen-MoE shared-gate logit; unused when ungated
-	shQ                             Buffer
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
 	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an
 	// extra copy. Reused across calls (decode consumes each before the next).
 	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
-	// Batched-head verify scratch (PrefillLastNArgmax). Allocated lazily INSIDE the executor
-	// job — af/ai require r.dev's context current — and reused across rounds. logitsBCap is the
-	// row count the current allocation covers; a wider block reallocates once and then holds.
-	logitsB    Buffer
-	logitsBIdx Buffer // [logitsBCap] int32: argmax_rows' output for the verify tail
-	logitsBCap int
-	setupErr   error // first alloc/upload error during BuildResident's setup job
+	setupErr     error     // first alloc/upload error during BuildResident's setup job
 	dbgState
-	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
-	dbgAllocSizes []int // every requested slot-buffer size, recording only
-
-	// planSlotGeom is the expert-cache geometry the memory plan supplies from the planned stacks (expertSlotGeom); nil in a build.
-	planSlotGeom *slotGeom
 }
 
 // alloc/upload helpers, called ONLY inside the setup job (r.dev's context current on the executor thread).
