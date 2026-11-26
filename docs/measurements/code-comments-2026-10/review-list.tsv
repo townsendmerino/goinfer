@@ -93,7 +93,7 @@ docs/tasks/task-gpu-paths-2026-09.md	cuda/prefill.go:431–320	cuda/prefill.go:c
 docs/tasks/task-gpu-paths-2026-09.md	cuda/prefill.go:458–319	cuda/prefill.go:cudaResident.prefillChunked	63	last := i+n == M	range
 docs/tasks/task-gpu-paths-2026-09.md	decoder/embed.go:36–71	decoder/embed.go:Model.HiddenLast	41	// guard, as ForwardCapture.	range
 docs/tasks/task-gpu-paths-2026-09.md	decoder/features.go:571	decoder/features.go:residentBackendFeatures	285	// story: the nGroup/topkGroup argument order was unverified for a real mismatch until this	
-docs/tasks/task-gpu-paths-2026-09.md	decoder/model.go:1624	decoder/model.go:Model.residentPrefillSeed	66	if err = ctx.Err(); err != nil {	
+docs/tasks/task-gpu-paths-2026-09.md	decoder/model.go:1624	decoder/resident_prefill_seed.go:Model.residentPrefillSeed	66	if err = ctx.Err(); err != nil {	
 docs/tasks/task-gpu-paths-2026-09.md	decoder/model.go:1835	decoder/model.go:Model.generateInto	709	// and fall back to CPU, which applies the adapter correctly on its own	
 docs/tasks/task-gpu-paths-2026-09.md	gpu/residency.go:1151	gpu/residency.go:webgpuBackend.BuildResident	1064	rl.hasSink = true	
 docs/tasks/task-gpu-paths-2026-09.md	gpu/residency.go:592	gpu/residency.go:webgpuBackend.BuildResident	1064	return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)	

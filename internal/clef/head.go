@@ -216,33 +216,11 @@ type LMHeadRows func(id int) ([]float32, error)
 // Forward returns, per question, one logit per option in the encoder's option order. hidden is the backbone's last_hidden_state after
 // its final norm, [L][hidden_size], and ids the encoder's input_ids (len L). Softmax each question's logits for the probabilities.
 func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRows) ([][]float32, error) {
-	cfg := h.Cfg
-	L, w, hs := len(hidden), cfg.Width, cfg.HiddenSize
-	if L == 0 || L != len(ids) {
-		return nil, fmt.Errorf("clef: %d hidden rows for %d input ids", L, len(ids))
+	flat, nOpt, err := h.checkForward(hidden, ids, qs)
+	if err != nil {
+		return nil, err
 	}
-	if len(qs) == 0 {
-		return nil, errors.New("clef: no questions")
-	}
-	nOpt := 0
-	for qi, q := range qs {
-		if q.Type < 0 || q.Type > 2 || len(q.OptionIDs) == 0 || len(q.OptionSpans) != len(q.OptionIDs) {
-			return nil, fmt.Errorf("clef: question %d is malformed", qi)
-		}
-		for _, sp := range append([][2]int{q.QuestionSpan}, q.OptionSpans...) {
-			if sp[0] < 0 || sp[1] > L || sp[0] >= sp[1] {
-				return nil, fmt.Errorf("clef: question %d has a span %v outside the %d-token sequence or empty", qi, sp, L)
-			}
-		}
-		nOpt += len(q.OptionIDs)
-	}
-	flat := make([]float32, L*hs)
-	for i, row := range hidden {
-		if len(row) != hs {
-			return nil, fmt.Errorf("clef: hidden row %d is %d wide, want %d", i, len(row), hs)
-		}
-		copy(flat[i*hs:], row)
-	}
+	L, w, hs := len(hidden), h.Cfg.Width, h.Cfg.HiddenSize
 
 	// hidden_norm over every position, then memory = memory_projection(h).
 	hn := make([]float32, L*hs)
@@ -250,6 +228,73 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 	memory := matmulBT(hn, h.memoryProj, L, hs, w)
 	global := hn[(L-1)*hs : L*hs]
 
+	sp, err := h.spanMeans(hn, ids, qs, nOpt, lm)
+	if err != nil {
+		return nil, err
+	}
+
+	// option_query = ctx-projection + lexical-projection + question-projection(qv[q]).
+	optQ := matmulBT(sp.ctx, h.optCtxProj, nOpt, hs, w)
+	addInPlace(optQ, matmulBT(sp.lex, h.optLexProj, nOpt, hs, w))
+	oq := matmulBT(sp.qv, h.optQuestionProj, len(qs), hs, w)
+	for i := 0; i < nOpt; i++ {
+		addInPlace(optQ[i*w:(i+1)*w], oq[sp.qOf[i]*w:(sp.qOf[i]+1)*w])
+	}
+
+	routed := h.route(optQ, nOpt, memory, L) // [N, w]
+	fields := h.questionFields(qs, sp, routed, global)
+	h.decodeFields(fields, len(qs), memory, L)
+
+	fn := make([]float32, len(qs)*w)
+	layerNormRows(fn, fields, h.fieldNorm, len(qs), w)
+	on := make([]float32, nOpt*w)
+	layerNormRows(on, routed, h.optionNorm, nOpt, w)
+	return h.logits(qs, sp, global, fn, on), nil
+}
+
+// checkForward refuses Forward's malformed inputs and returns hidden flattened to [L*hidden_size] and the number of options.
+func (h *Head) checkForward(hidden [][]float32, ids []int, qs []Question) (flat []float32, nOpt int, err error) {
+	L, hs := len(hidden), h.Cfg.HiddenSize
+	if L == 0 || L != len(ids) {
+		return nil, 0, fmt.Errorf("clef: %d hidden rows for %d input ids", L, len(ids))
+	}
+	if len(qs) == 0 {
+		return nil, 0, errors.New("clef: no questions")
+	}
+	for qi, q := range qs {
+		if q.Type < 0 || q.Type > 2 || len(q.OptionIDs) == 0 || len(q.OptionSpans) != len(q.OptionIDs) {
+			return nil, 0, fmt.Errorf("clef: question %d is malformed", qi)
+		}
+		for _, sp := range append([][2]int{q.QuestionSpan}, q.OptionSpans...) {
+			if sp[0] < 0 || sp[1] > L || sp[0] >= sp[1] {
+				return nil, 0, fmt.Errorf("clef: question %d has a span %v outside the %d-token sequence or empty", qi, sp, L)
+			}
+		}
+		nOpt += len(q.OptionIDs)
+	}
+	flat = make([]float32, L*hs)
+	for i, row := range hidden {
+		if len(row) != hs {
+			return nil, 0, fmt.Errorf("clef: hidden row %d is %d wide, want %d", i, len(row), hs)
+		}
+		copy(flat[i*hs:], row)
+	}
+	return flat, nOpt, nil
+}
+
+// headSpans is what Forward reads from the encoder's spans, all hidden_size wide: per question the mean normalised hidden
+// over its span, and per option the mean over its span and the mean lm_head row over its tokens, with the index maps.
+type headSpans struct {
+	qv    []float32 // [Q, hs]
+	ctx   []float32 // [N, hs] the mean hidden over each option span
+	lex   []float32 // [N, hs] the mean lm_head row over each option's tokens
+	qOf   []int     // option -> question
+	first []int     // question -> its first option
+}
+
+// spanMeans averages hn and the option tokens' lm_head rows over the encoder's spans; it asks lm once per distinct token.
+func (h *Head) spanMeans(hn []float32, ids []int, qs []Question, nOpt int, lm LMHeadRows) (headSpans, error) {
+	hs := h.Cfg.HiddenSize
 	meanSpan := func(sp [2]int) []float32 {
 		out := make([]float32, hs)
 		for t := sp[0]; t < sp[1]; t++ {
@@ -263,28 +308,27 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		}
 		return out
 	}
-	qv := make([]float32, len(qs)*hs) // [Q, hs]
-	ctx := make([]float32, nOpt*hs)   // [N, hs] the mean hidden over each option span
-	lex := make([]float32, nOpt*hs)   // [N, hs] the mean lm_head row over each option's tokens
-	qOf := make([]int, nOpt)          // option -> question
-	first := make([]int, len(qs))     // question -> its first option
+	s := headSpans{
+		qv: make([]float32, len(qs)*hs), ctx: make([]float32, nOpt*hs), lex: make([]float32, nOpt*hs),
+		qOf: make([]int, nOpt), first: make([]int, len(qs)),
+	}
 	rowCache := map[int][]float32{}
 	n := 0
 	for qi, q := range qs {
-		copy(qv[qi*hs:], meanSpan(q.QuestionSpan))
-		first[qi] = n
+		copy(s.qv[qi*hs:], meanSpan(q.QuestionSpan))
+		s.first[qi] = n
 		for _, sp := range q.OptionSpans {
-			copy(ctx[n*hs:], meanSpan(sp))
-			dst := lex[n*hs : (n+1)*hs]
+			copy(s.ctx[n*hs:], meanSpan(sp))
+			dst := s.lex[n*hs : (n+1)*hs]
 			for t := sp[0]; t < sp[1]; t++ {
 				row, ok := rowCache[ids[t]]
 				if !ok {
 					var err error
 					if row, err = lm(ids[t]); err != nil {
-						return nil, err
+						return headSpans{}, err
 					}
 					if len(row) != hs {
-						return nil, fmt.Errorf("clef: lm_head row for token %d is %d wide, want %d", ids[t], len(row), hs)
+						return headSpans{}, fmt.Errorf("clef: lm_head row for token %d is %d wide, want %d", ids[t], len(row), hs)
 					}
 					rowCache[ids[t]] = row
 				}
@@ -296,21 +340,17 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 			for j := range dst {
 				dst[j] *= inv
 			}
-			qOf[n] = qi
+			s.qOf[n] = qi
 			n++
 		}
 	}
+	return s, nil
+}
 
-	// option_query = ctx-projection + lexical-projection + question-projection(qv[q]).
-	optQ := matmulBT(ctx, h.optCtxProj, nOpt, hs, w)
-	addInPlace(optQ, matmulBT(lex, h.optLexProj, nOpt, hs, w))
-	oq := matmulBT(qv, h.optQuestionProj, len(qs), hs, w)
-	for i := 0; i < nOpt; i++ {
-		addInPlace(optQ[i*w:(i+1)*w], oq[qOf[i]*w:(qOf[i]+1)*w])
-	}
-
-	// Evidence routing: pre-norm cross-attention over the (normalised) memory, then a feed-forward.
-	x := optQ
+// route runs the evidence routing layers over the option queries x ([nOpt, w], updated in place and returned): pre-norm
+// cross-attention over the normalised memory ([L, w]), then a feed-forward.
+func (h *Head) route(x []float32, nOpt int, memory []float32, L int) []float32 {
+	w := h.Cfg.Width
 	for _, l := range h.routing {
 		nq := make([]float32, nOpt*w)
 		layerNormRows(nq, x, l.queryNorm, nOpt, w)
@@ -321,10 +361,14 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		layerNormRows(f, x, l.ffNorm, nOpt, w)
 		addInPlace(x, h.feedForward(f, nOpt, l.ff1W, l.ff1B, l.ff2W, l.ff2B))
 	}
-	routed := x // [N, w]
+	return x
+}
 
-	// Per question: softmax over its options of routed.field/sqrt(w), and the weighted sum of the routed rows.
-	baseFields := matmulBT(qv, h.questionProj, len(qs), hs, w)
+// questionFields is each question's field row before the decoder layers, [Q, w]: its projected span mean, plus the normalised
+// summary of its routed options (a softmax over them of routed.field/sqrt(w)), the projected global row and its type's embedding.
+func (h *Head) questionFields(qs []Question, sp headSpans, routed, global []float32) []float32 {
+	w, hs := h.Cfg.Width, h.Cfg.HiddenSize
+	baseFields := matmulBT(sp.qv, h.questionProj, len(qs), hs, w)
 	summaries := make([]float32, len(qs)*w)
 	for qi, q := range qs {
 		no := len(q.OptionIDs)
@@ -332,7 +376,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		sc := make([]float64, no)
 		mx := math.Inf(-1)
 		for o := range no {
-			sc[o] = dot64(routed[(first[qi]+o)*w:(first[qi]+o+1)*w], field) / math.Sqrt(float64(w))
+			sc[o] = dot64(routed[(sp.first[qi]+o)*w:(sp.first[qi]+o+1)*w], field) / math.Sqrt(float64(w))
 			mx = math.Max(mx, sc[o])
 		}
 		var z float64
@@ -343,7 +387,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		sum := summaries[qi*w : (qi+1)*w]
 		for o := range no {
 			wt := float32(sc[o] / z)
-			for j, v := range routed[(first[qi]+o)*w : (first[qi]+o+1)*w] {
+			for j, v := range routed[(sp.first[qi]+o)*w : (sp.first[qi]+o+1)*w] {
 				sum[j] += wt * v
 			}
 		}
@@ -358,9 +402,13 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 			f[j] = baseFields[qi*w+j] + nsum[qi*w+j] + gp[j] + h.typeEmb[q.Type*w+j]
 		}
 	}
+	return fields
+}
 
-	// Decoder layers: self-attention over the questions, cross-attention over the UN-normalised memory, feed-forward.
-	nQ := len(qs)
+// decodeFields runs the decoder layers over fields ([nQ, w], in place): self-attention over the questions, cross-attention
+// over the UN-normalised memory ([L, w]), feed-forward.
+func (h *Head) decodeFields(fields []float32, nQ int, memory []float32, L int) {
+	w := h.Cfg.Width
 	for _, l := range h.layers {
 		t := make([]float32, nQ*w)
 		layerNormRows(t, fields, l.norm1, nQ, w)
@@ -370,29 +418,29 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		layerNormRows(t, fields, l.norm3, nQ, w)
 		addInPlace(fields, h.feedForward(t, nQ, l.lin1W, l.lin1B, l.lin2W, l.b))
 	}
-	fn := make([]float32, nQ*w)
-	layerNormRows(fn, fields, h.fieldNorm, nQ, w)
-	on := make([]float32, nOpt*w)
-	layerNormRows(on, routed, h.optionNorm, nOpt, w)
+}
 
-	// Logits.
+// logits scores every option: the scaled lexical prior against the question's anchor, plus the gated joint score (the scaled
+// cosine of the normalised field fn and option on rows, and the residual scorer over their features).
+func (h *Head) logits(qs []Question, sp headSpans, global, fn, on []float32) [][]float32 {
+	w, hs := h.Cfg.Width, h.Cfg.HiddenSize
 	logCap := math.Log(100)
 	priorScale := math.Exp(math.Min(float64(h.priorScale), logCap))
 	jointScale := math.Exp(math.Min(float64(h.jointScale), logCap))
 	gate := 1 / (1 + math.Exp(-float64(h.residualGate)))
-	out := make([][]float32, nQ)
+	out := make([][]float32, len(qs))
 	for qi, q := range qs {
 		anchor := make([]float64, hs)
 		for j := range hs {
-			anchor[j] = float64(qv[qi*hs+j] + global[j])
+			anchor[j] = float64(sp.qv[qi*hs+j] + global[j])
 		}
 		normalize64(anchor)
 		field := fn[qi*w : (qi+1)*w]
 		out[qi] = make([]float32, len(q.OptionIDs))
 		for o := range q.OptionIDs {
-			oi := first[qi] + o
+			oi := sp.first[qi] + o
 			lexA := make([]float64, hs)
-			for j, v := range lex[oi*hs : (oi+1)*hs] {
+			for j, v := range sp.lex[oi*hs : (oi+1)*hs] {
 				lexA[j] = float64(v)
 			}
 			normalize64(lexA)
@@ -418,7 +466,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 			out[qi][o] = float32(prior + gate*joint)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Softmax is the per-question softmax the reference applies to the logits, in float64.

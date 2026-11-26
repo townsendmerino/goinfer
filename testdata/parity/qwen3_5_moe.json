@@ -16,7 +16,7 @@
   "programs": [
     "testdata/qwen35-tiny"
   ],
-  "deps_hash": "sha256:3e12defd7a5a37d64ab43d4f6b8a639eec60c3385f3fb00d74fe3f4ee9532d0a",
+  "deps_hash": "sha256:f197dc9329a840ed14d3087741885453e8c4171dd64ab9af3d9c8de84d1c7379",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
