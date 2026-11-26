@@ -563,7 +563,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
     `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
     The first load reads every page for the CRC pass unless `decoder/giwverify.go:giwVerified` finds the file's marker.
   - **CUDA and WebGPU copy the weights to the device** (`backend/cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
-    buffer; `backend/webgpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
+    buffer; `backend/webgpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/resident_prefill_seed.go:Model.tryClaimResident`
     falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
     after the upload.
   - **Metal aliases most of a `.giw` model:** `backend/metal/alias.go:weightAlias.windowOn` builds no-copy buffers over `Model.MmapAliasWindow`

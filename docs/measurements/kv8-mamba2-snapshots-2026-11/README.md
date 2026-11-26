@@ -7,7 +7,7 @@ Plan of record: `docs/tasks/task-kv-architecture-2026-10.md`, the KV8 row; the o
 
 - **State in the host snapshot.** `backend/cuda/kvsnap.go` places every recurrent layer's conv window and state (DeltaNet's `dnWin`/`dnState` and Mamba-2's `mbWin`/`mbSSM`, both through `cudaLayer.recurrentOf`) after the K/V rows, and
   restores them to the slot a restore names. `snapshotDecline`'s Mamba-2 refusal and `KVSnapshotRecurrent`'s `r.mamba == nil` go; `KVSnapshotBytes` prices the state.
-- **The mark needs no new code in the decoder.** A recurrent model's snapshot points are cuts (`decoder/model.go:Model.residentPrefillSeedMarked`: the prefill is split at the point and the mark called between the two calls), and the
+- **The mark needs no new code in the decoder.** A recurrent model's snapshot points are cuts (`decoder/resident_prefill_seed.go:Model.residentPrefillSeedMarked`: the prefill is split at the point and the mark called between the two calls), and the
   one-token-at-a-time prefill is such a call. Serve computes `MsgBoundary` and `Boundary` for a model whose snapshots carry its state (`KeepsRecurrentSnapshots`), which now includes Mamba-2.
 - **The cut cannot change a Mamba-2 prompt's numbers**, because every token takes the same per-token kernels whichever call it is in; the gate below reads that, it does not assume it.
 - **Not built:** Metal, a batched Mamba-2 prefill, Marconi admission.
