@@ -361,7 +361,7 @@ func TestParityPrograms_mapping(t *testing.T) {
 				continue
 			}
 			file, _ := runtime.FuncForPC(reflect.ValueOf(adapter).Pointer()).FileLine(reflect.ValueOf(adapter).Pointer())
-			def := "decoder/" + filepath.Base(file)
+			def := "internal/runtime/families/" + filepath.Base(file)
 			found := false
 			for _, o := range fam.Own {
 				found = found || o == def
