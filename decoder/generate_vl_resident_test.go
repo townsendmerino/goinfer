@@ -223,7 +223,7 @@ func loadQwen25VLTiny(t *testing.T) (*Model, qwen25vlGolden) {
 
 // TestGenerateQwenVL_residentDecodeUsesForwardMRoPE is gap 0's wiring gate for GenerateQwenVL,
 // extended for P9(a): with a MRoPEDecodeAvailable-capable resident attached, decode past the image block
-// must dispatch through ForwardMRoPE (not the base Forward), with ropePos = pos + mropeDelta — the
+// must dispatch through ForwardMRoPE (not the base Forward), with ropePos = pos + rope.MRoPEDelta — the
 // exact distinction Forward alone cannot express (ResidentDecodeSubsystem's ForwardMRoPE doc
 // comment) — and the turn must COMMIT resIDs + the image block afterward (see the Gemma 3 sibling
 // test's doc comment for why commit, not forget).
@@ -442,7 +442,7 @@ func TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower(t *testing
 // TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE confirms P9(a)'s fast path
 // exercises Qwen's m-RoPE-aware reseed (residentPrefillSeedMRoPE), not just the Gemma-shaped
 // plain-Forward path TestGenerateVL_imageReuseFastPath_sameImageSkipsTower already covers — the
-// ropePos = pos + mropeDelta distinction only ForwardMRoPE can express (decoder/residency.go).
+// ropePos = pos + rope.MRoPEDelta distinction only ForwardMRoPE can express (decoder/residency.go).
 func TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}

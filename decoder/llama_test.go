@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // validLlamaConfig is a tiny ValidateLlama-clean llama config for descriptor
@@ -86,7 +88,7 @@ func TestLlama_ropeScaling(t *testing.T) {
 		t.Fatalf("llama3 rope_scaling should load: %v", err)
 	}
 	// Scaling must change the low-frequency end of the table vs no scaling.
-	plain := computeInvFreq(cfg.RoPEGlobalBase, a.HeadDim, nil)
+	plain := rope.ComputeInvFreq(cfg.RoPEGlobalBase, a.HeadDim, nil)
 	if a.ropeInvFreqGlobal[len(a.ropeInvFreqGlobal)-1] >= plain[len(plain)-1] {
 		t.Errorf("llama3 scaling did not lower the low-frequency inv_freq (%v vs unscaled %v)",
 			a.ropeInvFreqGlobal[len(a.ropeInvFreqGlobal)-1], plain[len(plain)-1])

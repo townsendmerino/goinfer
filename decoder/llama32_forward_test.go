@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -65,7 +66,7 @@ func TestLlama32_forwardParity(t *testing.T) {
 	if m.w.arch.Name != "llama" {
 		t.Fatalf("resolved arch %q, want llama", m.w.arch.Name)
 	}
-	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.kind != ropeScaleLlama3 {
+	if m.w.arch.ropeScaling == nil || m.w.arch.ropeScaling.Kind != rope.ScaleLlama3 {
 		t.Fatalf("expected llama3 rope scaling, got %+v", m.w.arch.ropeScaling)
 	}
 	if !m.w.arch.TiedLMHead {

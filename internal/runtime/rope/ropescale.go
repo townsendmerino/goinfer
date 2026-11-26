@@ -1,0 +1,360 @@
+package rope
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+)
+
+// RoPE frequency scaling. HF's rope_scaling object transforms the base inverse-frequency table so a model trained at one context
+// length serves a longer one. The supported rope_type values are linear, llama3, yarn and dynamic (accepted as unscaled; see
+// ParseScaling); any other (longrope/su) is rejected loudly by the adapter rather than loaded with the wrong positional
+// frequencies.
+
+// ScalingKind enumerates the rope_scaling.rope_type values this build
+// supports. "none" is the implicit default (no rope_scaling object).
+type ScalingKind int
+
+const (
+	ScaleNone   ScalingKind = iota
+	ScaleLinear             // positions divided by factor (inv_freq /= factor)
+	ScaleLlama3             // Llama-3.1+/3.2 piecewise wavelength interpolation
+	ScaleYarn               // YaRN NTK-by-parts interpolation (Mellum, long-context Qwen)
+)
+
+// Scaling holds the resolved scaling parameters. Only the fields the active
+// kind needs are populated.
+type Scaling struct {
+	Kind   ScalingKind
+	Factor float64 // linear + llama3 + yarn
+
+	// llama3 only:
+	LowFreqFactor  float64
+	HighFreqFactor float64
+
+	OrigMaxPosition float64 // llama3 + yarn
+
+	// yarn only:
+	BetaFast float64
+	BetaSlow float64
+	Mscale   float64 // attention_factor applied to cos/sin (1.0 for non-yarn)
+	Truncate bool    // floor/ceil the correction range (HF default true); gpt-oss sets false (exact — truncating shifts inv_freq by ~2e-4)
+}
+
+// ParseScaling reads config.json's rope_scaling object. A null/empty object
+// means no scaling (returns nil, nil). An object whose rope_type this build
+// doesn't implement is an error — the caller surfaces it so the load fails
+// loudly instead of producing wrong frequencies. HF has used both "rope_type"
+// and the legacy "type" key; both are accepted.
+func ParseScaling(raw json.RawMessage) (*Scaling, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var obj struct {
+		RopeType        string   `json:"rope_type"`
+		Type            string   `json:"type"`
+		Factor          float64  `json:"factor"`
+		LowFreqFactor   float64  `json:"low_freq_factor"`
+		HighFreqFactor  float64  `json:"high_freq_factor"`
+		OrigMaxPosition float64  `json:"original_max_position_embeddings"`
+		BetaFast        *float64 `json:"beta_fast"`
+		BetaSlow        *float64 `json:"beta_slow"`
+		AttentionFactor *float64 `json:"attention_factor"`
+		Truncate        *bool    `json:"truncate"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("rope_scaling: %w", err)
+	}
+	kind := obj.RopeType
+	if kind == "" {
+		kind = obj.Type
+	}
+	switch kind {
+	case "linear":
+		if obj.Factor <= 0 {
+			return nil, fmt.Errorf("rope_scaling(linear): factor must be >0, got %v", obj.Factor)
+		}
+		return &Scaling{Kind: ScaleLinear, Factor: obj.Factor}, nil
+	case "llama3":
+		if obj.Factor <= 0 || obj.HighFreqFactor == obj.LowFreqFactor || obj.OrigMaxPosition <= 0 {
+			return nil, fmt.Errorf("rope_scaling(llama3): bad params factor=%v low=%v high=%v origMax=%v",
+				obj.Factor, obj.LowFreqFactor, obj.HighFreqFactor, obj.OrigMaxPosition)
+		}
+		return &Scaling{
+			Kind: ScaleLlama3, Factor: obj.Factor,
+			LowFreqFactor: obj.LowFreqFactor, HighFreqFactor: obj.HighFreqFactor,
+			OrigMaxPosition: obj.OrigMaxPosition,
+		}, nil
+	case "yarn":
+		return NewYarnScaling(obj.Factor, obj.OrigMaxPosition, obj.BetaFast, obj.BetaSlow, obj.AttentionFactor, obj.Truncate)
+	case "dynamic":
+		// Dynamic NTK (InternLM2/3, older Qwen/Llama long-context variants) recomputes the
+		// RoPE base per sequence from the CURRENT length:
+		//
+		//	base' = base · (factor·seq/origMax − (factor−1))^(dim/(dim−2))   when seq > origMax
+		//	base' = base                                                     otherwise
+		//
+		// WITHIN THE TRAINED WINDOW IT IS EXACTLY IDENTITY — HF's DynamicNTKScalingRotaryEmbedding
+		// only rescales once seq_len exceeds max_position_embeddings. So a null scaling here is
+		// not an approximation for seq ≤ origMax; it is the same function.
+		//
+		// It is accepted rather than rejected because rejecting it makes a whole family
+		// unloadable over a factor that does nothing at the lengths goinfer is gated at, and
+		// silently wrong ONLY past a boundary the caller can be told about. Beyond origMax the
+		// positions drift — that is a real limitation, recorded here and in the family docs,
+		// not papered over: it needs a per-sequence inv-freq rebuild, which the precomputed
+		// finalizeRoPE tables cannot express today.
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("rope_scaling rope_type=%q unsupported (have: linear, llama3, yarn, dynamic; longrope is a follow-up)", kind)
+	}
+}
+
+// LayerSpec is one attention type's resolved RoPE: its base (rope_theta)
+// and optional scaling (nil = plain RoPE). Used by ParseParameters for the
+// per-attention-type rope_parameters form.
+type LayerSpec struct {
+	Base    float64
+	Scaling *Scaling
+	// partial is this attention type's partial_rotary_factor, read from the SAME
+	// inner object (Laguna keys it per layer type: 0.5 on full_attention, 1.0 on
+	// sliding_attention, so the two types rotate different widths). 0 ⇒ absent;
+	// the caller falls back to the top-level config field. Mellum leaves it 0.
+	Partial float64
+}
+
+// ParseParameters reads the per-attention-type rope_parameters object
+// (Mellum): {"full_attention": {...}, "sliding_attention": {...}}, where each
+// inner object carries rope_theta plus a rope_scaling-style rope_type + params.
+// Returns the full (global) and sliding (local) specs. A missing rope_parameters
+// is (nil, nil, nil) — the caller falls back to the flat rope_theta/rope_scaling.
+//
+// A MISSING sliding_attention returns (full, nil, nil) rather than an error: a
+// family whose config drops layer_types entirely is all-full-attention and ships
+// only the one key (Laguna M.1 does exactly this, where the XS generations ship
+// both). Callers that REQUIRE both — mellum — already check for a nil sliding
+// themselves and say so in their own error, so relaxing it here cannot loosen them.
+func ParseParameters(raw json.RawMessage) (full, sliding *LayerSpec, err error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil, nil
+	}
+	var obj struct {
+		Full    json.RawMessage `json:"full_attention"`
+		Sliding json.RawMessage `json:"sliding_attention"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, nil, fmt.Errorf("rope_parameters: %w", err)
+	}
+	if full, err = ParseSpec("full_attention", obj.Full); err != nil {
+		return nil, nil, err
+	}
+	if len(obj.Sliding) == 0 {
+		return full, nil, nil
+	}
+	if sliding, err = ParseSpec("sliding_attention", obj.Sliding); err != nil {
+		return nil, nil, err
+	}
+	return full, sliding, nil
+}
+
+// ParseSpec reads one inner rope_parameters object: rope_theta + a
+// rope_type ("default" → plain; "yarn"/"linear"/"llama3" → scaling).
+func ParseSpec(name string, raw json.RawMessage) (*LayerSpec, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("rope_parameters: missing %s", name)
+	}
+	var head struct {
+		RopeType  string  `json:"rope_type"`
+		RopeTheta float64 `json:"rope_theta"`
+		Partial   float64 `json:"partial_rotary_factor"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, fmt.Errorf("rope_parameters(%s): %w", name, err)
+	}
+	if head.RopeTheta <= 0 {
+		return nil, fmt.Errorf("rope_parameters(%s): rope_theta must be >0", name)
+	}
+	spec := &LayerSpec{Base: head.RopeTheta, Partial: head.Partial}
+	switch head.RopeType {
+	case "", "default":
+		// plain RoPE, no scaling
+	default:
+		sc, err := ParseScaling(raw) // reuses the rope_type dispatch (yarn/linear/llama3)
+		if err != nil {
+			return nil, fmt.Errorf("rope_parameters(%s): %w", name, err)
+		}
+		spec.Scaling = sc
+	}
+	return spec, nil
+}
+
+// Reread decodes fields of a rope object the RoPE parser has already accepted into v, for a family that reads a field
+// the parser does not. Absent or null bytes leave v zero; bytes that do not decode into v (a field of the wrong type) are the
+// config's error, since a field read as absent would change the RoPE the family runs.
+func Reread(family string, raw json.RawMessage, v any) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("decoder(%s): rope_parameters: %w", family, err)
+	}
+	return nil
+}
+
+// ParseFlat reads the qwen3_5_moe flat rope_parameters object
+// {rope_type, rope_theta, partial_rotary_factor, …}: one LayerSpec (base +
+// optional scaling) plus the partial-rotary fraction (HF defaults it to 0.25
+// inside this object, so it is read here rather than from the top-level config).
+func ParseFlat(raw json.RawMessage) (spec *LayerSpec, partialRotary float64, err error) {
+	spec, err = ParseSpec("rope_parameters", raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	var head struct {
+		PartialRotaryFactor float64 `json:"partial_rotary_factor"`
+	}
+	_ = json.Unmarshal(raw, &head)
+	return spec, head.PartialRotaryFactor, nil
+}
+
+// ParseMRoPEFlat reads qwen3_5 / qwen3_5_moe's m-RoPE fields from the nested rope_parameters object:
+// mrope_section (T,H,W frequency counts) and mrope_interleaved. A missing, malformed or wrong-length
+// section returns (nil, false) — text-only loading must not depend on it; the image path checks
+// the section itself (GenerateQwenVL refuses a nil MRopeSection). Not validated against the rotary
+// dimension here: that needs the architecture and lives with the image seam.
+func ParseMRoPEFlat(raw json.RawMessage) (section []int, interleaved bool) {
+	var head struct {
+		Section     []int `json:"mrope_section"`
+		Interleaved bool  `json:"mrope_interleaved"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &head) != nil || len(head.Section) != 3 {
+		return nil, false
+	}
+	for _, n := range head.Section {
+		if n < 0 {
+			return nil, false
+		}
+	}
+	return head.Section, head.Interleaved
+}
+
+// NewYarnScaling builds a YaRN Scaling, mirroring HF
+// _compute_yarn_parameters' defaults: beta_fast 32, beta_slow 1, and an
+// attention_factor of get_mscale(factor) = 0.1·ln(factor)+1 when not given.
+func NewYarnScaling(factor, origMax float64, betaFast, betaSlow, attnFactor *float64, truncate *bool) (*Scaling, error) {
+	if factor <= 0 || origMax <= 0 {
+		return nil, fmt.Errorf("rope_scaling(yarn): bad params factor=%v origMax=%v", factor, origMax)
+	}
+	bf, bs := 32.0, 1.0
+	if betaFast != nil && *betaFast != 0 {
+		bf = *betaFast
+	}
+	if betaSlow != nil && *betaSlow != 0 {
+		bs = *betaSlow
+	}
+	ms := 1.0
+	if attnFactor != nil {
+		ms = *attnFactor
+	} else if factor > 1 {
+		ms = 0.1*math.Log(factor) + 1.0
+	}
+	trunc := true // HF's _compute_yarn_parameters default
+	if truncate != nil {
+		trunc = *truncate
+	}
+	return &Scaling{
+		Kind: ScaleYarn, Factor: factor, OrigMaxPosition: origMax,
+		BetaFast: bf, BetaSlow: bs, Mscale: ms, Truncate: trunc,
+	}, nil
+}
+
+// YarnGetMscale is HF's yarn_get_mscale: 1.0 at scale ≤ 1, else 0.1·m·ln(scale)+1.
+// DeepSeek's cos/sin attention_factor is the RATIO of this at the two mscale knobs
+// (mscale / mscale_all_dim); equal knobs (V2-Lite) ⇒ 1.0.
+func YarnGetMscale(scale, m float64) float64 {
+	if scale <= 1 {
+		return 1.0
+	}
+	return 0.1*m*math.Log(scale) + 1.0
+}
+
+// ComputeInvFreq builds the per-dimension inverse-frequency table RoPE rotates
+// with: invFreq[d] = base^(-2d/rotaryDim) for d in [0, rotaryDim/2), with any
+// scaling transform applied. rotaryDim is the number of rotated dims (== head
+// dim for full rotary, < head dim for Phi's partial_rotary_factor).
+func ComputeInvFreq(base float64, rotaryDim int, sc *Scaling) []float64 {
+	half := rotaryDim / 2
+	inv := make([]float64, half)
+	for d := range half {
+		inv[d] = math.Pow(base, -float64(2*d)/float64(rotaryDim))
+	}
+	if sc == nil {
+		return inv
+	}
+	switch sc.Kind {
+	case ScaleLinear:
+		for d := range inv {
+			inv[d] /= sc.Factor
+		}
+	case ScaleLlama3:
+		applyLlama3Scaling(inv, sc)
+	case ScaleYarn:
+		applyYarnScaling(inv, base, rotaryDim, sc)
+	}
+	return inv
+}
+
+// applyYarnScaling reproduces HF's _compute_yarn_parameters inv_freq (NTK-by-
+// parts): high-frequency dims extrapolate (kept as-is), low-frequency dims
+// interpolate (divided by factor), and a linear ramp over the correction range
+// [low, high] blends the two. `inv` enters as the plain extrapolation table
+// (base^-2d/dim); the per-dim attention_factor mscale is applied separately at
+// rotation time (see ropeMscale). truncate=true (floor/ceil the range), as in
+// every config we target. rotaryDim is the full dim (the ramp spans dim/2).
+func applyYarnScaling(inv []float64, base float64, rotaryDim int, sc *Scaling) {
+	dim := float64(rotaryDim)
+	corr := func(numRot float64) float64 {
+		return (dim * math.Log(sc.OrigMaxPosition/(numRot*2*math.Pi))) / (2 * math.Log(base))
+	}
+	// truncate=true (HF default) floors/ceils the range to integer dims; gpt-oss
+	// uses truncate=false (the raw fractional range), which matches HF to ~1e-8
+	// where truncating is ~2e-4 off.
+	low, high := corr(sc.BetaFast), corr(sc.BetaSlow)
+	if sc.Truncate {
+		low, high = math.Floor(low), math.Ceil(high)
+	}
+	low = math.Max(low, 0)
+	high = math.Min(high, dim-1)
+	if low == high {
+		high += 0.001 // prevent singularity (matches HF linear_ramp_factor)
+	}
+	for d := range inv {
+		ramp := (float64(d) - low) / (high - low)
+		ramp = math.Min(math.Max(ramp, 0), 1)
+		extrapFactor := 1 - ramp // inv_freq_extrapolation_factor
+		extrap := inv[d]         // plain (extrapolation) frequency
+		interp := extrap / sc.Factor
+		inv[d] = interp*(1-extrapFactor) + extrap*extrapFactor
+	}
+}
+
+// applyLlama3Scaling reproduces HF's _compute_llama3_parameters: split the
+// frequency band by wavelength into a high-frequency part (kept), a
+// low-frequency part (divided by factor), and a middle part (smoothly
+// interpolated between the two). Wavelength = 2π / inv_freq.
+func applyLlama3Scaling(inv []float64, sc *Scaling) {
+	lowWavelen := sc.OrigMaxPosition / sc.LowFreqFactor   // long wavelength threshold
+	highWavelen := sc.OrigMaxPosition / sc.HighFreqFactor // short wavelength threshold
+	for d, f := range inv {
+		wavelen := 2 * math.Pi / f
+		switch {
+		case wavelen < highWavelen:
+			// high frequency: unchanged
+		case wavelen > lowWavelen:
+			inv[d] = f / sc.Factor
+		default:
+			smooth := (sc.OrigMaxPosition/wavelen - sc.LowFreqFactor) / (sc.HighFreqFactor - sc.LowFreqFactor)
+			inv[d] = (1-smooth)*(f/sc.Factor) + smooth*f
+		}
+	}
+}

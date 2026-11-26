@@ -1822,7 +1822,7 @@ config.json-only value (EOSIDs() is its only consumer anywhere in the tree), so
 overwriting it here is safe.
 resolveEOSIDs looks for generation_config.json via os.DirFS(eosDir) — a real DIRECTORY.
 For a .gguf load, dir is the FILE path, so os.DirFS(dir) can never open anything inside it
-(the fallback decoder/gguf.go:ggufEOS's own comment claims); generation_config.json for a
+(the fallback internal/runtime/ggufconfig/metadata.go:ggufEOS's own comment claims); generation_config.json for a
 GGUF conversion lives beside the file, in its parent directory, same as M-04 found.
 ```
 
@@ -11878,7 +11878,7 @@ production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwe
 Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.
 
 ```text
-MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (rope.go's mropeDelta —
+MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (internal/runtime/rope's MRoPEDelta —
 scalar decode past the prefill rotates at seqPos+delta), set by prefillLogitsQwenVL. A
 cross-package resident-decode test needs this to compute the same ropePos GenerateQwenVL's
 production decode loop does (gap 0, docs/multimodal.md).

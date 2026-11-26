@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -219,7 +220,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 	}
 	for _, name := range []string{"interleaved", "adjacent"} {
 		l := g.Layouts[name]
-		pos, err := mropePositions(l.InputIDs, raw.ImageToken, l.GridTHW, merge)
+		pos, err := rope.MRoPEPositions(l.InputIDs, raw.ImageToken, l.GridTHW, merge)
 		if err != nil {
 			t.Fatalf("%s: mropePositions: %v", name, err)
 		}
@@ -235,7 +236,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		if !samePos(pos) {
 			t.Errorf("%s: m-RoPE positions differ from HF's", name)
 		}
-		if d := mropeDelta(pos, len(l.InputIDs)); d != l.RopeDelta {
+		if d := rope.MRoPEDelta(pos, len(l.InputIDs)); d != l.RopeDelta {
 			t.Errorf("%s: rope delta %d, HF %d", name, d, l.RopeDelta)
 		}
 		want := l.Logits[len(l.Logits)-1]

@@ -5,6 +5,8 @@ import (
 	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3): Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed to a shared
@@ -50,7 +52,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	var q []float32
 	if p.QLoRARank > 0 {
 		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
-		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
+		normact.RMS(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
 		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
 		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
@@ -78,7 +80,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := slices.Clone(lat[:rank])
-		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
+		normact.RMS(cn, w.kvALayernorm, 1, rank, eps, false)
 		kvUp := hybridattn.Matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave) // key rope at its own position
@@ -166,7 +168,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	var q []float32
 	if p.QLoRARank > 0 {
 		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
-		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
+		normact.RMS(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
 		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
 		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
@@ -216,7 +218,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := cnAll[j*rank : (j+1)*rank]
 		copy(cn, lat[:rank])
-		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
+		normact.RMS(cn, w.kvALayernorm, 1, rank, eps, false)
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave)
 		for hh := range H {
@@ -295,7 +297,7 @@ var mlaForceNaive bool
 // mlaRope rotates the rope-carrying dims of a [heads, ropeDim] vector at absolute
 // position pos. DeepSeek's rope_interleave (V3 default) lays the rotary dims out as
 // adjacent pairs (x0,x1),(x2,x3),…; de-interleaving each head into [evens|odds] and then
-// applying the standard NeoX rotate_half (applyRoPE) yields a layout P(interleaved-RoPE),
+// applying the standard NeoX rotate_half (rope.Apply) yields a layout P(interleaved-RoPE),
 // and since the SAME permutation P hits both query and key, the q·k dot product is
 // identical to HF's interleaved RoPE. rope_interleave=false skips the de-interleave (plain
 // NeoX). The rotary table (invFreq) is sized to ropeDim via Architecture.RotaryDim.
@@ -318,5 +320,5 @@ func mlaRope(vec []float32, heads, ropeDim, pos int, invFreq []float64, scale fl
 			copy(src, tmp)
 		}
 	}
-	applyRoPE(vec, heads, ropeDim, pos, invFreq, scale)
+	rope.Apply(vec, heads, ropeDim, pos, invFreq, scale)
 }

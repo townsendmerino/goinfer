@@ -5,6 +5,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // BackendModelView is a read-only view over a loaded Model's architecture,
@@ -140,9 +141,9 @@ func (v BackendModelView) MRopeAxis(half int) []int {
 	if len(sec) != 3 || half <= 0 {
 		return nil
 	}
-	comp := mropeComponent
+	comp := rope.MRoPEComponent
 	if v.m.w.arch.MRopeInterleaved {
-		comp = mropeComponentInterleaved
+		comp = rope.MRoPEComponentInterleaved
 	}
 	axis := make([]int, half)
 	for d := range axis {

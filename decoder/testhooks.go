@@ -20,7 +20,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -220,11 +222,11 @@ func (m *Model) SetLayerBuffersForTest(l int, bufs []program.Buf) {
 	m.fitOf.bufs[l] = bufs
 }
 
-// ApplyMRoPEForTest wraps applyMRoPE, the CPU m-RoPE reference a resident kernel's own rotation must match bit-for-bit.
-// Production always reaches applyMRoPE through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component
-// layout (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent); pass false for Qwen2.5-VL.
+// ApplyMRoPEForTest wraps rope.ApplyMRoPE, the CPU m-RoPE reference a resident kernel's own rotation must match bit-for-bit.
+// Production always reaches rope.ApplyMRoPE through rope.At, never directly. interleaved selects Qwen3-VL's per-index component
+// layout (rope.MRoPEComponentInterleaved) over Qwen2.5-VL's contiguous-block one (rope.MRoPEComponent); pass false for Qwen2.5-VL.
 func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
-	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale, interleaved)
+	rope.ApplyMRoPE(vec, heads, headDim, pos, section, invFreq, scale, interleaved)
 }
 
 // Gemma4MoEExpertForTest computes one gemma4 MoE expert's output on a caller-supplied input xe ([hidden]): edown = Down ·
@@ -246,7 +248,7 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 	matmul(be, &gm.expertsGateUp[e], xe, gu, 1)
 	mid := make([]float32, gm.moeInter)
 	for i := 0; i < gm.moeInter; i++ {
-		mid[i] = geluTanh(gu[i]) * gu[gm.moeInter+i]
+		mid[i] = normact.GELUTanh(gu[i]) * gu[gm.moeInter+i]
 	}
 	out := make([]float32, m.w.arch.HiddenDim)
 	matmul(be, &gm.expertsDown[e], mid, out, 1)
@@ -625,11 +627,11 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 	if len(path) == 0 {
 		return nil, fmt.Errorf("decoder: an empty path")
 	}
-	mropePos, err := mropePositions(ids, imageToken, gridTHW, merge)
+	mropePos, err := rope.MRoPEPositions(ids, imageToken, gridTHW, merge)
 	if err != nil {
 		return nil, err
 	}
-	delta := mropeDelta(mropePos, len(ids))
+	delta := rope.MRoPEDelta(mropePos, len(ids))
 	if err := m.checkDeepstack(deep, imageSpansTotal(spans)); err != nil {
 		return nil, err
 	}

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // qwen3NextArchitecture expresses Qwen3-Next (model_type qwen3_next): the same Gated-DeltaNet/softmax/MoE hybrid as qwen3_5_moe (DeltaNet
@@ -13,8 +15,8 @@ import (
 //     before ValidateQwen35 can require LayerTypes to be populated).
 //  2. partial_rotary_factor is a TOP-LEVEL field, not nested inside rope_parameters, and the released config has no rope_parameters object
 //     at all (top-level rope_theta + rope_scaling). So this mirrors deepseekArchitecture's dual-path RoPE resolution (nested if present, flat
-//     fields otherwise) rather than qwen35Architecture's nested-only parseRopeFlat, which hard-errors on an empty rope_parameters
-//     (parseRopeSpec refuses it).
+//     fields otherwise) rather than qwen35Architecture's nested-only rope.ParseFlat, which hard-errors on an empty rope_parameters
+//     (rope.ParseSpec refuses it).
 func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.NormalizeQwen3NextLayerTypes(); err != nil {
 		return nil, nil, err
@@ -23,17 +25,17 @@ func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, err
 	}
 	var base float64
-	var scaling *ropeScaling
+	var scaling *rope.Scaling
 	var partialRotary float64
 	if len(cfg.RopeParameters) > 0 {
-		spec, pr, err := parseRopeFlat(cfg.RopeParameters)
+		spec, pr, err := rope.ParseFlat(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(qwen3_next): %w", err)
 		}
-		base, scaling, partialRotary = spec.base, spec.scaling, pr
+		base, scaling, partialRotary = spec.Base, spec.Scaling, pr
 	} else {
 		base = cfg.RoPEGlobalBase
-		sc, err := parseRopeScaling(cfg.RopeScaling)
+		sc, err := rope.ParseScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(qwen3_next): %w", err)
 		}

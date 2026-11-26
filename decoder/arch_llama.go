@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
 // llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset, Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE,
@@ -16,7 +18,7 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling) // linear + llama3; unsupported types error here
+	scaling, err := rope.ParseScaling(cfg.RopeScaling) // linear + llama3; unsupported types error here
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(llama): %w", err)
 	}

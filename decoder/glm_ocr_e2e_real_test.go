@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
@@ -232,9 +234,9 @@ func glmOcrRun(t *testing.T, g *glmOcrGolden, pv []float32, grid [3]int, tag str
 	}
 	t.Logf("[%s] tower %.0fs for %d patches -> %d image tokens", tag, time.Since(t0).Seconds(), len(pv)/1176, g.NImgTokens)
 
-	// Stage: positions are the caller's (mropePositions), with the model's own image id and merge.
+	// Stage: positions are the caller's (rope.MRoPEPositions), with the model's own image id and merge.
 	const imageToken = 59280
-	mropePos, err := mropePositions(g.InputIDs, imageToken, [][3]int{grid}, pp.MergeSize)
+	mropePos, err := rope.MRoPEPositions(g.InputIDs, imageToken, [][3]int{grid}, pp.MergeSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +337,7 @@ func TestGlmOcrE2E_f32(t *testing.T) {
 				t.Fatalf("grid %v len %d, HF's processor gave %v with %d patches", grid, len(pv), g.Grid[0], g.NPatches)
 			}
 			// Stage: pixel_values against HF's own, when the dump is on disk (reported, not gated).
-			if dir, err := lookupAsset("GOINFER_GLM_OCR_E2E"); err == nil {
+			if dir, err := testassets.Lookup("GOINFER_GLM_OCR_E2E"); err == nil {
 				hf := readF32LE(t, filepath.Join(dir, name+".pv.f32"))
 				logPixelDiff(t, pv, hf)
 			} else {

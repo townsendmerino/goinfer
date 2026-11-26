@@ -68,7 +68,7 @@ func TestValidateResolved_theZerosThatLookLegal(t *testing.T) {
 }
 
 // The RoPE half, which is the quietest of the three: finalizeRoPE treats base <= 0 as "no
-// tables" and applyRoPE is a silent no-op on an empty table, so the model generates fluent,
+// tables" and rope.Apply is a silent no-op on an empty table, so the model generates fluent,
 // POSITION-BLIND text. gpt-oss and llama4 read only the flat rope_theta, and transformers
 // >=5.10 nests it under rope_parameters — a loud error for llama/mistral/qwen3, silence here.
 func TestValidateResolved_positionInformationMustExist(t *testing.T) {
