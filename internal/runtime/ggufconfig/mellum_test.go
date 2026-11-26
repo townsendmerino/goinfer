@@ -69,3 +69,30 @@ func TestGGUFMellumConfig_attentionFactorSentinelOmitted(t *testing.T) {
 		})
 	}
 }
+
+// The -MTP GGUFs count their multi-token-prediction block in block_count (nextn_predict_layers = 1) and in the sliding
+// pattern. The trunk is block_count - nextn layers; counting the head as a trunk layer would decode it as one.
+func TestGGUFMellumConfig_dropsTheNextNBlock(t *testing.T) {
+	meta := map[string]any{
+		"mellum.block_count":                      uint32(3),
+		"mellum.nextn_predict_layers":             uint32(1),
+		"mellum.embedding_length":                 uint32(64),
+		"mellum.attention.head_count":             uint32(4),
+		"mellum.attention.head_count_kv":          uint32(4),
+		"mellum.attention.key_length":             uint32(16),
+		"mellum.attention.sliding_window_pattern": []any{true, false, true},
+		"mellum.rope.freq_base":                   float32(10000),
+	}
+	cfg, err := ggufMellumConfig(&embed.GGUFFile{Metadata: meta})
+	if err != nil {
+		t.Fatalf("ggufMellumConfig: %v", err)
+	}
+	if cfg.NumLayers != 2 || len(cfg.LayerTypes) != 2 || cfg.LayerTypes[0] != "sliding_attention" || cfg.LayerTypes[1] != "full_attention" {
+		t.Fatalf("NumLayers %d, LayerTypes %v; want the 2 trunk layers [sliding full]", cfg.NumLayers, cfg.LayerTypes)
+	}
+
+	meta["mellum.nextn_predict_layers"] = uint32(3)
+	if _, err := ggufMellumConfig(&embed.GGUFFile{Metadata: meta}); err == nil {
+		t.Error("a nextn count that leaves no trunk layer was accepted")
+	}
+}
