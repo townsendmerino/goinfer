@@ -41,6 +41,9 @@ func (l *scratchList) add(sb stepBuf, dst *Buffer) {
 	*l = append(*l, sb)
 }
 
+func (l *scratchList) buf(kind stepBufKind, dst *Buffer, n int) {
+	l.add(stepBuf{kind: kind, n: n}, dst)
+}
 func (l *scratchList) f32(dst *Buffer, n int)    { l.add(stepBuf{kind: stepFloats, n: n}, dst) }
 func (l *scratchList) bytes(dst *Buffer, n int)  { l.add(stepBuf{kind: stepBytes, n: n}, dst) }
 func (l *scratchList) u32(dst *Buffer, v uint32) { l.add(stepBuf{kind: stepU32, n: 1, u: v}, dst) }
@@ -151,16 +154,23 @@ func (r *resident) decodeRowsCheck(declared map[string]int) error {
 // buffers is decode's scratch, each set into r as it is allocated: the list buildResident allocates it from and the price sums. A
 // new buffer goes here, and so is priced.
 func (s decodeShape) buffers(r *resident) []stepBuf {
-	var out []stepBuf
-	buf := func(kind stepBufKind, dst *Buffer, n int) {
-		out = append(out, stepBuf{kind: kind, n: n, set: func(b Buffer) { *dst = b }})
+	var l scratchList
+	s.coreBuffers(&l, r)
+	s.samplerBuffers(&l, r)
+	s.mixerBuffers(&l, r)
+	s.mlaBuffers(&l, r)
+	s.layerUniforms(&l, r)
+	out := append([]stepBuf(l), s.families...)
+	if r.batchCap > 0 { // ensureBatchCap's rows, allocated after the list at the build's capacity and grown by ForwardBatch
+		out = append(out, r.batchRows(r.batchCap, 0)...)
 	}
-	u32 := func(dst *Buffer, v uint32) {
-		out = append(out, stepBuf{kind: stepU32, n: 1, u: v, set: func(b Buffer) { *dst = b }})
-	}
-	f32Of := func(dst *Buffer, v float32) {
-		out = append(out, stepBuf{kind: stepFloatsOf, n: 1, f: v, set: func(b Buffer) { *dst = b }})
-	}
+	return append(out, r.chainBuffers(r.chainTok[0] != (Buffer{}), r.chainLogits[0] != (Buffer{}))...)
+}
+
+// coreBuffers is decode's per-token rows (the residual, the projections' inputs and outputs, the logits and their argmax
+// partials) and the model-wide uniforms.
+func (s decodeShape) coreBuffers(l *scratchList, r *resident) {
+	buf, u32, f32Of := l.buf, l.u32, l.f32Of
 	aq := s.H
 	if s.q4k {
 		aq = 4 * s.H // the q4k lane's head reads the f32 final norm from aq's slot 0 (gemv_w8f32_head)
@@ -217,6 +227,11 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 	u32(&r.uAddOne, s.addOne)
 	u32(&r.uWindow, s.window)
 	u32(&r.uLNHasBias, s.lnHasBias)
+}
+
+// samplerBuffers is the device sampler's rows and uniforms.
+func (s decodeShape) samplerBuffers(l *scratchList, r *resident) {
+	buf, u32, f32Of := l.buf, l.u32, l.f32Of
 	// The device sampler (gumbel_sample.go): each block's best key and index, the draw, and its uniforms.
 	buf(stepFloats, &r.gumbelBKey, s.gumbelNB)
 	buf(stepFloats, &r.gumbelBIdx, s.gumbelNB)
@@ -228,6 +243,12 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 	u32(&r.uGumbelK1, 0)
 	u32(&r.uGumbelD0, 0)
 	u32(&r.uGumbelD1, 0)
+}
+
+// mixerBuffers is the per-family mixers' rows and uniforms: Gemma 4's PLE branch, the Gated DeltaNet, gated attention's
+// split and the Mamba-2 mixer.
+func (s decodeShape) mixerBuffers(l *scratchList, r *resident) {
+	buf, u32, f32Of := l.buf, l.u32, l.f32Of
 	if P := s.pleP; P > 0 { // Gemma 4's per-layer-embedding branch: every layer's input, the gate, and its int8 row
 		buf(stepFloats, &r.pleIn, s.nL*P)
 		buf(stepFloats, &r.pleG, P)
@@ -286,6 +307,11 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		f32Of(&r.uMbEps, s.normEps)
 		u32(&r.uMbNormGroups, uint32(p.normGroups))
 	}
+}
+
+// mlaBuffers is Multi-head Latent Attention's rows and packed shapes.
+func (s decodeShape) mlaBuffers(l *scratchList, r *resident) {
+	buf, u32, f32Of := l.buf, l.u32, l.f32Of
 	if p := s.mla; p != nil { // Multi-head Latent Attention: q (through its LoRA), the latent, the absorbed q, and the lifted context
 		S, b := r.mlaS, uint32(0)
 		if p.interleave {
@@ -296,7 +322,7 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 			for i, v := range vs {
 				us[i] = uint32(v)
 			}
-			out = append(out, stepBuf{kind: stepU32s, n: len(us), us: us, set: func(x Buffer) { *dst = x }})
+			l.u32s(dst, us)
 		}
 		buf(stepFloats, &S.qa, max(p.qLoRA, 1))
 		buf(stepBytes, &S.qaQ, max(p.qLoRA, 4))
@@ -319,6 +345,11 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		f32Of(&S.uRopeScale, p.ropeScale)
 		f32Of(&S.uScale, p.attnScale)
 	}
+}
+
+// layerUniforms is each attention geometry's, each q4k segment's and each layer's own uniforms.
+func (s decodeShape) layerUniforms(l *scratchList, r *resident) {
+	u32 := l.u32
 	for _, g := range s.geoms {
 		u32(&g.uHd, uint32(g.hd))
 		u32(&g.uKvDim, uint32(g.kvDim))
@@ -346,11 +377,6 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 			u32(&L.uFFNI, uint32(ly.ffnI))
 		}
 	}
-	out = append(out, s.families...)
-	if r.batchCap > 0 { // ensureBatchCap's rows, allocated after the list at the build's capacity and grown by ForwardBatch
-		out = append(out, r.batchRows(r.batchCap, 0)...)
-	}
-	return append(out, r.chainBuffers(r.chainTok[0] != (Buffer{}), r.chainLogits[0] != (Buffer{}))...)
 }
 
 // batchRows is ensureBatchCap's buffers at capacity c: the batch's hidden and logits rows, and the position uniforms of rows held

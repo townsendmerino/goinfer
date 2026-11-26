@@ -1,6 +1,5 @@
 # Functions over funcLenCeiling lines (TestQualityScan_functionLengthRatchet): `<file>:<func> <lines> -- <reason>`.
 # Each is held at its length on 2026-11-19 so it can only shrink; lower the ceiling when one does.
-backend/metal/decode_scratch.go:decodeShape.buffers 202 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_batched.go:Context.DecodeTokenFusedBatched 315 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_fused.go:Context.DecodeTokenFused 216 -- over the ceiling before the ratchet; split it when next changed
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
@@ -15,4 +14,3 @@ decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratc
 decoder/spec_ngram.go:ngramSpecLoop 344 -- over the ceiling before the ratchet; split it when next changed
 decoder/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed
 decoder/weights.go:buildWeightsFromSafetensorsTo 256 -- over the ceiling before the ratchet; split it when next changed
-internal/app/chatapp/main.go:Main 327 -- over the ceiling before the ratchet; split it when next changed
