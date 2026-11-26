@@ -28,10 +28,14 @@ type programFixture struct {
 }
 
 // programFixtures loads every tiny checkpoint directory under the two testdata trees whose family has a layer program. A
-// directory that does not load is reported, not hidden.
+// directory that does not load is reported, not hidden; one whose weights are over programFixtureWeightCap is refused by
+// name, as NOT RUN, before it loads.
 func programFixtures(t *testing.T) []programFixture {
 	t.Helper()
-	dirs := programFixtureDirs([]string{"../testdata", "testdata"})
+	dirs, refused := programFixtureDirs([]string{"../testdata", "testdata"})
+	for _, r := range refused {
+		t.Logf("%s NOT RUN: refused by size (a skip is not a pass)", r)
+	}
 	// GPT-2 (gitignored, so absent on CI) is the only fixture with learned positions and non-zero biases: the tiny fixtures'
 	// biases are all zero, as HF initialises them.
 	if _, err := os.Stat("../testdata/gpt2/config.json"); err == nil {
@@ -60,10 +64,14 @@ func programFixtures(t *testing.T) []programFixture {
 	return out
 }
 
+// programFixtureWeightCap is the most weight bytes a fixture the name filter admits may hold. The largest tiny fixture is
+// about 10 MB; a real checkpoint under a tiny name is gigabytes at f32, and every sweep would load it.
+const programFixtureWeightCap = 32 << 20
+
 // programFixtureDirs lists the tiny fixtures under roots: a directory with a config.json, or a .gguf file, whose name is a tiny
-// fixture's (isTinyFixtureName).
-func programFixtureDirs(roots []string) []string {
-	var dirs []string
+// fixture's (isTinyFixtureName). refused names each one the filter admits whose weights (programFixtureWeightBytes) are over
+// programFixtureWeightCap, with its size; it is not in dirs.
+func programFixtureDirs(roots []string) (dirs, refused []string) {
 	for _, root := range roots {
 		ents, err := os.ReadDir(root)
 		if err != nil {
@@ -75,17 +83,47 @@ func programFixtureDirs(roots []string) []string {
 			}
 			d := filepath.Join(root, e.Name())
 			if !e.IsDir() {
-				if strings.HasSuffix(e.Name(), ".gguf") {
-					dirs = append(dirs, d) // a tiny GGUF fixture (gpt-oss's is one)
+				if !strings.HasSuffix(e.Name(), ".gguf") {
+					continue
 				}
+				// a tiny GGUF fixture (gpt-oss's is one)
+			} else if _, err := os.Stat(filepath.Join(d, "config.json")); err != nil {
 				continue
 			}
-			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil {
-				dirs = append(dirs, d)
+			if n := programFixtureWeightBytes(d); n > programFixtureWeightCap {
+				refused = append(refused, fmt.Sprintf("%s (%d weight bytes, cap %d)", e.Name(), n, programFixtureWeightCap))
+				continue
+			}
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs, refused
+}
+
+// programFixtureWeightBytes is the size of a .gguf file, or of the weight files (.safetensors, .bin, .gguf, .pt, .pth)
+// directly in a directory, through symlinks.
+func programFixtureWeightBytes(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	if !fi.IsDir() {
+		return fi.Size()
+	}
+	ents, err := os.ReadDir(path)
+	if err != nil {
+		return 0
+	}
+	var n int64
+	for _, e := range ents {
+		switch filepath.Ext(e.Name()) {
+		case ".safetensors", ".bin", ".gguf", ".pt", ".pth":
+			if fi, err := os.Stat(filepath.Join(path, e.Name())); err == nil && !fi.IsDir() {
+				n += fi.Size()
 			}
 		}
 	}
-	return dirs
+	return n
 }
 
 // isTinyFixtureName reports whether a testdata entry's name marks a tiny fixture: "tiny", optionally followed by digits, as a
@@ -261,19 +299,25 @@ func TestProgram_P_plants(t *testing.T) {
 		}},
 		{"attention window one key short on the first windowed layer", nil},
 	}
-	for _, mode := range walkerModes {
-		for _, pl := range plants {
-			changed, ran := 0, 0
-			var cells []string
-			for _, f := range fx {
-				ids := programPrompt(f.m)
-				if !mode.eligible(f.m, len(ids)) {
-					continue
-				}
-				ref, err := runProgram(f.m, f.m.prog, ids, mode)
-				if err != nil {
-					t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
-				}
+	type tally struct {
+		changed, ran int
+		cells        []string
+	}
+	tallies := make([][]tally, len(walkerModes)) // [mode][plant]
+	for mi := range tallies {
+		tallies[mi] = make([]tally, len(plants))
+	}
+	allRan := eachFixture(t, fx, func(t *testing.T, f programFixture) {
+		ids := programPrompt(f.m)
+		for mi, mode := range walkerModes {
+			if !mode.eligible(f.m, len(ids)) {
+				continue
+			}
+			ref, err := runProgram(f.m, f.m.prog, ids, mode)
+			if err != nil {
+				t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
+			}
+			for pi, pl := range plants {
 				c := cloneProgram(f.m.prog)
 				ok := false
 				if pl.apply != nil {
@@ -293,24 +337,52 @@ func TestProgram_P_plants(t *testing.T) {
 				if !ok {
 					continue
 				}
-				ran++
+				tl := &tallies[mi][pi]
+				tl.ran++
 				got, err := runProgram(f.m, c, ids, mode)
 				res := outcome(ref, got, err)
 				if res != "same" {
-					changed++
+					tl.changed++
 				}
-				cells = append(cells, f.name+"="+res)
+				tl.cells = append(tl.cells, f.name+"="+res)
 			}
-			if ran == 0 {
+		}
+	})
+	if !allRan || t.Failed() {
+		return
+	}
+	for mi, mode := range walkerModes {
+		for pi, pl := range plants {
+			tl := tallies[mi][pi]
+			if tl.ran == 0 {
 				t.Logf("P %s %q NOT RUN: no fixture this walker runs has what it changes", mode, pl.name)
 				continue
 			}
-			t.Logf("P %s %q: changed on %d of %d fixtures it applies to (%s)", mode, pl.name, changed, ran, strings.Join(cells, " "))
-			if changed == 0 {
+			t.Logf("P %s %q: changed on %d of %d fixtures it applies to (%s)", mode, pl.name, tl.changed, tl.ran, strings.Join(tl.cells, " "))
+			if tl.changed == 0 {
 				t.Errorf("P %s %q changed nothing on any fixture: the walker does not read what the plant changed", mode, pl.name)
 			}
 		}
 	}
+}
+
+// eachFixture runs body as one subtest per fixture, in order, so each fixture's time is its own in a -json stream and -run
+// can name one. It reports whether every fixture's subtest ran: a sweep's checks across fixtures read only a whole sweep,
+// and when -run named a subset it logs that they are NOT RUN.
+func eachFixture(t *testing.T, fx []programFixture, body func(t *testing.T, f programFixture)) bool {
+	t.Helper()
+	ran := 0
+	for _, f := range fx {
+		t.Run(f.name, func(t *testing.T) {
+			ran++
+			body(t, f)
+		})
+	}
+	if ran < len(fx) {
+		t.Logf("the checks across fixtures NOT RUN: -run named %d of the %d fixtures", ran, len(fx))
+		return false
+	}
+	return true
 }
 
 func indexesOf(ops []op, k opKind) []int {
@@ -359,8 +431,10 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 	pairs := map[string]*tally{}
 	for _, mode := range walkerModes {
 		res[mode] = map[string]map[string]string{}
-		for _, f := range fx {
-			ids := programPrompt(f.m)
+	}
+	allRan := eachFixture(t, fx, func(t *testing.T, f programFixture) {
+		ids := programPrompt(f.m)
+		for _, mode := range walkerModes {
 			if !mode.eligible(f.m, len(ids)) {
 				continue
 			}
@@ -395,6 +469,9 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 				}
 			}
 		}
+	})
+	if !allRan || t.Failed() {
+		return
 	}
 	keys := make([]string, 0, len(pairs))
 	for k := range pairs {
