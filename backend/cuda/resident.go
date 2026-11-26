@@ -22,7 +22,6 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -265,12 +264,8 @@ type cudaResident struct {
 	pass prefillPass
 	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
-	// cost, when set, counts the token in progress into costPhase (cost.go); nil is off. Executor goroutine only.
-	cost      *cost.Counter
-	costPhase cost.Phase
-	costNames map[Pipeline]string // each kernel's name, cached
-	costNamed int64               // launches counted through r.launch, for launch_other
-	line      string              // the plan line (a mem line) the allocation helpers lease on: onLine sets it
+	costState
+	line string // the plan line (a mem line) the allocation helpers lease on: onLine sets it
 	// recFloats is each recurrent layer's conv window and state in floats, read from stateSpecsOf when the layer is uploaded; zero on a
 	// layer with none. Every recurrent buffer (live, further slots, checkpoint, reset) and every price of them reads it.
 	recFloats []recurrentFloats
@@ -382,35 +377,11 @@ type cudaResident struct {
 	argChecks                                                              int
 	profT0                                                                 time.Time
 	profAttn, profDense, profRouter, profClear, profRT, profSegC, profHead time.Duration
-	// loraLayers is nil until SetAdapter binds a compute-time LoRA adapter, then non-nil for the life of that bind.
-	// segA/segB check it directly (cuda/lora.go's applyLora), so it must never be bound while r.graphs replays a
-	// captured segment: the graph was captured with this nil, so replay would silently skip every LoRA dispatch.
-	// SetAdapter refuses (returns an error) rather than bind under graphs; graphs are opt-in (GOINFER_CUDA_GRAPHS).
-	loraLayers  []cudaLoraLayer
-	loraT       Buffer         // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
-	lora        loraCacheState // the bound adapter's device cache + bind counters (cuda/lora.go)
-	graphs      bool           // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync  bool           // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask   string         // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap    bool           // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
-	layerCapBuf [][]float32
+	loraBind
+	graphState
+	captureState
 
-	// hidCap is the hidden-state seam a resident CUDA target would need to feed a hidden-state drafter (DFlash,
-	// DSpark): the resident analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. It is NOT
-	// wired into production: SetHiddenCapture/HiddenCapture have no non-test caller (the block drafter arms the batched
-	// counterpart below, via SetBatchedCapture), so nothing reaches this per-token seam yet
-	// (docs/code-notes/cuda.md#cudaResident.hidCap).
-	//
-	// It is distinct from layerCap, deliberately: layerCap is a divergence-localization probe (EVERY layer, a
-	// stream.Sync() and a download each, into an unbounded buffer: 36 syncs per token at 36 layers), far too
-	// expensive to decode against. hidCap copies only the TAPPED layers into fixed slots, so a 5-tap drafter costs 5.
-	hidCapTaps []int       // layer indices to capture, ascending; nil ⇒ seam off
-	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
-	// The BATCHED counterpart, for the block-drafting verify: one download per tap covering
-	// all M rows, instead of the per-token seam's one per tap PER TOKEN.
-	capBTaps []int       // layer indices, ascending; nil ⇒ off
-	capBOut  [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
-	launchN  int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
+	launchN int // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
 	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
 	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
 	launchViaExecutor bool
@@ -439,20 +410,7 @@ type cudaResident struct {
 	// gemma4Dense is true for ANY gemma4 checkpoint (dense or MoE), broader than gemma4Moe (enable_moe_block layers).
 	// It gates compiling fScaleVec, the dense per-layer-output-scalar kernel (segB's dense tail), which has nothing
 	// router-specific about it.
-	gemma4Dense                         bool
-	g4cap                               bool
-	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
-	g4capIdx                            [][]uint32 // APPEND order (token-outer, layer-inner), matching the CPU routerCaptureBuf — for the per-POSITION routing-agreement check (a top-k flip at pos N reads like accumulation in a cosine)
-	// g4capLayer is g4capIdx's layer index, recorded in parallel so a consumer replaying the trace through a
-	// per-layer cache need not infer the (token, layer) shape from the append order and a divisor.
-	g4capLayer []int
-
-	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
-	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
-	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
-	// ForwardSubCapture, so a cross-backend per-sublayer diff is possible.
-	subCap                                 bool
-	subAttnC, subMLPC, subCtxC, subMLPpreC [][]float32
+	gemma4Dense bool
 
 	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
@@ -479,10 +437,6 @@ type cudaResident struct {
 	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
 	fQKVg32, fGUg32 Pipeline
 	fuseG32         bool
-	// Compute-time LoRA ( cuda/lora.go). Own module (lora.ptx), loaded
-	// unconditionally like every other glue pipeline: cheap, and whether a model will ever receive an adapter is not
-	// known at BuildResident time.
-	fLoraDown, fLoraUp Pipeline
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx), the weight-stationary path. bGemv is the batched W4A8
 	// GEMV; the rest are the M=1 glue kernels with an M dimension, each bit-identical per row. Loaded once at build
 	// (small module).
@@ -789,25 +743,7 @@ type cudaResident struct {
 	logitsBIdx Buffer // [logitsBCap] int32: argmax_rows' output for the verify tail
 	logitsBCap int
 	setupErr   error // first alloc/upload error during BuildResident's setup job
-	// Instrument fields, RECORDING ONLY, never read by production logic: free device VRAM immediately before and after
-	// allocSlots in the SAME process, so a test measures consumption without a cross-run assumption.
-	dbgFreeBefore, dbgFreeAfter uint64
-	dbgPredInline               int64  // consumption predicted by the arithmetic production executes
-	dbgPredCapSlots             int64  // consumption predicted from capSlots' chosen count
-	dbgSlotsInline              int    // slot count the INLINE copy at allocSlots chose
-	dbgSlotsCapSlots            int    // slot count capSlots would choose from the same free
-	dbgFreeBeforeLaunch         uint64 // free VRAM immediately before the first forward's launches
-	dbgFreePreLaunch            uint64 // free VRAM immediately before the MOST RECENT launch
-	dbgLaunchTrace              []string
-	// dbgProbe enables the per-launch pre-launch probe. A FIELD, not a package var read from the environment: a
-	// package var is initialised before t.Setenv can run, so it would silently record nothing; the test sets the field
-	// on the resident it already holds. Off by default: the probe costs a MemInfo round-trip and a reflection scan on
-	// EVERY launch.
-	dbgProbe bool
-	// routeRecord, when non-nil, is called once per loadRoutedExperts call with the layer index and that call's routed
-	// expert ids (r.hostIdx[:topK]): a measurement hook for how many DISTINCT experts a whole M-row chunk touches per
-	// layer. A field for the same reason dbgProbe is.
-	routeRecord   func(layer int, ids []uint32)
+	dbgState
 	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
 	dbgAllocSizes []int // every requested slot-buffer size, recording only
 
@@ -2025,17 +1961,31 @@ func (r *cudaResident) pipeName(f Pipeline) (name string) {
 	if r == nil {
 		return "?"
 	}
-	v := reflect.ValueOf(r).Elem()
-	t := v.Type()
 	pt := reflect.TypeFor[Pipeline]()
-	for i := 0; i < t.NumField(); i++ {
-		if t.Field(i).Type != pt {
-			continue
+	// A subsystem's fields sit in an embedded struct; the walk descends into it, so a pipeline is named by its promoted name.
+	var find func(v reflect.Value) string
+	find = func(v reflect.Value) string {
+		t := v.Type()
+		for i := 0; i < t.NumField(); i++ {
+			sf := t.Field(i)
+			if sf.Anonymous && sf.Type.Kind() == reflect.Struct {
+				if n := find(v.Field(i)); n != "" {
+					return n
+				}
+				continue
+			}
+			if sf.Type != pt {
+				continue
+			}
+			fv := reflect.NewAt(pt, unsafe.Pointer(v.Field(i).UnsafeAddr())).Elem().Interface().(Pipeline)
+			if fv == f {
+				return sf.Name
+			}
 		}
-		fv := reflect.NewAt(pt, unsafe.Pointer(v.Field(i).UnsafeAddr())).Elem().Interface().(Pipeline)
-		if fv == f {
-			return t.Field(i).Name
-		}
+		return ""
+	}
+	if n := find(reflect.ValueOf(r).Elem()); n != "" {
+		return n
 	}
 	return "?"
 }
