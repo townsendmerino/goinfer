@@ -312,23 +312,3 @@ func (a *Architecture) llama4LayerOps(l int, input func(normSlot) op, ffn func(o
 	}
 	return append(ops, f, op{Kind: opResidual})
 }
-
-// attnParamsFor is the attention parameters the loops that do not walk a program read from the Architecture: the cache's window
-// on a local layer (the window the cache was built with), every key on a global one.
-func (a *Architecture) attnParamsFor(cache *KVCache, global bool) attentionParams {
-	p := attentionParams{Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnBatchedAcc64}
-	if !global && cache.window > 0 {
-		p.Window = cache.window
-	}
-	return p
-}
-
-// attnParamsQueryFor is attnParamsFor for attendQuery's callers, with Llama 4's chunk on its RoPE layers.
-func (a *Architecture) attnParamsQueryFor(cache *KVCache, layer int, global bool) attentionParams {
-	p := a.attnParamsFor(cache, global)
-	p.Order = attnQuery
-	if l4 := a.llama4; l4 != nil && l4.chunkSize > 0 && layer < len(l4.useRope) && l4.useRope[layer] {
-		p.Chunk = l4.chunkSize
-	}
-	return p
-}
