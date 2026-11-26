@@ -1,6 +1,10 @@
 package decoder
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
+)
 
 // Nemotron-H (nemotron_h): a SINGLE-OP-per-block hybrid. Each layer is exactly one of {Mamba-2 mixer, NoPE GQA attention,
 // non-gated relu² MLP, non-gated relu² MoE FFN}, applied pre-norm with a residual add, not the mixer+FFN block every other
@@ -54,7 +58,7 @@ func (m *Model) nemotronExpertFFN(ex *expertWeights, n []float32, inter, hidden 
 	up := make([]float32, inter)
 	matmul(m.be, &ex.Up, n, up, 1)
 	for i := range up {
-		up[i] = relu2(up[i])
+		up[i] = normact.ReLU2(up[i])
 	}
 	out := make([]float32, hidden)
 	matmul(m.be, &ex.Down, up, out, 1)

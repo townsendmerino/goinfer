@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // batchRows is what a batched pass knows about its rows beyond their embeddings: the token id behind each row and the prompt's
@@ -113,7 +115,7 @@ func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *Layer
 	q := make([]float32, K*nH*hd)
 	hq.prepare(be, &lw.QProj, x, K)
 	matmulPre(be, &lw.QProj, hq, x, q, K)
-	rmsNorm(q, lw.QNorm, K*nH, hd, p.Eps, p.AddOne)
+	normact.RMS(q, lw.QNorm, K*nH, hd, p.Eps, p.AddOne)
 	for row := range K {
 		applyRoPE(q[row*nH*hd:(row+1)*nH*hd], nH, hd, startPos+row, p.InvFreq, p.Mscale)
 	}
@@ -126,7 +128,7 @@ func (m *Model) gemma4AttnBatch(p *gemma4AttnParams, x, out []float32, lw *Layer
 		} else {
 			matmulPre(be, &lw.VProj, hq, x, v, K)
 		}
-		rmsNorm(k, lw.KNorm, K*nKV, hd, p.Eps, p.AddOne)
+		normact.RMS(k, lw.KNorm, K*nKV, hd, p.Eps, p.AddOne)
 		rmsNormNoWeight(v, K*nKV, hd, p.Eps) // scale-less v_norm, no RoPE
 		for row := range K {
 			kRow := k[row*nKV*hd : (row+1)*nKV*hd]
@@ -157,7 +159,7 @@ func (m *Model) gemma4DenseFFNBatch(act ActKind, x, out []float32, lw *LayerWeig
 	matmulPre(be, &lw.UpProj, hq, x, up, K)
 	parallelElementwise(len(gate), func(lo, hi int) {
 		for i := lo; i < hi; i++ {
-			gate[i] = geluTanh(gate[i]) * up[i]
+			gate[i] = normact.GELUTanh(gate[i]) * up[i]
 		}
 	})
 	matmul(be, &lw.DownProj, gate, out, K)
@@ -174,14 +176,14 @@ func (m *Model) gemma4PLEBatch(h []float32, l, K int, lw *LayerWeights, ne *norm
 		pl := gp.perLayer[row*gp.rowStride+l*pleDim : row*gp.rowStride+(l+1)*pleDim]
 		pxRow := px[row*pleDim : (row+1)*pleDim]
 		for i := range pxRow {
-			pxRow[i] = geluTanh(pxRow[i]) * pl[i]
+			pxRow[i] = normact.GELUTanh(pxRow[i]) * pl[i]
 		}
 	}
 	pout := make([]float32, K*hidden)
 	matmul(be, &lw.PLEProj, px, pout, K)
 	for row := range K {
 		r := pout[row*hidden : (row+1)*hidden]
-		rmsNormInto(r, r, lw.PostPLENorm, 1, hidden, ne.Eps, ne.AddOne)
+		normact.RMSInto(r, r, lw.PostPLENorm, 1, hidden, ne.Eps, ne.AddOne)
 	}
 	for i := range h {
 		h[i] += pout[i]
