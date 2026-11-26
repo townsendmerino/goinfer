@@ -711,7 +711,7 @@ number is published without provenance.
   (`decoder/registry.go`, aliases Qwen3's dense attention shape: per-head q/k RMSNorm, GQA, no
   q/k/v bias — confirmed from `Qwen3VLTextAttention` source, NOT Qwen2's shape, which
   `qwen2_5_vlArchitecture` aliases) + the interleaved m-RoPE component formula
-  (`mropeComponentInterleaved`, `decoder/rope.go`, pinned directly against the real HF slicing
+  (`MRoPEComponentInterleaved`, `internal/runtime/rope/rope.go`, pinned directly against the real HF slicing
   logic, not a re-derivation of it). Tiny-golden text-only parity: cosine 1.0, exact argmax +
   continuation (`decoder/qwen3vl_test.go`, `scripts/pin_qwen3vl_tiny.py`). Real-checkpoint gate
   written (`decoder/qwen3vl_real_test.go`, `scripts/pin_qwen3vl_real.py`,
@@ -787,7 +787,7 @@ number is published without provenance.
      `vision_start`/`vision_end` are TEXT (type 0) so they take scalar positions; an image group at
      `current_pos` gets `T = arange(t)·1 + cp`, `H = arange(h/2) + cp`, `W = arange(w/2) + cp`, then
      `cp += max(h, w)/merge` (**t is dropped**); `delta = max(pos)+1 − seq_len`; decode positions are
-     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:mropePositions`) scans by
+     `arange + cache_len + delta` on all three rows. `rope.MRoPEPositions` (`internal/runtime/rope/rope.go:MRoPEPositions`) scans by
      image-token runs, gives text `[st,st,st]`, image `[base+tt, base+hh, base+ww]`, resumes at
      `base + max(t, hm, wm)`; `mropeDelta` is `max over any component + 1 − seqLen`. **For an image
      (t = 1 — always, after temporal duplication) the two are identical**: `max(1,hm,wm) == max(hm,wm)`
