@@ -1,7 +1,9 @@
 package serveapp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -260,5 +262,21 @@ func TestBatches_serverWideLineBudgetIs429(t *testing.T) {
 	srv.batches.mu.Unlock()
 	if n != 0 {
 		t.Errorf("a refused batch must not be created (%d in the store)", n)
+	}
+}
+
+// A batch line whose drive was cut short by server shutdown is a 503 server_shutdown even though the drive returned its
+// context error; a failed drive outside shutdown stays a 500.
+func TestBatchLines_shutdownOutranksTheDriveError(t *testing.T) {
+	shut, shutCancel := context.WithCancelCause(context.Background())
+	shutCancel(errServerShutdown)
+	if r, failed := driveLineError(shut, "a", context.Canceled, ""); !failed || r.StatusCode != http.StatusServiceUnavailable || !strings.Contains(r.ErrMsg, "shutting down") {
+		t.Errorf("a drive cut short by shutdown: %+v (failed %v); want 503 server_shutdown", r, failed)
+	}
+	if r, failed := driveLineError(context.Background(), "b", errors.New("boom"), ""); !failed || r.StatusCode != 500 {
+		t.Errorf("a failed drive: %+v (failed %v); want 500", r, failed)
+	}
+	if _, failed := driveLineError(context.Background(), "c", nil, ""); failed {
+		t.Error("a completed drive reads as failed")
 	}
 }

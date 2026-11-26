@@ -1756,6 +1756,25 @@ class RunnerPidReuse(unittest.TestCase):
         self.assertFalse(night._argv_is_night_runner(["python3", "-m", "unittest", "scripts/test_night.py"]))
         self.assertFalse(night._argv_is_night_runner(["vim", "scripts/night.py"]))
         self.assertFalse(night._argv_is_night_runner(["/usr/bin/startplasma-wayland"]))
+        framework = "/Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python"
+        self.assertTrue(night._argv_is_night_runner([framework, "/opt/goinfer/scripts/night.py", "serve"]))
+        self.assertFalse(night._argv_is_night_runner([framework, "-c", "pass"]))
+
+    def test_live_night_py_pid_is_the_runner(self):
+        # The positive case on every platform, so the unrelated-pid test above cannot pass by rejecting everything.
+        d = Path(tempfile.mkdtemp(dir=_tmp))
+        script = d / "night.py"
+        script.write_text("import time\ntime.sleep(30)\n")
+        proc = subprocess.Popen([sys.executable, str(script)])
+        self.addCleanup(lambda: (proc.terminate(), proc.wait(timeout=5)))
+        night.PIDFILE.parent.mkdir(parents=True, exist_ok=True)
+        night.PIDFILE.write_text(str(proc.pid))
+        self.addCleanup(lambda: night.PIDFILE.unlink(missing_ok=True))
+        for _ in range(50):
+            if night.runner_pid() == proc.pid:
+                break
+            time.sleep(0.05)
+        self.assertEqual(night.runner_pid(), proc.pid, "a live python process running night.py was not recognized")
 
 if __name__ == "__main__":
     unittest.main()

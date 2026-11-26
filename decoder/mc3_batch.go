@@ -3,6 +3,7 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -447,7 +448,7 @@ func (b *tokenCoalescer) serveLocked(done func() bool) {
 				b.busy = true
 				b.mu.Unlock()
 				t0 := time.Now()
-				b.execRun(c, run)
+				bug := b.execRun(c, run)
 				b.mu.Lock()
 				if d := time.Since(t0).Nanoseconds(); c != nil {
 					b.stats.RideNs += d
@@ -467,6 +468,13 @@ func (b *tokenCoalescer) serveLocked(done func() bool) {
 					c.done = true
 				}
 				b.cond.Broadcast()
+				if bug != nil {
+					// A programming bug crashes loudly, as runGen's recover lets it (mem.RepanicBug), but only after busy is clear,
+					// the run's waiters are failed and b.mu is released: a caller up the stack that recovers it (net/http does)
+					// must not inherit a held lock or a resident marked busy forever.
+					b.mu.Unlock()
+					panic(bug)
+				}
 				continue
 			}
 			b.armLocked(start.Add(b.wait))
@@ -491,11 +499,15 @@ func (b *tokenCoalescer) armLocked(deadline time.Time) {
 	})
 }
 
-// execRun runs a batched step or prefill ride while converting any panic into an error for every waiting
-// caller in the run, so serveLocked always releases b.busy and wakes waiters instead of deadlocking.
-func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) {
+// execRun runs a batched step or prefill ride, converting a panic into an error for every waiting caller in the run so
+// serveLocked always releases b.busy and wakes waiters instead of deadlocking. A runtime.Error (a programming bug) is also
+// returned, for serveLocked to re-panic once the batcher is consistent again.
+func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) (bug any) {
 	defer func() {
 		if p := recover(); p != nil {
+			if _, ok := p.(runtime.Error); ok {
+				bug = p
+			}
 			err := fmt.Errorf("decoder: batched step panicked: %v", p)
 			if c != nil && c.err == nil {
 				c.err = err
@@ -512,6 +524,7 @@ func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) {
 	} else {
 		b.runTokens(run)
 	}
+	return nil
 }
 
 // runTokens serves one run: in one batched step (step) when it has at least lo tokens, else every token through its
