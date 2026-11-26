@@ -474,9 +474,8 @@ func (b *residentBuild) buildMixer(lb *layerBuild) error {
 	m, d, r, bv := b.m, b.d, b.r, b.bv
 	H, kvSlots := r.H, b.kvSlots
 	mk, fuse, alias := b.mk, b.fuse, b.alias
-	attnGate, dnetOK := b.attnGate, b.dnetOK
 	l, lw, lv, L, mixer, isAttn := lb.l, lb.lw, lb.lv, &lb.L, lb.mixer, lb.isAttn
-	isDelta := dnetOK && mixer == decoder.MixerDeltaNet
+	isDelta := b.dnetOK && mixer == decoder.MixerDeltaNet
 	if isDelta {
 		// Gated-DeltaNet mixer layer: no attention projections, no KV cache, no geometry at
 		// all — see metal/deltanet.go and residLayer.delta's doc. L.geom stays nil and
@@ -519,8 +518,8 @@ func (b *residentBuild) buildMixer(lb *layerBuild) error {
 		r.vc[l] = r.kc[l]
 	} else if mixer == decoder.MixerNone {
 		// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
-	} else if dnetOK && attnGate {
-		// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every dnetOK family: Olmo
+	} else if b.dnetOK && b.attnGate {
+		// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every b.dnetOK family: Olmo
 		// Hybrid's full-attention layer is olmo3's plain scheme (AttnGate=false) and takes the ordinary branch below.
 		// Its q/k/v/o live off qattn, not lw.QProj/KProj/VProj/OProj, and q_proj is double width: [query || gate] per
 		// head, interleaved, not two concatenated blocks; treated as an ordinary q_proj it yields plausible logits
@@ -538,7 +537,7 @@ func (b *residentBuild) buildMixer(lb *layerBuild) error {
 		L.oW, L.oS = mk(oP)
 		L.qNorm, L.kNorm = NewBufferFloatsOn(mem.LineDense, d, qN), NewBufferFloatsOn(mem.LineDense, d, kN)
 	} else {
-		// The ordinary plain-attention layer: every layer that is neither DeltaNet nor qGate, including a dnetOK
+		// The ordinary plain-attention layer: every layer that is neither DeltaNet nor qGate, including a b.dnetOK
 		// family's full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/OProj/QNorm/KNorm
 		// are read normally.
 		//
