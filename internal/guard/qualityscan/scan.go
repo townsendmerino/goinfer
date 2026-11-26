@@ -5,7 +5,7 @@
 //
 // (.github/workflows/quality-scans.yml). Each scan is a test in a quality_scan-tagged file. A deliberate exception is a line
 // in the scan's allowlist under testdata/, with its reason; a ratchet's line also carries the ceiling the site may not
-// exceed, so the scan fails on growth and only reports shrinkage.
+// exceed, so the scan fails on growth and only reports shrinkage (the file-length ratchet fails on both).
 package qualityscan
 
 import (
@@ -197,6 +197,43 @@ func Compare(found map[string]int, allow map[string]Entry) (grown, shrunk []stri
 		}
 	}
 	slices.Sort(grown)
+	slices.Sort(shrunk)
+	return grown, shrunk
+}
+
+// FileLines counts src's lines as wc -l does, plus one for a last line with no newline.
+func FileLines(src []byte) int {
+	n := bytes.Count(src, []byte("\n"))
+	if len(src) > 0 && src[len(src)-1] != '\n' {
+		n++
+	}
+	return n
+}
+
+// FileLengths maps each non-test file over ceiling lines to its length.
+func FileLengths(files []*File, ceiling int) map[string]int {
+	out := map[string]int{}
+	for _, f := range files {
+		if f.Test {
+			continue
+		}
+		if n := FileLines(f.Src); n > ceiling {
+			out[f.Path] = n
+		}
+	}
+	return out
+}
+
+// CompareExact checks found against an allowlist that holds every site at exactly its count. grown is as Compare's. stale
+// lists each line that no longer matches: a site under its ceiling or gone, or a line with no ceiling. The scan fails on
+// both, so the line moves down in the change that shrinks the site.
+func CompareExact(found map[string]int, allow map[string]Entry) (grown, stale []string) {
+	grown, shrunk := Compare(found, allow)
+	for k, e := range allow {
+		if e.Ceiling == 0 {
+			shrunk = append(shrunk, k+" (no ceiling)")
+		}
+	}
 	slices.Sort(shrunk)
 	return grown, shrunk
 }
