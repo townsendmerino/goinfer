@@ -154,3 +154,12 @@ func (m *Model) LoadProfile() *LoadProfile {
 	}
 	return m.prof
 }
+
+// loadProfileFor is the profile Load records a load of dir into: a fresh one for a GGUF file (the path loadWeights sends to
+// loadGGUFWeights), nil for a safetensors directory, which is not profiled.
+func loadProfileFor(dir string) *LoadProfile {
+	if strings.HasSuffix(dir, ".gguf") {
+		return &LoadProfile{}
+	}
+	return nil
+}

@@ -658,10 +658,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	var prof *LoadProfile // a GGUF load is profiled (Model.LoadProfile); a safetensors one is not
-	if strings.HasSuffix(dir, ".gguf") {
-		prof = &LoadProfile{}
-	}
+	prof := loadProfileFor(dir)
 	w, err := loadWeights(dir, weightLoadOpts{quant: quant, embedInt4: opts.EmbedInt4, needCanonical: wantsCanonicalInt4(opts.Backend, be), skipRow4: !wantsRow4Fallback(opts.layoutBackend()), lora: lora, abort: opts.LoadAbort, prof: prof})
 	if err != nil {
 		closeBackend(be)
@@ -692,12 +689,10 @@ func Load(dir string, opts Options) (*Model, error) {
 	if m, err = m.withResidencyOrAbort(); err != nil {
 		return nil, err
 	}
-	if prof != nil {
-		if d := time.Since(tRes); d > time.Millisecond {
-			prof.record("resident", d)
-		}
-		m.prof = prof
+	if d := time.Since(tRes); d > time.Millisecond {
+		prof.record("resident", d) // nil-safe: a safetensors load has no profile
 	}
+	m.prof = prof
 	return m, nil
 }
 
