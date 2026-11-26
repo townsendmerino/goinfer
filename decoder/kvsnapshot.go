@@ -199,36 +199,12 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 // would silently produce garbage. Pass "" to skip it (the id stays opaque to the
 // decoder — equality is the only test).
 func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
-	r := &giwReader{data: data}
-	if got := r.rawN(len(kvSnapMagic)); string(got) != kvSnapMagic {
-		return nil, &SnapshotError{fmt.Sprintf("bad magic %q (want %q)", got, kvSnapMagic)}
+	r, h, err := readKVSnapHeader(data)
+	if err != nil {
+		return nil, err
 	}
-	if v := r.u32(); v != kvSnapVersion {
-		return nil, &SnapshotError{fmt.Sprintf("format version %d, this build reads %d", v, kvSnapVersion)}
-	}
-	gotID := r.str()
-	gotAdapter := r.str()
-	numLayers, kvDim, window, headDim := int(r.u32()), int(r.u32()), int(r.u32()), int(r.u32())
-	if !r.need(2) {
-		return nil, &SnapshotError{"truncated header"}
-	}
-	manualPos := r.data[r.off] == 1
-	quant := kvQuant(r.data[r.off+1])
-	r.off += 2
-	pos := int(r.u32())
-	if r.err != nil {
-		return nil, &SnapshotError{"truncated header"}
-	}
-
-	// CRC over the whole payload before trusting offsets/lengths (serialize.go
-	// idiom): catches truncation and corruption up front.
-	if len(data) < 4 {
-		return nil, &SnapshotError{"too short"}
-	}
-	body, want := data[:len(data)-4], binary.LittleEndian.Uint32(data[len(data)-4:])
-	if got := crc32.ChecksumIEEE(body); got != want {
-		return nil, &SnapshotError{fmt.Sprintf("CRC mismatch (got %08x want %08x) — corrupt or truncated", got, want)}
-	}
+	gotID, gotAdapter, numLayers, kvDim, window, headDim := h.id, h.adapter, h.numLayers, h.kvDim, h.window, h.headDim
+	manualPos, quant, pos := h.manualPos, h.quant, h.pos
 
 	// Identity guard (post-CRC, so the id is trustworthy): reject KV written for a
 	// different model even if the architecture happens to match.
@@ -413,6 +389,52 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	ref.pos = pos
 	ref.lora = lora
 	return &Session{m: m, cache: ref, tokens: tokens, kvAdapter: lora}, nil
+}
+
+// kvSnapHeader is a session snapshot's header fields, as readKVSnapHeader reads them.
+type kvSnapHeader struct {
+	id, adapter                       string
+	numLayers, kvDim, window, headDim int
+	manualPos                         bool
+	quant                             kvQuant
+	pos                               int
+}
+
+// readKVSnapHeader reads a session snapshot's magic, version and header, and checks the payload's CRC before any offset or
+// length in it is trusted. The reader it returns is positioned after the header.
+func readKVSnapHeader(data []byte) (*giwReader, kvSnapHeader, error) {
+	r := &giwReader{data: data}
+	if got := r.rawN(len(kvSnapMagic)); string(got) != kvSnapMagic {
+		return nil, kvSnapHeader{}, &SnapshotError{fmt.Sprintf("bad magic %q (want %q)", got, kvSnapMagic)}
+	}
+	if v := r.u32(); v != kvSnapVersion {
+		return nil, kvSnapHeader{}, &SnapshotError{fmt.Sprintf("format version %d, this build reads %d", v, kvSnapVersion)}
+	}
+	var h kvSnapHeader
+	h.id = r.str()
+	h.adapter = r.str()
+	h.numLayers, h.kvDim, h.window, h.headDim = int(r.u32()), int(r.u32()), int(r.u32()), int(r.u32())
+	if !r.need(2) {
+		return nil, kvSnapHeader{}, &SnapshotError{"truncated header"}
+	}
+	h.manualPos = r.data[r.off] == 1
+	h.quant = kvQuant(r.data[r.off+1])
+	r.off += 2
+	h.pos = int(r.u32())
+	if r.err != nil {
+		return nil, kvSnapHeader{}, &SnapshotError{"truncated header"}
+	}
+
+	// CRC over the whole payload before trusting offsets/lengths (serialize.go
+	// idiom): catches truncation and corruption up front.
+	if len(data) < 4 {
+		return nil, kvSnapHeader{}, &SnapshotError{"too short"}
+	}
+	body, want := data[:len(data)-4], binary.LittleEndian.Uint32(data[len(data)-4:])
+	if got := crc32.ChecksumIEEE(body); got != want {
+		return nil, kvSnapHeader{}, &SnapshotError{fmt.Sprintf("CRC mismatch (got %08x want %08x) — corrupt or truncated", got, want)}
+	}
+	return r, h, nil
 }
 
 // ints writes a length-prefixed []int as uint32s (token ids are non-negative).
