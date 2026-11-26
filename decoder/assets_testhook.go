@@ -5,6 +5,8 @@ package decoder
 import (
 	"errors"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testassets"
 )
 
 // AssetPathForTest resolves a heavy test asset through testdata/assets.json — the same predicate
@@ -16,8 +18,8 @@ import (
 // skip wrapper is per-consumer, because assets.go must not import testing.
 func AssetPathForTest(tb testing.TB, env string) string {
 	tb.Helper()
-	p, err := lookupAsset(env)
-	if errors.Is(err, errRegistryUnreadable) {
+	p, err := testassets.Lookup(env)
+	if errors.Is(err, testassets.ErrRegistryUnreadable) {
 		tb.Fatalf("asset %s: %v", env, err)
 	}
 	if err != nil {

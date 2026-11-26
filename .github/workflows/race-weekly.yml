@@ -24,10 +24,29 @@ permissions:
   contents: read
 
 jobs:
+  # One process cannot hold ./decoder under -race inside a test timeout on a darwin runner, so ./decoder runs as ci.yml's
+  # per-push -race job runs it: the two decision-census steps, shard b and the -skip tail, each its own leg and process,
+  # with the rest of the module in a fifth leg beside them. The tail's -skip is ci.yml's test-decoder-tail pattern, checked
+  # equal below, so a test is caught by exactly one decoder leg; each -run leg keeps its zero-match guard.
   race-darwin:
-    name: darwin/arm64 -race (weekly)
+    name: darwin/arm64 -race (${{ matrix.leg }})
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: decoder census
+            run: '^TestDecisionCensus$|^TestDecisionCensus_twoRunsAgree$'
+            want: 2
+          - leg: decoder census second process
+            run: '^TestDecisionCensus_secondProcess$'
+          - leg: decoder shard b
+            run: 'TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree'
+          - leg: decoder tail
+            skip: 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws|^TestDecisionCensus$|^TestDecisionCensus_twoRunsAgree$|^TestDecisionCensus_secondProcess$'
+          - leg: rest of the module
+            rest: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -35,9 +54,58 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      # The exact per-push root-darwin invocation as it stood before 2026-09-22, -race included,
-      # no -short (C4 measured -short as a null on darwin: the exhaustive sweeps that cost the
-      # time never check testing.Short()). -timeout 40m: the ci.yml comment's reasoning for 25m
-      # applies with more margin here -- a weekly run has no critical path to protect.
+      - name: tail matches ci.yml's (drift guard)
+        if: matrix.skip != ''
+        env:
+          SKIP: ${{ matrix.skip }}
+        run: |
+          theirs=$(awk '/^  test-decoder-tail:/{f=1} f && /go test -race/ {print; exit}' .github/workflows/ci.yml | sed -E "s/.* -skip '([^']*)' .*/\1/")
+          if [ "$theirs" != "$SKIP" ]; then
+            echo "::error::the decoder tail's -skip differs from ci.yml's test-decoder-tail; copy it across"
+            echo "ci.yml: $theirs"
+            echo "here:   $SKIP"
+            exit 1
+          fi
+      - name: leg exists (zero-match guard)
+        if: matrix.run != ''
+        env:
+          PATTERN: ${{ matrix.run }}
+          WANT: ${{ matrix.want }}
+        run: |
+          if ! listed=$(go test -list "$PATTERN" -tags goinfer_testhooks ./decoder/ 2>&1); then
+            echo "::error::go test -list failed on ./decoder/: a build failure, not a missing test"
+            echo "$listed"
+            exit 1
+          fi
+          n=$(echo "$listed" | grep -cE '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ "$n" = 0 ] || { [ -n "$WANT" ] && [ "$n" != "$WANT" ]; }; then
+            echo "::error::pattern '$PATTERN' matched $n test(s) in ./decoder/, want ${WANT:-at least 1} (renamed or deleted?)"
+            echo "$listed"
+            exit 1
+          fi
+
+      # No -short (C4 measured -short as a null on darwin: the exhaustive sweeps that cost the time never check
+      # testing.Short()). A weekly run has no critical path to protect, so each leg's timeout has margin.
       - name: test -race (darwin/arm64)
-        run: go test -race -timeout 40m -tags goinfer_testhooks ./...
+        id: test
+        env:
+          RUN: ${{ matrix.run }}
+          SKIP: ${{ matrix.skip }}
+          REST: ${{ matrix.rest }}
+        run: |
+          if [ "$REST" = true ]; then
+            pkgs=$(go list ./... | grep -v -e '^github.com/townsendmerino/goinfer/decoder$')
+            go test -race -timeout 50m -tags goinfer_testhooks -json $pkgs > test.json
+          elif [ -n "$RUN" ]; then
+            go test -race -timeout 50m -tags goinfer_testhooks -json -run "$RUN" ./decoder/ > test.json
+          else
+            go test -race -timeout 50m -tags goinfer_testhooks -json -skip "$SKIP" ./decoder/ > test.json
+          fi
+      - name: test summary
+        if: always() && steps.test.outcome != 'skipped'
+        run: |
+          python3 scripts/ci_test_summary.py test.json --top 40 || {
+            echo "::error::ci_test_summary.py failed; raw build/fail events follow"
+            grep -E '"Action":"(build-output|build-fail|fail)"' test.json | head -300
+            exit 1
+          }

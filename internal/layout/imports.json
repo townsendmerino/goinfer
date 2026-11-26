@@ -57,6 +57,44 @@
       "why": "decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included."
     },
     {
+      "name": "ggufconfig-leaf",
+      "from": [
+        "internal/runtime/ggufconfig"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/ggufconfig": [
+          "decoder/config"
+        ]
+      },
+      "why": "internal/runtime/ggufconfig reads a GGUF's metadata into a Config, one reader per architecture, so the readers and their fuzz target test without compiling decoder. It sits below decoder, which calls Read: it imports decoder/config and no other goinfer package, decoder included."
+    },
+    {
+      "name": "testassets-leaf",
+      "from": [
+        "internal/testassets"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/testassets resolves heavy test assets through testdata/assets.json, the one predicate for whether an asset is present. It imports no goinfer package and not testing, so a backend's tests can reach it without importing decoder."
+    },
+    {
+      "name": "normact-leaf",
+      "from": [
+        "internal/runtime/normact"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -318,6 +356,7 @@
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
+      "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
@@ -325,8 +364,10 @@
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
+      "internal/testassets",
       "tokenizer"
     ],
     "decoder/fit": [
@@ -500,6 +541,9 @@
       "decoder",
       "internal/runtime/logs",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/ggufconfig": [
+      "decoder/config"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
@@ -684,13 +728,16 @@
       "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
+      "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/sampling",
+      "internal/testassets",
       "internal/testgate",
       "internal/vision",
       "multimodal",

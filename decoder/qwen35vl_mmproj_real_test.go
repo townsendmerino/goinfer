@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
@@ -148,7 +149,7 @@ func TestQwen35VLReal_mmproj(t *testing.T) {
 		}
 	}
 	// The 9B pair, when its checkpoint is present (the asset registry's predicate; absent is not a failure here).
-	if ck9, err := lookupAsset("GOINFER_QWEN35VL_9B"); err == nil {
+	if ck9, err := testassets.Lookup("GOINFER_QWEN35VL_9B"); err == nil {
 		enc9, err := vision.LoadQwen3VisionEncoderMMProj(filepath.Join(mdir, "qwen3.5-9b-ollama-projector.gguf"), false)
 		if err != nil {
 			t.Fatal(err)

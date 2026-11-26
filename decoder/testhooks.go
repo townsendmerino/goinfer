@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -246,7 +247,7 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 	matmul(be, &gm.expertsGateUp[e], xe, gu, 1)
 	mid := make([]float32, gm.moeInter)
 	for i := 0; i < gm.moeInter; i++ {
-		mid[i] = geluTanh(gu[i]) * gu[gm.moeInter+i]
+		mid[i] = normact.GELUTanh(gu[i]) * gu[gm.moeInter+i]
 	}
 	out := make([]float32, m.w.arch.HiddenDim)
 	matmul(be, &gm.expertsDown[e], mid, out, 1)

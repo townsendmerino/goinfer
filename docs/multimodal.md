@@ -815,7 +815,7 @@ number is published without provenance.
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
      (`backend/cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`backend/webgpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
-     (`backend/metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`backend/metal/resident_adapter.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
      `residentUploadPrefill` (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`) copies only layers whose
@@ -1185,7 +1185,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 ## What already exists to build on
 
 *(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/completed/task-code-comments-2026-10.md`);
-before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `decoder/gguf_qwen35.go:ggufQwen35Config` no longer at what they described.)*
+before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` no longer at what they described.)*
 
 - **VL config flattening** — `decoder/config.go:loadConfig` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
@@ -1193,7 +1193,7 @@ before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shard
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,
   `qwen3_5_moe` (the Qwen3.6-VL text side is already loaded, ignoring
   `model.visual.*` / MTP — `decoder/weights.go:shardIndexFile`).
-- **m-RoPE stubs** — `decoder/gguf_qwen35.go:ggufQwen35Config` already notes the image/video mrope
+- **m-RoPE stubs** — `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` already notes the image/video mrope
   sections (currently unused).
 - **Serve content-array parsing** — `contentText`/`responseInputToMessages`
   already walk OpenAI message content parts; extend to extract `image_url`.

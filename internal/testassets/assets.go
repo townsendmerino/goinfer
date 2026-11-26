@@ -1,4 +1,4 @@
-package decoder
+package testassets
 
 // The heavy-asset resolver: testdata/assets.json and the ONE predicate that decides whether an
 // asset is present. Regular (untagged) file, not a _test.go, so backend packages can reach it
@@ -51,9 +51,9 @@ func assetRoot() string {
 	}
 }
 
-// errRegistryUnreadable marks a registry that cannot be read or parsed. The file is tracked, so that is a broken harness, not an
+// ErrRegistryUnreadable marks a registry that cannot be read or parsed. The file is tracked, so that is a broken harness, not an
 // absent asset, and the test wrappers fail on it instead of skipping.
-var errRegistryUnreadable = errors.New("asset registry unreadable")
+var ErrRegistryUnreadable = errors.New("asset registry unreadable")
 
 func loadAssetRegistry() ([]assetSpec, error) {
 	raw, err := os.ReadFile(filepath.Join(assetRoot(), "testdata/assets.json"))
@@ -142,13 +142,13 @@ func satisfiesAsset(a assetSpec, p string) (bool, string) {
 	return false, "unknown kind " + a.Kind + " in the registry"
 }
 
-// lookupAsset resolves one registered asset. An explicit env value ALWAYS wins and is checked by the
+// Lookup resolves one registered asset. An explicit env value ALWAYS wins and is checked by the
 // same predicate: silently falling back to a candidate when the operator named a path would run the
 // gate against a different file than the one they asked for, which is worse than skipping.
-func lookupAsset(env string) (string, error) {
+func Lookup(env string) (string, error) {
 	assets, err := loadAssetRegistry()
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", errRegistryUnreadable, err)
+		return "", fmt.Errorf("%w: %w", ErrRegistryUnreadable, err)
 	}
 	for _, a := range assets {
 		if a.Env != env {

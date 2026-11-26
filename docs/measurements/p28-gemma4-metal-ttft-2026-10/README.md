@@ -37,8 +37,8 @@ lead token. Records: `step1/`.
   Gemma 4's layer head dims are above that, so E2B's attention layers run the exact kernel, `attention_prefill`.
 - **What the exact kernel does:** it keeps one score per key in threadgroup memory, `sc[4096]`, so it holds at most 4,096
   keys (`backend/metal/prefill.go:prefillExactAttnMaxKeys`). It does not write a score matrix to device memory.
-- **What happens past 4,096 keys:** `backend/metal/backend.go:metalResident.batchedPrefill` declines the prompt ("the exact prefill
-  attention kernel holds 4096"). The E-model branch of `backend/metal/backend.go:metalResident.PrefillLast` drops that error and
+- **What happens past 4,096 keys:** `backend/metal/resident_prefill.go:metalResident.batchedPrefill` declines the prompt ("the exact prefill
+  attention kernel holds 4096"). The E-model branch of `backend/metal/resident_prefill.go:metalResident.PrefillLast` drops that error and
   runs the layer-major pass on decode's kernels (bit-identical to sequential). Nothing logs it: the banner's prefill path
   line does not mention the bound.
 - **Prediction:** the knee is at 4,097 keys, a fall from the batched pass to the layer-major one, rather than memory
