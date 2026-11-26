@@ -158,7 +158,8 @@ func (g *schemaGrammar) wsStep() bool {
 
 // step advances over one byte, returning false if it isn't a legal next byte.
 // A loop lets a lazily-completing scalar (number/enum) finish and re-feed the
-// byte that ended it to the parent frame.
+// byte that ended it to the parent frame. Plain string content stays inline:
+// it is most of a document's bytes.
 func (g *schemaGrammar) step(b byte) bool {
 	if !isWS(b) {
 		g.ws = 0
@@ -175,146 +176,21 @@ func (g *schemaGrammar) step(b byte) bool {
 			}
 			return g.dispatch(f, b)
 
-		case fsObjKeyOrClose:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == '}' {
-				if g.objCanClose(f) {
-					g.complete()
-					return true
-				}
-				return false
-			}
-			if b == '"' && (f.n.free || g.objHasUnseen(f)) {
-				g.enterKey(f)
-				return true
-			}
-			return false
-
-		case fsObjKey:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == '"' && (f.n.free || g.objHasUnseen(f)) {
-				g.enterKey(f)
-				return true
-			}
-			return false
+		case fsObjKeyOrClose, fsObjKey, fsObjColon, fsObjComma:
+			return g.objStep(f, b)
 
 		case fsObjKeyStr:
 			return g.keyStep(f, b)
 
-		case fsFreeKey:
-			switch {
-			case b == '"':
-				f.state = fsObjColon
-			case b == '\\':
-				f.state = fsFreeKeyEsc
-			case b < 0x20:
-				return false
-			}
-			return true
+		case fsFreeKey, fsFreeKeyEsc, fsFreeKeyU:
+			return freeKeyStep(f, b)
 
-		case fsFreeKeyEsc:
-			switch b {
-			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
-				f.state = fsFreeKey
-				return true
-			case 'u':
-				f.state, f.num = fsFreeKeyU, 4
-				return true
+		case fsArrValueOrClose, fsArrValue, fsArrComma:
+			ok, refeed := g.arrStep(f, b)
+			if refeed {
+				continue // re-feed b to the new child value frame
 			}
-			return false
-
-		case fsFreeKeyU:
-			if !isHex(b) {
-				return false
-			}
-			if f.num--; f.num == 0 {
-				f.state = fsFreeKey
-			}
-			return true
-
-		case fsObjColon:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == ':' {
-				child := anyNode
-				if !f.n.free {
-					child = f.n.props[f.sel].schema
-				}
-				f.state = fsObjComma
-				g.push(child)
-				return true
-			}
-			return false
-
-		case fsObjComma:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == ',' && (f.n.free || g.objHasUnseen(f)) {
-				f.state = fsObjKey
-				return true
-			}
-			if b == '}' {
-				if g.objCanClose(f) {
-					g.complete()
-					return true
-				}
-				return false
-			}
-			return false
-
-		case fsArrValueOrClose:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == ']' {
-				if f.count >= f.n.minItems {
-					g.complete()
-					return true
-				}
-				return false
-			}
-			if f.n.maxItems >= 0 && f.count >= f.n.maxItems {
-				return false
-			}
-			f.state = fsArrComma
-			f.count++
-			g.push(f.n.items)
-			continue // re-feed b to the new child value frame
-
-		case fsArrValue:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if f.n.maxItems >= 0 && f.count >= f.n.maxItems {
-				return false
-			}
-			f.state = fsArrComma
-			f.count++
-			g.push(f.n.items)
-			continue
-
-		case fsArrComma:
-			if isWS(b) {
-				return g.wsStep()
-			}
-			if b == ',' && (f.n.maxItems < 0 || f.count < f.n.maxItems) {
-				f.state = fsArrValue
-				return true
-			}
-			if b == ']' {
-				if f.count >= f.n.minItems {
-					g.complete()
-					return true
-				}
-				return false
-			}
-			return false
+			return ok
 
 		case fsStr:
 			switch {
@@ -330,36 +206,8 @@ func (g *schemaGrammar) step(b byte) bool {
 				return true
 			}
 
-		case fsFmt:
-			if b == '"' {
-				if !fmtTerminal(f) {
-					return false
-				}
-				g.complete()
-				return true
-			}
-			return fmtStep(f, b)
-
-		case fsStrEsc:
-			switch b {
-			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
-				f.state = fsStr
-				return true
-			case 'u':
-				f.state, f.num = fsStrU, 4
-				return true
-			}
-			return false
-
-		case fsStrU:
-			if !isHex(b) {
-				return false
-			}
-			f.num--
-			if f.num == 0 {
-				f.state = fsStr
-			}
-			return true
+		case fsFmt, fsStrEsc, fsStrU:
+			return g.strStep(f, b)
 
 		case fsNum:
 			if numStepSchema(f, b) {
@@ -383,6 +231,131 @@ func (g *schemaGrammar) step(b byte) bool {
 		}
 		return false
 	}
+}
+
+// objStep advances an object frame between its members: a key's opening quote, the colon, the comma or the closing brace.
+func (g *schemaGrammar) objStep(f *frame, b byte) bool {
+	if isWS(b) {
+		return g.wsStep()
+	}
+	switch {
+	case b == '}' && (f.state == fsObjKeyOrClose || f.state == fsObjComma):
+		if !g.objCanClose(f) {
+			return false
+		}
+		g.complete()
+		return true
+	case b == '"' && (f.state == fsObjKeyOrClose || f.state == fsObjKey) && (f.n.free || g.objHasUnseen(f)):
+		g.enterKey(f)
+		return true
+	case b == ',' && f.state == fsObjComma && (f.n.free || g.objHasUnseen(f)):
+		f.state = fsObjKey
+		return true
+	case b == ':' && f.state == fsObjColon:
+		child := anyNode
+		if !f.n.free {
+			child = f.n.props[f.sel].schema
+		}
+		f.state = fsObjComma
+		g.push(child)
+		return true
+	}
+	return false
+}
+
+// freeKeyStep advances a free object's key string (anyObjNode): any JSON string, then the colon state.
+func freeKeyStep(f *frame, b byte) bool {
+	switch f.state {
+	case fsFreeKey:
+		switch {
+		case b == '"':
+			f.state = fsObjColon
+		case b == '\\':
+			f.state = fsFreeKeyEsc
+		case b < 0x20:
+			return false
+		}
+		return true
+	case fsFreeKeyEsc:
+		switch b {
+		case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			f.state = fsFreeKey
+			return true
+		case 'u':
+			f.state, f.num = fsFreeKeyU, 4
+			return true
+		}
+		return false
+	}
+	if !isHex(b) { // fsFreeKeyU
+		return false
+	}
+	if f.num--; f.num == 0 {
+		f.state = fsFreeKey
+	}
+	return true
+}
+
+// arrStep advances an array frame between its items. refeed reports that it pushed the next item's frame, which b begins;
+// the caller feeds b again, to that frame.
+func (g *schemaGrammar) arrStep(f *frame, b byte) (ok, refeed bool) {
+	if isWS(b) {
+		return g.wsStep(), false
+	}
+	if b == ']' && f.state != fsArrValue {
+		if f.count < f.n.minItems {
+			return false, false
+		}
+		g.complete()
+		return true, false
+	}
+	if f.state == fsArrComma {
+		if b == ',' && (f.n.maxItems < 0 || f.count < f.n.maxItems) {
+			f.state = fsArrValue
+			return true, false
+		}
+		return false, false
+	}
+	if f.n.maxItems >= 0 && f.count >= f.n.maxItems {
+		return false, false
+	}
+	f.state = fsArrComma
+	f.count++
+	g.push(f.n.items)
+	return true, true
+}
+
+// strStep advances a string frame held to a format, or one inside an escape.
+func (g *schemaGrammar) strStep(f *frame, b byte) bool {
+	switch f.state {
+	case fsFmt:
+		if b == '"' {
+			if !fmtTerminal(f) {
+				return false
+			}
+			g.complete()
+			return true
+		}
+		return fmtStep(f, b)
+	case fsStrEsc:
+		switch b {
+		case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			f.state = fsStr
+			return true
+		case 'u':
+			f.state, f.num = fsStrU, 4
+			return true
+		}
+		return false
+	}
+	if !isHex(b) { // fsStrU
+		return false
+	}
+	f.num--
+	if f.num == 0 {
+		f.state = fsStr
+	}
+	return true
 }
 
 // dispatch picks the concrete shape on the first byte of a pending value.
