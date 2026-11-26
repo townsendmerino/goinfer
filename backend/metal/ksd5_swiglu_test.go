@@ -160,7 +160,7 @@ func ksd5Checkpoint() (string, decoder.Options) {
 		return os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 			decoder.Options{Backend: "metal", Quant: "int8int8", DirectLoad: true, ResidentContext: 4096}
 	}
-	return os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw"), decoder.Options{Backend: "metal", ResidentContext: 4096}
+	return os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw"), decoder.Options{Backend: "metal", ResidentContext: 4096}
 }
 
 // TestKSD5_prefillFusedIdentity is D5-G1's and D5c-G1's model half: llama-tiny at int4 and at int8int8 (the native int8 lane)

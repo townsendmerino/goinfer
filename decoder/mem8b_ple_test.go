@@ -92,14 +92,14 @@ func TestPLE_sidecarTag(t *testing.T) {
 	if len(srcs) > 1 && gatherTableTag(srcs[1], "int4", false) != ".ple4" {
 		t.Errorf("gatherTableTag(gemma4-emodel-tiny) misses the per-layer table in config.json")
 	}
-	if p := SidecarPath(srcs[0], "int4", "metal", false); !strings.HasSuffix(p, ".int4.ple4.metal.v17.giw") {
-		t.Errorf("SidecarPath = %s, want the .int4.ple4.metal.v17.giw name", p)
+	if p := SidecarPath(srcs[0], "int4", "metal", false); !strings.HasSuffix(p, ".int4.ple4.metal.v18.giw") {
+		t.Errorf("SidecarPath = %s, want the .int4.ple4.metal.v18.giw name", p)
 	}
 	base := strings.TrimSuffix(plain, ".gguf")
-	if p := SidecarPath(plain, "int4", "metal", false); p != base+".int4.metal.v17.giw" {
-		t.Errorf("SidecarPath(no per-layer table) = %s, want %s", p, base+".int4.metal.v17.giw")
+	if p := SidecarPath(plain, "int4", "metal", false); p != base+".int4.metal.v18.giw" {
+		t.Errorf("SidecarPath(no per-layer table) = %s, want %s", p, base+".int4.metal.v18.giw")
 	}
-	if p := SidecarPath(srcs[0], "int4", "metal", true); !strings.HasSuffix(p, ".int4.e4h.metal.v17.giw") {
+	if p := SidecarPath(srcs[0], "int4", "metal", true); !strings.HasSuffix(p, ".int4.e4h.metal.v18.giw") {
 		t.Errorf("SidecarPath(embed-int4) = %s, want the .e4h name unchanged", p)
 	}
 

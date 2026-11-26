@@ -278,8 +278,8 @@ func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {
 		home := os.Getenv("HOME")
 		cases = append(cases,
-			guardCase{"Phi-3 mini q4", filepath.Join(home, "models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.metal.v17.giw"), "q4k", 2048, 0},
-			guardCase{"Qwen2.5-Coder 0.5B q4_k_m", filepath.Join(home, "models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v17.giw"), "int4", 2048, 0})
+			guardCase{"Phi-3 mini q4", filepath.Join(home, "models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.metal.v18.giw"), "q4k", 2048, 0},
+			guardCase{"Qwen2.5-Coder 0.5B q4_k_m", filepath.Join(home, "models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v18.giw"), "int4", 2048, 0})
 	}
 	slotOpts := func(c guardCase, o decoder.Options) decoder.Options {
 		o.ResidentContext = c.ctx

@@ -157,7 +157,7 @@ func TestHLR_gatedChainMatchesTodaysPath(t *testing.T) {
 	}{
 		{"fixture", mc3ChainFixture, mc3ChainPrompt(5, 24)},
 		{"0.5b", filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), text(48)},
-		{"1.5b", filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw"), text(48)},
+		{"1.5b", filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw"), text(48)},
 	} {
 		t.Run(c.name, func(t *testing.T) { hlrCell(t, c.path, c.prompt) })
 	}

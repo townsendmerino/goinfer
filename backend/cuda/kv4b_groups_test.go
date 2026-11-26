@@ -507,7 +507,7 @@ func TestFlint_rangeSurvey(t *testing.T) {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the real Flint checkpoint)")
 	}
 	gguf := modelPath("Flint-Q4_K_M.gguf")
-	load := modelPath("Flint-Q4_K_M.int4.e4h.cuda.v17.giw")
+	load := modelPath("Flint-Q4_K_M.int4.e4h.cuda.v18.giw")
 	for _, p := range []string{gguf, load} {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("no checkpoint at %s: %v", p, err)

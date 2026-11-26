@@ -38,9 +38,8 @@ func (b *ggufBuild) loadLayers() (*Weights, error) {
 	arch, g, w, quant, sink, abort, hidden, hd, streamMat, mat, vec, vnorm, stackedExperts, permMat, fusedSplit := b.arch, b.g, b.w, b.quant, b.sink, b.abort, b.hidden, b.hd, b.streamMat, b.mat, b.vec, b.vnorm, b.stackedExperts, b.permMat, b.fusedSplit
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	// llama.cpp permutes the q/k weights (and their per-row biases / head-dim
-	// norms) only for the NORM rope type — llama and its derivatives (incl.
-	// mellum). The NEOX rope type (qwen2/qwen3/gemma) leaves q/k in HF order, so
-	// no un-permutation is needed there.
+	// norms) only for the NORM rope type (ggufQKPermuted); the NEOX rope type
+	// leaves q/k in HF order, so no un-permutation is needed there.
 	permuteQK := ggufQKPermuted(arch.Name)
 	loadQK := func(name string, out, nHead int) (linalg.WeightMat, error) {
 		if permuteQK {

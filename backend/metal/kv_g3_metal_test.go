@@ -2301,7 +2301,7 @@ func TestKVWindow_gemma3PricingTable(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	home, _ := os.UserHomeDir()
-	for _, name := range []string{"gemma3-1b-q4_k_m.int4.metal.v17.giw", "gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"} {
+	for _, name := range []string{"gemma3-1b-q4_k_m.int4.metal.v18.giw", "gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"} {
 		path := filepath.Join(home, "models", name)
 		if _, err := os.Stat(path); err != nil {
 			t.Logf("%s: not present", name)
@@ -2339,7 +2339,7 @@ func TestKV58_perSlotTable(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
-	for _, name := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw", "qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw", "gemma3-1b-q4_k_m.int4.metal.v17.giw"} {
+	for _, name := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw", "qwen2.5-7b-instruct-q4_k_m.int4.metal.v18.giw", "gemma3-1b-q4_k_m.int4.metal.v18.giw"} {
 		path := filepath.Join(home, "models", name)
 		if _, err := os.Stat(path); err != nil {
 			t.Logf("%s: not present", name)
@@ -2371,7 +2371,7 @@ func TestKVWindow_gemma3RealIdentity(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "models", "gemma3-1b-q4_k_m.int4.metal.v17.giw")
+	path := filepath.Join(home, "models", "gemma3-1b-q4_k_m.int4.metal.v18.giw")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}

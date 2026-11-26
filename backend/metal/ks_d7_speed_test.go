@@ -94,7 +94,7 @@ func TestKSD7_prefillSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSD7_TIMING") == "" {
 		t.Skip("set GOINFER_KSD7_TIMING=1 (a timed run under the timing lock)")
 	}
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw")
 	opts := decoder.Options{Backend: "metal", ResidentContext: 4096}
 	mo, rfo, pfo := ksd7Load(t, path, opts, true)
 	_, rfn, pfn := ksd7Load(t, path, opts, false)
@@ -145,7 +145,7 @@ func TestKSD7_prefillSpeed(t *testing.T) {
 // the logits byte-equal. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).
 func TestKSD7_memoryUnchanged(t *testing.T) {
 	testgate.RequireHeavy(t)
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}

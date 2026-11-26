@@ -36,7 +36,7 @@ func sp2Target() string {
 	if p := os.Getenv("SP2_TARGET"); p != "" {
 		return p
 	}
-	return os.ExpandEnv("$HOME/models/Qwen3.5-9B-Q4_K_M.int4.e4h.cuda.v17.giw")
+	return os.ExpandEnv("$HOME/models/Qwen3.5-9B-Q4_K_M.int4.e4h.cuda.v18.giw")
 }
 
 // sp2Width is the verify width G1c (beside 16) and G4 run at: SP2_WIDTH, else 4.
