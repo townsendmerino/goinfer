@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/ggufconfig"
 )
 
 // TestQwen35StreamingTranscode_matchesResident is the correctness gate
@@ -51,7 +53,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gguf config: %v", err)
 		}
-		if err := validateGGUFDims(cfg); err != nil {
+		if err := ggufconfig.ValidateDims(cfg); err != nil {
 			t.Fatalf("validate dims: %v", err)
 		}
 		arch, _, err := resolveArchitecture(cfg)
