@@ -199,16 +199,8 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	s.routeThink(lm, &gr, tm, bturns, ts, func(t string) { rb.WriteString(t) })
 	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
-	if gerr != nil {
-		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
-		return
-	}
-	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
-		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
-		return
-	}
-	if res.cancelReason != "" {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+res.cancelReason))
+	if r, failed := driveLineError(bgCtx, customID, gerr, res.cancelReason); failed {
+		setResult(batch, i, r)
 		return
 	}
 
@@ -329,16 +321,8 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
 	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
-	if gerr != nil {
-		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
-		return
-	}
-	if errors.Is(context.Cause(bgCtx), errServerShutdown) {
-		setResult(batch, i, lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"))
-		return
-	}
-	if res.cancelReason != "" {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+res.cancelReason))
+	if r, failed := driveLineError(bgCtx, customID, gerr, res.cancelReason); failed {
+		setResult(batch, i, r)
 		return
 	}
 
@@ -358,4 +342,18 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"usage":         anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
+}
+
+// driveLineError is a batch line's result when its drive did not complete: shutdown first, since a drive cut short by it
+// returns its context error, then a failed drive, then a cancelled one. failed is false when the line has output to record.
+func driveLineError(bgCtx context.Context, customID string, gerr error, cancelReason string) (r batchLineResult, failed bool) {
+	switch {
+	case errors.Is(context.Cause(bgCtx), errServerShutdown):
+		return lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"), true
+	case gerr != nil:
+		return lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()), true
+	case cancelReason != "":
+		return lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+cancelReason), true
+	}
+	return batchLineResult{}, false
 }
