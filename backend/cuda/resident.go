@@ -373,7 +373,7 @@ type cudaResident struct {
 	splitKVState
 	psScores, psSoftmax, psVsum Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
 	psLaunches                  int      // launch groups of it, for tests
-	kv8Store                    Pipeline // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
+	kvState
 
 	// L2: the fused prefill attention, one instantiation per supported head
 	// dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module loaded; every selection site
@@ -390,11 +390,7 @@ type cudaResident struct {
 	// Per-lever selection: fastAttn drives L2, fastGemm drives L3.
 	fastAttn, fastGemm bool
 
-	// planning is set while BuildResident prices the margin on the planned geometry, before any module loads: the span routing then
-	// assumes the row-batched kernels and, under fastAttn, the fused attention for head dims 64 and 128 (fusedLoadedFor).
-	planning bool
-	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
-	openedForPlan bool
+	planState
 	dnetState
 	mambaState
 
@@ -469,15 +465,12 @@ type cudaResident struct {
 	tile128Launches            int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
 	mlaState
 
-	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
-	launchErr   error // sticky first launch error within a launchToken call (reset per token)
-	layers      []cudaLayer
-	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
-	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused QKV (fQKV) + fGU super-kernels are usable
+	launchErr error // sticky first launch error within a launchToken call (reset per token)
+	layers    []cudaLayer
 	ckptState
-	extraBytes int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
-	lmW        cudaWQ
-	finalNorm  Buffer
+	lmW       cudaWQ
+	finalNorm Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
@@ -487,61 +480,11 @@ type cudaResident struct {
 	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
 	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
 	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
-	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
-	ksc, vsc                                            []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
+	gbKey, gbIdx, gbOut                                 Buffer // gumbel_stage1 per-block winners, and the drawn id
 
-	// The resident KV slots over the paged pools (kvpool.go). kvSlotsReq is the model's
-	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
-	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
-	// one, or a batched decode step row's while its attention runs.
-	kvSlotsReq      int
-	kvF16           bool             // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
-	kvI8            bool             // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
-	ctxPlanned      int              // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
-	deepPlan        *cudaDeepPlan    // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
-	allocSlackBytes int64            // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
-	wArena          *weightArena     // the dense weights' arena while uploadLayers sub-allocates from it; nil otherwise
-	wArenaStats     weightArenaStats // what the arena held when uploadLayers closed it
-	ctxMarginBytes  int64            // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
-	ctxMarginCtx    int              // the context the margin is priced at: the one the plan returned
-	kvSlotsN        int              // what checkKVFits granted (>= 1)
-	kvSlot          int
-	kvTabSlot       int
-	kvPools         [kvGroups]kvPool
-	kvTabs          []kvSlotTabs
-	kvTabDev        Buffer
-	kvTabStage      *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables
-	kvTabEv         []gpu.Event            // each staging entry's last copy
-	kvTabNext       int
-	// The pool's capacity rule (kvpool.go, KV4a-3): every slot is guaranteed kvShareBlocks blocks of the full group, the context the
-	// plan chose for one slot (kvShareCtx); kvRaise lets one conversation's cap (ctxCap) grow to the pool, up to modelCtx. kvSlotBusy marks
-	// the slots a running generation holds (decoder.ResidentKVSubsystem), kvSlotUse each slot's last write, kvEvicted the slots whose
-	// blocks were released to make room.
-	kvShareCtx, kvShareBlocks int
-	kvRaise                   bool
-	modelCtx                  int
-	kvSlotBusy, kvEvicted     []bool
-	// kvDemoted holds, per slot, the rows kvEvictIdle kept in host memory for a released slot (kvdemote.go), charged to kvHost, nil when
-	// demotion is off. kvValid is, per slot, the end of its sequence's written rows: its table can name blocks past that, from a longer
-	// sequence before.
-	kvDemoted   []*cudaKVSnapshot
-	kvHost      decoder.KVHostBudget
-	kvValid     []int
-	kvFloor     []int         // per slot, the shortest prefix it answers for: a wrapped upload holds no sliding-layer rows below its base, so a shorter prefix's window has none (0: any)
-	kvCopySrc   int           // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
-	kvUpload    *kvUploadPass // the upload in progress, nil when none
-	kvStopped   []bool        // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
-	kvStepAbort bool          // a reclaim happened while a batched step mapped its rows: the step must not launch
-	kvSlotUse   []uint64
-	kvUseTick   uint64
+	deepPlan *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 
-	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
-	// windowed layers hold.
-	kvWin    bool
-	kvWindow int
-	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
-	kvBases  []int
+	kvWindowState
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback: a pageable D2H stages through a driver
 	// bounce buffer, pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns without an

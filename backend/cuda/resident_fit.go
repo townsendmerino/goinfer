@@ -261,3 +261,22 @@ var kvTrimOffForTest bool
 // memReadSeenForTest, when set (tests only), is called with every free-VRAM reading a build's memory decisions take: the site
 // ("weightsOpen", "plan", "weights", "kv"), the figure and whether the read succeeded.
 var memReadSeenForTest func(site string, free int64, ok bool)
+
+// planState is what the memory plan and the fit checks decided for cudaResident: the context cap and how it was set, the
+// margins and companion bytes priced into every free-VRAM check, the dense weights' arena, and the planning flags.
+type planState struct {
+	// planning is set while BuildResident prices the margin on the planned geometry, before any module loads: the span routing then
+	// assumes the row-batched kernels and, under fastAttn, the fused attention for head dims 64 and 128 (fusedLoadedFor).
+	planning bool
+	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
+	openedForPlan   bool
+	ctxExplicit     bool             // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
+	ctxCap          int              // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	extraBytes      int64            // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
+	ctxPlanned      int              // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
+	allocSlackBytes int64            // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
+	wArena          *weightArena     // the dense weights' arena while uploadLayers sub-allocates from it; nil otherwise
+	wArenaStats     weightArenaStats // what the arena held when uploadLayers closed it
+	ctxMarginBytes  int64            // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
+	ctxMarginCtx    int              // the context the margin is priced at: the one the plan returned
+}
