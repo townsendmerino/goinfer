@@ -5,9 +5,7 @@ backend/cuda/prefill_pass.go:prefillPass.stepAttn 19 -- an unpacking preamble be
 backend/cuda/prefill_pass.go:prefillPass.stepDenseFFN 16 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 backend/cuda/resident_build.go:buildState.allocDecodeScratch 10 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 backend/cuda/resident_build.go:buildState.newResident 41 -- an unpacking preamble before the ratchet; read the fields directly when next changed
-backend/cuda/resident_build.go:buildState.planLayers 27 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 backend/cuda/resident_build.go:buildState.sizeAttnScratch 8 -- an unpacking preamble before the ratchet; read the fields directly when next changed
-backend/metal/resident_build.go:residentBuild.buildLayer 14 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 backend/metal/resident_build.go:residentBuild.sizeDecodeScratch 11 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 decoder/gguf_build_gemma4.go:ggufBuild.loadGemma4 15 -- an unpacking preamble before the ratchet; read the fields directly when next changed
 decoder/gguf_build.go:ggufBuild.loadLayers 15 -- an unpacking preamble before the ratchet; read the fields directly when next changed

@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 )
 
 // The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt; deltaNetCore called once per token on ONE thread would serialize the recurrence and the conv's SiLU between matmuls that run on all threads.
@@ -120,7 +121,7 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 						s += w.convW[c*Kc+j] * wv[j][c]
 					}
 				}
-				out[c] = silu(s)
+				out[c] = normact.SiLU(s)
 			}
 			for headK := range nk {
 				hybridattn.L2NormScaledInto(qAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[headK*hk:(headK+1)*hk], qScale)
@@ -213,7 +214,7 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				}
 				inv := float32(1 / math.Sqrt(ss/float64(hv)+onEps))
 				for vd := range hv {
-					seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
+					seg[vd] = seg[vd] * inv * w.normW[vd] * normact.SiLU(zt[vd])
 				}
 			}
 		}
