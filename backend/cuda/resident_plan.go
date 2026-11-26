@@ -75,8 +75,6 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 	m, planProj := s.m, s.planProj
 	bv := m.BackendView()
 	H, nH, pleP := s.H, s.nH, s.pleP
-	qLoRA, kvLoRA, qkNope, qkRope, vHead := s.qLoRA, s.kvLoRA, s.qkNope, s.qkRope, s.vHead
-	dnAttnGate, dnetOK, mambaP := s.dnAttnGate, s.dnetOK, s.mambaP
 	actG32 := s.actG32
 	var proj []struct {
 		dst *hostW
@@ -109,7 +107,7 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 		proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
 			{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
 	case hl.mixer == decoder.MixerMamba:
-		hm, e := packMambaLayer(m, l, H, mambaP)
+		hm, e := packMambaLayer(m, l, H, s.mambaP)
 		if e != nil {
 			return decline(e)
 		}
@@ -117,11 +115,11 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 	case hl.mixer == decoder.MixerNone:
 		// A feed-forward-only block: the non-gated up and down projections (relu² between them). lw.GateProj is empty by design.
 		proj = []projEnt{{&hl.u, &lw.UpProj}, {&hl.d, &lw.DownProj}}
-	case dnetOK && dnAttnGate:
+	case s.dnetOK && s.dnAttnGate:
 		// The same family's gated softmax layer (qwen3_5/qwen3_5_moe/qwen3_next; not every dnetOK family: Olmo Hybrid's
 		// full-attention layer is olmo3's plain scheme, dnAttnGate=false, and falls through to default below). Its weights live
 		// off lw.QProj, and q_proj is double width, [query ‖ gate] per head.
-		hl.qGate = dnAttnGate
+		hl.qGate = s.dnAttnGate
 		qP, kP, vP, oP, qN, kN := bv.Layer(l).Qwen35AttnWeights()
 		hl.qNorm, hl.kNorm = qN, kN
 		// Same reason as the DeltaNet check below: these become device uploads, and an empty
@@ -135,7 +133,7 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 		qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := bv.Layer(l).MLAWeights()
 		qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
 		hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
-		latDim := kvLoRA + qkRope
+		latDim := s.kvLoRA + s.qkRope
 		// wm is a projection's int8 form when the load holds one (the codes packWeight makes from the f32), else its f32.
 		wm := func(q *linalg.WeightMat, f []float32, rows, cols int) *linalg.WeightMat {
 			if q.Rows() > 0 {
@@ -144,16 +142,16 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 			w := linalg.WrapF32(f, rows, cols)
 			return &w
 		}
-		if qLoRA > 0 {
+		if s.qLoRA > 0 {
 			proj = append(proj,
-				projEnt{&hl.mlaQA, wm(qAQ, qA, qLoRA, H)},
-				projEnt{&hl.mlaQB, wm(qBQ, qB, nH*(qkNope+qkRope), qLoRA)},
+				projEnt{&hl.mlaQA, wm(qAQ, qA, s.qLoRA, H)},
+				projEnt{&hl.mlaQB, wm(qBQ, qB, nH*(s.qkNope+s.qkRope), s.qLoRA)},
 			)
 		} else {
-			proj = append(proj, projEnt{&hl.mlaQ, wm(qQ, qProj, nH*(qkNope+qkRope), H)})
+			proj = append(proj, projEnt{&hl.mlaQ, wm(qQ, qProj, nH*(s.qkNope+s.qkRope), H)})
 		}
 		kvaWM := wm(kvAQ, kvA, latDim, H)
-		oWM := wm(oQ, oProj, H, nH*vHead)
+		oWM := wm(oQ, oProj, H, nH*s.vHead)
 		proj = append(proj,
 			projEnt{&hl.mlaKVA, kvaWM},
 			projEnt{&hl.o, oWM},
@@ -161,18 +159,18 @@ func (s *buildState) planLayerProjs(l int, hl *hlayer, lw *decoder.LayerWeights,
 		// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows). Slice it into W_UKᵀ [nH, kvLoRA,
 		// qkNope] (transposed for the absorb GEMV) and W_UV [nH, vHead, kvLoRA] (the lift, as-is), as
 		// webgpuBackend.BuildResident does (gpu/residency.go).
-		hRow := qkNope + vHead
-		wuk := make([]float32, nH*kvLoRA*qkNope)
-		wuv := make([]float32, nH*vHead*kvLoRA)
+		hRow := s.qkNope + s.vHead
+		wuk := make([]float32, nH*s.kvLoRA*s.qkNope)
+		wuv := make([]float32, nH*s.vHead*s.kvLoRA)
 		for h := range nH {
-			for d := range qkNope {
-				src := kvB[(h*hRow+d)*kvLoRA : (h*hRow+d)*kvLoRA+kvLoRA]
-				for cc := range kvLoRA {
-					wuk[(h*kvLoRA+cc)*qkNope+d] = src[cc]
+			for d := range s.qkNope {
+				src := kvB[(h*hRow+d)*s.kvLoRA : (h*hRow+d)*s.kvLoRA+s.kvLoRA]
+				for cc := range s.kvLoRA {
+					wuk[(h*s.kvLoRA+cc)*s.qkNope+d] = src[cc]
 				}
 			}
-			for ev := range vHead {
-				copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
+			for ev := range s.vHead {
+				copy(wuv[(h*s.vHead+ev)*s.kvLoRA:(h*s.vHead+ev)*s.kvLoRA+s.kvLoRA], kvB[(h*hRow+s.qkNope+ev)*s.kvLoRA:(h*hRow+s.qkNope+ev)*s.kvLoRA+s.kvLoRA])
 			}
 		}
 		hl.mlaWUK, hl.mlaWUV = wuk, wuv
@@ -361,11 +359,10 @@ func (s *buildState) planLayerExperts(l int, hl *hlayer, lw *decoder.LayerWeight
 
 // planLayerNorms takes layer l's norms, rope table and window, and checks the norms and geometry its mixer needs.
 func (s *buildState) planLayerNorms(l int, hl *hlayer, lw *decoder.LayerWeights) error {
-	m, shape := s.m, s.shape
+	m := s.m
 	bv := m.BackendView()
 	H, nH := s.H, s.nH
 	dnAttnGate, dnetOK, mambaP := s.dnAttnGate, s.dnetOK, s.mambaP
-	sandwich, postOnly, qkNormWhole, parallelBlock := s.sandwich, s.postOnly, s.qkNormWhole, s.parallelBlock
 	hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 	if hl.mixer == decoder.MixerMamba || hl.mixer == decoder.MixerNone {
 		// A single-operation block: its one pre-norm and the weights packed above, no attention geometry, QK-norm or rope table.
@@ -411,21 +408,21 @@ func (s *buildState) planLayerNorms(l int, hl *hlayer, lw *decoder.LayerWeights)
 	// Gemma sandwich / Olmo 3 postOnly: both dispatch PostAttnNorm/PostMLPNorm on the sublayer output, so they must be
 	// present when the arch declares either (a missing one would silently drop the norm). Non-DeltaNet layers only (see the
 	// continue above).
-	if sandwich || postOnly {
+	if s.sandwich || s.postOnly {
 		hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
 		if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
-			return decline(fmt.Errorf("layer %d: arch declares sandwich/postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+			return decline(fmt.Errorf("layer %d: arch declares s.sandwich/s.postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
 				l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
 		}
 	}
-	if hdL := bv.Layer(l).HeadDim(); shape.QKNorm {
+	if hdL := bv.Layer(l).HeadDim(); s.shape.QKNorm {
 		// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim, not the model HeadDim, so validate
 		// against the layer's own width. QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the whole q/k vector, so the
 		// weight is nH*hdL / nKV*hdL wide, and the resident launch (one Q block plus one K block, see segA) sizes both blocks
 		// from a single hd, which is correct only when nH==nKV (MHA). Decline rather than mis-normalize a GQA family.
 		wantQ, wantK := hdL, hdL
 		nKVL := bv.Layer(l).KVHeads()
-		if qkNormWhole {
+		if s.qkNormWhole {
 			if nH != nKVL {
 				return decline(fmt.Errorf("layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, nH, nKVL))
 			}
@@ -439,13 +436,13 @@ func (s *buildState) planLayerNorms(l int, hl *hlayer, lw *decoder.LayerWeights)
 				l, wantQ, wantK, len(hl.qNorm), len(hl.kNorm)))
 		}
 	}
-	if !postOnly && len(hl.preNorm) == 0 {
+	if !s.postOnly && len(hl.preNorm) == 0 {
 		return decline(fmt.Errorf("layer %d missing pre-norm", l))
 	}
 	// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — the MLP reuses the
 	// SAME shared input norm the attention branch already computed (segBFFN's r.aq/r.aSc
 	// reuse), so hl.postNorm is legitimately empty for it and must not be required.
-	if hl.ffn && !postOnly && !parallelBlock && len(hl.postNorm) == 0 {
+	if hl.ffn && !s.postOnly && !s.parallelBlock && len(hl.postNorm) == 0 {
 		return decline(fmt.Errorf("layer %d missing pre-MLP norm", l))
 	}
 	if lw.QBias != nil {
