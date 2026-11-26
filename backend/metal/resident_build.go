@@ -436,19 +436,47 @@ func (b *residentBuild) uploadLayers() error {
 // buildLayer uploads layer l's weights and norms and allocates its KV pool, as the mixer and FFN kinds it carries ask. It grows the
 // widest-layer sizes on b that the shared scratch is cut to.
 func (b *residentBuild) buildLayer(l int) error {
-	m, d, r, bv := b.m, b.d, b.r, b.bv
-	H := r.H
-	kvSlots, win, kq := b.kvSlots, b.win, b.kq
-	w, mk, fuse, alias := b.w, b.mk, b.fuse, b.alias
-	geomCache, attnGate, dnetOK := b.geomCache, b.attnGate, b.dnetOK
-	lw := &w.Layers[l]
-	lv := bv.Layer(l)
-	var L residLayer
-	var kEqV bool // false for isDelta (no geometry) and qGate (this family never has K=V); set below otherwise
+	lv := b.bv.Layer(l)
 	mixer, hasFFN := lv.Ops()
-	L.ffn = hasFFN
+	lb := &layerBuild{l: l, lw: &b.w.Layers[l], lv: lv, mixer: mixer, hasFFN: hasFFN, isAttn: mixer == decoder.MixerAttention}
+	lb.L.ffn = hasFFN
+	if err := b.buildMixer(lb); err != nil {
+		return err
+	}
+	if err := b.buildFFN(lb); err != nil {
+		return err
+	}
+	if err := b.buildNorms(lb); err != nil {
+		return err
+	}
+	if err := b.buildAttnKV(lb); err != nil {
+		return err
+	}
+	b.r.layers[l] = lb.L
+	return nil
+}
+
+// layerBuild is one layer's state through buildLayer's phases: its weights and view, the layer being built, and what the
+// mixer phase decides for the geometry phase.
+type layerBuild struct {
+	l              int
+	lw             *decoder.LayerWeights
+	lv             decoder.ResidentLayerView
+	L              residLayer
+	mixer          decoder.ResidentMixer
+	hasFFN, isAttn bool
+	kEqV           bool // false for isDelta (no geometry) and qGate (this family never has K=V); set by buildMixer otherwise
+}
+
+// buildMixer uploads the layer's mixer: a DeltaNet, Mamba-2 or MLA block, a gated or plain attention's projections and
+// qk-norms, and an attention layer's sinks. An MLA layer's latent KV pool is allocated here.
+func (b *residentBuild) buildMixer(lb *layerBuild) error {
+	m, d, r, bv := b.m, b.d, b.r, b.bv
+	H, kvSlots := r.H, b.kvSlots
+	mk, fuse, alias := b.mk, b.fuse, b.alias
+	attnGate, dnetOK := b.attnGate, b.dnetOK
+	l, lw, lv, L, mixer, isAttn := lb.l, lb.lw, lb.lv, &lb.L, lb.mixer, lb.isAttn
 	isDelta := dnetOK && mixer == decoder.MixerDeltaNet
-	isAttn := mixer == decoder.MixerAttention
 	if isDelta {
 		// Gated-DeltaNet mixer layer: no attention projections, no KV cache, no geometry at
 		// all — see metal/deltanet.go and residLayer.delta's doc. L.geom stays nil and
@@ -519,7 +547,7 @@ func (b *residentBuild) buildLayer(l int) error {
 		// slot is scale-less-v_norm'd and left un-roped, while the K slot gets k_norm and RoPE. This is a build-time
 		// weight-layout difference, so the value-independent ForwardEmbPipe pre-encode stays correct (see geom.kEqV).
 		// False (and a no-op) for every family without K=V layers.
-		kEqV = lv.VFromK()
+		lb.kEqV = lv.VFromK()
 		if src := lv.KVSrc(); src != l {
 			// Gemma 4 E-model KV-shared layer: the checkpoint has no k_proj/v_proj/k_norm here; it attends
 			// over layer src's keys and values. Q-only projection; kEqV does not apply (no K of its own).
@@ -534,9 +562,9 @@ func (b *residentBuild) buildLayer(l int) error {
 					}
 				}
 			}
-			L.kvShared, L.kvSrc, kEqV = true, src, false
+			L.kvShared, L.kvSrc, lb.kEqV = true, src, false
 			L.qkvW, L.qkvS = fuse(&lw.QProj)
-		} else if kEqV {
+		} else if lb.kEqV {
 			L.qkvW, L.qkvS = int4ConcatOn(mem.LineDense, d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
 		} else {
 			L.qkvW, L.qkvS = fuse(&lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
@@ -573,6 +601,15 @@ func (b *residentBuild) buildLayer(l int) error {
 			L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, []float32{0})
 		}
 	}
+	return nil
+}
+
+// buildFFN uploads the layer's feed-forward block (Gemma 4's dense||MoE, a generic MoE, a non-gated MLP or a dense
+// SwiGLU) and, on the q4k lane, its projections' Q4_K segments.
+func (b *residentBuild) buildFFN(lb *layerBuild) error {
+	m, d, r := b.m, b.d, b.r
+	mk, fuse, kq := b.mk, b.fuse, b.kq
+	l, lw, lv, L, hasFFN, isAttn, kEqV := lb.l, lb.lw, lb.lv, &lb.L, lb.hasFFN, lb.isAttn, lb.kEqV
 	g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
 	if r.g4moe != nil {
 		g4b, isG4MoE = lv.Gemma4MoEBundle()
@@ -604,6 +641,15 @@ func (b *residentBuild) buildLayer(l int) error {
 		L.oSegs, L.dSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.OProj), q4kLaneProjOn(mem.LineDense, d, kq, &lw.DownProj)
 		L.guSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.GateProj, &lw.UpProj)
 	}
+	return nil
+}
+
+// buildNorms uploads the layer's norms: pre-attention and pre-MLP (with LayerNorm biases), the sandwich or postOnly
+// post-norms, Gemma 4's dense layer scalar and the PLE branch's weights.
+func (b *residentBuild) buildNorms(lb *layerBuild) error {
+	d, r, bv := b.d, b.r, b.bv
+	H, mk := r.H, b.mk
+	l, lw, lv, L, mixer, hasFFN, isAttn := lb.l, lb.lw, lb.lv, &lb.L, lb.mixer, lb.hasFFN, lb.isAttn
 	// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
 	// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
 	// so gate on the per-layer truth, not the model-level flag.
@@ -673,6 +719,15 @@ func (b *residentBuild) buildLayer(l int) error {
 		L.plePW, L.plePS = mk(&lw.PLEProj)
 		L.postPLENorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostPLENorm)
 	}
+	return nil
+}
+
+// buildAttnKV gives an attention layer its RoPE table, geometry, window and fused QKV bias, and its KV pool: its own
+// blocks, or its source layer's for a KV-shared one. It grows the widest-layer sizes on b that the shared scratch is cut to.
+func (b *residentBuild) buildAttnKV(lb *layerBuild) error {
+	m, d, r := b.m, b.d, b.r
+	kvSlots, win, geomCache := b.kvSlots, b.win, b.geomCache
+	l, lw, lv, L, isAttn, kEqV := lb.l, lb.lw, lb.lv, &lb.L, lb.isAttn, lb.kEqV
 	if isAttn {
 		// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
 		// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
@@ -766,7 +821,7 @@ func (b *residentBuild) buildLayer(l int) error {
 				r.ks[l], r.vs[l] = r.ks[L.kvSrc], r.vs[L.kvSrc]
 			}
 			r.kc[l], r.vc[l] = r.kc[L.kvSrc], r.vc[L.kvSrc]
-			r.layers[l] = L
+			r.layers[l] = *L
 			return nil
 		}
 		r.kvSlotBytes[l] = kvBytes
@@ -778,7 +833,6 @@ func (b *residentBuild) buildLayer(l int) error {
 			r.vs[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
 		}
 	}
-	r.layers[l] = L
 	return nil
 }
 
