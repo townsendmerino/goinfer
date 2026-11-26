@@ -1594,7 +1594,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (backend/cuda/resident.go:cudaResident.allocSlots) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (backend/cuda/resident_cache.go:cudaResident.allocSlots) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `backend/metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs

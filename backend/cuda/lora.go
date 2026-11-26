@@ -16,7 +16,7 @@ import (
 // Go-side `if r.loraLayers != nil` at each of the 7 projection sites, with no fixed dispatch plan to rebuild (contrast
 // gpu/lora_resident.go's rebuildSteps). CUDA graphs are the exception: a captured graph replays the launches recorded
 // with r.loraLayers == nil and would silently skip every LoRA dispatch, so SetAdapter refuses under graphs (see the
-// loraLayers field in resident.go).
+// loraLayers field of loraBind).
 //
 // The delta and its two-kernel down/up split mirror metal/lora.go and gpu/lora.go: y[o] += scale * sum_r
 // B[o,r]*(A.x)[r], applied after the base projection's matmul on the same quantized activation the base projection

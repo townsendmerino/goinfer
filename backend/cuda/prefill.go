@@ -339,7 +339,7 @@ func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) 
 // PrefillSeedArgmax satisfies decoder.ResidentRuntimeSubsystem: the same batched forward and capture, but the head runs over
 // ONE row (tailLastLogits), since the block-spec prompt seed needs only the last row's argmax. Heading all M rows
 // allocates M x vocab of logits on device and host (1.24 GB at a 2048-token prompt, vocab 151,936), and an OOM there can
-// leave the context launching kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in resident.go).
+// leave the context launching kernels that "return SUCCESS and execute NOTHING" (prefillRun.prefillChunkCap).
 func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
 	// No context: decoder.ResidentRuntimeSubsystem carries none, so a cancelled block-spec seed runs to completion. Known gap;
 	// closing it is an interface change (docs/code-notes/cuda.md#PrefillSeedArgmax: cancellation gap). The passes are

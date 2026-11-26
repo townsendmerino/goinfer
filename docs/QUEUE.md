@@ -1279,7 +1279,7 @@ so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-r
 
 | | 30 slots (48 req) | 16 slots | ratio |
 |---|---|---|---|
-| **stall** (the `Sync` at `backend/cuda/resident.go:cudaResident.loadRoutedExperts`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **stall** (the `Sync` at `backend/cuda/resident_cache.go:cudaResident.loadRoutedExperts`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
 | **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
 | **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
 | misses | 5229 | 9316 | **1.782** |
