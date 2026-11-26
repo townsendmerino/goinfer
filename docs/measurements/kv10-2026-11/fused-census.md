@@ -1,6 +1,6 @@
 # Fused CUDA prefill attention: which checkpoints get it (66 attention-decoder configs under /home/francis/models)
 
-The rule (`backend/cuda/prefill.go:cudaResident.useAttnFused`): the fused kernel serves a layer only at head dim 64 or 128, with no attention softcap; every other layer runs the exact `attn_batched`.
+The rule (`backend/cuda/prefill_kernels.go:cudaResident.useAttnFused`): the fused kernel serves a layer only at head dim 64 or 128, with no attention softcap; every other layer runs the exact `attn_batched`.
 
 ## No fused prefill kernel
 
