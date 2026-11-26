@@ -103,7 +103,16 @@ func writeFARowsKernels(b *strings.Builder) {
 func deriveRowsKernels() string {
 	var b strings.Builder
 	b.WriteString("\n// ---- MC3 S3: multi-row forms derived from the kernels above (batch_rows.go); bodies unchanged ----\n")
+	writeRowsNormKernels(&b)
+	writeRowsAttnKernels(&b)
+	writeRowsW8Kernels(&b)
+	writeRowsMoEKernels(&b)
+	writeRowsQ4KKernels(&b)
+	return b.String()
+}
 
+// writeRowsNormKernels writes the multi-row forms of rmsnorm_quant, quant_vec and swiglu_quant.
+func writeRowsNormKernels(b *strings.Builder) {
 	// rmsnorm_quant: one threadgroup per row; x and aq advance H, asc one.
 	b.WriteString(edit(extractKernel(allKernels, "rmsnorm_quant"),
 		"kernel void rmsnorm_quant(device const float* x[[buffer(0)]]",
@@ -137,7 +146,11 @@ func deriveRowsKernels() string {
 		"uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]],\n    uint mc3_row[[threadgroup_position_in_grid]]) {\n"+
 			"    device const float* g = g_rows + mc3_row*2u*I; device const float* u = g + I; device char* dq = dq_rows + mc3_row*I; device float* ds = ds_rows + mc3_row;"))
 	b.WriteString("\n")
+}
 
+// writeRowsAttnKernels writes the multi-row forms of rope2, kv_store, the per-head attention and qk_norm, then attention_fa's
+// (writeFARowsKernels) and its combine.
+func writeRowsAttnKernels(b *strings.Builder) {
 	// rope2: one thread per rotated pair, M rows of it; each row has its own position and Q temperature scale, and a
 	// row of the fused qkv buffer is rowStride floats.
 	b.WriteString(edit(extractKernel(allKernels, "rope2"),
@@ -195,7 +208,7 @@ func deriveRowsKernels() string {
 		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
 	b.WriteString("\n")
 
-	writeFARowsKernels(&b)
+	writeFARowsKernels(b)
 	// Its combine: row j merges its own partial region into its own row of ctx (outStride floats), over its own splits.
 	b.WriteString(edit(extractKernel(allKernels, "attention_fa_combine"),
 		"kernel void attention_fa_combine(", "kernel void mc3_attention_fa_combine_rows(",
@@ -210,7 +223,10 @@ func deriveRowsKernels() string {
 			"    uint nSplit = nSplit_rows[mc3_row]; device const float* partial = partial_rows + mc3_j*partStride;\n"+
 			"    device float* out = out_rows + mc3_row*outStride;"))
 	b.WriteString("\n")
+}
 
+// writeRowsW8Kernels writes the native int8 path's multi-row projection, mc3_gemv_w8a8_rows, at B = 2 to 8.
+func writeRowsW8Kernels(b *strings.Builder) {
 	// int8 slice 3b: the native int8 path's projection for B rows of the batched
 	// step, each weight row read ONCE for all B activation rows. One simdgroup per output row keeps B integer
 	// accumulators; W8A8 sums are exact, so any order gives decode's integer, and each row's epilogue is decode's own
@@ -246,9 +262,12 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 }
 `)
 	for B := 2; B <= 8; B++ {
-		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8a8_rows%d\")]] kernel decltype(mc3_gemv_w8a8_rows<%d>) mc3_gemv_w8a8_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(b, "template [[host_name(\"mc3_gemv_w8a8_rows%d\")]] kernel decltype(mc3_gemv_w8a8_rows<%d>) mc3_gemv_w8a8_rows<%d>;\n", B, B, B)
 	}
+}
 
+// writeRowsMoEKernels writes the MoE step's k-slot expert GEMVs and their combine.
+func writeRowsMoEKernels(b *strings.Builder) {
 	// Decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
 	// rowsPerExpert/(tgs/32) threadgroups; a threadgroup's slot is its index divided by that, and within the slot it
 	// is the threadgroup production's per-slot dispatch had. Needs rowsPerExpert % (tgs/32) == 0 (encodeMoEExperts
@@ -286,7 +305,10 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
     }
 }
 `)
+}
 
+// writeRowsQ4KKernels writes the q4k lane's multi-row norm, SwiGLU and projections.
+func writeRowsQ4KKernels(b *strings.Builder) {
 	// The q4k lane's step: its norm and SwiGLU derived as
 	// above, and its two projections for B rows, each weight read once for all rows. A rows GEMV keeps its decode
 	// kernel's per-lane loop, statement for statement, and simd_sum per row (q4k_rows_acc, w8f32_rows_acc), so each row is
@@ -311,13 +333,11 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 	b.WriteString("\n")
 	b.WriteString(q4kRowsSrc)
 	for B := 1; B <= 8; B++ {
-		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q4k_f32_rows%d\")]] kernel decltype(mc3_gemv_q4k_f32_rows<%d, %d>) mc3_gemv_q4k_f32_rows<%d, %d>;\n", B, B, stepRowsNR, B, stepRowsNR)
-		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8_f32_rows%d\")]] kernel decltype(mc3_gemv_w8_f32_rows<%d>) mc3_gemv_w8_f32_rows<%d>;\n", B, B, B)
-		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q5k_f32_rows%d\")]] kernel decltype(mc3_gemv_q5k_f32_rows<%d, %d>) mc3_gemv_q5k_f32_rows<%d, %d>;\n", B, B, stepRowsNR, B, stepRowsNR)
-		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q6k_f32_rows%d\")]] kernel decltype(mc3_gemv_q6k_f32_rows<%d>) mc3_gemv_q6k_f32_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(b, "template [[host_name(\"mc3_gemv_q4k_f32_rows%d\")]] kernel decltype(mc3_gemv_q4k_f32_rows<%d, %d>) mc3_gemv_q4k_f32_rows<%d, %d>;\n", B, B, stepRowsNR, B, stepRowsNR)
+		fmt.Fprintf(b, "template [[host_name(\"mc3_gemv_w8_f32_rows%d\")]] kernel decltype(mc3_gemv_w8_f32_rows<%d>) mc3_gemv_w8_f32_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(b, "template [[host_name(\"mc3_gemv_q5k_f32_rows%d\")]] kernel decltype(mc3_gemv_q5k_f32_rows<%d, %d>) mc3_gemv_q5k_f32_rows<%d, %d>;\n", B, B, stepRowsNR, B, stepRowsNR)
+		fmt.Fprintf(b, "template [[host_name(\"mc3_gemv_q6k_f32_rows%d\")]] kernel decltype(mc3_gemv_q6k_f32_rows<%d>) mc3_gemv_q6k_f32_rows<%d>;\n", B, B, B)
 	}
-
-	return b.String()
 }
 
 const q4kRowsSrc = `// The step's Q4_K and Q5_K GEMVs run the B activation rows one after another inside the simdgroup (a loop the compiler is told
