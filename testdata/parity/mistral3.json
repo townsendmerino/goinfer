@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_mistral3.go"
+    "internal/runtime/families/arch_mistral3.go"
   ],
   "programs": [
     "testdata/ministral3-tiny"
   ],
-  "deps_hash": "sha256:b46674a17f84b50ff310f979bcbe4cda482937e298e930ce58705915ffaa2f87",
+  "deps_hash": "sha256:4de5d933d0c0206306347f4e23d5fdbc1155dc72853cd0309674df5bb8ccaed9",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

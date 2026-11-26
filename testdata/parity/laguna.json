@@ -13,10 +13,10 @@
     "decoder/laguna_gguf_test.go",
     "scripts/pin_laguna_tiny.py",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_laguna.go",
+    "internal/runtime/families/arch_laguna.go",
     "decoder/gguf_build_laguna.go"
   ],
-  "deps_hash": "sha256:44325218efe8e94c0d5dd26ed72fabb4a05fa220fa90995677f18c57c6325091",
+  "deps_hash": "sha256:db28b0a61d902439b6d9227932bd049ae4ba14baaaeb8586bc442fa7e7d1d5a3",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

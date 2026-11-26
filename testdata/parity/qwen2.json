@@ -5,9 +5,9 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen2.go"
+    "internal/runtime/families/arch_qwen2.go"
   ],
-  "deps_hash": "sha256:a87301e066f61a5c99f33080397083e1ae45e475fa315b92fc863f5982ac0ebb",
+  "deps_hash": "sha256:8f75fdbda6345b01daee11c4c00d4b4b16f27cc422df4b4ed050d04f37b47b30",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

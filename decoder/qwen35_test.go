@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"testing"
 )
 
@@ -44,7 +45,7 @@ func TestResolveQwen35(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture(qwen3_5_moe): %v", err)
 	}
-	if arch.Name != "qwen3_5_moe" || schema != &qwen35TensorSchema {
+	if arch.Name != "qwen3_5_moe" || schema != &families.Qwen35TensorSchema {
 		t.Fatalf("wrong adapter: name=%q", arch.Name)
 	}
 

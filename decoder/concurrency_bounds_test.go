@@ -18,6 +18,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -277,13 +278,13 @@ func TestRunGen_recoversPanicIntoGenerationErr(t *testing.T) {
 
 func TestValidateConfigBounds_catchesGPT2Oversized(t *testing.T) {
 	cfg := &Config{ModelType: "gpt2", NLayer: maxGGUFLayers + 1}
-	if err := validateConfigBounds(cfg); err == nil {
+	if err := families.ValidateConfigBounds(cfg); err == nil {
 		t.Fatal("expected oversized GPT-2 n_layer to be rejected")
 	}
-	if err := validateConfigBounds(&Config{ModelType: "gpt2", NEmbd: maxGGUFHidden + 1}); err == nil {
+	if err := families.ValidateConfigBounds(&Config{ModelType: "gpt2", NEmbd: maxGGUFHidden + 1}); err == nil {
 		t.Fatal("expected oversized GPT-2 n_embd to be rejected")
 	}
-	if err := validateConfigBounds(&Config{ModelType: "gpt2", NLayer: 12, NEmbd: 768, NHead: 12}); err != nil {
+	if err := families.ValidateConfigBounds(&Config{ModelType: "gpt2", NLayer: 12, NEmbd: 768, NHead: 12}); err != nil {
 		t.Fatalf("valid GPT-2 rejected: %v", err)
 	}
 }

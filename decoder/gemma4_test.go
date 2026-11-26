@@ -2,6 +2,7 @@ package decoder
 
 import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"math"
 	"testing"
 )
@@ -34,9 +35,9 @@ func TestGemma4Architecture(t *testing.T) {
 		PartialRotaryFactor:  0.25, // p-RoPE on the global layers
 	}
 
-	arch, schema, err := gemma4Architecture(cfg)
+	arch, schema, err := families.Gemma4Architecture(cfg)
 	if err != nil {
-		t.Fatalf("gemma4Architecture: %v", err)
+		t.Fatalf("families.Gemma4Architecture: %v", err)
 	}
 	if schema == nil {
 		t.Fatal("nil tensor schema")
@@ -134,9 +135,9 @@ func TestGemma4MoEDescriptor(t *testing.T) {
 	moeCfg.NumExperts = 128
 	moeCfg.TopKExperts = 8
 	moeCfg.MoeIntermediateSize = 704
-	arch, _, err := gemma4Architecture(moeCfg)
+	arch, _, err := families.Gemma4Architecture(moeCfg)
 	if err != nil {
-		t.Fatalf("gemma4Architecture(moe): %v", err)
+		t.Fatalf("families.Gemma4Architecture(moe): %v", err)
 	}
 	if arch.MoE == nil {
 		t.Fatal("enable_moe_block=true but arch.MoE is nil")
@@ -161,7 +162,7 @@ func TestGemma4MoEDescriptor(t *testing.T) {
 	}
 
 	// Dense variant: enable_moe_block unset ⇒ MoE nil (byte-unchanged descriptor).
-	if a, _, err := gemma4Architecture(base()); err != nil || a.MoE != nil {
+	if a, _, err := families.Gemma4Architecture(base()); err != nil || a.MoE != nil {
 		t.Fatalf("dense gemma4: MoE=%v err=%v — want nil MoE", a.MoE, err)
 	}
 
@@ -171,11 +172,11 @@ func TestGemma4MoEDescriptor(t *testing.T) {
 	bad.NumExperts = 4
 	bad.TopKExperts = 9 // > num_experts
 	bad.MoeIntermediateSize = 704
-	if _, _, err := gemma4Architecture(bad); err == nil {
+	if _, _, err := families.Gemma4Architecture(bad); err == nil {
 		t.Error("top_k_experts > num_experts should be rejected")
 	}
 	bad.TopKExperts, bad.NumExperts = 2, 0
-	if _, _, err := gemma4Architecture(bad); err == nil {
+	if _, _, err := families.Gemma4Architecture(bad); err == nil {
 		t.Error("num_experts=0 should be rejected")
 	}
 }

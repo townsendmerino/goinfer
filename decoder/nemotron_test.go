@@ -10,6 +10,7 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -27,7 +28,7 @@ func TestNemotron_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &nemotronTensorSchema || arch.Nemotron == nil {
+	if schema != &families.NemotronTensorSchema || arch.Nemotron == nil {
 		t.Fatalf("schema/nemotron mismatch")
 	}
 	want := []uint8{archparts.NemoMamba, archparts.NemoAttn, archparts.NemoMLP, archparts.NemoMamba, archparts.NemoAttn}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"io/fs"
 	"math"
 	"os"
@@ -59,7 +60,7 @@ func TestResolveMellum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture(mellum): %v", err)
 	}
-	if arch.Name != "mellum" || schema != &mellumTensorSchema {
+	if arch.Name != "mellum" || schema != &families.MellumTensorSchema {
 		t.Fatalf("wrong adapter: name=%q", arch.Name)
 	}
 

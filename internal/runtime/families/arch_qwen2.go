@@ -1,0 +1,55 @@
+package families
+
+import (
+	"fmt"
+	"math"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+)
+
+// qwen2Architecture expresses Qwen2/Qwen2.5 dense: identical to the llama
+// descriptor (RMS no-offset, Pre2, SwiGLU, single-base RoPE, no QK-norm, derived
+// head_dim, tied-or-untied head) plus QKVBias — Qwen2 carries an additive bias
+// on the q/k/v projections (o_proj stays biasless). The tensor schema is
+// qwen2TensorSchema.
+func qwen2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSchema, error) {
+	if err := backfillFlatRope(cfg, "qwen2"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.ValidateQwen2(); err != nil {
+		return nil, nil, err
+	}
+	scaling, err := rope.ParseScaling(cfg.RopeScaling) // linear + llama3 (Qwen2.5 leaves it null)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(qwen2): %w", err)
+	}
+	hd := cfg.EffectiveHeadDim()
+	return &darch.Architecture{
+		Name:            "qwen2",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            darch.NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   darch.NormPre2,
+		Act:             darch.ActSiLU,
+		QKVBias:         true, // the one knob that differs from llama
+		QKNorm:          false,
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   0,   // ValidateQwen2 rejects use_sliding_window=true
+		LayerIsGlobal:   nil, // all-global
+		RoPELocalBase:   cfg.RoPEGlobalBase,
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RotaryDim:       cfg.RotaryDim(),
+		RoPEScaling:     scaling,
+		EmbedScale:      0,
+		TiedLMHead:      false, // finalized from lm_head.weight presence at load
+	}, &qwen2TensorSchema, nil
+}

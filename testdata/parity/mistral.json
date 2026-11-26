@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_mistral.go"
+    "internal/runtime/families/arch_mistral.go"
   ],
   "programs": [
     "testdata/mistral-tiny-window"
   ],
-  "deps_hash": "sha256:bcce2a96a7dee949d1df1ae4ba86ebaadffcd70a7b357aec208a19695669b42b",
+  "deps_hash": "sha256:12e566e73715fbe510c96bffe8535248763105ad201f1ccb8d4f2ccaa72e6238",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

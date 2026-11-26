@@ -6,7 +6,7 @@
   ],
   "own": [
     "decoder/forward_gemma4.go",
-    "decoder/arch_gemma4.go",
+    "internal/runtime/families/arch_gemma4.go",
     "decoder/forward_gemma4_moe.go",
     "decoder/program_cpu_n_gemma4.go",
     "decoder/gguf_build_gemma4.go"
@@ -15,7 +15,7 @@
     "testdata/gemma4-moe-kv-tiny",
     "testdata/gemma4-moe-kv-tiny32"
   ],
-  "deps_hash": "sha256:bcaf72712e1d134ad5d38f0f98e176678dd6f47e1a137b3d12fc3685d742c81c",
+  "deps_hash": "sha256:d619db43d30c395d44b3a015800464354b062eb0d48959673da52541d49dc886",
   "status": "validated",
   "validated_at": "310a2e44",
   "date": "2026-09-28",

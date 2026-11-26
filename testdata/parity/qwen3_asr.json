@@ -5,13 +5,13 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen3_asr.go",
-    "decoder/arch_qwen3.go"
+    "internal/runtime/families/arch_qwen3_asr.go",
+    "internal/runtime/families/arch_qwen3.go"
   ],
   "programs": [
     "testdata/qwen3asr-tiny"
   ],
-  "deps_hash": "sha256:854175211c4444fc558b5484bfa0baa4bf91ab5dcbd243e22cfdfc1d7251b6c6",
+  "deps_hash": "sha256:6bb1a8d0a346a72532cad9dd4c7dd544fd0ea095c24370a1af84f8cbd11afb6b",
   "status": "validated",
   "validated_at": "4f84f2c1",
   "date": "2026-10-08",

@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -29,7 +30,7 @@ func TestDeepseek_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &deepseekTensorSchema || arch.MLA == nil {
+	if schema != &families.DeepseekTensorSchema || arch.MLA == nil {
 		t.Fatalf("schema/mla mismatch")
 	}
 	p := arch.MLA

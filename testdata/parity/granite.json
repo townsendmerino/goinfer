@@ -6,12 +6,12 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_granite.go"
+    "internal/runtime/families/arch_granite.go"
   ],
   "programs": [
     "testdata/granite-dense-tiny"
   ],
-  "deps_hash": "sha256:e7d9548e68c1f0330bc88f8cd43fe102c13dce1e81075d7eb53206609395433a",
+  "deps_hash": "sha256:e2700e62bc54b618a7f81b7a6b3e26037074d593529671453609f2ac37fb9e2e",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

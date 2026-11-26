@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"strings"
 	"testing"
 )
@@ -32,7 +33,7 @@ func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing
 		t.Run(name, func(t *testing.T) {
 			cfg := &Config{}
 			tc.mutate(cfg)
-			err := validateConfigBounds(cfg)
+			err := families.ValidateConfigBounds(cfg)
 			if err == nil {
 				t.Fatalf("accepted; an adapter would allocate from this before anything else " +
 					"ran, and the result is a fatal OOM rather than an error (M-10)")
@@ -48,7 +49,7 @@ func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing
 	t.Run("a large real model passes", func(t *testing.T) {
 		cfg := &Config{NumLayers: 126, HiddenDim: 18432, NumHeads: 128, NumKVHeads: 8,
 			VocabSize: 256000, NumExperts: 256}
-		if err := validateConfigBounds(cfg); err != nil {
+		if err := families.ValidateConfigBounds(cfg); err != nil {
 			t.Errorf("a 405B-class config is rejected: %v", err)
 		}
 	})
@@ -57,7 +58,7 @@ func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing
 	// adapter has filled in what the config omits. Pinned so a later "tidy-up" that moves them
 	// here does not start rejecting the MoE checkpoints that legitimately leave fields at zero.
 	t.Run("zero is left to validateResolved", func(t *testing.T) {
-		if err := validateConfigBounds(&Config{}); err != nil {
+		if err := families.ValidateConfigBounds(&Config{}); err != nil {
 			t.Errorf("an all-zero config is rejected here: %v", err)
 		}
 	})

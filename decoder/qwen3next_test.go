@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
+	"testing"
+)
 
 // TestQwen3Next_descriptor verifies qwen3NextArchitecture against the REAL
 // released config (Qwen/Qwen3-Next-80B-A3B-Instruct config.json, fetched
@@ -25,8 +28,8 @@ func TestQwen3Next_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &qwen35TensorSchema {
-		t.Errorf("schema = %p, want &qwen35TensorSchema (rides the existing qwen3_5_moe loader, no new schema)", schema)
+	if schema != &families.Qwen35TensorSchema {
+		t.Errorf("schema = %p, want &families.Qwen35TensorSchema (rides the existing qwen3_5_moe loader, no new schema)", schema)
 	}
 	if arch.Qwen35 == nil {
 		t.Fatal("arch.qwen35 is nil — DeltaNet params not populated")

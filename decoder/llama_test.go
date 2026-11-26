@@ -169,7 +169,7 @@ func TestResolveArchitecture_mistral(t *testing.T) {
 			t.Errorf("layer %d global, want all-local", i)
 		}
 	}
-	if schema.QBias != "" { // Mistral has no bias (shares llamaTensorSchema)
+	if schema.QBias != "" { // Mistral has no bias (shares families.LlamaTensorSchema)
 		t.Errorf("mistral schema should have no QKV bias, got %q", schema.QBias)
 	}
 

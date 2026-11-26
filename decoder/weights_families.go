@@ -8,6 +8,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 )
 
 // conv1DTransposed loads a GPT-2 Conv1D weight and returns it transposed to the
@@ -467,7 +468,7 @@ func buildPhi3Weights(cfg *Config, arch *darch.Architecture, st *embed.Safetenso
 
 // buildGlmOcrWeights loads the GLM-OCR text decoder (model_type glm_ocr / glm_ocr_text; the vision
 // wrapper's checkpoint holds it under model.language_model.* with a top-level lm_head.weight). It is
-// the llama skeleton with FOUR norms per layer (Sandwich4; glmOcrTensorSchema carries the names,
+// the llama skeleton with FOUR norms per layer (Sandwich4; families.GlmOcrTensorSchema carries the names,
 // which are not Gemma's), separate bias-free q/k/v/o at an explicit head_dim, and ONE fused tensor:
 // mlp.gate_up_proj is [2*inter, hidden] with the GATE rows first (HF: chunk(2); up * silu(gate)).
 //
@@ -478,7 +479,7 @@ func buildPhi3Weights(cfg *Config, arch *darch.Architecture, st *embed.Safetenso
 // either. The head is untied on the real checkpoint but finalized from lm_head.weight presence, like
 // phi3, so a tied re-save would still load.
 func buildGlmOcrWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
-	s := &glmOcrTensorSchema
+	s := &families.GlmOcrTensorSchema
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -501,7 +502,7 @@ func buildGlmOcrWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 
 	loadLayer := func(i int) error {
 		l := &w.Layers[i]
-		p := fmt.Sprintf("%slayers.%d.", glmOcrPrefix, i)
+		p := fmt.Sprintf("%slayers.%d.", families.GlmOcrPrefix, i)
 		var e error
 		if l.PreAttnNorm, e = st.TensorF32(p+s.PreAttnNorm, hidden); e != nil {
 			return e
@@ -532,7 +533,7 @@ func buildGlmOcrWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 		}
 		l.OProj = q(l.OProj)
 		// Fused gate_up_proj [2*inter, hidden] -> gate ‖ up by output rows, GATE FIRST.
-		gu, gerr := st.TensorF32(p+glmOcrGateUp, 2*inter, hidden)
+		gu, gerr := st.TensorF32(p+families.GlmOcrGateUp, 2*inter, hidden)
 		if gerr != nil {
 			return gerr
 		}

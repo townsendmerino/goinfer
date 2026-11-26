@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -27,7 +28,7 @@ func TestLlama4_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &llama4TensorSchema || arch.Llama4 == nil {
+	if schema != &families.Llama4TensorSchema || arch.Llama4 == nil {
 		t.Fatalf("schema/llama4 mismatch")
 	}
 	lp := arch.Llama4

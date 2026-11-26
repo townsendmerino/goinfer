@@ -111,6 +111,27 @@
       "why": "internal/runtime/normact holds the CPU forward's row norms and elementwise activations, so they test without compiling decoder. It sits below decoder, which calls it: it imports no goinfer package."
     },
     {
+      "name": "families-leaf",
+      "from": [
+        "internal/runtime/families"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/families": [
+          "decoder/arch",
+          "decoder/config",
+          "internal/runtime/archparts",
+          "internal/runtime/ggufconfig",
+          "internal/runtime/program",
+          "internal/runtime/rope"
+        ]
+      },
+      "why": "internal/runtime/families holds the per-family architecture adapters (arch_*.go, gemma12.go), model_type registry, and safetensors tensor schemas below decoder (SZ13a). It imports only the arch/config/rope/program/ggufconfig leaves and never decoder."
+    },
+    {
       "name": "arch-leaf",
       "from": [
         "decoder/arch"
@@ -411,6 +432,7 @@
       "internal/runtime/archparts",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
+      "internal/runtime/families",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
@@ -609,6 +631,14 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2"
     ],
+    "internal/runtime/families": [
+      "decoder/arch",
+      "decoder/config",
+      "internal/runtime/archparts",
+      "internal/runtime/ggufconfig",
+      "internal/runtime/program",
+      "internal/runtime/rope"
+    ],
     "internal/runtime/ggufconfig": [
       "decoder/config"
     ],
@@ -797,6 +827,7 @@
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/archparts",
+      "internal/runtime/families",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
@@ -932,6 +963,9 @@
     "internal/guard/swapguard": [
       "decoder",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/families": [
+      "decoder/config"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"

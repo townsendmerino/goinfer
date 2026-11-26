@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"os"
 	"testing"
 	"testing/fstest"
@@ -17,7 +18,7 @@ func nemotronHeadDim(t *testing.T, path string) int {
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
-	arch, _, err := nemotronhArchitecture(cfg)
+	arch, _, err := families.NemotronHArchitecture(cfg)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
