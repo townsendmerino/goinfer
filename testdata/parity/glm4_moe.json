@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_glm4_moe.go"
+    "internal/runtime/families/arch_glm4_moe.go"
   ],
   "programs": [
     "testdata/glm-tiny",

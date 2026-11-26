@@ -5,8 +5,8 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen3_asr.go",
-    "decoder/arch_qwen3.go"
+    "internal/runtime/families/arch_qwen3_asr.go",
+    "internal/runtime/families/arch_qwen3.go"
   ],
   "programs": [
     "testdata/qwen3asr-tiny"

@@ -5,8 +5,8 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_voxtral.go",
-    "decoder/arch_llama.go"
+    "internal/runtime/families/arch_voxtral.go",
+    "internal/runtime/families/arch_llama.go"
   ],
   "programs": [
     "testdata/voxtral-tiny"

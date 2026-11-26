@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_smollm3.go"
+    "internal/runtime/families/arch_smollm3.go"
   ],
   "programs": [
     "testdata/smollm3-tiny"

@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_mistral.go"
+    "internal/runtime/families/arch_mistral.go"
   ],
   "programs": [
     "testdata/mistral-tiny-window"

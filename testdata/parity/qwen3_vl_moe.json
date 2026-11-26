@@ -7,9 +7,9 @@
   "own": [
     "decoder/qwen3vlmoe_test.go",
     "scripts/pin_qwen3vlmoe_tiny.py",
-    "decoder/arch_qwen3_vl_moe.go",
-    "decoder/arch_qwen3_moe.go",
-    "decoder/arch_qwen3_vl.go"
+    "internal/runtime/families/arch_qwen3_vl_moe.go",
+    "internal/runtime/families/arch_qwen3_moe.go",
+    "internal/runtime/families/arch_qwen3_vl.go"
   ],
   "programs": [
     "testdata/qwen3vlmoe-tiny"

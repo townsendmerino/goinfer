@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_mixtral.go"
+    "internal/runtime/families/arch_mixtral.go"
   ],
   "programs": [
     "testdata/mixtral-tiny"

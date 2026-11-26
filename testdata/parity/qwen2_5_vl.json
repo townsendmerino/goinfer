@@ -5,8 +5,8 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen2_5_vl.go",
-    "decoder/arch_qwen2.go"
+    "internal/runtime/families/arch_qwen2_5_vl.go",
+    "internal/runtime/families/arch_qwen2.go"
   ],
   "programs": [
     "testdata/qwen25vl-tiny"

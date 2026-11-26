@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_qwen2_moe.go"
+    "internal/runtime/families/arch_qwen2_moe.go"
   ],
   "deps_hash": "sha256:97d44a0c8984bacb901fb0428cb03b887543e09c1459e2c4d01bd905e8c20f00",
   "status": "validated",

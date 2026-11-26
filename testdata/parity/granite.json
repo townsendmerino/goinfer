@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_granite.go"
+    "internal/runtime/families/arch_granite.go"
   ],
   "programs": [
     "testdata/granite-dense-tiny"

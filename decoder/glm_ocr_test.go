@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
@@ -48,8 +49,8 @@ func TestGlmOcr_realConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &glmOcrTensorSchema {
-		t.Fatalf("schema = %p, want glmOcrTensorSchema", schema)
+	if schema != &families.GlmOcrTensorSchema {
+		t.Fatalf("schema = %p, want families.GlmOcrTensorSchema", schema)
 	}
 	checks := []struct {
 		name      string

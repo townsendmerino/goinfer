@@ -2,6 +2,7 @@ package decoder
 
 import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"testing"
 )
 
@@ -19,8 +20,8 @@ func TestGPT2_activationSelectsTheNamedFunction(t *testing.T) {
 		{"gelu_new", darch.ActGeluTanh}, // tanh approximation
 		{"gelu", darch.ActGelu},         // exact erf — the case that was wrong
 	} {
-		if got := gpt2Act(c.name); got != c.want {
-			t.Errorf("gpt2Act(%q) = %v, want %v", c.name, got, c.want)
+		if got := families.GPT2Act(c.name); got != c.want {
+			t.Errorf("families.GPT2Act(%q) = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

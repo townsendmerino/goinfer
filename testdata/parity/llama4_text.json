@@ -7,7 +7,7 @@
   ],
   "own": [
     "decoder/forward_llama4.go",
-    "decoder/arch_llama4_text.go",
+    "internal/runtime/families/arch_llama4_text.go",
     "decoder/gguf_build_llama4.go"
   ],
   "programs": [

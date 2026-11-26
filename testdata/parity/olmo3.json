@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_olmo3.go"
+    "internal/runtime/families/arch_olmo3.go"
   ],
   "programs": [
     "testdata/olmo3-tiny"

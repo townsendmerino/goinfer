@@ -7,7 +7,7 @@
   ],
   "own": [
     "decoder/forward_deepseek.go",
-    "decoder/arch_deepseek.go",
+    "internal/runtime/families/arch_deepseek.go",
     "decoder/mla_int8.go"
   ],
   "deps_hash": "sha256:4239e06e4ce505036cf06542a4d5765cc6dc3494bd2e02ebeb7b9c00fd47fdc4",

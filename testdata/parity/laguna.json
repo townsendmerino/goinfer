@@ -13,7 +13,7 @@
     "decoder/laguna_gguf_test.go",
     "scripts/pin_laguna_tiny.py",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_laguna.go",
+    "internal/runtime/families/arch_laguna.go",
     "decoder/gguf_build_laguna.go"
   ],
   "deps_hash": "sha256:2ad11c8b8be208a222ca86e1b181367c371a310f0da04a48173774c28525606f",

@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_llama.go"
+    "internal/runtime/families/arch_llama.go"
   ],
   "programs": [
     "testdata/llama-attnfa-tiny",

@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_cohere2.go"
+    "internal/runtime/families/arch_cohere2.go"
   ],
   "programs": [
     "testdata/cohere2-tiny"

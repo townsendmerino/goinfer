@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_flint.go",
+    "internal/runtime/families/arch_flint.go",
     "decoder/flint_parity_test.go",
     "scripts/pin_flint_tiny.py"
   ],

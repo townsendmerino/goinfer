@@ -9,7 +9,7 @@
     "decoder/forward_qwen35.go",
     "decoder/qwen3_5_test.go",
     "scripts/pin_qwen3_5_forward.py",
-    "decoder/arch_qwen3_5.go",
+    "internal/runtime/families/arch_qwen3_5.go",
     "decoder/generate_vl_qwen35.go",
     "decoder/gguf_build_qwen35.go"
   ],

@@ -8,3 +8,6 @@ func KVRowPadElems(elems, elemBytes, align int) int {
 	}
 	return 64 / elemBytes
 }
+
+// KVRowPadAlignDefault is the row-pad alignment that pays on the CPU.
+const KVRowPadAlignDefault = 4096

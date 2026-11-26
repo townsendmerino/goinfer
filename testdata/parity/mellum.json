@@ -8,7 +8,7 @@
   "own": [
     "decoder/mellum_slice_test.go",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_mellum.go"
+    "internal/runtime/families/arch_mellum.go"
   ],
   "programs": [
     "testdata/mellum21-config"

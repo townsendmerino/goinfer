@@ -7,7 +7,7 @@
   ],
   "own": [
     "decoder/forward_nemotron.go",
-    "decoder/arch_nemotron_h.go",
+    "internal/runtime/families/arch_nemotron_h.go",
     "decoder/gguf_build_nemotron.go"
   ],
   "programs": [

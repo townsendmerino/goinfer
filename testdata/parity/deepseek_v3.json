@@ -7,7 +7,7 @@
   ],
   "own": [
     "decoder/forward_deepseek.go",
-    "decoder/arch_deepseek.go",
+    "internal/runtime/families/arch_deepseek.go",
     "decoder/mla_int8.go"
   ],
   "programs": [

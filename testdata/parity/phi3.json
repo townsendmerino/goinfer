@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_phi3.go"
+    "internal/runtime/families/arch_phi3.go"
   ],
   "programs": [
     "testdata/phi3-tiny"

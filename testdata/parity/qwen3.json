@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_qwen3.go"
+    "internal/runtime/families/arch_qwen3.go"
   ],
   "deps_hash": "sha256:ba906d391ed73575fc46ffd02fe28f5433c5da7ebd2d348cf550e3a015124318",
   "status": "validated",

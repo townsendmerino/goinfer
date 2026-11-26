@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_bailing_hybrid.go",
+    "internal/runtime/families/arch_bailing_hybrid.go",
     "decoder/kda.go",
     "decoder/kda_rehearsal.go",
     "decoder/forward_deepseek.go",

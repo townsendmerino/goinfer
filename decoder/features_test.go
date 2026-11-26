@@ -22,7 +22,7 @@ var archFeatureProfile = map[string][]darch.ResidentFeature{
 	// dense, plain — the subset every backend implements
 	"qwen2":      {},
 	"qwen2_5_vl": {},
-	// qwen3_vl (text only): aliases plain qwen3's attention shape (qwen3_vlArchitecture calls qwen3Architecture), so it
+	// qwen3_vl (text only): aliases plain qwen3's attention shape (families.Qwen3VLArchitecture calls qwen3Architecture), so it
 	// needs the same FeatQKNorm and nothing else: MRopeSection/MRopeInterleaved only diverge from scalar RoPE on an image
 	// path that cache.mropePos never takes for ordinary Generate, same reasoning as qwen2_5_vl's empty profile above.
 	"qwen3_vl": {darch.FeatQKNorm},

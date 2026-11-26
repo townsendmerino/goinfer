@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -32,7 +33,7 @@ var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 
 // kvRowPadAlignDefault is the row-pad alignment that pays on the CPU (docs/measurements/cpu-kv-rowpad-full-2026-11-24/README.md): rows a
 // multiple of 4 KiB apart share L1 sets, and a 64 B pad separates them.
-const kvRowPadAlignDefault = 4096
+const kvRowPadAlignDefault = archparts.KVRowPadAlignDefault
 
 // mustUnpadded panics on a padded cache: what names an accessor that hands out the store without its stride.
 func (c *KVCache) mustUnpadded(what string) {

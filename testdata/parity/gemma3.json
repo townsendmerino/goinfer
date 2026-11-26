@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/arch_gemma3.go"
+    "internal/runtime/families/arch_gemma3.go"
   ],
   "programs": [
     "testdata/gemma3-vl-tiny"

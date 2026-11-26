@@ -67,7 +67,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 // every architecture adapter (gemma12.go holds gemma's and gemma2's), config.go's per-family files, and the program's types.
 func isBuilder(p string) bool {
 	switch p {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/gemma12.go",
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/gemma12.go", "internal/runtime/families/registry.go", "internal/runtime/families/gemma12.go",
 		"internal/runtime/program/program.go":
 		return true
 	}
@@ -75,7 +75,7 @@ func isBuilder(p string) bool {
 	if strings.HasSuffix(base, "_test.go") {
 		return false
 	}
-	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") || strings.HasPrefix(filepath.ToSlash(p), "decoder/config/config_")
+	return (filepath.Dir(p) == "decoder" || filepath.ToSlash(filepath.Dir(p)) == "internal/runtime/families") && strings.HasPrefix(base, "arch_") || strings.HasPrefix(filepath.ToSlash(p), "decoder/config/config_")
 }
 
 // TestParityKey_shadowMatchesDecoder is VK5 week 2's W1: the shadow key

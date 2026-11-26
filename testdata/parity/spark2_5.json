@@ -9,7 +9,7 @@
     "decoder/spark25_real_test.go",
     "scripts/pin_spark2_5_tiny.py",
     "scripts/pin_spark2_5_real.py",
-    "decoder/arch_spark2_5.go"
+    "internal/runtime/families/arch_spark2_5.go"
   ],
   "deps_hash": "sha256:d211afff488d7bbba24519d76af3b8070a8d81a7ae1b83afe7c1f27930f185a1",
   "status": "validated",

@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -39,7 +40,7 @@ func TestNemotron3NanoMoE_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &nemotronTensorSchema || arch.Nemotron == nil {
+	if schema != &families.NemotronTensorSchema || arch.Nemotron == nil {
 		t.Fatalf("schema/nemotron mismatch")
 	}
 	want := []uint8{archparts.NemoMamba, archparts.NemoAttn, archparts.NemoMoE}

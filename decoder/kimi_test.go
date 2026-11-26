@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/families"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -28,7 +29,7 @@ func TestKimi_descriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	if schema != &deepseekTensorSchema || arch.MLA == nil {
+	if schema != &families.DeepseekTensorSchema || arch.MLA == nil {
 		t.Fatalf("kimi_k2 should resolve to the deepseek MLA descriptor")
 	}
 	if !arch.MoE.RouterSigmoid || arch.MoE.NGroup > 1 || !arch.MoE.SharedUngated {

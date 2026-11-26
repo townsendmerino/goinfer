@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/gemma12.go"
+    "internal/runtime/families/gemma12.go"
   ],
   "programs": [
     "testdata/gemma1-tiny"

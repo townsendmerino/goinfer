@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/arch_qwen3_moe.go"
+    "internal/runtime/families/arch_qwen3_moe.go"
   ],
   "programs": [
     "testdata/qwen3moe-tiny",
