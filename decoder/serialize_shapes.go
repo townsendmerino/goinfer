@@ -88,6 +88,7 @@ type layerNeeds struct {
 	mambaNormGroups              int
 	mlaHeadWise                  bool
 	gemma4MoE                    bool
+	ple                          bool // gemma-4's per-layer-embedding branch (opPLE)
 }
 
 // needsAt reads layer i's needs from the ops the forward walks (Architecture.layerOps), so a check cannot drift from the
@@ -116,6 +117,8 @@ func needsAt(w *Weights, arch *Architecture, i int) layerNeeds {
 			}
 		case opGemma4MoE:
 			n.gemma4MoE = true
+		case opPLE:
+			n.ple = true
 		case opDeltaNet:
 			n.delta = true
 		case opGatedAttn:
@@ -220,7 +223,7 @@ func validateLayerMLPShapes(lw *LayerWeights, arch *Architecture, i int, n layer
 			return e
 		}
 	}
-	if e := validateLayerPLEShapes(lw, arch, i); e != nil {
+	if e := validateLayerPLEShapes(lw, arch, i, n.ple); e != nil {
 		return e
 	}
 	if e := validateGemma4MoEShapes(lw, arch, i, n.gemma4MoE); e != nil {
@@ -296,18 +299,22 @@ func validateLayerMLPShapes(lw *LayerWeights, arch *Architecture, i int, n layer
 }
 
 // validateLayerPLEShapes checks gemma-4's per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm
-// rmsNorm'd at fixed widths; a wrong-shape blob OOB-panics or silently truncates the PLE activation.
-func validateLayerPLEShapes(lw *LayerWeights, arch *Architecture, i int) *SerializeError {
+// rmsNorm'd at fixed widths; a wrong-shape blob OOB-panics or silently truncates the PLE activation. required is whether the
+// layer's program runs the branch, which then dereferences all three unconditionally.
+func validateLayerPLEShapes(lw *LayerWeights, arch *Architecture, i int, required bool) *SerializeError {
 	if arch.gemma4 == nil {
 		return nil
 	}
 	if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
-		if e := shapeMat(fmt.Sprintf("layer %d PLEGate", i), &lw.PLEGate, pleDim, arch.HiddenDim, false); e != nil {
+		if e := shapeMat(fmt.Sprintf("layer %d PLEGate", i), &lw.PLEGate, pleDim, arch.HiddenDim, required); e != nil {
 			return e
 		}
-		if e := shapeMat(fmt.Sprintf("layer %d PLEProj", i), &lw.PLEProj, arch.HiddenDim, pleDim, false); e != nil {
+		if e := shapeMat(fmt.Sprintf("layer %d PLEProj", i), &lw.PLEProj, arch.HiddenDim, pleDim, required); e != nil {
 			return e
 		}
+	}
+	if required {
+		return shapeReq(fmt.Sprintf("layer %d PostPLENorm", i), len(lw.PostPLENorm), arch.HiddenDim)
 	}
 	return shapeVec(fmt.Sprintf("layer %d PostPLENorm", i), len(lw.PostPLENorm), arch.HiddenDim)
 }
@@ -334,18 +341,34 @@ func validateGemma4MoEShapes(lw *LayerWeights, arch *Architecture, i int, requir
 	if e := shapeVec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
 		return e
 	}
-	// routerScale scales the [hidden] router input; the three branch norms rmsNorm at hidden. A short slice OOB-panics in the
-	// decode goroutine.
+	// routerScale scales the [hidden] router input and the five norms rmsNorm at hidden, all unconditionally: an absent or
+	// short slice OOB-panics in the decode goroutine.
 	for _, c := range []struct {
 		name string
 		got  int
 	}{
 		{"gemma4moe routerScale", len(mo.routerScale)},
+		{"gemma4moe preFFNNorm", len(mo.preFFNNorm)},
 		{"gemma4moe postFFNNorm1", len(mo.postFFNNorm1)},
 		{"gemma4moe preFFNNorm2", len(mo.preFFNNorm2)},
 		{"gemma4moe postFFNNorm2", len(mo.postFFNNorm2)},
+		{"gemma4moe postFFNNorm", len(mo.postFFNNorm)},
 	} {
-		if e := shapeVec(fmt.Sprintf("layer %d %s", i, c.name), c.got, arch.HiddenDim); e != nil {
+		if e := shapeReq(fmt.Sprintf("layer %d %s", i, c.name), c.got, arch.HiddenDim); e != nil {
+			return e
+		}
+	}
+	// The dense branch writes denseInter-sized scratch from mlpGate/mlpUp and hidden from mlpDown.
+	for _, c := range []struct {
+		name       string
+		m          *linalg.WeightMat
+		rows, cols int
+	}{
+		{"gemma4moe mlpGate", &mo.mlpGate, mo.denseInter, arch.HiddenDim},
+		{"gemma4moe mlpUp", &mo.mlpUp, mo.denseInter, arch.HiddenDim},
+		{"gemma4moe mlpDown", &mo.mlpDown, arch.HiddenDim, mo.denseInter},
+	} {
+		if e := shapeMat(fmt.Sprintf("layer %d %s", i, c.name), c.m, c.rows, c.cols, true); e != nil {
 			return e
 		}
 	}

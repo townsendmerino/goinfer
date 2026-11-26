@@ -308,3 +308,50 @@ func TestDownload_noDeclaredDigestWritesNoSidecar(t *testing.T) {
 		t.Errorf("a download with no declared digest must not record one (stat err = %v)", err)
 	}
 }
+
+// A 416 on a resume short of the declared size means the server has no byte at resumeFrom, so this .part can never be resumed
+// from it: keeping it makes every retry send the same Range and get the same 416. The refusal must clear it, so the next run
+// fetches from the start.
+func TestDownload_rangeNotSatisfiableShortOfDeclaredSizeClearsThePart(t *testing.T) {
+	body := []byte(strings.Repeat("goinfer-416-short-", 400))
+	sum := sha256.Sum256(body)
+	f := File{Path: "m.gguf", Size: int64(len(body)), SHA256: hex.EncodeToString(sum[:])}
+
+	refuse := true
+	var ranges []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ranges = append(ranges, r.Header.Get("Range"))
+		if refuse {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Write(body)
+	}))
+	defer srv.Close()
+	hfCDN = srv.URL
+	defer func() { hfCDN = "https://huggingface.co" }()
+
+	dir := t.TempDir()
+	part := filepath.Join(dir, "m.gguf.part")
+	if err := os.WriteFile(part, body[:len(body)/2], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Download(context.Background(), "o/r", f, dir, nil); err == nil {
+		t.Fatal("a 416 short of the declared size must fail")
+	}
+	if _, err := os.Stat(part); !os.IsNotExist(err) {
+		t.Fatal("the unresumable .part must be removed, or every retry sends the same Range and gets the same 416")
+	}
+
+	refuse = false
+	path, err := Download(context.Background(), "o/r", f, dir, nil)
+	if err != nil {
+		t.Fatalf("retry after the 416: %v (ranges requested: %v)", err, ranges)
+	}
+	if got, err := fileSHA256(path); err != nil || got != f.SHA256 {
+		t.Errorf("retry digest = %s (%v), want %s", got, err, f.SHA256)
+	}
+	if len(ranges) != 2 || ranges[1] != "" {
+		t.Errorf("the retry must fetch from the start with no Range, got requests %q", ranges)
+	}
+}

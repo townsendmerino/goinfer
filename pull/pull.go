@@ -921,7 +921,10 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		// re-requests a Range starting exactly at EOF and gets 416, not 206/200. h already covers the whole.
 		// part (hashPrefix, above); verify it directly instead of copying a body a 416 response does not have.
 		if f.Size > 0 && resumeFrom != f.Size {
-			return "", fmt.Errorf("downloading %s: the server has %s of the declared %d bytes; the partial download is kept", f.Path, humanBytes(resumeFrom), f.Size)
+			// The server has no byte at resumeFrom, short of the declared size, so this .part can never resume from it: kept,
+			// every retry would send the same Range and get the same 416.
+			os.Remove(part)
+			return "", fmt.Errorf("downloading %s: the server refused a resume at %s of the declared %d bytes; the partial download was removed, re-run to fetch from the start", f.Path, humanBytes(resumeFrom), f.Size)
 		}
 		if f.SHA256 != "" {
 			if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {
