@@ -1,10 +1,9 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
-	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -47,11 +46,6 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-type towerPipe struct {
-	pl  *wgpu.ComputePipeline
-	lay *wgpu.BindGroupLayout
-}
-
 // towerOps is a tower's Context and shared kernels. One forward at a time: the tower holds its own lock.
 type towerOps struct {
 	c       *Context
@@ -59,11 +53,8 @@ type towerOps struct {
 	eps     float32 // RMSNorm's
 	pending int     // score-matrix bytes submitted since the device was last waited for
 	err     error   // the first pipeline that failed to build (pipe)
+	block   int     // test seam: override query-row attention block size
 }
-
-// towerBlockForTest, when positive, is the number of query rows one attention block scores at a time, in place of the
-// number that fits towerScoreBytes. 0 outside the towers' gates.
-var towerBlockForTest int
 
 // towerScoreBytes bounds one attention block's score matrix [rows, keys]. The device is waited for whenever four
 // times that has been submitted, so released score matrices do not pile up behind the queue.
@@ -71,12 +62,12 @@ const towerScoreBytes = 64 << 20
 
 // newTowerOps opens a Context and builds the kernels every tower uses. rmsEps is the tower's RMSNorm epsilon.
 func newTowerOps(rmsEps float32) (*towerOps, error) {
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		return nil, err
 	}
 	o := &towerOps{c: c, eps: rmsEps}
-	if err := c.ensureVision(); err != nil {
+	if err := c.EnsureVision(); err != nil {
 		c.Close()
 		return nil, err
 	}
@@ -92,7 +83,7 @@ func (o *towerOps) pipe(dst *towerPipe, label, code string) {
 	if o.err != nil {
 		return
 	}
-	_, dst.pl, dst.lay, o.err = o.c.mkPipeline(label, code)
+	*dst, o.err = o.c.MakeTowerPipe(label, code)
 }
 
 // close releases bufs (nil entries skipped) and the Context. A second call does nothing.
@@ -102,7 +93,7 @@ func (o *towerOps) close(bufs []*DeviceBuffer) error {
 	}
 	c := o.c
 	o.c = nil
-	c.releaseOwned(func() {
+	c.ReleaseOwned(func() {
 		for _, d := range bufs {
 			if d != nil {
 				_ = d.Close()
@@ -110,47 +101,6 @@ func (o *towerOps) close(bufs []*DeviceBuffer) error {
 		}
 	})
 	return c.Close()
-}
-
-// kernelN runs k over bufs (bindings 0 to len(bufs)-1) and a uniform holding p (the next binding), gx by gy
-// workgroups. No Poll.
-func (c *Context) kernelN(k towerPipe, bufs []*wgpu.Buffer, p []uint32, gx, gy int) error {
-	pbuf, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "kn-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
-	if err != nil {
-		return err
-	}
-	defer releaseBuf(pbuf)
-	entries := make([]wgpu.BindGroupEntry, 0, len(bufs)+1)
-	for i, b := range bufs {
-		entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()})
-	}
-	entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(len(bufs)), Buffer: pbuf, Size: pbuf.GetSize()})
-	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: k.lay, Entries: entries})
-	if err != nil {
-		return err
-	}
-	defer bg.Release()
-	enc, err := c.device.TryCreateCommandEncoder(nil)
-	if err != nil {
-		return fmt.Errorf("gpu: kernelN: command encoder: %w", err)
-	}
-	defer enc.Release()
-	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(k.pl)
-	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups(uint32(gx), uint32(gy), 1)
-	if err := pass.TryEnd(); err != nil {
-		pass.Release()
-		return err
-	}
-	pass.Release()
-	cmd, err := enc.TryFinish(nil)
-	if err != nil {
-		return fmt.Errorf("gpu: kernelN: finish: %w", err)
-	}
-	defer cmd.Release()
-	c.queue.Submit(cmd)
-	return nil
 }
 
 // towerScope holds the device buffers one stretch of a forward allocates, released together. A buffer may be released
@@ -173,13 +123,13 @@ func (s *towerScope) release() {
 
 // rmsRowsEps is RMSNorm over rows of width h, at epsilon eps, into a new buffer.
 func (o *towerOps) rmsRowsEps(s *towerScope, src, weight *DeviceBuffer, rows, h int, eps float32) (*DeviceBuffer, error) {
-	dst, err := s.add(o.c.newDevBuf(rows * h))
+	dst, err := s.add(o.c.NewDevBuf(rows * h))
 	if err != nil {
 		return nil, err
 	}
 	gx := min(rows, 32768)
 	p := []uint32{uint32(rows), uint32(h), math.Float32bits(eps), uint32(gx)}
-	return dst, o.c.kernelN(o.rms, []*wgpu.Buffer{src.buf, weight.buf, dst.buf}, p, gx, (rows+gx-1)/gx)
+	return dst, o.c.KernelN(o.rms, []*wgpu.Buffer{src.Raw(), weight.Raw(), dst.Raw()}, p, gx, (rows+gx-1)/gx)
 }
 
 // attention is full attention among the T rows from row0 of q, k, v [rows, nH, hd] (H = nH*hd wide), one head at a
@@ -188,8 +138,8 @@ func (o *towerOps) rmsRowsEps(s *towerScope, src, weight *DeviceBuffer, rows, h 
 func (o *towerOps) attention(q, k, v, ctx *DeviceBuffer, row0, T, H, nH, hd int, scale float32) error {
 	c := o.c
 	block := max(64, towerScoreBytes/(4*T)/64*64)
-	if towerBlockForTest > 0 {
-		block = towerBlockForTest
+	if o.block > 0 {
+		block = o.block
 	}
 	block = min(block, T)
 	// rows scores B query rows from r0 of the head at off against the segment's keys and writes their context rows.
@@ -197,42 +147,42 @@ func (o *towerOps) attention(q, k, v, ctx *DeviceBuffer, row0, T, H, nH, hd int,
 		var bs towerScope
 		defer bs.release()
 		rowOff := (row0+r0)*H + off // the block's first row, this head, in a [rows, H] buffer
-		qh, err := bs.add(c.newDevBuf(B * hd))
+		qh, err := bs.add(c.NewDevBuf(B * hd))
 		if err != nil {
 			return err
 		}
-		if err := c.copyHeadDevice(q.buf, qh.buf, B, hd, H, rowOff, 0); err != nil {
+		if err := c.CopyHeadDevice(q.Raw(), qh.Raw(), B, hd, H, rowOff, 0); err != nil {
 			return err
 		}
-		scores, err := bs.add(c.matmulF32Device(qh.buf, kh.buf, B, hd, T)) // [B, T]
+		scores, err := bs.add(c.MatmulF32Device(qh.Raw(), kh.Raw(), B, hd, T)) // [B, T]
 		if err != nil {
 			return err
 		}
-		if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(B), uint32(T), math.Float32bits(scale), 0}, B); err != nil {
+		if err := c.SoftmaxInplace(scores.Raw(), []uint32{uint32(B), uint32(T), math.Float32bits(scale), 0}, B); err != nil {
 			return err
 		}
-		oh, err := bs.add(c.matmulF32Device(scores.buf, vt.buf, B, T, hd)) // [B, hd]
+		oh, err := bs.add(c.MatmulF32Device(scores.Raw(), vt.Raw(), B, T, hd)) // [B, hd]
 		if err != nil {
 			return err
 		}
-		return c.copyHeadDevice(oh.buf, ctx.buf, B, hd, H, rowOff, 1)
+		return c.CopyHeadDevice(oh.Raw(), ctx.Raw(), B, hd, H, rowOff, 1)
 	}
 	// head runs one head over every block of query rows.
 	head := func(off int) error {
 		var hs towerScope
 		defer hs.release()
-		kh, err := hs.add(c.newDevBuf(T * hd))
+		kh, err := hs.add(c.NewDevBuf(T * hd))
 		if err != nil {
 			return err
 		}
-		if err := c.copyHeadDevice(k.buf, kh.buf, T, hd, H, row0*H+off, 0); err != nil {
+		if err := c.CopyHeadDevice(k.Raw(), kh.Raw(), T, hd, H, row0*H+off, 0); err != nil {
 			return err
 		}
-		vt, err := hs.add(c.newDevBuf(T * hd)) // [hd, T]
+		vt, err := hs.add(c.NewDevBuf(T * hd)) // [hd, T]
 		if err != nil {
 			return err
 		}
-		if err := c.copyHeadDevice(v.buf, vt.buf, T, hd, H, row0*H+off, 2); err != nil {
+		if err := c.CopyHeadDevice(v.Raw(), vt.Raw(), T, hd, H, row0*H+off, 2); err != nil {
 			return err
 		}
 		for r0 := 0; r0 < T; r0 += block {
@@ -241,7 +191,7 @@ func (o *towerOps) attention(q, k, v, ctx *DeviceBuffer, row0, T, H, nH, hd int,
 				return err
 			}
 			if o.pending += 4 * B * T; o.pending > 4*towerScoreBytes {
-				c.device.Poll(true, nil) // lets the device free the score matrices already released
+				c.PollWait() // lets the device free the score matrices already released
 				o.pending = 0
 			}
 		}

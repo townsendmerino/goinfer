@@ -1,13 +1,14 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -116,12 +117,9 @@ type g4vTower struct {
 	patchW, ones                    *DeviceBuffer // ones: v's unweighted norm
 	posX, posY                      []float32     // the position tables, added on the host side of the upload
 	layers                          []g4vLayer
+	defect                          int                      // test seam: planted defect
+	profile                         map[string]time.Duration // test seam: per-step wall time
 }
-
-// g4vDefectForTest plants one defect in the tower, for its gate's planted-defect arm (gpu/gemma4_vision_test.go): 1 the
-// clamps skipped, 2 the x and y position tables swapped, 3 RoPE not applied to k, 4 the v norm skipped, 5 k normed with
-// q's weight. 0, the only value outside that test, plants nothing.
-var g4vDefectForTest int
 
 func newG4VTower(enc *vision.Gemma4Encoder) (*g4vTower, error) {
 	w, err := enc.Weights()
@@ -215,28 +213,28 @@ func (a *g4vTower) Close() error {
 // the matmul, then the output clamp.
 func (a *g4vTower) proj(s *towerScope, x *DeviceBuffer, p *g4vProj, rows int) (*DeviceBuffer, error) {
 	c := a.c
-	clamps := g4vDefectForTest != 1
+	clamps := a.defect != 1
 	in := x
 	if clamps && p.clipIn {
 		n := rows * p.in
-		cp, err := s.add(c.newDevBuf(n))
+		cp, err := s.add(c.NewDevBuf(n))
 		if err != nil {
 			return nil, err
 		}
 		par := []uint32{uint32(n), math.Float32bits(p.inMin), math.Float32bits(p.inMax), 0}
-		if err := c.kernelN(a.clampCopy, []*wgpu.Buffer{x.buf, cp.buf}, par, maxWG((n+63)/64), 1); err != nil {
+		if err := c.KernelN(a.clampCopy, []*wgpu.Buffer{x.Raw(), cp.Raw()}, par, maxWG((n+63)/64), 1); err != nil {
 			return nil, err
 		}
 		in = cp
 	}
-	out, err := s.add(c.matmulF32Device(in.buf, p.w.buf, rows, p.in, p.out))
+	out, err := s.add(c.MatmulF32Device(in.Raw(), p.w.Raw(), rows, p.in, p.out))
 	if err != nil {
 		return nil, err
 	}
 	if clamps && p.clipOut {
 		n := rows * p.out
 		par := []uint32{uint32(n), math.Float32bits(p.outMin), math.Float32bits(p.outMax), 0}
-		if err := c.kernelN(a.clamp, []*wgpu.Buffer{out.buf}, par, maxWG((n+63)/64), 1); err != nil {
+		if err := c.KernelN(a.clamp, []*wgpu.Buffer{out.Raw()}, par, maxWG((n+63)/64), 1); err != nil {
 			return nil, err
 		}
 	}
@@ -247,7 +245,7 @@ func (a *g4vTower) proj(s *towerScope, x *DeviceBuffer, p *g4vProj, rows int) (*
 func (a *g4vTower) ropeRows(x, cs, sn *DeviceBuffer, np int) error {
 	nH, hd := a.cfg.NumAttentionHeads, a.cfg.HeadDim
 	n := np * nH * hd / 2
-	return a.c.kernelN(a.rope, []*wgpu.Buffer{x.buf, cs.buf, sn.buf}, []uint32{uint32(n), uint32(nH), uint32(hd), 0}, maxWG((n+63)/64), 1)
+	return a.c.KernelN(a.rope, []*wgpu.Buffer{x.Raw(), cs.Raw(), sn.Raw()}, []uint32{uint32(n), uint32(nH), uint32(hd), 0}, maxWG((n+63)/64), 1)
 }
 
 // Hidden runs the patch embed and every layer (multimodal.Gemma4TowerAccelerator): the last layer's output, [np, hidden],
@@ -267,12 +265,12 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	}
 	last := time.Now()
 	mark := func(step string) {
-		if visionProfileForTest == nil {
+		if a.profile == nil {
 			return
 		}
-		c.device.Poll(true, nil)
+		c.PollWait()
 		now := time.Now()
-		visionProfileForTest[step] += now.Sub(last)
+		a.profile[step] += now.Sub(last)
 		last = now
 	}
 	pt := make([]float32, len(patches))
@@ -280,7 +278,7 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		pt[i] = 2 * (v - 0.5) // the patch embedder's own remap, as Forward does it
 	}
 	posX, posY := a.posX, a.posY
-	if g4vDefectForTest == 2 {
+	if a.defect == 2 {
 		posX, posY = posY, posX
 	}
 	pe := make([]float32, np*H) // each patch's row of the x table plus its row of the y table
@@ -313,11 +311,11 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	x, err := whole.add(c.matmulF32Device(ptD.buf, a.patchW.buf, np, pd, H))
+	x, err := whole.add(c.MatmulF32Device(ptD.Raw(), a.patchW.Raw(), np, pd, H))
 	if err != nil {
 		return nil, err
 	}
-	if err := c.addRowsDevice(x.buf, peD.buf, np*H, H, 1); err != nil {
+	if err := c.AddRowsDevice(x.Raw(), peD.Raw(), np*H, H, 1); err != nil {
 		return nil, err
 	}
 	mark("patch embed")
@@ -336,7 +334,7 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 // RoPE through ropeRows on q or k, attention over every row at the op's scale, the GELU product through its kernel, a
 // residual add through addRowsDevice. Every register but x is a buffer the op that writes it allocates; one read before
 // it is written is a new zeroed buffer. An op that does not fit its kind (vision.TowerOp.CheckRegs), its weight
-// (vision.TowerOp.CheckShape) or this tower is an error before anything is allocated for it. g4vDefectForTest's
+// (vision.TowerOp.CheckShape) or this tower is an error before anything is allocated for it. a.defect's
 // defects act at their ops.
 func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *DeviceBuffer, np int, mark func(string)) error {
 	c, cfg := a.c, a.cfg
@@ -352,7 +350,7 @@ func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *De
 		if w == 0 {
 			return nil, fmt.Errorf("register %d unknown", n)
 		}
-		d, err := s.add(c.newDevBuf(np * w))
+		d, err := s.add(c.NewDevBuf(np * w))
 		if err != nil {
 			return nil, err
 		}
@@ -392,10 +390,10 @@ func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *De
 			w := a.ones
 			if op.Form == vision.TowerRMSNorm {
 				w, _ = ly.towerNorm(op.W)
-				if op.W == vision.TowerKNorm && g4vDefectForTest == 5 {
+				if op.W == vision.TowerKNorm && a.defect == 5 {
 					w = ly.qNorm
 				}
-			} else if g4vDefectForTest == 4 { // v's unscaled norm skipped
+			} else if a.defect == 4 { // v's unscaled norm skipped
 				continue
 			}
 			d, err := a.rmsRowsEps(&s, out, w, np*nH, hd, eps)
@@ -412,7 +410,7 @@ func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *De
 			regs[op.Out] = d
 			mark("projections")
 		case vision.TowerRoPEAxial:
-			if op.Out == vision.TowerK && g4vDefectForTest == 3 {
+			if op.Out == vision.TowerK && a.defect == 3 {
 				continue
 			}
 			if err := a.ropeRows(out, cs, sn, np); err != nil {
@@ -426,7 +424,7 @@ func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *De
 					return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
 				}
 			}
-			ctx, err := s.add(c.newDevBuf(np * H))
+			ctx, err := s.add(c.NewDevBuf(np * H))
 			if err != nil {
 				return err
 			}
@@ -437,17 +435,17 @@ func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *De
 			mark("attention")
 		case vision.TowerGELUMul:
 			n := np * I
-			if err := c.kernelN(a.geluMul, []*wgpu.Buffer{out.buf, in.buf}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
+			if err := c.KernelN(a.geluMul, []*wgpu.Buffer{out.Raw(), in.Raw()}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
 				return err
 			}
 			mark("gated GELU")
 		case vision.TowerAdd:
-			if err := c.addRowsDevice(out.buf, in.buf, np*H, H, 1); err != nil {
+			if err := c.AddRowsDevice(out.Raw(), in.Raw(), np*H, H, 1); err != nil {
 				return err
 			}
 		}
 	}
-	c.device.Poll(true, nil)
+	c.PollWait()
 	mark("norms")
 	return nil
 }

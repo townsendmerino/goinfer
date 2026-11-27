@@ -1,6 +1,6 @@
 //go:build gpu && goinfer_testhooks
 
-package kernels
+package towers
 
 import (
 	"fmt"
@@ -100,9 +100,9 @@ func TestQwen25VisionWebGPU_matchesCPU(t *testing.T) {
 		return w
 	}
 	const bar = 0.9999
-	defer func() { gvNoWindowKernelsForTest = false }()
+	defer func() { r.a.noWindowKernels = false }()
 	for _, off := range []bool{false, true} {
-		gvNoWindowKernelsForTest = off
+		r.a.noWindowKernels = off
 		before := r.a.winBlocks
 		w := lowest()
 		ran := r.a.winBlocks - before
@@ -114,7 +114,7 @@ func TestQwen25VisionWebGPU_matchesCPU(t *testing.T) {
 			t.Errorf("windowed kernels off %v, yet %d blocks ran on them: the comparison is not of the two paths", off, ran)
 		}
 	}
-	gvNoWindowKernelsForTest = false
+	r.a.noWindowKernels = false
 	for _, d := range []struct {
 		name string
 		set  func(*gvDefect)

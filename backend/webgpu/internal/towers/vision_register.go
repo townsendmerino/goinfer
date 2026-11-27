@@ -1,12 +1,15 @@
 //go:build gpu
 
-package kernels
+package towers
 
-import "github.com/townsendmerino/goinfer/internal/vision"
+import (
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/vision"
+)
 
 // newSiglipResident builds the WebGPU SigLIP vision tower for vision.RegisterResident (wired in register.go).
 func newSiglipResident(e *vision.Encoder) (vision.ResidentEncoder, error) {
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		return nil, err
 	}
@@ -14,12 +17,12 @@ func newSiglipResident(e *vision.Encoder) (vision.ResidentEncoder, error) {
 	if e.Quantized() { // int8 matmul weights (LoadEncoder quant=true)
 		var w vision.GPUWeights
 		if w, err = e.GPUWeights(); err == nil {
-			ve, err = c.NewVisionEncoder(w)
+			ve, err = NewVisionEncoder(c, w)
 		}
 	} else {
 		var w vision.SiglipWeights
 		if w, err = e.Weights(); err == nil {
-			ve, err = c.NewVisionEncoderF32(w)
+			ve, err = NewVisionEncoderF32(c, w)
 		}
 	}
 	if err != nil {

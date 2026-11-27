@@ -1,6 +1,6 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"errors"
@@ -37,7 +37,7 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 		if r < vision.TowerX || r > vision.TowerMid {
 			return nil, fmt.Errorf("register %d unknown", r)
 		}
-		b, err := c.newDevBuf(np * width(r))
+		b, err := c.NewDevBuf(np * width(r))
 		if err != nil {
 			return nil, err
 		}
@@ -65,12 +65,12 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 			if !ok || op.Form != vision.TowerLayerNorm {
 				return keep, fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
 			}
-			dst, err := ve.c.newDevBuf(np * hidden)
+			dst, err := ve.c.NewDevBuf(np * hidden)
 			if err != nil {
 				return keep, err
 			}
 			keep = append(keep, dst)
-			if err := c.layerNormRowsDevice(in.buf, nw.buf, nb.buf, dst.buf, np, hidden, float32(op.Eps)); err != nil {
+			if err := c.LayerNormRowsDevice(in.Raw(), nw.Raw(), nb.Raw(), dst.Raw(), np, hidden, float32(op.Eps)); err != nil {
 				return keep, err
 			}
 			regs[op.Out] = dst
@@ -104,7 +104,7 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 				return keep, fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
 			}
 			if !(defect == 5 && op.W == vision.TowerWFC2) {
-				if err := c.addRowsDevice(out.buf, d.buf, np*N, N, 1); err != nil { // out += d
+				if err := c.AddRowsDevice(out.Raw(), d.Raw(), np*N, N, 1); err != nil { // out += d
 					return keep, err
 				}
 			}
@@ -132,7 +132,7 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 			}
 			if defect != 4 {
 				n := np * width(op.Out)
-				if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, out.buf, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64)); err != nil {
+				if err := c.GELUInplace(out.Raw(), []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64)); err != nil {
 					return keep, err
 				}
 			}
@@ -160,7 +160,7 @@ func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
 		return fmt.Errorf("linear of weight %d", op.W)
 	}
 	if w8 != nil {
-		return op.CheckShape(w8.rows, w8.cols, ve.w.Hidden, ve.w.Inter)
+		return op.CheckShape(w8.Rows(), w8.Cols(), ve.w.Hidden, ve.w.Inter)
 	}
 	if wf == nil {
 		return fmt.Errorf("linear of weight %d has no matrix", op.W)
@@ -172,8 +172,8 @@ func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
 	case vision.TowerWFC2:
 		in = ve.w.Inter
 	}
-	if wf.n != out*in {
-		return fmt.Errorf("linear of weight %d holds %d values, not [%d, %d]", op.W, wf.n, out, in)
+	if wf.Len() != out*in {
+		return fmt.Errorf("linear of weight %d holds %d values, not [%d, %d]", op.W, wf.Len(), out, in)
 	}
 	return op.CheckShape(out, in, ve.w.Hidden, ve.w.Inter)
 }
@@ -196,7 +196,7 @@ func visStep(w vision.TowerWeight) string {
 func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(string)) (*DeviceBuffer, error) {
 	c, w := ve.c, ve.w
 	np, hidden, hd := w.NumPatches, w.Hidden, w.HeadDim
-	att, err := c.newDevBuf(np * hidden)
+	att, err := c.NewDevBuf(np * hidden)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(
 		var hbufs []*DeviceBuffer
 		hrel := func() {
 			for _, b := range hbufs {
-				b.Release()
+				_ = b.Close()
 			}
 		}
 		htrack := func(d *DeviceBuffer, e error) (*DeviceBuffer, error) {
@@ -225,24 +225,24 @@ func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(
 			return att, fmt.Errorf("gather: %w", errors.Join(e1, e2, e3))
 		}
 		mark("per head: gather q, k, v")
-		scores, e := htrack(c.matmulF32Device(qh.buf, kh.buf, np, hd, np)) // [np,np]
+		scores, e := htrack(c.MatmulF32Device(qh.Raw(), kh.Raw(), np, hd, np)) // [np,np]
 		if e != nil {
 			hrel()
 			return att, e
 		}
 		mark("per head: scores = q·kᵀ")
-		if e := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(np), uint32(np), math.Float32bits(scale), 0}, np); e != nil {
+		if e := c.SoftmaxInplace(scores.Raw(), []uint32{uint32(np), uint32(np), math.Float32bits(scale), 0}, np); e != nil {
 			hrel()
 			return att, e
 		}
 		mark("per head: softmax")
-		oh, e := htrack(c.matmulF32Device(scores.buf, vt.buf, np, np, hd)) // [np,hd]
+		oh, e := htrack(c.MatmulF32Device(scores.Raw(), vt.Raw(), np, np, hd)) // [np,hd]
 		if e != nil {
 			hrel()
 			return att, e
 		}
 		mark("per head: scores·v")
-		if e := c.copyHeadDevice(oh.buf, att.buf, np, hd, hidden, off, 1); e != nil { // scatter
+		if e := c.CopyHeadDevice(oh.Raw(), att.Raw(), np, hd, hidden, off, 1); e != nil { // scatter
 			hrel()
 			return att, e
 		}

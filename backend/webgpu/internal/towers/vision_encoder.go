@@ -1,13 +1,13 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"time"
 
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -25,7 +25,9 @@ type VisionEncoder struct {
 	layers                                   []visLayer
 	// f32: the projections are float32 (NewVisionEncoderF32). ForwardPatches then returns the last block's output and the
 	// caller applies the post-layernorm on the host (vision.Encoder.FinishHidden), which the float32 export leaves there.
-	f32 bool
+	f32     bool
+	profile map[string]time.Duration // test seam: per-step wall time
+	defect  int                      // test seam: planted defect
 }
 
 type visLayer struct {
@@ -35,20 +37,10 @@ type visLayer struct {
 	qf, kf, vf, of, fc1f, fc2f *DeviceBuffer // the float32 form's, each [out, in]
 }
 
-// visionProfileForTest, when non-nil, makes ForwardPatches wait for the device after every step and add the time since
-// the previous step to that step's name: a per-step profile for the tower's timing test. Waiting after every step makes
-// the whole pass slower than it otherwise is, so the shares are the reading, not the total. nil outside that test.
-var visionProfileForTest map[string]time.Duration
-
-// visionDefectForTest plants one defect in the float32 forward's first layer, for the tower gate's planted-defect
-// arm (gpu/vision_f32_test.go): 1 the position table not added, 2 the q bias dropped, 3 q and k weights swapped, 4 the
-// GELU skipped, 5 the MLP residual dropped. 0, the only value outside that test, plants nothing.
-var visionDefectForTest int
-
 // NewVisionEncoderF32 uploads the tower in float32 from the encoder's own weights (vision.Encoder.Weights; the tower must
 // be loaded with quant=false).
-func (c *Context) NewVisionEncoderF32(w vision.SiglipWeights) (*VisionEncoder, error) {
-	if err := c.ensureVision(); err != nil {
+func NewVisionEncoderF32(c *Context, w vision.SiglipWeights) (*VisionEncoder, error) {
+	if err := c.EnsureVision(); err != nil {
 		return nil, err
 	}
 	cfg := w.Cfg
@@ -98,13 +90,13 @@ func (c *Context) NewVisionEncoderF32(w vision.SiglipWeights) (*VisionEncoder, e
 
 // projF32 runs a float32 projection: src[M,K] · w[N,K]ᵀ + bias[N] → out[M,N].
 func (ve *VisionEncoder) projF32(src, w, bias *DeviceBuffer, M, K, N int) (*DeviceBuffer, error) {
-	out, err := ve.c.matmulF32Device(src.buf, w.buf, M, K, N)
+	out, err := ve.c.MatmulF32Device(src.Raw(), w.Raw(), M, K, N)
 	if err != nil {
 		return nil, err
 	}
 	if bias != nil {
-		if err := ve.c.addRowsDevice(out.buf, bias.buf, M*N, N, 0); err != nil {
-			out.Release()
+		if err := ve.c.AddRowsDevice(out.Raw(), bias.Raw(), M*N, N, 0); err != nil {
+			_ = out.Close()
 			return nil, err
 		}
 	}
@@ -112,11 +104,11 @@ func (ve *VisionEncoder) projF32(src, w, bias *DeviceBuffer, M, K, N int) (*Devi
 }
 
 // NewVisionEncoder uploads the tower to the device.
-func (c *Context) NewVisionEncoder(w vision.GPUWeights) (*VisionEncoder, error) {
-	if err := c.ensureVision(); err != nil {
+func NewVisionEncoder(c *Context, w vision.GPUWeights) (*VisionEncoder, error) {
+	if err := c.EnsureVision(); err != nil {
 		return nil, err
 	}
-	if err := c.ensureQuant(); err != nil {
+	if err := c.EnsureQuant(); err != nil {
 		return nil, err
 	}
 	ve := &VisionEncoder{c: c, w: w}
@@ -155,22 +147,14 @@ func (c *Context) NewVisionEncoder(w vision.GPUWeights) (*VisionEncoder, error) 
 	return ve, nil
 }
 
-func (c *Context) newDevBuf(n int) (*DeviceBuffer, error) {
-	b, err := c.tryCreateBuffer(mem.LineCompanion, &wgpu.BufferDescriptor{Label: "vbuf", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	if err != nil {
-		return nil, err
-	}
-	return NewDeviceBuffer(b, n), nil
-}
-
 // ln runs LayerNorm(src) → a new device buffer [rows, h].
 func (ve *VisionEncoder) ln(src *DeviceBuffer, w, b *DeviceBuffer, rows, h int) (*DeviceBuffer, error) {
-	dst, err := ve.c.newDevBuf(rows * h)
+	dst, err := ve.c.NewDevBuf(rows * h)
 	if err != nil {
 		return nil, err
 	}
-	if err := ve.c.layerNormRowsDevice(src.buf, w.buf, b.buf, dst.buf, rows, h, ve.w.Eps); err != nil {
-		dst.Release()
+	if err := ve.c.LayerNormRowsDevice(src.Raw(), w.Raw(), b.Raw(), dst.Raw(), rows, h, ve.w.Eps); err != nil {
+		_ = dst.Close()
 		return nil, err
 	}
 	return dst, nil
@@ -180,18 +164,18 @@ func (ve *VisionEncoder) ln(src *DeviceBuffer, w, b *DeviceBuffer, rows, h int) 
 // → +bias[N] → out[M,N]. Releases the transient quantized activation.
 func (ve *VisionEncoder) proj(src *DeviceBuffer, rm *ResidentW8A8, bias *DeviceBuffer, M, K int) (*DeviceBuffer, error) {
 	c := ve.c
-	aq, as, err := c.quantizeDevice(src, M, K)
+	aq, as, err := c.QuantizeDevice(src, M, K)
 	if err != nil {
 		return nil, err
 	}
-	defer aq.Release()
-	defer as.Release()
-	out, err := c.matmulW8A8Device(aq, as, rm, M)
+	defer aq.Close()
+	defer as.Close()
+	out, err := c.MatmulW8A8Device(aq, as, rm, M)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.addRowsDevice(out.buf, bias.buf, M*rm.rows, rm.rows, 0); err != nil {
-		out.Release()
+	if err := c.AddRowsDevice(out.Raw(), bias.Raw(), M*rm.Rows(), rm.Rows(), 0); err != nil {
+		_ = out.Close()
 		return nil, err
 	}
 	return out, nil
@@ -200,12 +184,12 @@ func (ve *VisionEncoder) proj(src *DeviceBuffer, rm *ResidentW8A8, bias *DeviceB
 // gatherHead extracts head `off:off+hd` of src[rows, stride] into a contiguous
 // buffer: [rows,hd] (dir 0) or transposed [hd,rows] (dir 2).
 func (ve *VisionEncoder) gatherHead(src *DeviceBuffer, rows, hd, stride, off, dir int) (*DeviceBuffer, error) {
-	dst, err := ve.c.newDevBuf(rows * hd)
+	dst, err := ve.c.NewDevBuf(rows * hd)
 	if err != nil {
 		return nil, err
 	}
-	if err := ve.c.copyHeadDevice(src.buf, dst.buf, rows, hd, stride, off, dir); err != nil {
-		dst.Release()
+	if err := ve.c.CopyHeadDevice(src.Raw(), dst.Raw(), rows, hd, stride, off, dir); err != nil {
+		_ = dst.Close()
 		return nil, err
 	}
 	return dst, nil
@@ -220,12 +204,12 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	cpp := len(patches) / np
 	last := time.Now()
 	mark := func(step string) {
-		if visionProfileForTest == nil {
+		if ve.profile == nil {
 			return
 		}
-		c.device.Poll(true, nil)
+		c.PollWait()
 		now := time.Now()
-		visionProfileForTest[step] += now.Sub(last)
+		ve.profile[step] += now.Sub(last)
 		last = now
 	}
 
@@ -235,21 +219,21 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	h, err := c.matmulF32Device(pd.buf, ve.patchW.buf, np, cpp, hidden)
-	pd.Release()
+	h, err := c.MatmulF32Device(pd.Raw(), ve.patchW.Raw(), np, cpp, hidden)
+	_ = pd.Close()
 	if err != nil {
 		return nil, err
 	}
-	defer h.Release()
-	if err := c.addRowsDevice(h.buf, ve.patchB.buf, np*hidden, hidden, 0); err != nil {
+	defer h.Close()
+	if err := c.AddRowsDevice(h.Raw(), ve.patchB.Raw(), np*hidden, hidden, 0); err != nil {
 		return nil, err
 	}
-	if !(ve.f32 && visionDefectForTest == 1) {
-		if err := c.addRowsDevice(h.buf, ve.posEmb.buf, np*hidden, hidden, 1); err != nil {
+	if !(ve.f32 && ve.defect == 1) {
+		if err := c.AddRowsDevice(h.Raw(), ve.posEmb.Raw(), np*hidden, hidden, 1); err != nil {
 			return nil, err
 		}
 	}
-	c.device.Poll(true, nil)
+	c.PollWait()
 	mark("patch embed")
 	// proj is one projection in whichever form the tower was uploaded.
 	proj := func(src *DeviceBuffer, w8 *ResidentW8A8, wf, bias *DeviceBuffer, M, K, N int) (*DeviceBuffer, error) {
@@ -264,15 +248,15 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	for li := range ve.layers {
 		defect := 0
 		if ve.f32 && li == 0 {
-			defect = visionDefectForTest
+			defect = ve.defect
 		}
 		keep, err := ve.walkBlock(prog, &ve.layers[li], h, defect, proj, mark)
 		if err == nil {
-			c.device.Poll(true, nil) // ONE sync per layer; release this layer's scratch
+			c.PollWait() // ONE sync per layer; release this layer's scratch
 			mark("mlp residual and the layer's sync")
 		}
 		for _, b := range keep {
-			b.Release()
+			_ = b.Close()
 		}
 		if err != nil {
 			return nil, fmt.Errorf("gpu: vision block %d: %w", li, err)
@@ -286,7 +270,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer out.Release()
+	defer out.Close()
 	return c.Readback(out)
 }
 
@@ -294,7 +278,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 // match the rest of the gpu resource types; teardown is best-effort (the underlying releases cannot meaningfully fail), so it
 // always returns nil. Calls the standard Close() (not the deprecated Release alias) on each sub-resource.
 func (ve *VisionEncoder) Close() error {
-	ve.c.releaseOwned(ve.release)
+	ve.c.ReleaseOwned(ve.release)
 	return nil
 }
 

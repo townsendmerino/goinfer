@@ -4,12 +4,13 @@ package kernels
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )

@@ -1036,6 +1036,26 @@
       "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
     },
     {
+      "name": "webgpu-towers-leaf",
+      "from": [
+        "backend/webgpu/internal/towers"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "backend/webgpu/internal/towers": [
+          "backend/webgpu/internal/kernels",
+          "internal/runtime/mem",
+          "internal/testgate",
+          "internal/vision",
+          "multimodal"
+        ]
+      },
+      "why": "backend/webgpu/internal/towers holds the standalone WebGPU vision tower accelerators below backend/webgpu (WGK1). It never imports backend/webgpu or decoder."
+    },
+    {
       "name": "cuda-towers-leaf",
       "from": [
         "backend/cuda/internal/towers"
@@ -1210,6 +1230,7 @@
     "backend/webgpu": [
       "backend/webgpu/internal/kernels",
       "backend/webgpu/internal/kvdecl",
+      "backend/webgpu/internal/towers",
       "decoder",
       "internal/cost",
       "internal/runtime/logs",
@@ -1227,12 +1248,16 @@
     "backend/webgpu/internal/kernels": [
       "internal/cost",
       "internal/runtime/adapter",
-      "internal/runtime/mem",
-      "internal/vision",
-      "multimodal"
+      "internal/runtime/mem"
     ],
     "backend/webgpu/internal/kvdecl": [
       "internal/runtime/program"
+    ],
+    "backend/webgpu/internal/towers": [
+      "backend/webgpu/internal/kernels",
+      "internal/runtime/mem",
+      "internal/vision",
+      "multimodal"
     ],
     "chat": [
       "constrain",
@@ -1910,12 +1935,16 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mem",
       "internal/runtime/sampling",
-      "internal/testgate",
-      "internal/vision",
-      "multimodal"
+      "internal/testgate"
     ],
     "backend/webgpu/internal/kvdecl": [
       "internal/runtime/program"
+    ],
+    "backend/webgpu/internal/towers": [
+      "backend/webgpu/internal/kernels",
+      "internal/testgate",
+      "internal/vision",
+      "multimodal"
     ],
     "chat": [
       "internal/codec",

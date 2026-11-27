@@ -106,7 +106,7 @@ func TestMatmulTiledF32_matchesNaive(t *testing.T) {
 	}
 	rng := rand.New(rand.NewSource(3))
 	const tol = 1e-5
-	defer func() { visionMatmulForTest = visionMatmulRB64 }()
+	defer c.SetVisionMatmul(VisionMatmulRB64)
 	for _, sh := range shapes {
 		M, K, N := sh[0], sh[1], sh[2]
 		a, b := make([]float32, M*K), make([]float32, N*K)
@@ -116,11 +116,11 @@ func TestMatmulTiledF32_matchesNaive(t *testing.T) {
 		for i := range b {
 			b[i] = rng.Float32()*2 - 1
 		}
-		visionMatmulForTest = visionMatmulNaive
+		c.SetVisionMatmul(VisionMatmulNaive)
 		naive := mmF32OnDevice(t, c, a, b, M, K, N)
-		visionMatmulForTest = visionMatmulTiled16
+		c.SetVisionMatmul(VisionMatmulTiled16)
 		tiled := mmF32OnDevice(t, c, a, b, M, K, N)
-		visionMatmulForTest = visionMatmulRB64
+		c.SetVisionMatmul(VisionMatmulRB64)
 		rb := mmF32OnDevice(t, c, a, b, M, K, N)
 		host := mmF64Host(a, b, M, K, N)
 		tn, rn, nh := worstRel(tiled, naive), worstRel(rb, naive), worstRel(naive, host)
@@ -153,8 +153,8 @@ func TestMatmulTiledF32_matchesNaive(t *testing.T) {
 		ly   **wgpu.BindGroupLayout
 		pick int
 	}{
-		{"16x16", matmulTiledF32WGSL, &c.mmTiledF32Pipeline, &c.mmTiledF32Layout, visionMatmulTiled16},
-		{"register-blocked", matmulRB64F32WGSL, &c.mmRB64F32Pipeline, &c.mmRB64F32Layout, visionMatmulRB64},
+		{"16x16", matmulTiledF32WGSL, &c.mmTiledF32Pipeline, &c.mmTiledF32Layout, VisionMatmulTiled16},
+		{"register-blocked", matmulRB64F32WGSL, &c.mmRB64F32Pipeline, &c.mmRB64F32Layout, VisionMatmulRB64},
 	} {
 		code := strings.ReplaceAll(k.code, " && kc < dims.k", "")
 		if code == k.code {
@@ -166,10 +166,10 @@ func TestMatmulTiledF32_matchesNaive(t *testing.T) {
 		}
 		savedPl, savedLy := *k.pl, *k.ly
 		*k.pl, *k.ly = pl, ly
-		visionMatmulForTest = k.pick
+		c.SetVisionMatmul(k.pick)
 		planted := worstRel(mmF32OnDevice(t, c, a, b, M, K, N), want)
 		*k.pl, *k.ly = savedPl, savedLy
-		visionMatmulForTest = visionMatmulRB64
+		c.SetVisionMatmul(VisionMatmulRB64)
 		t.Logf("planted in the %s kernel (no zero fill past K) at K=31: relative %.2e", k.name, planted)
 		if planted <= tol {
 			t.Errorf("the planted defect left the %s kernel's gate green (%.2e)", k.name, planted)

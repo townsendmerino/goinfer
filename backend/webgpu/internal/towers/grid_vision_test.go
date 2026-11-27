@@ -1,6 +1,6 @@
 //go:build gpu && goinfer_testhooks
 
-package kernels
+package towers
 
 import (
 	"fmt"
@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -69,7 +70,7 @@ type gvCase struct {
 // gvNoGPU skips a test on a machine with no adapter.
 func gvNoGPU(t *testing.T) {
 	t.Helper()
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -173,16 +174,16 @@ func TestGridVisionWebGPU_matchesCPU(t *testing.T) {
 	for name, mk := range map[string]func(*testing.T) gvCase{"qwen3": gvQwen3, "glm-ocr": gvGlm} {
 		t.Run(name, func(t *testing.T) {
 			c := mk(t)
-			defer func() { towerBlockForTest = 0 }()
+			defer func() { c.acc.block = 0 }()
 			for _, B := range []int{0, 5} {
-				towerBlockForTest = B
+				c.acc.block = B
 				w := c.lowestOver(t, 1)
 				t.Logf("%s, block %d: lowest merged-token cosine %.9f over %d grid sets", c.name, B, w, len(gvGrids))
 				if !(w >= bar) { // written this way so a NaN fails
 					t.Errorf("%s, block %d: lowest token cosine %.9f under %v", c.name, B, w, bar)
 				}
 			}
-			towerBlockForTest = 0
+			c.acc.block = 0
 			for d, set := range c.defects {
 				set(&c.acc.planted, true)
 				wd := c.lowestOver(t, 1)

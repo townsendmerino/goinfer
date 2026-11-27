@@ -22,7 +22,7 @@ var forTestGlobalsRatchet = map[string]int{
 	"backend/metal":                   65,
 	"backend/metal/internal/gpudev":   4,
 	"backend/webgpu":                  9,
-	"backend/webgpu/internal/kernels": 29,
+	"backend/webgpu/internal/kernels": 23,
 	"decoder":                         22,
 	"internal/diag/towerid":           1,
 	"internal/vision":                 3,

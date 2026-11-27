@@ -1,11 +1,12 @@
 //go:build gpu && goinfer_testhooks
 
-package kernels
+package towers
 
 import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -88,13 +89,14 @@ func minTokenCos(a, b []float32, hidden int) float64 {
 }
 
 // siglipF32Device runs the float32 device tower on the encoder's weights and finishes it on the host.
-func siglipF32Device(t *testing.T, c *Context, enc *vision.Encoder, w vision.SiglipWeights, pixels []float32) []float32 {
+func siglipF32Device(t *testing.T, c *Context, enc *vision.Encoder, w vision.SiglipWeights, pixels []float32, defect int) []float32 {
 	t.Helper()
-	ve, err := c.NewVisionEncoderF32(w)
+	ve, err := NewVisionEncoderF32(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ve.Close()
+	ve.defect = defect
 	patches, err := enc.GridPatches(pixels)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +116,7 @@ func siglipF32Device(t *testing.T, c *Context, enc *vision.Encoder, w vision.Sig
 // SigLIP tower on WebGPU against the CPU float32 tower on the sharpened tiny fixture, every output token at cosine
 // >= 0.9999, and each planted defect, alone, under that bar.
 func TestVisionEncoderF32_parity(t *testing.T) {
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestVisionEncoderF32_parity(t *testing.T) {
 	}
 	hidden := w.Cfg.HiddenSize
 	const bar = 0.9999
-	clean := minTokenCos(siglipF32Device(t, c, enc, w, pixels), cpu, hidden)
+	clean := minTokenCos(siglipF32Device(t, c, enc, w, pixels, 0), cpu, hidden)
 	t.Logf("float32 WebGPU tower against the CPU float32 tower: lowest token cosine %.7f over %d tokens", clean, len(cpu)/hidden)
 	if !(clean >= bar) { // written this way so a NaN fails
 		t.Errorf("lowest token cosine %.7f, want at least %v", clean, bar)
@@ -138,9 +140,7 @@ func TestVisionEncoderF32_parity(t *testing.T) {
 		4: "the GELU skipped in the first layer",
 		5: "the MLP residual dropped in the first layer",
 	} {
-		visionDefectForTest = d
-		got := minTokenCos(siglipF32Device(t, c, enc, w, pixels), cpu, hidden)
-		visionDefectForTest = 0
+		got := minTokenCos(siglipF32Device(t, c, enc, w, pixels, d), cpu, hidden)
 		t.Logf("planted (%d) %s: lowest token cosine %.7f", d, name, got)
 		if got >= bar {
 			t.Errorf("planted defect (%d) %s left the gate green (%.7f)", d, name, got)
@@ -152,7 +152,7 @@ func TestVisionEncoderF32_parity(t *testing.T) {
 // bias is pushed to about ±40, as a real float32 SigLIP reaches; the CPU tower handles it and the device tower must
 // match it, not return NaN.
 func TestVisionEncoderF32_largeActivations(t *testing.T) {
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestVisionEncoderF32_largeActivations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := minTokenCos(siglipF32Device(t, c, enc, w, pixels), cpu, w.Cfg.HiddenSize)
+	got := minTokenCos(siglipF32Device(t, c, enc, w, pixels, 0), cpu, w.Cfg.HiddenSize)
 	t.Logf("with GELU inputs near ±40: lowest token cosine %.7f", got)
 	if !(got >= 0.9999) {
 		t.Errorf("lowest token cosine %.7f, want at least 0.9999 (NaN is a tanh that overflowed)", got)
@@ -175,7 +175,7 @@ func TestVisionEncoderF32_largeActivations(t *testing.T) {
 // TestVisionEnableResidentF32_parity: the serve seam for a float32 encoder. EnableResident attaches the float32 device
 // tower and Encoder.Forward, delegating to it, matches a separate CPU encoder of the same checkpoint.
 func TestVisionEnableResidentF32_parity(t *testing.T) {
-	if _, err := New(); err != nil {
+	if _, err := kernels.New(); err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
 	const ckpt = "../../../../testdata/siglip-tiny"
@@ -235,7 +235,7 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
 	}
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 		}
 		logf("image %d/%d %s: CPU float32 tower %.1f s", i+1, len(pixels), siglipRealImages[i], time.Since(ts).Seconds())
 	}
-	ve, err := c.NewVisionEncoderF32(w)
+	ve, err := NewVisionEncoderF32(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve8, err := c.NewVisionEncoder(w8)
+	ve8, err := NewVisionEncoder(c, w8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
 	}
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -364,20 +364,20 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[G-S12.3b-3 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
 	run := func(label string, ve *VisionEncoder, patches []float32) {
-		names := map[int]string{visionMatmulRB64: "register-blocked", visionMatmulTiled16: "16x16", visionMatmulNaive: "naive"}
-		kernels := []int{visionMatmulRB64, visionMatmulRB64, visionMatmulTiled16, visionMatmulRB64, visionMatmulTiled16} // the first is a warm-up
+		names := map[int]string{kernels.VisionMatmulRB64: "register-blocked", kernels.VisionMatmulTiled16: "16x16", kernels.VisionMatmulNaive: "naive"}
+		modes := []int{kernels.VisionMatmulRB64, kernels.VisionMatmulRB64, kernels.VisionMatmulTiled16, kernels.VisionMatmulRB64, kernels.VisionMatmulTiled16} // the first is a warm-up
 		if os.Getenv("GOINFER_TOWER_SMOKE_NAIVE") != "" {
-			kernels = append(kernels, visionMatmulNaive)
+			modes = append(modes, kernels.VisionMatmulNaive)
 		}
-		for i, k := range kernels {
-			visionMatmulForTest = k
+		for i, k := range modes {
+			ve.c.SetVisionMatmul(k)
 			ts := time.Now()
 			if _, err := ve.ForwardPatches(patches); err != nil {
 				t.Fatal(err)
 			}
 			logf("%s tower, pass %d, %s matmul: %.1f s", label, i, names[k], time.Since(ts).Seconds())
 		}
-		visionMatmulForTest = visionMatmulRB64
+		ve.c.SetVisionMatmul(kernels.VisionMatmulRB64)
 	}
 	enc, err := vision.LoadEncoder(dir, false)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve, err := c.NewVisionEncoderF32(w)
+	ve, err := NewVisionEncoderF32(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve8, err := c.NewVisionEncoder(w8)
+	ve8, err := NewVisionEncoder(c, w8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestVisionEncoder_profile(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
 	}
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -445,14 +445,14 @@ func TestVisionEncoder_profile(t *testing.T) {
 			}
 			fmt.Fprintf(os.Stderr, "[profile] %s tower, unprofiled pass: %.1f s\n", label, time.Since(ts).Seconds())
 		}
-		visionProfileForTest = map[string]time.Duration{}
+		ve.profile = map[string]time.Duration{}
 		ts := time.Now()
 		if _, err := ve.ForwardPatches(patches); err != nil {
 			t.Fatal(err)
 		}
 		total := time.Since(ts)
-		prof := visionProfileForTest
-		visionProfileForTest = nil
+		prof := ve.profile
+		ve.profile = nil
 		type row struct {
 			step string
 			d    time.Duration
@@ -481,7 +481,7 @@ func TestVisionEncoder_profile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve, err := c.NewVisionEncoderF32(w)
+	ve, err := NewVisionEncoderF32(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func TestVisionEncoder_profile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve8, err := c.NewVisionEncoder(w8)
+	ve8, err := NewVisionEncoder(c, w8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +516,7 @@ func TestVisionEncoderF32_speedGate(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("no gemma-3-4b-it: %v", err) // a queued gate that cannot run is a failure, not a skip
 	}
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Fatalf("no gpu: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestVisionEncoderF32_speedGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ve, err := c.NewVisionEncoderF32(w)
+	ve, err := NewVisionEncoderF32(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}
