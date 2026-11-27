@@ -13,8 +13,8 @@ func TestSequenceState_CPUAndResidentParity(t *testing.T) {
 	// 1. CPU Session SequenceState: prefix score, wrapped-ring horizon, and len(tokens)>pos guard.
 	s := m.NewSession(16)
 	for range 6 {
-		for l := 0; l < s.cache.numLayers; l++ {
-			s.cache.Append(l, make([]float32, s.cache.kvDim), make([]float32, s.cache.kvDim))
+		for l := 0; l < s.cache.c.NumLayers; l++ {
+			s.cache.Append(l, make([]float32, s.cache.c.KVDim), make([]float32, s.cache.c.KVDim))
 		}
 	}
 	s.reconcile([]int{10, 20, 30, 40, 50, 60})
@@ -37,7 +37,7 @@ func TestSequenceState_CPUAndResidentParity(t *testing.T) {
 
 	// Wrapped ring on CPU SequenceState: rewinding by 1 is servable; rewinding by 2 drops below the horizon.
 	ringCache := NewKVCache(1, 1, 4, 4, 8, nil)
-	ringCache.enableRings(4, func(int) bool { return false })
+	ringCache.c.EnableRings(4, func(int) bool { return false })
 	for range 6 {
 		ringCache.Append(0, make([]float32, 4), make([]float32, 4))
 	}

@@ -49,7 +49,7 @@ func BenchmarkDecodeSerialVsParallel(b *testing.B) {
 			prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25}
 			cache := m.NewCache(len(prompt) + b.N + 8)
 			// THE FIX: the PER-WORKSPACE threshold, which is what decode actually consults.
-			cache.scr.ws.SetThreshold(arm.thr)
+			cache.c.Scr.WS.SetThreshold(arm.thr)
 
 			for _, id := range prompt[:len(prompt)-1] {
 				if _, err := m.runLayers(id, cache); err != nil {

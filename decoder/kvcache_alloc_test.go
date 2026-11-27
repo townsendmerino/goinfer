@@ -11,15 +11,15 @@ func TestNewKVCache_skipLayerZeroesCapacity(t *testing.T) {
 	c := NewKVCache(3, 8, 128, 0, capHint, skip)
 	for l := range 3 {
 		wantZero := l == 1
-		gotZero := cap(c.keys[l]) == 0 && cap(c.vals[l]) == 0
+		gotZero := cap(c.c.KeysBuf[l]) == 0 && cap(c.c.ValsBuf[l]) == 0
 		if wantZero != gotZero {
-			t.Errorf("layer %d: cap(keys)=%d cap(vals)=%d, want zero=%v", l, cap(c.keys[l]), cap(c.vals[l]), wantZero)
+			t.Errorf("layer %d: cap(keys)=%d cap(vals)=%d, want zero=%v", l, cap(c.c.KeysBuf[l]), cap(c.c.ValsBuf[l]), wantZero)
 		}
 	}
 	// The non-skipped layers must be UNAFFECTED — same capacity as before this parameter existed.
 	want := capHint * 8 * 128
-	if cap(c.keys[0]) != want || cap(c.vals[0]) != want {
-		t.Errorf("layer 0 (not skipped): cap(keys)=%d cap(vals)=%d, want %d", cap(c.keys[0]), cap(c.vals[0]), want)
+	if cap(c.c.KeysBuf[0]) != want || cap(c.c.ValsBuf[0]) != want {
+		t.Errorf("layer 0 (not skipped): cap(keys)=%d cap(vals)=%d, want %d", cap(c.c.KeysBuf[0]), cap(c.c.ValsBuf[0]), want)
 	}
 }
 
@@ -31,8 +31,8 @@ func TestNewKVCache_nilSkipLayerReservesEveryLayer(t *testing.T) {
 	c := NewKVCache(4, 2, 4, 0, capHint, nil)
 	want := capHint * 2 * 4
 	for l := range 4 {
-		if cap(c.keys[l]) != want || cap(c.vals[l]) != want {
-			t.Errorf("layer %d: cap(keys)=%d cap(vals)=%d, want %d", l, cap(c.keys[l]), cap(c.vals[l]), want)
+		if cap(c.c.KeysBuf[l]) != want || cap(c.c.ValsBuf[l]) != want {
+			t.Errorf("layer %d: cap(keys)=%d cap(vals)=%d, want %d", l, cap(c.c.KeysBuf[l]), cap(c.c.ValsBuf[l]), want)
 		}
 	}
 }
@@ -56,10 +56,10 @@ func TestNewCache_hybridRealFixtureSkipsRecurrentLayerAllocation(t *testing.T) {
 	c := m.NewCache(capHint)
 	for l := 0; l < arch.NumLayers; l++ {
 		wantZero := arch.HasNoAttentionKVAt(l)
-		gotZero := cap(c.keys[l]) == 0 && cap(c.vals[l]) == 0
+		gotZero := cap(c.c.KeysBuf[l]) == 0 && cap(c.c.ValsBuf[l]) == 0
 		if wantZero != gotZero {
 			t.Errorf("layer %d (blockKind=%d): cap(keys)=%d cap(vals)=%d, want zero=%v",
-				l, arch.Nemotron.BlockKind[l], cap(c.keys[l]), cap(c.vals[l]), wantZero)
+				l, arch.Nemotron.BlockKind[l], cap(c.c.KeysBuf[l]), cap(c.c.ValsBuf[l]), wantZero)
 		}
 	}
 }

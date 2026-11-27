@@ -68,7 +68,7 @@ func TestRow4_coldTouchLatency(t *testing.T) {
 				dstDn := make([]float32, dn.Rows())
 
 				t0 := time.Now()
-				m.pager.touch(key)
+				m.pager.Touch(key)
 				touchElapsed := time.Since(t0)
 
 				t1 := time.Now()

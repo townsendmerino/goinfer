@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"os"
@@ -58,7 +59,7 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 						p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd))}
 						a, b := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil), NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)
 						if withScr {
-							a.scr = newDecodeScratch(arch, a.knobs)
+							a.c.Scr = newDecodeScratch(arch, a.c.Knobs)
 						}
 						for range nKeys - 1 {
 							k, v := ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
@@ -111,24 +112,24 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 							}
 							a, b := NewKVCache(1, sh.nKV, sh.hd, p.Window, nKeys, nil), NewKVCache(1, sh.nKV, sh.hd, p.Window, nKeys, nil)
 							if mode == "ring" {
-								a.enableRings(W, func(int) bool { return false })
-								b.enableRings(W, func(int) bool { return false })
+								a.c.EnableRings(W, func(int) bool { return false })
+								b.c.EnableRings(W, func(int) bool { return false })
 							}
 							if withScr {
-								a.scr = newDecodeScratch(arch, a.knobs)
+								a.c.Scr = newDecodeScratch(arch, a.c.Knobs)
 							}
 							for i := range nKeys {
 								k, v := ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
 								if mode == "ring" {
-									a.rings[0].write(i, k, v)
-									b.rings[0].write(i, k, v)
+									a.c.Rings[0].Write(i, k, v)
+									b.c.Rings[0].Write(i, k, v)
 								} else {
 									a.Append(0, k, v)
 									b.Append(0, k, v)
 								}
 							}
 							if mode == "ring" {
-								a.rings[0].count, b.rings[0].count = nKeys, nKeys
+								a.c.Rings[0].Count, b.c.Rings[0].Count = nKeys, nKeys
 							}
 							q := ksf2Floats(r, sh.nH*sh.hd, 2)
 							got, want := make([]float32, sh.nH*sh.hd), make([]float32, sh.nH*sh.hd)
@@ -139,10 +140,10 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 							if withScr {
 								eligible := scalarHeadWorkers(sh.nH, nKeys-p.Start(nKeys-1), sh.hd) > 1
 								switch {
-								case eligible && len(a.scr.headPool) == 0:
+								case eligible && len(a.c.Scr.HeadPool) == 0:
 									t.Errorf("%s: the fan-out rule takes this cell, but attendQueryP grew no head worker slot", name)
-								case !eligible && len(a.scr.headPool) > 0:
-									t.Errorf("%s: under the fan-out threshold, but attendQueryP grew %d head worker slots", name, len(a.scr.headPool))
+								case !eligible && len(a.c.Scr.HeadPool) > 0:
+									t.Errorf("%s: under the fan-out threshold, but attendQueryP grew %d head worker slots", name, len(a.c.Scr.HeadPool))
 								}
 								if eligible {
 									fanned++
@@ -227,8 +228,8 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 	// logical count, and the window guarantees every read s in [start, nKeys) is resident. wrap=0 means global append-forever,
 	// row = s. scores stays indexed by absolute s (its scratch is already context-sized).
 	wrap := 0
-	if r := cache.rings[layer]; r != nil {
-		keys, vals, nKeys, wrap = r.k, r.v, r.count, r.w
+	if r := cache.c.Rings[layer]; r != nil {
+		keys, vals, nKeys, wrap = r.K, r.V, r.Count, r.W
 	}
 	rowBase := func(s int) int {
 		if wrap > 0 {
@@ -293,9 +294,9 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 		run := func(name string, window, n int) {
 			p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: 30}
 			a, b := NewKVCache(1, sh.nKV, sh.hd, window, n, nil), NewKVCache(1, sh.nKV, sh.hd, window, n, nil)
-			a.scr = scr
+			a.c.Scr = scr
 			qa, qb := NewKVCache(1, sh.nKV, sh.hd, 0, n, nil), NewKVCache(1, sh.nKV, sh.hd, 0, n, nil)
-			qa.scr = scr
+			qa.c.Scr = scr
 			for pos := range n {
 				q, k, v := ksf2Floats(r, sh.nH*sh.hd, 2), ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
 				got, want := make([]float32, sh.nH*sh.hd), make([]float32, sh.nH*sh.hd)
@@ -305,7 +306,7 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 				qa.Append(0, k, v)
 				qb.Append(0, k, v)
 				pq := attentionParams{Window: window, Scale: p.Scale, Softcap: p.Softcap}
-				attendQueryP(pq, q, got, scr.scoresBuf(pos+1), qa, 0, pos, arch) // the cache scratch's buffer, as the walker passes it
+				attendQueryP(pq, q, got, scr.ScoresBuf(pos+1), qa, 0, pos, arch) // the cache scratch's buffer, as the walker passes it
 				attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
 				ksf2SameBits(t, fmt.Sprintf("%+v %s queryP step %d: ctx", sh, name, pos), got, want)
 				if scalarHeadWorkers(sh.nH, pos+1-p.Start(pos), sh.hd) > 1 { // the span the step reads, as attendSinksToken counts it
@@ -348,14 +349,14 @@ func TestKSF2_familiesTakeTheFannedSchedule(t *testing.T) {
 			for i := range prompt {
 				prompt[i] = 3 + (i*131)%(vocab-3)
 			}
-			before := attendQueryPFanned.Load()
+			before := cpuengine.AttendQueryPFanned.Load()
 			ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
 			for range ch {
 			}
 			if err := g.Err(); err != nil {
 				t.Fatalf("generate: %v", err)
 			}
-			fanned := attendQueryPFanned.Load() - before
+			fanned := cpuengine.AttendQueryPFanned.Load() - before
 			if fanned == 0 {
 				t.Fatalf("%d-token prompt (heads %d × head size %d): attendQueryP never fanned out", n, nH, hd)
 			}

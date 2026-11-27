@@ -184,7 +184,7 @@ is.
   (`decoder/model_forward.go:Model.ForwardCapture`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (the own-loop table, `ownForwards`, since removed in OP3z; its predicate was `a.qwen35 != nil`, so it matched both). The capture
-  contract (`decoder/program_cpu.go:Model.walkToken`, which captures it) is the residual *after* layer l, before the final norm, so D2
+  contract (`internal/runtime/cpuengine/program_cpu.go:Engine.WalkToken`, which captures it) is the residual *after* layer l, before the final norm, so D2
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
@@ -196,7 +196,7 @@ is.
     family by design.
 - **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:KVCache.TruncateTo`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
-  recurrent state (`decoder/kvsnapshot.go:Session.Snapshot`). So "prefill the shared state once, branch per
+  recurrent state (`decoder/session_giwkv.go:Session.Snapshot`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
   logprobs: true, top_logprobs: 20` (`internal/app/serveapp/openai_types.go:sampling`, cap `internal/app/serveapp/openai_generate.go:maxTopLogprobs`) gives a client
@@ -986,11 +986,11 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model_forward.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/program_cpu.go:Model.walkToken` (the capture
+`Process`) · `decoder/model_forward.go:Model.ForwardCapture` (`ForwardCapture`) · `internal/runtime/cpuengine/program_cpu.go:Engine.WalkToken` (the capture
 contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
 `internal/runtime/archparts/arch.go:Qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.ValidateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo`, `:744`
-(merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/kvsnapshot.go:Session.Snapshot` (snapshot
+(merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/session_giwkv.go:Session.Snapshot` (snapshot
 skips recurrent state) · `internal/app/serveapp/openai_generate.go:maxTopLogprobs`, `internal/app/serveapp/openai_types.go:sampling` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/app/serveapp/main.go:Main` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·

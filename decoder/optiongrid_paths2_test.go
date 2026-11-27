@@ -22,12 +22,12 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 		{name: "Quant int8int8", opts: Options{Quant: "int8int8"}, effect: ogDiffersFromPlain},
 		{name: "Quant int4", opts: Options{Quant: "int4"}, effect: ogDiffersFromPlain},
 		{name: "KVQuant i8", opts: Options{KVQuant: "i8"}, effect: func(t *testing.T, m *Model) {
-			if m.NewCache(1).quant != kvI8 {
+			if m.NewCache(1).c.Quant != kvI8 {
 				t.Fatal("KVQuant i8 did not give an int8 cache")
 			}
 		}},
 		{name: "KVQuant f16", opts: Options{KVQuant: "f16"}, effect: func(t *testing.T, m *Model) {
-			if m.NewCache(1).quant != kvqF16 {
+			if m.NewCache(1).c.Quant != kvqF16 {
 				t.Fatal("KVQuant f16 did not give an f16 cache")
 			}
 		}},

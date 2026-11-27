@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"io/fs"
 	"math"
 	"os"
@@ -200,8 +201,8 @@ func TestMLAAbsorb_parity(t *testing.T) {
 			t.Fatalf("Load: %v", err)
 		}
 		defer m.Close()
-		mlaForceNaive = naive
-		defer func() { mlaForceNaive = false }()
+		cpuengine.MLAForceNaive = naive
+		defer func() { cpuengine.MLAForceNaive = false }()
 		cache := m.NewCache(len(g.PromptIDs) + g.NNew + 1)
 		var logits []float32
 		for _, id := range g.PromptIDs {
@@ -263,7 +264,7 @@ func TestMLAAbsorb_scratchReuseIsBitIdenticalAndAllocatesLess(t *testing.T) {
 	layers := []int{0, arch.NumLayers - 1}
 	const steps = 48
 	warm, fresh := m.NewCache(steps+64), m.NewCache(steps+64)
-	fresh.scr = nil
+	fresh.c.Scr = nil
 	n := make([]float32, arch.HiddenDim)
 	for pos := range steps {
 		for i := range n {

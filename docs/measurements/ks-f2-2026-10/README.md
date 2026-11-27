@@ -7,8 +7,8 @@ separate PR with their own fidelity gate.
 ## The change (no number moves)
 
 Two CPU attention functions keep their math and change their schedule:
-- `decoder/forward_gptoss.go:attendSinksToken` (gpt-oss, the `attnSinksF64` order);
-- `decoder/attention.go:attendQueryP` (the `attnQuery` order: Qwen3.5/3.6 attention layers, Granite-4.0-H, Nemotron-H, LFM2, Llama 4).
+- `internal/runtime/cpuengine/forward_gptoss.go:AttendSinksToken` (gpt-oss, the `attnSinksF64` order);
+- `internal/runtime/cpuengine/attention.go:AttendQueryP` (the `attnQuery` order: Qwen3.5/3.6 attention layers, Granite-4.0-H, Nemotron-H, LFM2, Llama 4).
 
 1. **Heads fan out** over the attention worker pool (`runSplitAligned`), one head per task range. Each worker has its own score buffer (a
    `decodeScratch` slot), and each head writes its own disjoint slice of ctx. A head's arithmetic is the same on any worker.
@@ -81,7 +81,7 @@ The exp-and-sum loop and the AV loop keep key order.
 
 "#239 risk 1, option A. Limit #239's default change to gpt-oss. attendQueryP keeps today's schedule for Qwen3.5/3.6, Granite-4.0-H,
 Nemotron-H, LFM2 and Llama 4 until they're timed."
-- **`decoder/attention.go:attendQueryP` is `main`'s code again,** unchanged. `TestKSF2_queryPKeepsTheOldPath` holds it there: bit-identical
+- **`internal/runtime/cpuengine/attention.go:AttendQueryP` is `main`'s code again,** unchanged. `TestKSF2_queryPKeepsTheOldPath` holds it there: bit-identical
   to its reference, and it never grows a head worker slot. A planted fan-out turned that test red.
 - **Shipped:** `attendSinksToken`'s new schedule, for gpt-oss alone.
 - **Later, not run now:** timing the new schedule for the other families is KS-F2b in the survey's ledger. Their schedule's code is in this

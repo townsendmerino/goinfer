@@ -5,17 +5,17 @@
     "quant"
   ],
   "own": [
-    "decoder/forward_gemma4.go",
+    "internal/runtime/cpuengine/forward_gemma4.go",
     "internal/runtime/families/arch_gemma4.go",
-    "decoder/forward_gemma4_moe.go",
-    "decoder/program_cpu_n_gemma4.go",
+    "internal/runtime/cpuengine/forward_gemma4_moe.go",
+    "internal/runtime/cpuengine/program_cpu_n_gemma4.go",
     "internal/runtime/wbuild/gguf_build_gemma4.go"
   ],
   "programs": [
     "testdata/gemma4-moe-kv-tiny",
     "testdata/gemma4-moe-kv-tiny32"
   ],
-  "deps_hash": "sha256:25396c20d32dddd63d166bce817308ccf1cd1c468df63cab786b34f470f02ed7",
+  "deps_hash": "sha256:410c19f0757e3ebe10e47664133e87ad69babe98dcf98f7e211177dc393b085e",
   "status": "validated",
   "validated_at": "310a2e44",
   "date": "2026-09-28",

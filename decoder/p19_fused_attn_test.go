@@ -631,7 +631,7 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 			vals := randF32(tc.nKeys*kvDim, 43)
 			cache := &KVCache{}
 			if tc.window > 0 {
-				cache.window = tc.window
+				cache.c.Window = tc.window
 			}
 			run := func(on string) []float32 {
 				t.Setenv("GOINFER_FUSED_ATTENTION", on)

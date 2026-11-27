@@ -99,11 +99,11 @@ func cpuKVArm(t *testing.T, m *Model, ids, refTokens []int) ([][]float32, *KVCac
 // cpuKVBytes is the K/V bytes a cache holds: f32 rows at 4 bytes an element, f16 rows at 2.
 func cpuKVBytes(c *KVCache) int64 {
 	var n int64
-	for l := range c.keys {
-		n += 4 * int64(len(c.keys[l])+len(c.vals[l]))
+	for l := range c.c.KeysBuf {
+		n += 4 * int64(len(c.c.KeysBuf[l])+len(c.c.ValsBuf[l]))
 	}
-	for l := range c.keysH {
-		n += 2 * int64(len(c.keysH[l])+len(c.valsH[l]))
+	for l := range c.c.KeysH {
+		n += 2 * int64(len(c.c.KeysH[l])+len(c.c.ValsH[l]))
 	}
 	return n
 }
@@ -122,8 +122,8 @@ func cpuKVGateCell(t *testing.T, name string, K int, tk *tokenizer.Tokenizer, pr
 		exact, ce := cpuKVArm(t, f32, ids, refTokens)
 		half, ch := cpuKVArm(t, f16, ids, refTokens)
 		// PRECONDITION 1 (vacuity): the candidate's cache holds f16 rows and the control's f32, and their decode rows differ.
-		if ch.quant != kvqF16 || ce.quant != kvqF32 {
-			t.Fatalf("PRECONDITION 1: caches hold %v (f16 arm) and %v (f32 arm); want f16 and f32", ch.quant, ce.quant)
+		if ch.c.Quant != kvqF16 || ce.c.Quant != kvqF32 {
+			t.Fatalf("PRECONDITION 1: caches hold %v (f16 arm) and %v (f32 arm); want f16 and f32", ch.c.Quant, ce.c.Quant)
 		}
 		differ := false
 		for i := 1; i < len(half); i++ {

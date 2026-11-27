@@ -13302,7 +13302,7 @@ WHAT IS BEING PRICED, and it is not the thing docs/qwen3_5_moe.md deferred. That
 "state checkpoints" for cross-call PREFIX REUSE — restore to an arbitrary earlier position,
 later, possibly across requests. Speculation needs something much weaker: snapshot immediately
 before a verify, restore on rejection, discard. One buffer, one round deep, lifetime of
-milliseconds. The two were bundled because they share a root cause (decoder/deltanet.go:deltaState: the
+milliseconds. The two were bundled because they share a root cause (internal/runtime/cpuengine/deltanet.go:DeltaState: the
 state is fixed-size and NOT position-truncatable), not because they are the same size of
 problem.
 
@@ -19144,7 +19144,7 @@ LoadSerializedWeights, which would additionally require a resolvable arch.
 Moved from `decoder/session_fastattn_test.go` (the comment above the test) on 2026-10-09.
 
 ```text
-TestSessionFastAttnDivergence — THE TEST decoder/forwardn.go:cpuFastAttention HAS BEEN CITING ALL ALONG.
+TestSessionFastAttnDivergence — THE TEST internal/runtime/cpuengine/forwardn.go:CPUFastAttention HAS BEEN CITING ALL ALONG.
 
 It did not exist anywhere in the tree. The doc comment above cpuFastAttention says
 "TestSessionFastAttnDivergence pins the new behaviour", which is the exact "a doc comment

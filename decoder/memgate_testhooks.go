@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"cmp"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"reflect"
 	"slices"
 	"strings"
@@ -35,7 +36,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			h.root(weights, f.Name, w.Field(i))
 		}
 	}
-	cv := reflect.ValueOf(c).Elem()
+	cv := reflect.ValueOf(&c.c).Elem()
 	for i := range cv.NumField() {
 		name := cv.Type().Field(i).Name
 		if cpuCacheIgnored[name] {
@@ -47,8 +48,8 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			continue
 		}
 		h.root(func(path string) mem.LineID {
-			if strings.Contains(path, ".hq") || strings.Contains(path, ".dn.") || strings.HasSuffix(path, ".dn") ||
-				path == "mamba.conv" || path == "mamba.y" ||
+			if (strings.Contains(path, ".HQ") || strings.Contains(path, ".hq")) || strings.Contains(path, ".dn.") || strings.HasSuffix(path, ".dn") ||
+				path == "Mamba.conv" || path == "Mamba.y" ||
 				strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
 				return mem.LineScratch // rewritten every step
 			}
@@ -231,25 +232,25 @@ func (h *holdsWalker) finish() (release func()) {
 }
 
 // CPUScratchBudgetForTest is the per-stream scratch the CPU's fit allows: the figure a row holds the scratch line to.
-const CPUScratchBudgetForTest = prefillAttnScratchBudget
+const CPUScratchBudgetForTest = cpuengine.PrefillAttnScratchBudget
 
 // cpuCacheLines is the plan line of each KVCache field that holds bytes or bookkeeping.
-var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV, "keysQ": mem.LineKV, "valsQ": mem.LineKV, "keyScale": mem.LineKV, "valScale": mem.LineKV,
-	"keysH": mem.LineKV, "valsH": mem.LineKV, "rings": mem.LineKV, "mlaLatent": mem.LineKV,
-	"delta": mem.LineState, "conv": mem.LineState, "mamba": mem.LineState, "kda": mem.LineState,
-	"scr": mem.LineScratch, "imgBlocks": mem.LineScratch, "mropePos": mem.LineScratch, "deepstack": mem.LineScratch, "stride": mem.LineScratch, "captureLayers": mem.LineScratch,
-	"captured": mem.LineScratch, "layerInputs": mem.LineScratch, "subAttn": mem.LineScratch, "subMLP": mem.LineScratch, "subMLPpre": mem.LineScratch, "subCtx": mem.LineScratch, "subPLE": mem.LineScratch, "treeRowPos": mem.LineScratch,
-	"treeMask": mem.LineScratch, "numLayers": mem.LineScratch, "planRows": mem.LineScratch, "rowCeiling": mem.LineScratch, "regrownBytes": mem.LineScratch, "kvDim": mem.LineScratch,
-	"window": mem.LineScratch, "mropeDelta": mem.LineScratch, "pos": mem.LineScratch, "localAny": mem.LineScratch, "quant": mem.LineScratch, "headDim": mem.LineScratch,
-	"manualPos": mem.LineScratch, "recurrentResets": mem.LineScratch, "latentDim": mem.LineScratch, "subCapture": mem.LineScratch,
-	"rowPad": mem.LineScratch, "f16InPlaceReads": mem.LineScratch}
+var cpuCacheLines = map[string]mem.LineID{"KeysBuf": mem.LineKV, "ValsBuf": mem.LineKV, "KeysQ": mem.LineKV, "ValsQ": mem.LineKV, "KeyScale": mem.LineKV, "ValScale": mem.LineKV,
+	"KeysH": mem.LineKV, "ValsH": mem.LineKV, "Rings": mem.LineKV, "MLALatent": mem.LineKV,
+	"Delta": mem.LineState, "Conv": mem.LineState, "Mamba": mem.LineState, "KDA": mem.LineState,
+	"Scr": mem.LineScratch, "ImgBlocks": mem.LineScratch, "MRopePos": mem.LineScratch, "Deepstack": mem.LineScratch, "Stride": mem.LineScratch, "CaptureLayers": mem.LineScratch,
+	"Captured": mem.LineScratch, "LayerInputs": mem.LineScratch, "SubAttn": mem.LineScratch, "SubMLP": mem.LineScratch, "SubMLPPre": mem.LineScratch, "SubCtx": mem.LineScratch, "SubPLE": mem.LineScratch, "TreeRowPos": mem.LineScratch,
+	"TreeMask": mem.LineScratch, "NumLayers": mem.LineScratch, "PlanRows": mem.LineScratch, "RowCeiling": mem.LineScratch, "RegrownBytes": mem.LineScratch, "KVDim": mem.LineScratch,
+	"Window": mem.LineScratch, "MRopeDelta": mem.LineScratch, "PosN": mem.LineScratch, "LocalAny": mem.LineScratch, "Quant": mem.LineScratch, "HeadDim": mem.LineScratch,
+	"ManualPos": mem.LineScratch, "RecurrentResets": mem.LineScratch, "LatentDim": mem.LineScratch, "SubCapture": mem.LineScratch,
+	"RowPad": mem.LineScratch, "F16InPlaceReads": mem.LineScratch}
 
 // cpuRingBookkeeping is a ring's scalar fields: its geometry and counters, which lease on scratch beside the cache's own (kvDim, window, pos),
 // so its K/V line is the arrays alone.
-var cpuRingBookkeeping = map[string]bool{"rings.w": true, "rings.stride": true, "rings.count": true, "rings.quant": true, "rings.headDim": true}
+var cpuRingBookkeeping = map[string]bool{"Rings.W": true, "Rings.Stride": true, "Rings.Count": true, "Rings.Quant": true, "Rings.HeadDim": true}
 
 // cpuCacheIgnored is what KVCache points at and does not own: a request's counter, the adapter the model holds, and a predicate.
-var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true, "knobs": true}
+var cpuCacheIgnored = map[string]bool{"Cost": true, "CostPhase": true, "LoRALayers": true, "SkipAppend": true, "Knobs": true}
 
 // PricedDenseVectorBytesForTest is what the plan's dense figure now holds of what a backend's gap table once bounded as vectors, so a table can
 // bound only what is left.

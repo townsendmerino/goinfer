@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"slices"
@@ -34,8 +35,8 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	nv, hk, hv, nk := p.NumValueHeads, p.KeyHeadDim, p.ValueHeadDim, p.NumKeyHeads
 	valueDim, convDim := hv*nv, 2*hk*nk+hv*nv
 
-	defer func(a int) { deltaNetMinWork = a }(deltaNetMinWork)
-	deltaNetMinWork = 2
+	defer func(a int) { cpuengine.DeltaNetMinWork = a }(cpuengine.DeltaNetMinWork)
+	cpuengine.DeltaNetMinWork = 2
 
 	rnd := rand.New(rand.NewSource(7))
 	vec := func(n int, scale float64) []float32 {
@@ -47,8 +48,8 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	}
 	newState := func(priorRows int, seed []float32, convWin [][]float32) *deltaState {
 		st := newDeltaState(p)
-		copy(st.s, seed)
-		st.convWin = slices.Clone(convWin)
+		copy(st.S, seed)
+		st.ConvWin = slices.Clone(convWin)
 		_ = priorRows
 		return st
 	}
@@ -69,7 +70,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 			for i := range convWin {
 				convWin[i] = vec(convDim, 1)
 			}
-			seed := vec(len(newDeltaState(p).s), 0.3)
+			seed := vec(len(newDeltaState(p).S), 0.3)
 			mixed, z := vec(K*convDim, 1), vec(K*valueDim, 1)
 			bt, at := vec(K*nv, 1), vec(K*nv, 1)
 
@@ -81,22 +82,22 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 				deltaNetCore(refCore[i*valueDim:(i+1)*valueDim], refMixed[i*convDim:(i+1)*convDim], bt[i*nv:(i+1)*nv], at[i*nv:(i+1)*nv], z[i*valueDim:(i+1)*valueDim], w, p, eps, ref)
 			}
 
-			before := deltaNetFanouts.Load()
+			before := cpuengine.DeltaNetFanouts.Load()
 			got := newState(prior, seed, convWin)
 			gotCore := make([]float32, K*valueDim)
 			deltaNetCoreN(gotCore, slices.Clone(mixed), bt, at, z, K, w, p, eps, got)
-			if K >= deltaNetMinWork && deltaNetFanouts.Load() == before {
+			if K >= cpuengine.DeltaNetMinWork && cpuengine.DeltaNetFanouts.Load() == before {
 				t.Fatalf("prior=%d K=%d: the fan-out never forked, so this compared the code with itself", prior, K)
 			}
 
 			tag := func(s string) string { return s }
 			bits(refCore, gotCore, tag("core"), t)
-			bits(ref.s, got.s, tag("state S"), t)
-			if len(ref.convWin) != len(got.convWin) {
-				t.Fatalf("prior=%d K=%d: conv window length %d vs %d", prior, K, len(ref.convWin), len(got.convWin))
+			bits(ref.S, got.S, tag("state S"), t)
+			if len(ref.ConvWin) != len(got.ConvWin) {
+				t.Fatalf("prior=%d K=%d: conv window length %d vs %d", prior, K, len(ref.ConvWin), len(got.ConvWin))
 			}
-			for i := range ref.convWin {
-				bits(ref.convWin[i], got.convWin[i], "conv window row", t)
+			for i := range ref.ConvWin {
+				bits(ref.ConvWin[i], got.ConvWin[i], "conv window row", t)
 			}
 		}
 	}

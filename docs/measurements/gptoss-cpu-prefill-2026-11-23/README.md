@@ -6,7 +6,7 @@ Registered 2026-11-23, before any timed run or fidelity reading.
 
 gpt-oss's prompts ran one token at a time on the CPU: `Program.BatchEligible` refused its FFN form (`FfnGptOss`). The batched walker
 now takes it. Its FFN runs expert-major in chunks (`gptOssMoEBatch`, new: the gpt-oss form of
-`decoder/mlp.go:moeMLPBatchWith`), its attention is the batched kernel with the sink term (KS-O4), and its window layers go through the KV ring.
+`internal/runtime/cpuengine/mlp.go:moeMLPBatchWith`), its attention is the batched kernel with the sink term (KS-O4), and its window layers go through the KV ring.
 With exact attention the batched walker is bit-identical to the sequential one (tier 0, `TestGptOssPrefill_batchedEqualsSequential`, new).
 At the default it takes CPU fast attention (f32) from 512 prompt rows, as every batched family does, so outputs change by float order.
 Batched as gpt-oss's CPU default is Francis's call; this records what it is decided on.

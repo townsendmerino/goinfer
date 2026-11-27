@@ -206,8 +206,8 @@ func TestQwen3VLMoe_goinferLogits(t *testing.T) {
 				t.Fatal(err)
 			}
 			cache := m.NewCache(len(ids))
-			cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(ids))
-			cache.deepstack = &deepstackRows{spans: spans, rows: im.deep}
+			cache.c.MRopePos, cache.c.MRopeDelta = mp, rope.MRoPEDelta(mp, len(ids))
+			cache.c.Deepstack = &deepstackRows{Spans: spans, Rows: im.deep}
 			h := m.embedN(ids)
 			spliceImageSpans(h, spans, im.merged, hidden)
 			hN, err := m.runLayersFromEmbedN(context.Background(), h, cache, m.cpuFastAttention())

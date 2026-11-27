@@ -59,7 +59,7 @@ func (c cpuSequenceState) Classes() []kvmgr.ClassRun {
 }
 
 func (c cpuSequenceState) Recurrent() bool {
-	return c.s != nil && c.s.cache != nil && c.s.cache.hasRecurrentState()
+	return c.s != nil && c.s.cache != nil && c.s.cache.c.HasRecurrentState()
 }
 
 func (c cpuSequenceState) Checkpoint() int { return 0 }
@@ -77,8 +77,8 @@ func (c cpuSequenceState) ReusablePrefix(prefix int) int {
 	if prefix < kv.Pos() && kv.holdsStateHandled(lcRewind, hInexact) {
 		return 0
 	}
-	for _, r := range kv.rings {
-		if r != nil && !kvmgr.RingTruncateExact(r.count, r.w, prefix) {
+	for _, r := range kv.c.Rings {
+		if r != nil && !kvmgr.RingTruncateExact(r.Count, r.W, prefix) {
 			return 0
 		}
 	}
@@ -106,7 +106,7 @@ func (s *Session) cachePrecision() string {
 	if s == nil || s.cache == nil {
 		return "f32"
 	}
-	switch s.cache.quant {
+	switch s.cache.c.Quant {
 	case kvqF16:
 		return "f16"
 	case kvI8:

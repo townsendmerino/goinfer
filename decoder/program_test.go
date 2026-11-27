@@ -195,9 +195,9 @@ func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logit
 		c := mm.NewCache(len(ids))
 		if len(m.w.Arch.MRopeSection) > 0 {
 			// A text prompt's m-RoPE positions are (p, p, p), where the section and the interleave cannot show: give each axis its own.
-			c.mropePos = make([][3]int, len(ids))
+			c.c.MRopePos = make([][3]int, len(ids))
 			for i := range ids {
-				c.mropePos[i] = [3]int{i, i / 2, i % 3}
+				c.c.MRopePos[i] = [3]int{i, i / 2, i % 3}
 			}
 		}
 		return c

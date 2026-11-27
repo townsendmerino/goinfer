@@ -44,7 +44,7 @@ gate about 30 min for Phi-3 and 5 for the 0.5B. In all, about 2 h by day, finish
   reading for) so the outer 150-minute timeout can be followed by a re-launch without re-running a cell. No cell, arm or bar changed.
 - **Mechanism, read from the code after the 0.5B's cells:** single-token decode on an f16 global layer goes through
   `KVCache.dequantGlobalLayer`, which widens the layer's whole history into f32 scratch on one goroutine every token, and attention then
-  reads the f32 scratch (`decoder/program_cpu.go:attendToken`'s `cache.quant.widened()` case). Per element per token that is a 2-byte
+  reads the f32 scratch (`internal/runtime/cpuengine/program_cpu.go:attendToken`'s `cache.quant.widened()` case). Per element per token that is a 2-byte
   read, a 4-byte write and a 4-byte read against f32's one 4-byte read, serial ahead of the parallel head workers.
 
 ## Speed: Qwen2.5-Coder-0.5B (int4), complete, read 2026-11-23 09:36 PST

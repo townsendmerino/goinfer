@@ -10,7 +10,7 @@
   "programs": [
     "testdata/gemma3-vl-tiny"
   ],
-  "deps_hash": "sha256:cf65be77070efde055e0cce1dfd8b7616cfe7e11e3cdf4f06e914096528697ae",
+  "deps_hash": "sha256:235781d0cab60073ab5922574ba50802dca869166ae9a80d7ab37c22f34be597",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

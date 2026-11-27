@@ -37,15 +37,15 @@ import (
 // census that cries wolf on every reformat is a census someone disables. What it is supposed to notice, a member being
 // named in a dispatch, is a property of the CODE, not of where the code sits.
 var declaredIdentityDispatch = map[string]string{
-	"decoder/cpu_batch.go|if !isW4A8(w) || !canon || w.Cols() != ws[0].Cols() || w.ActQuantGroup() != ws[0].ActQuantGroup() {": "MC3c step 2 S1's fused-call qualification (w4a8FusedOps): a capability guard — the batched W4A8 kernel reads canonical int4 bytes only, so every op must carry them and share K and the activation-quant group; anything else keeps the per-projection calls",
-	"decoder/mlp.go|} else if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                    "fused gate+up on the decode path — same capability guard (now an else-if: the CPU fused gate+up+SwiGLU branch, cpu_gateup_fused.go, is tried first)",
-	"decoder/cpu_gateup_fused.go|if act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {":                          "CPU fused gate+up+SwiGLU fork/join — a capability guard, same as the W4A8 batch site: it needs both projections W4A8 (the serial MatmulBTW4A8Into kernel it calls is W4A8-only) and SiLU (the activation it folds in); anything else declines and takes the unfused path",
-	"decoder/mlp.go|} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {":                                "fused gate+up batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
-	"decoder/program_cpu.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                  "the per-token program walker's proj-qkv (projQKVToken): fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
-	"decoder/program_cpu.go|} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {":       "the per-token program walker's proj-qkv: fused QKV batched W4A8 kernel (audit R-06) — the same capability guard one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
-	"decoder/program_cpu_n.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                "the batched and multi-sequence program walkers' proj-qkv: the same fused QKV W8A8 capability guard as projQKVToken's",
-	"decoder/program_cpu_n.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                 "the batched and multi-sequence program walkers' gated FFN: the fused gate+up W8A8 capability guard, as on the decode path (mlp.go)",
-	"decoder/weightmat.go|if isW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
+	"internal/runtime/cpuengine/cpu_batch.go|if !IsW4A8(w) || !canon || w.Cols() != ws[0].Cols() || w.ActQuantGroup() != ws[0].ActQuantGroup() {":         "MC3c step 2 S1's fused-call qualification (w4a8FusedOps): a capability guard — the batched W4A8 kernel reads canonical int4 bytes only, so every op must carry them and share K and the activation-quant group; anything else keeps the per-projection calls",
+	"internal/runtime/cpuengine/mlp.go|} else if IsW8A8(&lw.GateProj) && IsW8A8(&lw.UpProj) {":                                                            "fused gate+up on the decode path — same capability guard (now an else-if: the CPU fused gate+up+SwiGLU branch, cpu_gateup_fused.go, is tried first)",
+	"internal/runtime/cpuengine/cpu_gateup_fused.go|if act != darch.ActSiLU || !IsW4A8(&lw.GateProj) || !IsW4A8(&lw.UpProj) {":                            "CPU fused gate+up+SwiGLU fork/join — a capability guard, same as the W4A8 batch site: it needs both projections W4A8 (the serial MatmulBTW4A8Into kernel it calls is W4A8-only) and SiLU (the activation it folds in); anything else declines and takes the unfused path",
+	"internal/runtime/cpuengine/mlp.go|} else if activeHooks().W4A8BatchEnabled && IsW4A8(&lw.GateProj) && IsW4A8(&lw.UpProj) {":                          "fused gate+up batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
+	"internal/runtime/cpuengine/program_cpu.go|if IsW8A8(&lw.QProj) && IsW8A8(&lw.KProj) && IsW8A8(&lw.VProj) {":                                          "the per-token program walker's proj-qkv (projQKVToken): fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
+	"internal/runtime/cpuengine/program_cpu.go|} else if activeHooks().W4A8BatchEnabled && IsW4A8(&lw.QProj) && IsW4A8(&lw.KProj) && IsW4A8(&lw.VProj) {": "the per-token program walker's proj-qkv: fused QKV batched W4A8 kernel (audit R-06) — the same capability guard one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
+	"internal/runtime/cpuengine/program_cpu_n.go|if IsW8A8(&lw.QProj) && IsW8A8(&lw.KProj) && IsW8A8(&lw.VProj) {":                                        "the batched and multi-sequence program walkers' proj-qkv: the same fused QKV W8A8 capability guard as projQKVToken's",
+	"internal/runtime/cpuengine/program_cpu_n.go|if IsW8A8(&lw.GateProj) && IsW8A8(&lw.UpProj) {":                                                         "the batched and multi-sequence program walkers' gated FFN: the fused gate+up W8A8 capability guard, as on the decode path (mlp.go)",
+	"internal/runtime/cpuengine/matmul.go|if IsW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
 		"W8A8-specific QuantBackend kernel, and the int4 branch beside it reaches the same Workspace. " +
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",
 }
@@ -64,7 +64,7 @@ var declaredTypeSwitches = map[string]string{}
 // matters: the census must notice a member being named, including by a predicate that did not exist
 // when it was written.
 var (
-	identityDef = regexp.MustCompile(`(?m)^func (is[A-Z][A-Za-z0-9]*)\([^)]*\*linalg\.WeightMat[^)]*\) bool`)
+	identityDef = regexp.MustCompile(`(?m)^func ([iI]s[A-Z][A-Za-z0-9]*)\([^)]*\*linalg\.WeightMat[^)]*\) bool`)
 	typeSwitch  = regexp.MustCompile(`\.\(type\)`) // any type switch; the subject can be an index expr, a call, anything
 )
 
@@ -75,6 +75,11 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
+	ceFiles, err := filepath.Glob("../internal/runtime/cpuengine/*.go")
+	if err != nil {
+		t.Fatalf("glob cpuengine: %v", err)
+	}
+	files = append(files, ceFiles...)
 	slices.Sort(files)
 
 	// Pass 1: which predicates are quantization-identity predicates at all.
@@ -112,10 +117,15 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 		}
 		for line := range strings.SplitSeq(string(raw), "\n") {
 			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "func is") {
+			if strings.HasPrefix(trimmed, "//") || (strings.HasPrefix(trimmed, "func is") || strings.HasPrefix(trimmed, "func Is")) {
 				continue
 			}
-			loc := fmt.Sprintf("decoder/%s|%s", f, trimmed)
+			sf := filepath.ToSlash(f)
+			rel := "decoder/" + sf
+			if strings.HasPrefix(sf, "../") {
+				rel = strings.TrimPrefix(sf, "../")
+			}
+			loc := fmt.Sprintf("%s|%s", rel, trimmed)
 			if identityCall.MatchString(line) {
 				ident = append(ident, loc)
 			}

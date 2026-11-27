@@ -19,6 +19,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/families"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -174,16 +175,15 @@ func (h *fakeSnapHandle) Serves(int) bool { return true }
 func (h *fakeSnapHandle) Release()        { h.released++ }
 
 func TestKVSnapStore_removeLockedIdempotent(t *testing.T) {
-	st := newKVSnapStore(1024)
+	st := kvsnap.NewStore(1024)
 	h := &fakeSnapHandle{bytes: 128}
-	x := &kvSnap{h: h, ids: []int{1, 2, 3, 4}}
-	st.list = append(st.list, x)
-	st.used = 128
+	x := &kvsnap.Entry{Handle: h, IDs: []int{1, 2, 3, 4}}
+	st.Add(x, nil, 0, 0)
 
-	st.drop(x)
-	st.drop(x) // second drop after prior eviction must be a no-op
-	if st.used != 0 {
-		t.Fatalf("used = %d, want 0", st.used)
+	st.Drop(x)
+	st.Drop(x) // second drop after prior eviction must be a no-op
+	if used := st.Stats().Used; used != 0 {
+		t.Fatalf("used = %d, want 0", used)
 	}
 	if h.released != 1 {
 		t.Fatalf("released = %d, want 1", h.released)
@@ -214,12 +214,12 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 		kvI8: true,
 	}
 	ref := m.NewCache(0)
-	if ref.quant != kvI8 {
-		t.Fatalf("synthetic cache quant = %d, want kvI8 (%d)", ref.quant, kvI8)
+	if ref.c.Quant != kvI8 {
+		t.Fatalf("synthetic cache quant = %d, want kvI8 (%d)", ref.c.Quant, kvI8)
 	}
 	const pos = 2
-	kvDim := ref.kvDim // 8
-	nKV := kvDim / ref.headDim
+	kvDim := ref.c.KVDim // 8
+	nKV := kvDim / ref.c.HeadDim
 
 	buildBlob := func(kLen, vLen, ksLen, vsLen int) []byte {
 		wr := &giwWriter{}
@@ -227,10 +227,10 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 		wr.U32(kvSnapVersion)
 		wr.Str("m")
 		wr.Str("")
-		wr.U32(uint32(ref.numLayers))
+		wr.U32(uint32(ref.c.NumLayers))
 		wr.U32(uint32(kvDim))
-		wr.U32(uint32(ref.window))
-		wr.U32(uint32(ref.headDim))
+		wr.U32(uint32(ref.c.Window))
+		wr.U32(uint32(ref.c.HeadDim))
 		wr.Raw([]byte{0, byte(kvI8)})
 		wr.U32(pos)
 		wr.ints([]int{1, 2})

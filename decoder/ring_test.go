@@ -42,10 +42,10 @@ func TestRing_decodeBitExact(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 })
 
 	ringC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	ringC.enableRings(W, arch.IsGlobalLayer)
-	ringC.scr = newDecodeScratch(arch, ringC.knobs)
+	ringC.c.EnableRings(W, arch.IsGlobalLayer)
+	ringC.c.Scr = newDecodeScratch(arch, ringC.c.Knobs)
 	fullC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	fullC.scr = newDecodeScratch(arch, fullC.knobs)
+	fullC.c.Scr = newDecodeScratch(arch, fullC.c.Knobs)
 
 	rng := rand.New(rand.NewSource(11))
 	for pos := range N {
@@ -56,11 +56,11 @@ func TestRing_decodeBitExact(t *testing.T) {
 			rk, rv, rq := slices.Clone(k), slices.Clone(v), slices.Clone(q)
 			ringC.Append(l, rk, rv)
 			rCtx := make([]float32, qDim)
-			attendQuery(rq, rCtx, ringC.scr.scoresBuf(ringC.storedRows(l, kvDim)), ringC, l, pos, global, arch)
+			attendQuery(rq, rCtx, ringC.c.Scr.ScoresBuf(ringC.c.StoredRows(l, kvDim)), ringC, l, pos, global, arch)
 
 			fullC.Append(l, k, v)
 			fCtx := make([]float32, qDim)
-			attendQuery(q, fCtx, fullC.scr.scoresBuf(fullC.storedRows(l, kvDim)), fullC, l, pos, global, arch)
+			attendQuery(q, fCtx, fullC.c.Scr.ScoresBuf(fullC.c.StoredRows(l, kvDim)), fullC, l, pos, global, arch)
 
 			for j := range fCtx {
 				if rCtx[j] != fCtx[j] {
@@ -70,13 +70,13 @@ func TestRing_decodeBitExact(t *testing.T) {
 		}
 	}
 	// Memory: the local layer holds exactly W rows; the global layer grows with N.
-	if got := len(ringC.rings[0].k); got != W*kvDim {
+	if got := len(ringC.c.Rings[0].K); got != W*kvDim {
 		t.Errorf("local ring storage = %d floats, want W*kvDim = %d (O(W), not O(context))", got, W*kvDim)
 	}
-	if ringC.rings[1] != nil {
+	if ringC.c.Rings[1] != nil {
 		t.Errorf("global layer 1 must not have a ring")
 	}
-	if got := len(fullC.keys[0]) / kvDim; got != N {
+	if got := len(fullC.c.KeysBuf[0]) / kvDim; got != N {
 		t.Errorf("append-forever sanity: full cache stored %d rows, want %d", got, N)
 	}
 }
@@ -97,24 +97,24 @@ func TestRing_batchedBitExact(t *testing.T) {
 
 	// Reference: append-forever cache holding all K rows, base 0.
 	full := NewKVCache(1, nKV, hd, W, K, nil)
-	full.keys[0] = append(full.keys[0], k...)
-	full.vals[0] = append(full.vals[0], v...)
-	full.pos = K
+	full.c.KeysBuf[0] = append(full.c.KeysBuf[0], k...)
+	full.c.ValsBuf[0] = append(full.c.ValsBuf[0], v...)
+	full.c.PosN = K
 	bufs := func(maxKeys int) []headWorkerScratch {
 		return []headWorkerScratch{{
-			qh: make([]float32, K*hd), kh: make([]float32, maxKeys*hd), vt: make([]float32, maxKeys*hd),
-			scores: make([]float32, K*maxKeys), ch: make([]float32, K*hd),
+			QH: make([]float32, K*hd), KH: make([]float32, maxKeys*hd), VT: make([]float32, maxKeys*hd),
+			Scores: make([]float32, K*maxKeys), CH: make([]float32, K*hd),
 		}}
 	}
 	fCtx := make([]float32, K*qDim)
-	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, bufs(K))
+	attendBatchedHeads(q, fCtx, full.c.KeysBuf[0], full.c.ValsBuf[0], 0, full, 0, 0, K, false, arch, false, bufs(K))
 
 	// Ring: empty cache (startPos 0), assemble [base, K) from (empty history + new).
 	ring := NewKVCache(1, nKV, hd, W, K, nil)
-	ring.enableRings(W, arch.IsGlobalLayer)
+	ring.c.EnableRings(W, arch.IsGlobalLayer)
 	alk := make([]float32, K*kvDim)
 	alv := make([]float32, K*kvDim)
-	base, nRows := ring.batchReadLocal(0, 0, K, k, v, alk, alv)
+	base, nRows := ring.c.BatchReadLocal(0, 0, K, k, v, alk, alv)
 	rCtx := make([]float32, K*qDim)
 	attendBatchedHeads(q, rCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, 0, K, false, arch, false, bufs(nRows))
 
@@ -123,12 +123,12 @@ func TestRing_batchedBitExact(t *testing.T) {
 			t.Fatalf("ctx[%d]: ring %v != append-forever %v (batched prefill NOT bit-exact, K=%d>W=%d)", j, rCtx[j], fCtx[j], K, W)
 		}
 	}
-	ring.commitBatch(0, 0, K, k, v)
-	if ring.rings[0].count != K {
-		t.Errorf("after commit, ring count = %d, want %d", ring.rings[0].count, K)
+	ring.c.CommitBatch(0, 0, K, k, v)
+	if ring.c.Rings[0].Count != K {
+		t.Errorf("after commit, ring count = %d, want %d", ring.c.Rings[0].Count, K)
 	}
-	if len(ring.rings[0].k) != W*kvDim {
-		t.Errorf("ring storage = %d, want W*kvDim = %d", len(ring.rings[0].k), W*kvDim)
+	if len(ring.c.Rings[0].K) != W*kvDim {
+		t.Errorf("ring storage = %d, want W*kvDim = %d", len(ring.c.Rings[0].K), W*kvDim)
 	}
 }
 
@@ -143,13 +143,13 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
 	ring := NewKVCache(1, nKV, hd, W, N+1, nil)
-	ring.enableRings(W, arch.IsGlobalLayer)
+	ring.c.EnableRings(W, arch.IsGlobalLayer)
 	full := NewKVCache(1, nKV, hd, W, N+1, nil)
 
 	mkbufs := func(nKeys int) []headWorkerScratch {
 		return []headWorkerScratch{{
-			qh: make([]float32, hd), kh: make([]float32, nKeys*hd), vt: make([]float32, nKeys*hd),
-			scores: make([]float32, nKeys), ch: make([]float32, hd), avAcc: make([]float64, hd),
+			QH: make([]float32, hd), KH: make([]float32, nKeys*hd), VT: make([]float32, nKeys*hd),
+			Scores: make([]float32, nKeys), CH: make([]float32, hd), AvAcc: make([]float64, hd),
 		}}
 	}
 	rng := rand.New(rand.NewSource(31))
@@ -161,18 +161,18 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		rows := pos - ring.WindowStart(pos, false) + 1
 		lk := make([]float32, rows*kvDim)
 		lv := make([]float32, rows*kvDim)
-		base, nKeys := ring.batchReadLocal(0, pos, 1, rk, rv, lk, lv)
+		base, nKeys := ring.c.BatchReadLocal(0, pos, 1, rk, rv, lk, lv)
 		rCtx := make([]float32, qDim)
 		attendBatchedHeads(q, rCtx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, ring, 0, pos, 1, false, arch, true, mkbufs(nKeys))
-		ring.commitBatch(0, pos, 1, rk, rv)
+		ring.c.CommitBatch(0, pos, 1, rk, rv)
 
 		// Reference: append-forever, attend K=1 base 0 over all stored keys.
-		full.keys[0] = append(full.keys[0], k...)
-		full.vals[0] = append(full.vals[0], v...)
-		full.pos = pos + 1
+		full.c.KeysBuf[0] = append(full.c.KeysBuf[0], k...)
+		full.c.ValsBuf[0] = append(full.c.ValsBuf[0], v...)
+		full.c.PosN = pos + 1
 		fCtx := make([]float32, qDim)
 		nf := pos + 1
-		attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, pos, 1, false, arch, true, mkbufs(nf))
+		attendBatchedHeads(q, fCtx, full.c.KeysBuf[0], full.c.ValsBuf[0], 0, full, 0, pos, 1, false, arch, true, mkbufs(nf))
 
 		for j := range fCtx {
 			if rCtx[j] != fCtx[j] {

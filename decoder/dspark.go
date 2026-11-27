@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"path/filepath"
 	"slices"
@@ -270,7 +271,7 @@ func (d *DSparkDrafter) EmbedBlock(ids []int) [][]float32 {
 // BaseLogits applies DSpark's own LM head to one trunk row — the pre-Markov draft logits.
 func (d *DSparkDrafter) BaseLogits(be Backend, h []float32) []float32 {
 	out := make([]float32, d.vocab)
-	matmul(be, &d.lmHead, h, out, 1)
+	cpuengine.Matmul(be, &d.lmHead, h, out, 1)
 	return out
 }
 
@@ -290,7 +291,7 @@ func (d *DSparkDrafter) SampleBlock(be Backend, trunk [][]float32, firstPrev int
 		if d.markovRank > 0 {
 			d.markovW1.Row(prev, lat)        // rank-256 latent for the previous token
 			bias := make([]float32, d.vocab) // w2 · latent
-			matmul(be, &d.markovW2, lat, bias, 1)
+			cpuengine.Matmul(be, &d.markovW2, lat, bias, 1)
 			for i := range lg {
 				lg[i] += bias[i]
 			}
@@ -323,7 +324,7 @@ func (d *DSparkDrafter) Confidence(be Backend, trunk [][]float32, prevIDs []int)
 			n += d.markovRank
 		}
 		acc := make([]float32, 1)
-		matmul(be, &d.confW, feat[:n], acc, 1)
+		cpuengine.Matmul(be, &d.confW, feat[:n], acc, 1)
 		out[i] = acc[0] + d.confB
 	}
 	return out

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"os"
@@ -14,8 +15,8 @@ import (
 // decodes.
 
 func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
-	origMin, origPar := kvDequantMinFloats, kvDequantParallel
-	t.Cleanup(func() { kvDequantMinFloats, kvDequantParallel = origMin, origPar })
+	origMin, origPar := cpuengine.KVDequantMinFloats, cpuengine.KVDequantParallel
+	t.Cleanup(func() { cpuengine.KVDequantMinFloats, cpuengine.KVDequantParallel = origMin, origPar })
 	rng := rand.New(rand.NewSource(15))
 	forks := 0
 	for _, tc := range []struct{ rows, cols, minFloats int }{
@@ -23,7 +24,7 @@ func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
 		{600, 128, 1 << 17}, // above the real threshold, nothing forced
 		{50, 128, 1 << 17},  // below it: must stay serial and still be right
 	} {
-		kvDequantMinFloats, kvDequantParallel = tc.minFloats, true
+		cpuengine.KVDequantMinFloats, cpuengine.KVDequantParallel = tc.minFloats, true
 		n := tc.rows * tc.cols
 		kq, vq := make([]int8, n), make([]int8, n)
 		for i := range kq {
@@ -40,9 +41,9 @@ func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
 		for i := range gotK { // poison: every element must be written
 			gotK[i], gotV[i] = float32(math.NaN()), float32(math.NaN())
 		}
-		before := kvDequantFanouts.Load()
+		before := cpuengine.KVDequantFanouts.Load()
 		dequantKVRows(gotK, gotV, kq, vq, ksc, vsc, tc.rows, tc.cols)
-		forks += int(kvDequantFanouts.Load() - before)
+		forks += int(cpuengine.KVDequantFanouts.Load() - before)
 		for i := range wantK {
 			if math.Float32bits(gotK[i]) != math.Float32bits(wantK[i]) || math.Float32bits(gotV[i]) != math.Float32bits(wantV[i]) {
 				t.Fatalf("rows=%d cols=%d: element %d differs from the serial widen", tc.rows, tc.cols, i)
@@ -58,8 +59,8 @@ func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
 // even at these sizes (threshold 1), and requires every logit of every step to match. cohere2-tiny and gemma2-tiny put int8 RINGS on the same path; the others
 // are global-only.
 func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
-	origMin, origPar := kvDequantMinFloats, kvDequantParallel
-	t.Cleanup(func() { kvDequantMinFloats, kvDequantParallel = origMin, origPar })
+	origMin, origPar := cpuengine.KVDequantMinFloats, cpuengine.KVDequantParallel
+	t.Cleanup(func() { cpuengine.KVDequantMinFloats, cpuengine.KVDequantParallel = origMin, origPar })
 	for _, fx := range []string{"cohere2-tiny", "gemma2-tiny", "llama-tiny"} {
 		t.Run(fx, func(t *testing.T) {
 			dir := "../testdata/" + fx
@@ -78,10 +79,10 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 				toks[i] = 1 + rng.Intn(m.w.Arch.VocabSize-1)
 			}
 			run := func(par bool) [][]float32 {
-				kvDequantParallel = par
-				kvDequantMinFloats = 1
+				cpuengine.KVDequantParallel = par
+				cpuengine.KVDequantMinFloats = 1
 				cache := m.NewCache(N + 2)
-				if cache.quant != kvI8 {
+				if cache.c.Quant != kvI8 {
 					t.Fatalf("the cache is not int8: this test would not touch the widen")
 				}
 				var all [][]float32
@@ -95,9 +96,9 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 				return all
 			}
 			ref := run(false)
-			before := kvDequantFanouts.Load()
+			before := cpuengine.KVDequantFanouts.Load()
 			got := run(true)
-			if kvDequantFanouts.Load() == before {
+			if cpuengine.KVDequantFanouts.Load() == before {
 				t.Fatal("the parallel run never forked: nothing was proved")
 			}
 			for i := range ref {

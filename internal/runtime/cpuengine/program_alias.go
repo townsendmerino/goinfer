@@ -1,0 +1,74 @@
+// The program's types live in internal/program, which the GPU backends share; decoder builds the program and keeps these
+// names for its own code.
+
+package cpuengine
+
+import "github.com/townsendmerino/goinfer/internal/runtime/program"
+
+type (
+	layerProgram     = program.Program
+	opReg            = program.Reg
+	op               = program.Op
+	normParams       = program.NormParams
+	projParams       = program.ProjParams
+	qkNormParams     = program.QKNormParams
+	ropeParams       = program.RopeParams
+	attentionParams  = program.AttentionParams
+	mlaOpParams      = program.MLAOpParams
+	ffnParams        = program.FFNParams
+	deltaNetOpParams = program.DeltaNetOpParams
+	gatedAttnParams  = program.GatedAttnParams
+	gemma4AttnParams = program.Gemma4AttnParams
+	normEpsParams    = program.NormEpsParams
+)
+
+const (
+	opNorm           = program.OpNorm
+	opProjQKV        = program.OpProjQKV
+	opQKNorm         = program.OpQKNorm
+	opRope           = program.OpRope
+	opAttnTemp       = program.OpAttnTemp
+	opAttention      = program.OpAttention
+	opOutGate        = program.OpOutGate
+	opProjO          = program.OpProjO
+	opFFN            = program.OpFFN
+	opResidual       = program.OpResidual
+	opMLA            = program.OpMLA
+	opKDA            = program.OpKDA
+	opShortConv      = program.OpShortConv
+	opMamba2         = program.OpMamba2
+	opDeltaNet       = program.OpDeltaNet
+	opGatedAttn      = program.OpGatedAttn
+	opGemma4Attn     = program.OpGemma4Attn
+	opGemma4MoE      = program.OpGemma4MoE
+	opPLE            = program.OpPLE
+	opLayerScale     = program.OpLayerScale
+	regH             = program.RegH
+	regX             = program.RegX
+	regA             = program.RegA
+	regB             = program.RegB
+	slotPreAttn      = program.SlotPreAttn
+	slotPreMLP       = program.SlotPreMLP
+	slotPostAttn     = program.SlotPostAttn
+	slotPostMLP      = program.SlotPostMLP
+	slotFinal        = program.SlotFinal
+	normRMS          = program.NormRMS
+	normLayer        = program.NormLayer
+	normCopy         = program.NormCopy
+	qkRMS            = program.QKRMS
+	qkL2             = program.QKL2
+	ropeAtKernel     = program.RopeAtKernel
+	ropeMLAKernel    = program.RopeMLAKernel
+	attnBatchedAcc64 = program.AttnBatchedAcc64
+	attnSinksF64     = program.AttnSinksF64
+	attnQuery        = program.AttnQuery
+	attnMLA          = program.AttnMLA
+	attnGemma4       = program.AttnGemma4
+	ffnGated         = program.FfnGated
+	ffnNonGated      = program.FfnNonGated
+	ffnMoE           = program.FfnMoE
+	ffnGptOss        = program.FfnGptOss
+	ffnLlama4MoE     = program.FfnLlama4MoE
+	ffnNemotronMoE   = program.FfnNemotronMoE
+	ffnGemma4Dense   = program.FfnGemma4Dense
+)

@@ -37,7 +37,7 @@ func decodeCounted(t *testing.T, m *Model, warm []int, id int, counter *cost.Cou
 			t.Fatal(err)
 		}
 	}
-	cache.cost, cache.costPhase = counter, cost.Decode
+	cache.c.Cost, cache.c.CostPhase = counter, cost.Decode
 	lg, err := m.forward(id, cache)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	ids := []int{1, 2, 3, 4, 5, 6, 7}
 	run := func(c *cost.Counter) [][]float32 {
 		cache := m.NewCache(64)
-		cache.cost, cache.costPhase = c, cost.Prefill
+		cache.c.Cost, cache.c.CostPhase = c, cost.Prefill
 		rows, err := m.forwardN(context.Background(), ids, cache)
 		if err != nil {
 			t.Fatal(err)
@@ -266,10 +266,10 @@ func TestCost_cpuTreeMaskUnmeasured(t *testing.T) {
 	}
 	for _, tree := range []bool{false, true} {
 		c := cost.New()
-		cache.cost, cache.costPhase = c, cost.Decode
-		cache.treeMask = nil
+		cache.c.Cost, cache.c.CostPhase = c, cost.Decode
+		cache.c.TreeMask = nil
 		if tree {
-			cache.treeMask = [][]bool{{true}}
+			cache.c.TreeMask = [][]bool{{true}}
 		}
 		m.countOp(cache, &ops[ai], &m.w.Layers[0], 0, time.Now())
 		got := c.Report().Decode.Ops["attention"]
@@ -277,7 +277,7 @@ func TestCost_cpuTreeMaskUnmeasured(t *testing.T) {
 			t.Errorf("tree mask %v: attention's bytes unmeasured %v (%+v)", tree, unmeasured, got)
 		}
 	}
-	cache.cost, cache.treeMask = nil, nil
+	cache.c.Cost, cache.c.TreeMask = nil, nil
 }
 
 // costOffHook is the off path one operation pays in the walkers: costStart's nil check, its zero time held live across the
@@ -287,7 +287,7 @@ func TestCost_cpuTreeMaskUnmeasured(t *testing.T) {
 func costOffHook(cache *KVCache, op func()) bool {
 	t0 := costStart(cache)
 	op()
-	return cache.cost != nil && !t0.IsZero()
+	return cache.c.Cost != nil && !t0.IsZero()
 }
 
 //go:noinline

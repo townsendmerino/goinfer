@@ -124,11 +124,11 @@ Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:
 - **Multiple "heads"** — instead of one Query/Key/Value comparison, there are
   many running in parallel (one head might track grammar, another long-range
-  topic). [decoder/program_cpu.go:attendToken](../decoder/program_cpu.go).
+  topic). [internal/runtime/cpuengine/program_cpu.go:attendToken](../decoder/program_cpu.go).
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/program_cpu.go:applyRope](../decoder/program_cpu.go).
+  is. [internal/runtime/cpuengine/program_cpu.go:applyRope](../decoder/program_cpu.go).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -218,14 +218,14 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/program_cpu.go:attendToken](../decoder/program_cpu.go)).
+([internal/runtime/cpuengine/program_cpu.go:attendToken](../decoder/program_cpu.go)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
 shrink it:
 - **int8 KV quantization** — store the cached Keys/Values as 8-bit integers
   instead of 32-bit floats, ~4× smaller, with a per-head scale factor to
-  reconstruct them ([decoder/kvcache.go:quantizeHeads](../decoder/kvcache.go)).
+  reconstruct them ([internal/runtime/cpuengine/kvcache.go:quantizeHeads](../decoder/kvcache.go)).
 - **Ring buffers for sliding-window layers** — some layers only ever need the
   last *W* tokens, so the cache for them is a fixed-size circular buffer that
   overwrites old entries instead of growing forever

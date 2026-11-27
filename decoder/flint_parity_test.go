@@ -666,8 +666,8 @@ func TestFlint_kv0hBShapedWindowReuse(t *testing.T) {
 	cpuCache := m.NewCache(1024)
 	for l := range m.w.Arch.NumLayers {
 		if m.w.Arch.RingLayerAt(l) {
-			cpuCache.rings[l].count = 640
-			if exact := cpuCache.rings[l].truncate(614); exact {
+			cpuCache.c.Rings[l].Count = 640
+			if exact := cpuCache.c.Rings[l].Truncate(614); exact {
 				t.Fatalf("layer %d ring.truncate(614) from wrapped 640 on 513-ring reported exact=true, want false", l)
 			}
 		}

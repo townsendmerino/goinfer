@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"slices"
 	"testing"
@@ -53,8 +54,8 @@ func TestMoEPagingSpike(t *testing.T) {
 		L, E, K, float64(expBytes)/1e6, float64(L*E*expBytes)/1e9)
 
 	// Record every router selection over a real generated stream.
-	moeSelTrace = make([][]int, 0, 1<<16)
-	defer func() { moeSelTrace = nil }()
+	cpuengine.MoESelTrace = make([][]int, 0, 1<<16)
+	defer func() { cpuengine.MoESelTrace = nil }()
 	prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25} // valid Qwen ids; the 200 generated tokens drive realistic decode-time routing
 	prog.Phase("generate (drives real decode-time routing)")
 	ch, g := m.Generate(deadlineCtx(t), prompt, gen, SamplingParams{Temperature: 0})
@@ -67,7 +68,7 @@ func TestMoEPagingSpike(t *testing.T) {
 	if g.Err() != nil {
 		t.Fatalf("generate: %v", g.Err())
 	}
-	calls := len(moeSelTrace)
+	calls := len(cpuengine.MoESelTrace)
 	tokens := calls / L
 	t.Logf("generated %d tokens; %d moeMLP calls (%d tokens × %d layers)", n, calls, tokens, L)
 	if calls == 0 {
@@ -81,7 +82,7 @@ func TestMoEPagingSpike(t *testing.T) {
 	for i := range perLayer {
 		perLayer[i] = map[int]int{}
 	}
-	for c, sel := range moeSelTrace {
+	for c, sel := range cpuengine.MoESelTrace {
 		layer := c % L
 		for _, e := range sel {
 			key := layer*E + e

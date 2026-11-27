@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"slices"
@@ -62,16 +63,16 @@ func TestA3MoERouteFlips(t *testing.T) {
 		t.Helper()
 		setKnob(t, m, knobCPUFastAttention, map[bool]string{true: "1", false: "0"}[probe])
 		if trace {
-			moeSelTrace = make([][]int, 0, 1<<14)
-			moeWtsTrace = make([][]float32, 0, 1<<14)
+			cpuengine.MoESelTrace = make([][]int, 0, 1<<14)
+			cpuengine.MoEWtsTrace = make([][]float32, 0, 1<<14)
 		}
 		if replayIdx != nil {
-			moeSelOverride, moeWtsOverride, moeOverridePos = replayIdx, replayWts, 0
+			cpuengine.MoESelOverride, cpuengine.MoEWtsOverride, cpuengine.MoEOverridePos = replayIdx, replayWts, 0
 		}
 		out, err := m.forwardLayersN(deadlineCtx(t), ids, m.NewCache(K+8), cpuFastAttention())
-		moeSelOverride, moeWtsOverride = nil, nil
-		gotIdx, gotWts := moeSelTrace, moeWtsTrace
-		moeSelTrace, moeWtsTrace = nil, nil
+		cpuengine.MoESelOverride, cpuengine.MoEWtsOverride = nil, nil
+		gotIdx, gotWts := cpuengine.MoESelTrace, cpuengine.MoEWtsTrace
+		cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = nil, nil
 		if err != nil {
 			t.Fatalf("probe=%v replay=%v: %v", probe, replayIdx != nil, err)
 		}

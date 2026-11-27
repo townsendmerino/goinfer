@@ -6,23 +6,15 @@ package decoder
 import "github.com/townsendmerino/goinfer/internal/runtime/program"
 
 type (
-	layerProgram     = program.Program
-	opKind           = program.OpKind
-	opReg            = program.Reg
-	op               = program.Op
-	normParams       = program.NormParams
-	projParams       = program.ProjParams
-	qkNormParams     = program.QKNormParams
-	ropeParams       = program.RopeParams
-	attentionParams  = program.AttentionParams
-	mlaOpParams      = program.MLAOpParams
-	ffnParams        = program.FFNParams
-	deltaNetOpParams = program.DeltaNetOpParams
-	gatedAttnParams  = program.GatedAttnParams
-	gemma4AttnParams = program.Gemma4AttnParams
-	normEpsParams    = program.NormEpsParams
-	embedParams      = program.EmbedParams
-	headParams       = program.HeadParams
+	layerProgram    = program.Program
+	opKind          = program.OpKind
+	op              = program.Op
+	normParams      = program.NormParams
+	attentionParams = program.AttentionParams
+	mlaOpParams     = program.MLAOpParams
+	ffnParams       = program.FFNParams
+	embedParams     = program.EmbedParams
+	headParams      = program.HeadParams
 )
 
 const (

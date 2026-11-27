@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 )
 
 // Prefix reuse on the resident positional KV.
@@ -204,7 +205,11 @@ func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *lor
 	if !a.Live(a.Bound()) {
 		a.Unrecorded(a.Bound())
 	}
-	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns, ckpt))
+	if m.residentReuseDisabled() {
+		return 0
+	}
+	req := kvmgr.Request{Root: m.kvRootIn(lora, ns), Tokens: prompt, Images: kvSpansOfClaims(imgs), Checkpoint: ckpt}
+	return kvmgr.ScoreSequence(residentSequenceState{m: m, slot: a.Bound()}, req)
 }
 
 // ErrKVPoolFull is what a resident whose KV slots share one block pool returns, wrapped, when a conversation past its guaranteed share of
@@ -261,7 +266,7 @@ func (m *Model) residentPromote(acq *kvAcquired) {
 	}
 	if blocks > 0 {
 		acq.promotedBlocks, acq.promotedRows = acq.promotedBlocks+blocks, acq.reuse
-		m.kvSnaps.promoted(blocks)
+		m.kvSnaps.Promoted(blocks)
 		fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d; the request reuses %d rows\n", blocks, acq.slot, acq.reuse)
 	}
 }
@@ -326,7 +331,7 @@ type kvAcquired struct {
 	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
 	snapRows int
 	snapDur  time.Duration
-	snapFrom *kvSnap // the snapshot those rows came from
+	snapFrom *kvsnap.Entry // the snapshot those rows came from
 	// markFired is set when the prefill reached its snapshot mark and offered a boundary snapshot (taken or declined): the end of the prompt takes none.
 	markFired bool
 	// msgRows is the row count of the message-boundary snapshot this request's prefill offered (0: none), which Keep's snapshot does not replace.
@@ -508,7 +513,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		var blocks int
 		if blocks, held, err = kv.CopyDemotedKV(src, dst, start, hit); blocks > 0 {
 			acq.promotedBlocks += blocks
-			m.kvSnaps.promoted(blocks)
+			m.kvSnaps.Promoted(blocks)
 			fmt.Fprintf(stderrKV, "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)
 		}
 	}

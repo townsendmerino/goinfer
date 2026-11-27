@@ -104,13 +104,13 @@ func f1Cells(t *testing.T, m *Model, n int, setup func(*KVCache)) map[string]int
 	}
 	pa := f1Run(false, func() pf { lg, c := f1Prefill(t, f16, ids, setup); return pf{lg, c} })
 	pb := f1Run(true, func() pf { lg, c := f1Prefill(t, ref, ids, setup); return pf{lg, c} })
-	if pa.c.quant != kvqF16 || pb.c.quant != kvqF32 {
-		t.Fatalf("arms' caches are %d and %d, want f16 and f32", pa.c.quant, pb.c.quant)
+	if pa.c.c.Quant != kvqF16 || pb.c.c.Quant != kvqF32 {
+		t.Fatalf("arms' caches are %d and %d, want f16 and f32", pa.c.c.Quant, pb.c.c.Quant)
 	}
 	got["prefill"] = f1Diff(pa.lg, pb.lg)
 	// The GPU-upload bridge: every layer's K and V as the bridge reads them.
 	bridge := 0
-	for l := range pa.c.numLayers {
+	for l := range pa.c.c.NumLayers {
 		ka, va, _ := pa.c.LayerKV(l)
 		kb, vb, _ := pb.c.LayerKV(l)
 		bridge += f1Diff([][]float32{ka, va}, [][]float32{kb, vb})
@@ -147,7 +147,7 @@ func TestKVF16_F1Exactness(t *testing.T) {
 				pos[i] = [3]int{4, 4 + (i-4)/4, 4 + (i-4)%4}
 			}
 		}
-		c.mropePos = pos
+		c.c.MRopePos = pos
 	}
 	for _, fx := range []struct {
 		dir   string
@@ -311,8 +311,8 @@ func TestKVF16_excludedFamilyKeepsF32(t *testing.T) {
 // default following the command lines (gate F5).
 func TestKVF16_F5LibraryDefaultIsF32(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
-	if c := m.NewCache(8); c.quant != kvqF32 || m.CPUKVPrecision() != "f32" {
-		t.Errorf("zero options built a %d cache (CPUKVPrecision %q), want f32", c.quant, m.CPUKVPrecision())
+	if c := m.NewCache(8); c.c.Quant != kvqF32 || m.CPUKVPrecision() != "f32" {
+		t.Errorf("zero options built a %d cache (CPUKVPrecision %q), want f32", c.c.Quant, m.CPUKVPrecision())
 	}
 }
 
@@ -334,8 +334,8 @@ func TestKVF16_decodeReadsInPlace(t *testing.T) {
 		}
 		inPlace = append(inPlace, append([]float32(nil), lg...))
 	}
-	if want := int64(len(ids) * m.w.Arch.NumLayers); c.f16InPlaceReads != want {
-		t.Fatalf("decode over the f16 cache read its rows in place %d times, want %d (every layer of every token)", c.f16InPlaceReads, want)
+	if want := int64(len(ids) * m.w.Arch.NumLayers); c.c.F16InPlaceReads != want {
+		t.Fatalf("decode over the f16 cache read its rows in place %d times, want %d (every layer of every token)", c.c.F16InPlaceReads, want)
 	}
 	if d := f1Diff(inPlace, f1Run(true, func() [][]float32 { return f1Decode(t, ref, ids) })); d != 0 {
 		t.Errorf("the in-place f16 read differs from the f16-rounded f32 path in %d logits", d)

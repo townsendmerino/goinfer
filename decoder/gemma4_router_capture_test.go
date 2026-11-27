@@ -5,6 +5,7 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestGemma4RouterCapture(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("real gemma-4-26b-a4b-it not present")
 	}
-	if !routerCapture {
+	if !cpuengine.RouterCapture {
 		t.Skip("set GOINFER_ROUTER_CAPTURE=1 to capture router selections")
 	}
 	base := os.Getenv("ZZBASE")
@@ -45,14 +46,14 @@ func TestGemma4RouterCapture(t *testing.T) {
 	}
 	ids, _ := tk.Encode("The capital of France is Paris, one of the most visited cities in the world, known for the Eiffel Tower and its museums.", true)
 
-	routerCaptureReset() // N-27: clears every buffer AND re-arms the cap
+	cpuengine.RouterCaptureReset() // N-27: clears every buffer AND re-arms the cap
 	c := m.NewCache(len(ids))
 	for _, id := range ids {
 		if _, err := m.runLayers(id, c); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sel := routerCaptureBuf
+	sel := cpuengine.RouterCaptureBuf
 
 	out := os.Getenv("ROUTER_CAPTURE_OUT")
 	if out == "" {

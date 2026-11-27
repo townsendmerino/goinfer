@@ -28,7 +28,7 @@ a further slot leaves for per-call prefill scratch and the lazily grown runners)
 
 ## The CPU: `newDecodeScratch` against the declared rows
 
-`decoder/scratch.go:newDecodeScratch` allocates the host float buffers one stream's decode reuses. Over the 56 census fixtures that load,
+`internal/runtime/cpuengine/scratch.go:NewDecodeScratch` allocates the host float buffers one stream's decode reuses. Over the 56 census fixtures that load,
 its float buffers equal the declared layer rows plus head rows on **2** and range from 0.17 to 1.46 of them on the rest: the CPU
 walker reuses one `norm` and one `sub` where the declaration lists each operation's own rows, holds no DeltaNet, Mamba or KDA rows in this struct,
 and sizes q and ctx at the widest head count. It is host memory, which no guard prices.

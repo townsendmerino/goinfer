@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
@@ -9,12 +10,12 @@ import (
 
 // Sharing between CPU sessions:
 // a new conversation copies the whole blocks of another session's KV that its own cold prefill would compute bit for
-// bit, and prefills the rest. A CPU prefill pass of fastAttnMinPrompt rows or more runs the fast prefill attention, a
+// bit, and prefills the rest. A CPU prefill pass of cpuengine.FastAttnMinPrompt rows or more runs the fast prefill attention, a
 // class of its own; passes at or above it are invariant to where they start (docs/measurements/kv2-2026-10-14.md, "Split invariance").
 
 // cpuClassMap is the class rule for a CPU session's prefill passes.
 func (m *Model) cpuClassMap() kvmgr.ClassMap {
-	return kvmgr.ClassMap{Floor: fastAttnMinPrompt, MinRows: fastAttnMinPrompt}
+	return kvmgr.ClassMap{Floor: cpuengine.FastAttnMinPrompt, MinRows: cpuengine.FastAttnMinPrompt}
 }
 
 // errCopyLayout is copyPrefixFrom's refusal of a cache layout it does not copy.
@@ -24,43 +25,43 @@ var errCopyLayout = errors.New("decoder: this KV cache layout is not copied betw
 // and the MLA latent; a sliding-window ring, recurrent state, image blocks or m-RoPE positions are refused before c is
 // touched.
 func (c *KVCache) copyPrefixFrom(src *KVCache, n int) error {
-	if n <= 0 || n > src.pos || src.localAny || c.localAny || src.hasRecurrentState() || c.hasRecurrentState() ||
-		src.imgBlocks != nil || src.mropePos != nil || src.deepstack != nil || src.manualPos || c.manualPos ||
-		src.quant != c.quant || src.numLayers != c.numLayers || (src.mlaLatent == nil) != (c.mlaLatent == nil) {
+	if n <= 0 || n > src.c.PosN || src.c.LocalAny || c.c.LocalAny || src.c.HasRecurrentState() || c.c.HasRecurrentState() ||
+		src.c.ImgBlocks != nil || src.c.MRopePos != nil || src.c.Deepstack != nil || src.c.ManualPos || c.c.ManualPos ||
+		src.c.Quant != c.c.Quant || src.c.NumLayers != c.c.NumLayers || (src.c.MLALatent == nil) != (c.c.MLALatent == nil) {
 		return errCopyLayout
 	}
 	c.TruncateTo(0)
-	c.rowPad = src.rowPad // rows are copied at src's stride
-	for l := range c.numLayers {
-		if src.mlaLatent != nil {
-			c.mlaLatent[l] = append(c.mlaLatent[l][:0], src.mlaLatent[l][:n*src.latentDim]...)
+	c.c.RowPad = src.c.RowPad // rows are copied at src's stride
+	for l := range c.c.NumLayers {
+		if src.c.MLALatent != nil {
+			c.c.MLALatent[l] = append(c.c.MLALatent[l][:0], src.c.MLALatent[l][:n*src.c.LatentDim]...)
 			continue
 		}
-		st := src.stride[l]
-		c.stride[l] = st
+		st := src.c.Stride[l]
+		c.c.Stride[l] = st
 		if st == 0 {
 			continue // a KV-shared layer appends nothing
 		}
-		if src.quant == kvqF16 {
-			c.keysH[l] = append(c.keysH[l][:0], src.keysH[l][:n*st]...)
-			c.valsH[l] = append(c.valsH[l][:0], src.valsH[l][:n*st]...)
+		if src.c.Quant == kvqF16 {
+			c.c.KeysH[l] = append(c.c.KeysH[l][:0], src.c.KeysH[l][:n*st]...)
+			c.c.ValsH[l] = append(c.c.ValsH[l][:0], src.c.ValsH[l][:n*st]...)
 		}
-		if src.quant == kvI8 {
-			nKV := st / src.headDim
-			c.keysQ[l] = append(c.keysQ[l][:0], src.keysQ[l][:n*st]...)
-			c.valsQ[l] = append(c.valsQ[l][:0], src.valsQ[l][:n*st]...)
-			c.keyScale[l] = append(c.keyScale[l][:0], src.keyScale[l][:n*nKV]...)
-			c.valScale[l] = append(c.valScale[l][:0], src.valScale[l][:n*nKV]...)
+		if src.c.Quant == kvI8 {
+			nKV := st / src.c.HeadDim
+			c.c.KeysQ[l] = append(c.c.KeysQ[l][:0], src.c.KeysQ[l][:n*st]...)
+			c.c.ValsQ[l] = append(c.c.ValsQ[l][:0], src.c.ValsQ[l][:n*st]...)
+			c.c.KeyScale[l] = append(c.c.KeyScale[l][:0], src.c.KeyScale[l][:n*nKV]...)
+			c.c.ValScale[l] = append(c.c.ValScale[l][:0], src.c.ValScale[l][:n*nKV]...)
 		}
-		if len(src.keys[l]) >= n*st { // f32 rows, which an int8 layer may also keep
-			c.keys[l] = append(c.keys[l][:0], src.keys[l][:n*st]...)
-			c.vals[l] = append(c.vals[l][:0], src.vals[l][:n*st]...)
+		if len(src.c.KeysBuf[l]) >= n*st { // f32 rows, which an int8 layer may also keep
+			c.c.KeysBuf[l] = append(c.c.KeysBuf[l][:0], src.c.KeysBuf[l][:n*st]...)
+			c.c.ValsBuf[l] = append(c.c.ValsBuf[l][:0], src.c.ValsBuf[l][:n*st]...)
 		}
 	}
-	if src.mlaLatent != nil {
-		c.latentDim = src.latentDim
+	if src.c.MLALatent != nil {
+		c.c.LatentDim = src.c.LatentDim
 	}
-	c.pos = n
+	c.c.PosN = n
 	return nil
 }
 
