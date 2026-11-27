@@ -474,13 +474,13 @@ func TestTranscode_realGGUFSucceedsAndPublishedBundleLoads(t *testing.T) {
 // partial bundle where the cache lookup will find it.
 func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "sidecar.go", nil, 0)
+	af, err := parser.ParseFile(fset, "../internal/runtime/sidecar/sidecar.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	var fn *ast.FuncDecl
 	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "TranscodeGIWTimed" { // the GGUF branch's body; TranscodeGIW wraps it
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "TranscodeTimed" { // the GGUF branch's body; TranscodeGIW wraps it
 			fn = d
 		}
 		return true
@@ -499,7 +499,7 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 		if !ok {
 			return true
 		}
-		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "publishGIW" && len(call.Args) == 2 && render(call.Args[1]) == "out" {
+		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "PublishGIW" && len(call.Args) == 3 && render(call.Args[2]) == "out" {
 			renamedToFinal++
 			return true
 		}
@@ -538,13 +538,13 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 // TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
 func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "sidecar.go", nil, 0)
+	af, err := parser.ParseFile(fset, "../internal/runtime/sidecar/sidecar.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	var fn *ast.FuncDecl
 	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "transcodeDir" {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "TranscodeDir" {
 			fn = d
 		}
 		return true
@@ -563,7 +563,7 @@ func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
 		if !ok {
 			return true
 		}
-		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "publishGIW" && len(call.Args) == 2 && render(call.Args[1]) == "out" {
+		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "PublishGIW" && len(call.Args) == 3 && render(call.Args[2]) == "out" {
 			renamedToFinal++
 			return true
 		}

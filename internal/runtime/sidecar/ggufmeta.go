@@ -1,4 +1,4 @@
-package decoder
+package sidecar
 
 import (
 	"encoding/binary"
@@ -15,7 +15,7 @@ import (
 //
 // It mirrors aikit/embed.parseGGUF's cursor exactly; if that format changes,
 // the prequant generator must follow (the version guards catch a stale bundle).
-func metadataPrefixLen(raw []byte) (int, error) {
+func MetadataPrefixLen(raw []byte) (int, error) {
 	c := &ggufCur{b: raw}
 	if c.u32() != 0x46554747 { // "GGUF" little-endian
 		return 0, fmt.Errorf("not a GGUF file (bad magic)")

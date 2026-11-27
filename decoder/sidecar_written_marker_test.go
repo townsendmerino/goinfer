@@ -57,7 +57,7 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes })
 	hooked := 0
 	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-		afterWrite: func(tmp string) {
+		AfterWrite: func(tmp string) {
 			hooked++
 			if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); err != nil {
 				t.Errorf("the written bundle has no marker before its self-check: %v", err)
@@ -94,7 +94,7 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 // the same size and mtime, so the marker still holds and the refusal is the load's own and not the CRC's.
 func TestTranscode_selfCheckStillRefusesAnUnloadableBundle(t *testing.T) {
 	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-		afterWrite: func(tmp string) {
+		AfterWrite: func(tmp string) {
 			fi, err := os.Stat(tmp)
 			if err != nil {
 				t.Fatal(err)
@@ -176,7 +176,7 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 		sidecarHostRAM = func() int64 { return c.total }
 		for _, flip := range []bool{true, false} {
 			ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-				afterWrite: func(tmp string) {
+				AfterWrite: func(tmp string) {
 					if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
 						t.Errorf("%s: the transcode's own marker is present=%v, want %v", c.name, err == nil, c.marked)
 					}
@@ -254,8 +254,8 @@ func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
 	afterWrite := func(string) { reachedSelfCheck = true }
 	for _, at := range []int64{0, 4097, 100000} {
 		ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-			afterWrite: afterWrite,
-			wrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: at} },
+			AfterWrite: afterWrite,
+			WrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: at} },
 		})
 		dir := t.TempDir()
 		err := TranscodeGIW(ctx, src, filepath.Join(dir, "p.giw"), "int4", false, GIWTargetNone)
@@ -270,8 +270,8 @@ func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
 		}
 	}
 	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-		afterWrite: afterWrite,
-		wrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: -1} },
+		AfterWrite: afterWrite,
+		WrapSink:   func(w io.Writer) io.Writer { return &flipAt{w: w, at: -1} },
 	})
 	if err := TranscodeGIW(ctx, src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone); err != nil {
 		t.Fatalf("an untouched stream: %v", err)
@@ -292,7 +292,7 @@ func TestReadBack_readsBehindTheWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	rb := startReadBack(f, base)
-	w := rb.writer(f)
+	w := rb.Writer(f)
 	chunk := make([]byte, 300_000)
 	var crc uint32
 	for i := range 8 {
@@ -306,29 +306,29 @@ func TestReadBack_readsBehindTheWriter(t *testing.T) {
 		want := int64(i+1)*int64(len(chunk)) - 4
 		caught := false
 		for range 2000 {
-			if rb.read.Load() >= want {
+			if rb.ReadBytes() >= want {
 				caught = true
 				break
 			}
 			time.Sleep(time.Millisecond)
 		}
 		if !caught {
-			t.Fatalf("after write %d the read-back had read %d bytes, want %d: it is not reading behind the writer", i, rb.read.Load(), want)
+			t.Fatalf("after write %d the read-back had read %d bytes, want %d: it is not reading behind the writer", i, rb.ReadBytes(), want)
 		}
 	}
 	if _, err := w.Write(binary.LittleEndian.AppendUint32(nil, crc)); err != nil {
 		t.Fatal(err)
 	}
-	if err := rb.finish(); err != nil {
+	if err := rb.Finish(); err != nil {
 		t.Fatalf("a blob written whole with its own CRC: %v", err)
 	}
 
 	// A blob too short to hold a CRC word is an error, not a pass.
 	short := startReadBack(f, base)
-	if _, err := short.writer(io.Discard).Write([]byte{1, 2}); err != nil {
+	if _, err := short.Writer(io.Discard).Write([]byte{1, 2}); err != nil {
 		t.Fatal(err)
 	}
-	if err := short.finish(); err == nil {
+	if err := short.Finish(); err == nil {
 		t.Error("a two-byte blob passed the read-back")
 	}
 }

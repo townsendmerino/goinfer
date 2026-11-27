@@ -1,4 +1,4 @@
-package decoder
+package sidecar
 
 import (
 	"os"
@@ -20,8 +20,8 @@ import (
 // A fixed allowance per tensor and per file covers the header, shapes and alignment, and a 3% margin the
 // rest (on a tiny model those fixed costs are most of the file; on a real one, noise). ok is false when the header does not
 // parse; the caller then falls back to the source's size.
-func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
-	g, err := OpenGGUFMmap(ggufPath)
+func ProjectedSidecarBytes(ops Ops, ggufPath, quant string) (int64, bool) {
+	g, err := ops.OpenGGUFMmap(ggufPath)
 	if err != nil {
 		return 0, false
 	}
@@ -79,7 +79,7 @@ func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
 // 4/32, f32 4), plus the same 3% margin. A bundled vision tower is in the files and not in the sidecar, and an f32 source
 // is twice the elements' bytes, so both over-count, which is the safe direction for a disk check. ok is false when the
 // directory holds no .safetensors file.
-func projectedDirSidecarBytes(dir, quant string) (int64, bool) {
+func ProjectedDirSidecarBytes(dir, quant string) (int64, bool) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, false
