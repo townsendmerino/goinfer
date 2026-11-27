@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"path/filepath"
@@ -30,12 +31,12 @@ func mem12Alloc(fn func()) uint64 {
 func TestMEM12Scratch_moeChunks(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "mixtral-tiny"))
 	setKnob(t, m, knobMoEExpertMajor, "1")
-	defer func(r int) { prefillChunkRows = r }(prefillChunkRows)
-	prefillChunkRows = 16
+	defer func(r int) { cpuengine.PrefillChunkRows = r }(cpuengine.PrefillChunkRows)
+	cpuengine.PrefillChunkRows = 16
 	ids := f1IDs(64, m.w.Arch.VocabSize)
 	var first, last uint64
-	defer func() { prefillChunkDone = nil }()
-	prefillChunkDone = func(c int) {
+	defer func() { cpuengine.PrefillChunkDone = nil }()
+	cpuengine.PrefillChunkDone = func(c int) {
 		var ms runtime.MemStats
 		runtime.ReadMemStats(&ms)
 		switch c {
@@ -45,23 +46,23 @@ func TestMEM12Scratch_moeChunks(t *testing.T) {
 			last = ms.TotalAlloc
 		}
 	}
-	g := &moeScratchGrows
+	g := &cpuengine.MoEScratchGrows
 	counters := []struct {
 		name string
 		c    *atomic.Int64
-	}{{"output", &g.out}, {"done flags", &g.done}, {"router logits", &g.logits}, {"per-rank outputs", &g.perRank},
-		{"gather", &g.gathered}, {"gate", &g.gate}, {"up", &g.up}, {"down output", &g.outBuf}}
+	}{{"output", &g.Out}, {"done flags", &g.Done}, {"router logits", &g.Logits}, {"per-rank outputs", &g.PerRank},
+		{"gather", &g.Gathered}, {"gate", &g.Gate}, {"up", &g.Up}, {"down output", &g.OutBuf}}
 	before := make([]int64, len(counters))
 	for i, c := range counters {
 		before[i] = c.c.Load()
 	}
-	runs := atomic.LoadInt64(&moeExpertMajorRuns)
+	runs := atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns)
 	mem12Alloc(func() {
 		if _, err := m.prefillLogits(context.Background(), ids, m.NewCache(len(ids)+8)); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if atomic.LoadInt64(&moeExpertMajorRuns) == runs {
+	if atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns) == runs {
 		t.Fatal("the expert-major path never ran: the reading would measure the per-row path")
 	}
 	if last == 0 || first == 0 {
@@ -118,8 +119,8 @@ func TestMEM12Scratch_headLogits(t *testing.T) {
 // last logits byte-equal to the sequential decode's, and a verify round's rows equal sequential forwards', on mixtral-tiny
 // and llama-tiny, run twice on one cache so the second reads the reused buffers.
 func TestMEM12Scratch_identity(t *testing.T) {
-	defer func(r int) { prefillChunkRows = r }(prefillChunkRows)
-	prefillChunkRows = 16
+	defer func(r int) { cpuengine.PrefillChunkRows = r }(cpuengine.PrefillChunkRows)
+	cpuengine.PrefillChunkRows = 16
 	ctx := context.Background()
 	for _, dir := range []string{"mixtral-tiny", "llama-tiny"} {
 		m := f1Load(t, filepath.Join("..", "testdata", dir))

@@ -32,7 +32,7 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 	b := fill(out*r, 3)
 	x := fill(in, 4)
 	const scale = 1.7
-	d := &loraDelta{a: a, b: b, r: r, in: in, out: out, scale: scale}
+	d := &loraDelta{A: a, B: b, R: r, In: in, Out: out, Scale: scale}
 
 	// Merge path: fold the delta into a copy of W, then matmul.
 	wm := slices.Clone(w)

@@ -7,15 +7,16 @@
   ],
   "own": [
     "internal/runtime/families/arch_bailing_hybrid.go",
-    "decoder/kda.go",
-    "decoder/kda_rehearsal.go",
-    "decoder/forward_deepseek.go",
-    "decoder/mla_int8.go"
+    "internal/runtime/cpuengine/kda.go",
+    "internal/runtime/cpuengine/kda_rehearsal.go",
+    "internal/runtime/cpuengine/forward_deepseek.go",
+    "decoder/mla_int8.go",
+    "internal/runtime/cpuengine/mla_int8.go"
   ],
   "programs": [
     "testdata/bailing_hybrid-tiny"
   ],
-  "deps_hash": "sha256:a12a0a700a96556a5168a25c208672e6248ddeaf369cfc6e9ed4e337dd45248c",
+  "deps_hash": "sha256:0084fba38bc83054da407856994b6af3f755b290ff7422a86c808d89f5ac9d85",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
@@ -24,7 +25,7 @@
   "method": "tiny-golden",
   "metrics": {
     "argmax_pct": 100.0,
-    "cosine_min": 1.00000,
-    "cosine_mean": 1.00000
+    "cosine_min": 1.0,
+    "cosine_mean": 1.0
   }
 }

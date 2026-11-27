@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"os"
@@ -64,12 +65,12 @@ func v1Prompt(m *Model) (ids []int, spans []ImageSpan, feats []float32, mrope []
 // four greedy decode steps after, and the passes it took.
 func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, logits [][]float32, passes int64) {
 	t.Helper()
-	prev := prefillChunkRows
-	prefillChunkRows = chunk
-	defer func() { prefillChunkRows = prev }()
+	prev := cpuengine.PrefillChunkRows
+	cpuengine.PrefillChunkRows = chunk
+	defer func() { cpuengine.PrefillChunkRows = prev }()
 	ids, spans, feats, mrope, deep := v1Prompt(m)
 	ctx := context.Background()
-	p0 := atomic.LoadInt64(&prefillPasses)
+	p0 := atomic.LoadInt64(&cpuengine.PrefillPasses)
 	var lg []float32
 	var err error
 	switch route {
@@ -79,7 +80,7 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 			t.Fatal(err)
 		}
 		cache := m.NewCache(len(ids) + 8)
-		p0 = atomic.LoadInt64(&prefillPasses)
+		p0 = atomic.LoadInt64(&cpuengine.PrefillPasses)
 		lg, err = m.prefillLogitsVLSpans(ctx, ids, spans, feats, cache, causal)
 		if err != nil {
 			t.Fatal(err)
@@ -87,26 +88,26 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 		logits = v1Decode(t, m, cache, lg)
 	case "mrope", "deepstack":
 		c := m.NewCache(len(ids) + 8)
-		c.mropePos, c.mropeDelta = mrope, rope.MRoPEDelta(mrope, len(ids))
+		c.c.MRopePos, c.c.MRopeDelta = mrope, rope.MRoPEDelta(mrope, len(ids))
 		if route == "deepstack" {
-			c.deepstack = &deepstackRows{spans: spans, rows: deep}
+			c.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 		}
 		if rows, err = m.prefillSpliced(ctx, ids, spans, feats, c, true); err != nil {
 			t.Fatal(err)
 		}
 		cache := m.NewCache(len(ids) + 8)
 		if route == "deepstack" {
-			cache.deepstack = &deepstackRows{spans: spans, rows: deep}
+			cache.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 		}
-		p0 = atomic.LoadInt64(&prefillPasses)
+		p0 = atomic.LoadInt64(&cpuengine.PrefillPasses)
 		lg, err = m.prefillLogitsQwenVLSpans(ctx, ids, spans, feats, mrope, cache)
-		cache.deepstack = nil
+		cache.c.Deepstack = nil
 		if err != nil {
 			t.Fatal(err)
 		}
 		logits = v1Decode(t, m, cache, lg)
 	}
-	return rows, logits, atomic.LoadInt64(&prefillPasses) - p0
+	return rows, logits, atomic.LoadInt64(&cpuengine.PrefillPasses) - p0
 }
 
 func v1Decode(t *testing.T, m *Model, cache *KVCache, lg []float32) [][]float32 {
@@ -192,10 +193,10 @@ func TestMEM5VL_sharedRouteChunked(t *testing.T) {
 // alv: sized by the whole prefill's keys in every pass, G40's amendment).
 func v1RowBytes(ps *prefillPassScratch) (rows, keys int64) {
 	var n int
-	for _, b := range [][]float32{ps.h, ps.norm, ps.q, ps.k, ps.v, ps.ctx, ps.att, ps.gate, ps.up, ps.mlpOut} {
+	for _, b := range [][]float32{ps.H, ps.Norm, ps.Q, ps.K, ps.V, ps.Ctx, ps.Att, ps.Gate, ps.Up, ps.MLPOut} {
 		n += cap(b)
 	}
-	return 4 * int64(n), 4 * int64(cap(ps.alk)+cap(ps.alv)+cap(ps.gbuf))
+	return 4 * int64(n), 4 * int64(cap(ps.ALK)+cap(ps.ALV)+cap(ps.GBuf))
 }
 
 // TestMEM5VL_sharedRouteBytes is V1-G2: a 200-row image prefill whose first image span (20 rows) is longer than a 16-row chunk.
@@ -222,16 +223,18 @@ func TestMEM5VL_sharedRouteBytes(t *testing.T) {
 			feats[i] = float32(i%13) * 0.01
 		}
 		run := func(C int) (int64, int64, []uint64) {
-			prev, prevSeen, prevDone := prefillChunkRows, prefillScratchSeen, prefillChunkDone
-			defer func() { prefillChunkRows, prefillScratchSeen, prefillChunkDone = prev, prevSeen, prevDone }()
-			prefillChunkRows = C
+			prev, prevSeen, prevDone := cpuengine.PrefillChunkRows, cpuengine.PrefillScratchSeen, cpuengine.PrefillChunkDone
+			defer func() {
+				cpuengine.PrefillChunkRows, cpuengine.PrefillScratchSeen, cpuengine.PrefillChunkDone = prev, prevSeen, prevDone
+			}()
+			cpuengine.PrefillChunkRows = C
 			var bytes, keys int64
-			prefillScratchSeen = func(ps *prefillPassScratch) { bytes, keys = v1RowBytes(ps) }
+			cpuengine.PrefillScratchSeen = func(ps *prefillPassScratch) { bytes, keys = v1RowBytes(ps) }
 			var allocs []uint64
 			var ms runtime.MemStats
 			runtime.ReadMemStats(&ms)
 			last := ms.TotalAlloc
-			prefillChunkDone = func(i int) {
+			cpuengine.PrefillChunkDone = func(i int) {
 				runtime.ReadMemStats(&ms)
 				if i >= 0 {
 					allocs = append(allocs, ms.TotalAlloc-last)

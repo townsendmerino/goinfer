@@ -47,9 +47,9 @@ func TestKV2_cpuSessionShare(t *testing.T) {
 		return ids, g
 	}
 	sameKV := func(a, b *KVCache, n int) bool {
-		for l := range a.keys {
-			w := a.stride[l]
-			if !slices.Equal(a.keys[l][:n*w], b.keys[l][:n*w]) || !slices.Equal(a.vals[l][:n*w], b.vals[l][:n*w]) {
+		for l := range a.c.KeysBuf {
+			w := a.c.Stride[l]
+			if !slices.Equal(a.c.KeysBuf[l][:n*w], b.c.KeysBuf[l][:n*w]) || !slices.Equal(a.c.ValsBuf[l][:n*w], b.c.ValsBuf[l][:n*w]) {
 				return false
 			}
 		}

@@ -62,7 +62,7 @@ func TestKVCache_TruncateTo_kvShared(t *testing.T) {
 	const layers, kvHeads, headDim = 3, 1, 4
 	kvDim := kvHeads * headDim // nominal = 4
 	c := NewKVCache(layers, kvHeads, headDim, 0, 8, nil)
-	c.manualPos = true                  // gemma4 advances pos explicitly
+	c.c.ManualPos = true                // gemma4 advances pos explicitly
 	narrow := []float32{1, 2, 3, 4}     // layer 0: width 4 (== nominal kvDim)
 	wide := []float32{1, 2, 3, 4, 5, 6} // layer 1: width 6 (per-layer head_dim ≠ nominal)
 	for range 5 {
@@ -218,7 +218,7 @@ func TestLoadSession_rejectsCorrupt(t *testing.T) {
 	// ever sets s.tokens = seq clamped to s.cache.Pos(). The rings themselves stay unpopulated
 	// (count=0), which the M17 "never-written ring" case (kvsnapshot.go) accepts independent of pos.
 	sess.tokens = []int{1, 2, 3}
-	sess.cache.pos = len(sess.tokens) // KV rings unwritten; only the token/pos pairing matters here
+	sess.cache.c.PosN = len(sess.tokens) // KV rings unwritten; only the token/pos pairing matters here
 	blob := sess.Snapshot("model-A")
 
 	if _, err := m.LoadSession(blob, ""); err != nil {

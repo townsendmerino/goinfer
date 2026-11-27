@@ -104,7 +104,7 @@ func newLayerPager(w *darch.Weights, mapping []byte, budget int64) *layerPager {
 // enterLayer is called at the top of the layer loop before layer l is read. It
 // prefetches l and the layer `ahead` of it (so the next fault overlaps this layer's
 // compute) and releases the layer `window` behind (keeping resident RAM bounded).
-func (p *layerPager) enterLayer(l int) {
+func (p *layerPager) EnterLayer(l int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, t := range [2]int{l, l + p.ahead} {
@@ -129,7 +129,7 @@ func (p *layerPager) enterLayer(l int) {
 // so resident RAM returns to ~zero between tokens and stays bounded by `window+ahead`
 // during the loop (the cross-token re-read of one window is negligible for a model
 // that doesn't fit anyway). Idempotent.
-func (p *layerPager) finishLayers() {
+func (p *layerPager) FinishLayers() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for l := range p.state {

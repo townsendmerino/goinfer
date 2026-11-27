@@ -86,7 +86,7 @@ func rowPadCells(t *testing.T, m *Model, n int) (map[string][][]float32, *KVCach
 	for _, id := range ids[n-4:] {
 		out["prefill+decode"] = append(out["prefill+decode"], step(pc, id))
 	}
-	for l := range pc.numLayers {
+	for l := range pc.c.NumLayers {
 		k, v, _ := pc.LayerKV(l)
 		out["bridge"] = append(out["bridge"], k, v)
 	}
@@ -154,17 +154,17 @@ func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 				pc = c
 				return o
 			})
-			if (pc.rowPad > 0) != fx.padded {
-				t.Fatalf("%s %s: the pad-on prefill cache has rowPad %d, want padded=%v", fx.dir, arm.name, pc.rowPad, fx.padded)
+			if (pc.c.RowPad > 0) != fx.padded {
+				t.Fatalf("%s %s: the pad-on prefill cache has rowPad %d, want padded=%v", fx.dir, arm.name, pc.c.RowPad, fx.padded)
 			}
 			cells := make([]string, 0, len(ref))
 			for c := range ref {
 				cells = append(cells, c)
 			}
 			slices.Sort(cells)
-			t.Logf("%s %s: rowPad %d, cells %v", fx.dir, arm.name, pc.rowPad, cells)
-			if rc.rowPad != 0 {
-				t.Fatalf("%s %s: the pad-off cache is padded (%d)", fx.dir, arm.name, rc.rowPad)
+			t.Logf("%s %s: rowPad %d, cells %v", fx.dir, arm.name, pc.c.RowPad, cells)
+			if rc.c.RowPad != 0 {
+				t.Fatalf("%s %s: the pad-off cache is padded (%d)", fx.dir, arm.name, rc.c.RowPad)
 			}
 			for cell := range got {
 				if _, ok := ref[cell]; !ok {
@@ -188,8 +188,8 @@ func TestKVRowPad_padAppliesWhereEligible(t *testing.T) {
 		f16, f32 := f1Arms(m)
 		for _, mm := range []*Model{f32, f16} {
 			c := rowPadArms(t, mm, true, rowPadTestAlign, func() *KVCache { return mm.NewCache(16) })
-			if (c.rowPad > 0) != fx.padded {
-				t.Errorf("%s: rowPad %d, want padded=%v", fx.dir, c.rowPad, fx.padded)
+			if (c.c.RowPad > 0) != fx.padded {
+				t.Errorf("%s: rowPad %d, want padded=%v", fx.dir, c.c.RowPad, fx.padded)
 			}
 		}
 	}
@@ -219,8 +219,8 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadSession: %v", err)
 			}
-			if (back.cache.rowPad > 0) != padded {
-				t.Fatalf("restored cache rowPad %d, want padded=%v", back.cache.rowPad, padded)
+			if (back.cache.c.RowPad > 0) != padded {
+				t.Fatalf("restored cache rowPad %d, want padded=%v", back.cache.c.RowPad, padded)
 			}
 			lg, err := f32.forward(next, back.cache)
 			if err != nil {
@@ -262,10 +262,10 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 				}
 				priced := memprice.CPUKVBytesForCtx(arm.m.w.Arch, ctx, arm.f16, false)
 				switch {
-				case c.rowPad == 0 && priced != unpadded:
+				case c.c.RowPad == 0 && priced != unpadded:
 					t.Errorf("%s %s: unpadded cache, but the plan prices %d against the unpadded %d", fx.dir, arm.name, priced, unpadded)
-				case c.rowPad > 0 && (priced != c.rowPadBytesHeld() || priced <= unpadded):
-					t.Errorf("%s %s: the padded cache holds %d bytes at %d positions; the plan prices %d (unpadded %d)", fx.dir, arm.name, c.rowPadBytesHeld(), ctx, priced, unpadded)
+				case c.c.RowPad > 0 && (priced != c.c.RowPadBytesHeld() || priced <= unpadded):
+					t.Errorf("%s %s: the padded cache holds %d bytes at %d positions; the plan prices %d (unpadded %d)", fx.dir, arm.name, c.c.RowPadBytesHeld(), ctx, priced, unpadded)
 				}
 				return 0
 			})

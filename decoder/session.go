@@ -74,12 +74,12 @@ func (s *Session) UseAdapter(name string) error {
 	if rt == nil {
 		return fmt.Errorf("decoder: no compute-time adapter %q loaded", name)
 	}
-	s.cache.lora = rt
+	s.cache.setLora(rt)
 	return nil
 }
 
 // ClearAdapter reverts this session to the base (merged/no-adapter) projections.
-func (s *Session) ClearAdapter() { s.cache.lora = nil }
+func (s *Session) ClearAdapter() { s.cache.setLora(nil) }
 
 // Reset drops all cached KV, returning the session to empty without freeing the
 // backing arrays (so the next generation re-grows into them).

@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math/rand/v2"
 	"testing"
 
@@ -50,13 +51,13 @@ func TestGatedMLPFusedGateUp_bitIdentical(t *testing.T) {
 		for _, width := range []int{1, 2, 3, 5, 8, 16, 0} {
 			t.Run(fmt.Sprintf("N%dK%d/width%d", sh.N, sh.K, width), func(t *testing.T) {
 				linalg.SetParallelWidth(width)
-				scr := &decodeScratch{gate: make([]float32, sh.N), up: make([]float32, sh.N)}
+				scr := cpuengine.NewGateUpScratch(sh.N)
 				if !gatedMLPFusedGateUp(h, lw, arch, scr) {
 					t.Fatal("fused path declined a canonical W4A8 SiLU MLP")
 				}
 				for i := range wantGate {
-					if scr.gate[i] != wantGate[i] {
-						t.Fatalf("gate[%d] = %v, unfused %v — not bit-identical", i, scr.gate[i], wantGate[i])
+					if scr.GateSlice()[i] != wantGate[i] {
+						t.Fatalf("gate[%d] = %v, unfused %v — not bit-identical", i, scr.GateSlice()[i], wantGate[i])
 					}
 				}
 			})
@@ -74,11 +75,11 @@ func TestGatedMLPFusedGateUp_declines(t *testing.T) {
 		UpProj:   linalg.QuantizeInt4(w, N, K, 32),
 	}
 	h := make([]float32, K)
-	scr := &decodeScratch{gate: make([]float32, N), up: make([]float32, N)}
+	scr := cpuengine.NewGateUpScratch(N)
 	if gatedMLPFusedGateUp(h, lw, &darch.Architecture{Act: darch.ActGeluTanh}, scr) {
 		t.Error("fused path ran for a GeGLU activation")
 	}
-	small := &decodeScratch{gate: make([]float32, N-1), up: make([]float32, N)}
+	small := cpuengine.NewGateUpScratch(N - 1)
 	if gatedMLPFusedGateUp(h, lw, &darch.Architecture{Act: darch.ActSiLU}, small) {
 		t.Error("fused path ran with a gate scratch shorter than N")
 	}

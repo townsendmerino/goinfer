@@ -44,10 +44,10 @@ func TestConvWin_noSlabRetained(t *testing.T) {
 		hi := lo + uintptr(4*len(mixed))
 		st := newDeltaState(p)
 		deltaNetCoreN(make([]float32, K*valueDim), mixed, vec(K*nv), vec(K*nv), vec(K*valueDim), K, m.w.Layers[layer].Delta, p, arch.NormEps, st)
-		if len(st.convWin) != min(K, p.ConvKernel-1) {
-			t.Fatalf("K=%d: the window holds %d rows", K, len(st.convWin))
+		if len(st.ConvWin) != min(K, p.ConvKernel-1) {
+			t.Fatalf("K=%d: the window holds %d rows", K, len(st.ConvWin))
 		}
-		for i, row := range st.convWin {
+		for i, row := range st.ConvWin {
 			if a := uintptr(unsafe.Pointer(&row[0])); a >= lo && a < hi {
 				t.Errorf("K=%d: window row %d is a slice of the pass's slab", K, i)
 			}
@@ -71,8 +71,8 @@ func TestConvWin_qwen35BitIdentical(t *testing.T) {
 		if !m.qwen35BatchN(len(ids), cache) {
 			t.Fatal("the fixture does not take the batched Qwen3.5 pass")
 		}
-		if cache.scr == nil {
-			cache.scr = newDecodeScratch(m.w.Arch, cache.knobs)
+		if cache.c.Scr == nil {
+			cache.c.Scr = newDecodeScratch(m.w.Arch, cache.c.Knobs)
 		}
 		hn, err := m.runLayersQwen35N(context.Background(), m.embedN(ids), cache)
 		if err != nil {

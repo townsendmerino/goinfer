@@ -42,9 +42,9 @@ func TestSession_snapshotAdapterContinuation(t *testing.T) {
 	kv := func(s *Session) []float32 {
 		c := s.cache
 		var out []float32
-		for l := 0; l < c.numLayers; l++ {
-			out = append(out, c.keys[l][:c.pos*c.kvDim]...)
-			out = append(out, c.vals[l][:c.pos*c.kvDim]...)
+		for l := 0; l < c.c.NumLayers; l++ {
+			out = append(out, c.c.KeysBuf[l][:c.c.PosN*c.c.KVDim]...)
+			out = append(out, c.c.ValsBuf[l][:c.c.PosN*c.c.KVDim]...)
 		}
 		return out
 	}

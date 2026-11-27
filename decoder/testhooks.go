@@ -9,6 +9,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"slices"
@@ -39,20 +40,20 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q: a layer has an operation its contributions do not cover", a.Name)
 	}
 	nL := a.NumLayers
-	cache.subCapture = true
-	cache.subAttn = make([][]float32, nL)
-	cache.subMLP = make([][]float32, nL)
-	cache.subMLPpre = make([][]float32, nL)
-	cache.subCtx = make([][]float32, nL)
+	cache.c.SubCapture = true
+	cache.c.SubAttn = make([][]float32, nL)
+	cache.c.SubMLP = make([][]float32, nL)
+	cache.c.SubMLPPre = make([][]float32, nL)
+	cache.c.SubCtx = make([][]float32, nL)
 	defer func() {
-		cache.subCapture = false
-		cache.subAttn, cache.subMLP, cache.subMLPpre, cache.subCtx = nil, nil, nil, nil
+		cache.c.SubCapture = false
+		cache.c.SubAttn, cache.c.SubMLP, cache.c.SubMLPPre, cache.c.SubCtx = nil, nil, nil, nil
 	}()
 	lg, ferr := m.forward(id, cache)
 	if ferr != nil {
 		return nil, nil, nil, nil, nil, ferr
 	}
-	return slices.Clone(lg), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
+	return slices.Clone(lg), cache.c.SubAttn, cache.c.SubMLP, cache.c.SubCtx, cache.c.SubMLPPre, nil
 }
 
 // LayerCaptureForTest is one token's per-layer CPU intermediates from ForwardLayerCaptureLogitsForTest, each [layer][width]:
@@ -78,26 +79,26 @@ func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]floa
 	for l := range all {
 		all[l] = l
 	}
-	cache.subCapture = true
-	cache.subAttn, cache.subMLP, cache.subMLPpre = make([][]float32, nL), make([][]float32, nL), make([][]float32, nL)
-	cache.subCtx, cache.subPLE = make([][]float32, nL), make([][]float32, nL)
-	cache.captureLayers, cache.captured = all, make([][]float32, nL)
+	cache.c.SubCapture = true
+	cache.c.SubAttn, cache.c.SubMLP, cache.c.SubMLPPre = make([][]float32, nL), make([][]float32, nL), make([][]float32, nL)
+	cache.c.SubCtx, cache.c.SubPLE = make([][]float32, nL), make([][]float32, nL)
+	cache.c.CaptureLayers, cache.c.Captured = all, make([][]float32, nL)
 	defer func() {
-		cache.subCapture = false
-		cache.subAttn, cache.subMLP, cache.subMLPpre, cache.subCtx, cache.subPLE = nil, nil, nil, nil, nil
-		cache.captureLayers, cache.captured = nil, nil
+		cache.c.SubCapture = false
+		cache.c.SubAttn, cache.c.SubMLP, cache.c.SubMLPPre, cache.c.SubCtx, cache.c.SubPLE = nil, nil, nil, nil, nil
+		cache.c.CaptureLayers, cache.c.Captured = nil, nil
 	}()
 	lg, err := m.forward(id, cache)
 	if err != nil {
 		return nil, LayerCaptureForTest{}, err
 	}
-	c := LayerCaptureForTest{Ctx: cache.subCtx, Attn: cache.subAttn, MLPPre: cache.subMLPpre, MLP: cache.subMLP, Out: cache.captured,
+	c := LayerCaptureForTest{Ctx: cache.c.SubCtx, Attn: cache.c.SubAttn, MLPPre: cache.c.SubMLPPre, MLP: cache.c.SubMLP, Out: cache.c.Captured,
 		Scalar: make([]float32, nL)}
 	for l := range c.Scalar {
 		c.Scalar[l] = m.w.Layers[l].LayerScalar
 	}
 	if a.Gemma4 != nil && a.Gemma4.HiddenSizePerLayerInput > 0 {
-		c.PLE = cache.subPLE
+		c.PLE = cache.c.SubPLE
 	}
 	return slices.Clone(lg), c, nil
 }
@@ -198,10 +199,10 @@ func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, res Re
 // own setting), so a cross-package gate can run the CPU prefill with them; nil clears them.
 func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
 	if rows == nil {
-		c.deepstack = nil
+		c.c.Deepstack = nil
 		return
 	}
-	c.deepstack = &deepstackRows{spans: []ImageSpan{{Pos: start, Len: n}}, rows: rows}
+	c.c.Deepstack = &deepstackRows{Spans: []ImageSpan{{Pos: start, Len: n}}, Rows: rows}
 }
 
 // ResidentCommitIDsForTest records ids as the bound slot's sequence, as the upload bridge does when its decode ends.
@@ -247,19 +248,19 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 	}
 	be := &cpuBackend{}
 	gu := make([]float32, 2*gm.MoeInter)
-	matmul(be, &gm.ExpertsGateUp[e], xe, gu, 1)
+	cpuengine.Matmul(be, &gm.ExpertsGateUp[e], xe, gu, 1)
 	mid := make([]float32, gm.MoeInter)
 	for i := 0; i < gm.MoeInter; i++ {
 		mid[i] = normact.GELUTanh(gu[i]) * gu[gm.MoeInter+i]
 	}
 	out := make([]float32, m.w.Arch.HiddenDim)
-	matmul(be, &gm.ExpertsDown[e], mid, out, 1)
+	cpuengine.Matmul(be, &gm.ExpertsDown[e], mid, out, 1)
 	return out, &gm.ExpertsGateUp[e], &gm.ExpertsDown[e], gm.MoeInter, m.w.Arch.HiddenDim, true
 }
 
 // Gemma4MoERouterForTest exposes a gemma4 MoE layer's f32 router projection (row-major [nE, hidden]) and its selection bias
 // (zeros: gemma4 has no router bias) for the cuda resident-router idx-equality test. That test replays captured router inputs
-// (routerRnBuf) through the CUDA selection kernels and compares resident idx[] with the CPU idx[], which isolates a routing flip
+// (cpuengine.RouterRnBuf) through the CUDA selection kernels and compares resident idx[] with the CPU idx[], which isolates a routing flip
 // from any expert-GEMV numeric difference. ok=false for a non-gemma4 model, a dense (non-MoE) layer, an out-of-range layer, or a
 // router not held as f32.
 func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, topK, hidden int, ok bool) {
@@ -309,25 +310,27 @@ func SetGemma4HiddenCaptureForTest(on bool) {
 // largest rejected expert's), in RouterCaptureForTest's order and index. It is the MoE robustness signal a noise-floor check
 // reads: a fixture whose margin sits below the int4-vs-f32 routing perturbation can flip top-k under quant and cannot gate a
 // resident router, however correct the port.
-func RouterMarginForTest() []float32 { return routerMarginBuf }
+func RouterMarginForTest() []float32 { return cpuengine.RouterMarginBuf }
 
 // Gemma4MoECaptureForTest returns the CPU per-decision wts / x1 / x2 (same order as RouterCaptureForTest).
 func Gemma4MoECaptureForTest() (wts, x1, x2 [][]float32) {
-	return routerWtsBuf, routerX1Buf, routerX2Buf
+	return cpuengine.RouterWtsBuf, cpuengine.RouterX1Buf, cpuengine.RouterX2Buf
 }
 
 // RouterCaptureForTest returns the captured per-decision selected experts and router inputs (same
 // order/index). Sibling to SetRouterCaptureForTest for the cross-package (cuda) router-first gate.
-func RouterCaptureForTest() (idx [][]int, rn [][]float32) { return routerCaptureBuf, routerRnBuf }
+func RouterCaptureForTest() (idx [][]int, rn [][]float32) {
+	return cpuengine.RouterCaptureBuf, cpuengine.RouterRnBuf
+}
 
 // SetRouterCaptureForTest toggles router capture and (when enabling) clears the buffers. Exported so
 // the CUDA resident-router unit test (package cuda) can drive a CPU forward, capture idx/rn, and
 // replay rn through the device kernels — it cannot touch these unexported vars directly.
 func SetRouterCaptureForTest(on bool) {
-	routerCapture = on
+	cpuengine.RouterCapture = on
 	if on {
-		routerCaptureBuf, routerRnBuf, routerMarginBuf = nil, nil, nil
-		routerWtsBuf, routerX1Buf, routerX2Buf = nil, nil, nil
+		cpuengine.RouterCaptureBuf, cpuengine.RouterRnBuf, cpuengine.RouterMarginBuf = nil, nil, nil
+		cpuengine.RouterWtsBuf, cpuengine.RouterX1Buf, cpuengine.RouterX2Buf = nil, nil, nil
 	}
 }
 
@@ -337,26 +340,26 @@ func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return 
 
 // SetLayerInputsForTest makes the next single-token forwards on c start layer l from in[l] wherever in[l] is non-nil (each row
 // [hidden]); nil clears it. c holds the slice until it is cleared, so the caller sets it before each token it isolates.
-func (c *KVCache) SetLayerInputsForTest(in [][]float32) { c.layerInputs = in }
+func (c *KVCache) SetLayerInputsForTest(in [][]float32) { c.c.LayerInputs = in }
 
 // SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
 // the resident W8A8 path.
-func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
+func SetSSMQ8CPU(v bool) { cpuengine.SSMQ8CPU = v }
 
 // SetSSMForceF32 toggles the CPU reference's f32 SSM accumulation (the gated-norm precision-localization seam). It and
 // SetSSMQ8CPU are exports because gpu/ssm_kernel_control_test.go needs the staged webgpu backend and so lives in package gpu,
 // which cannot reach decoder's unexported variables.
-func SetSSMForceF32(v bool) { ssmForceF32 = v }
+func SetSSMForceF32(v bool) { cpuengine.SSMForceF32 = v }
 
 // SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
-func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
+func SetMambaCapHook(f func(proj, gated []float32)) { cpuengine.MambaCapHook = f }
 
 // GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (mamba2.GatedRMSNormGrouped, under SetSSMForceF32's
 // setting): x, already y·silu(z), normalized in place per group, times weight. A backend's gated-norm kernel is gated against
 // it at group counts the tiny fixtures lack.
 func GatedRMSNormGroupedForTest(x, weight []float32, nGroups int, eps float64) {
-	mamba2.GatedRMSNormGrouped(x, weight, nGroups, eps, ssmForceF32)
+	mamba2.GatedRMSNormGrouped(x, weight, nGroups, eps, cpuengine.SSMForceF32)
 }
 
 // DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
@@ -427,7 +430,7 @@ func DeltaNetStepForTest(be Backend, h []float32, w *DeltaNetWeightsForTest, hid
 	if be == nil {
 		be = &cpuBackend{}
 	}
-	return gatedDeltaNetStep(be, h, w.w, w.p, hidden, eps, st.s)
+	return cpuengine.GatedDeltaNetStep(be, h, w.w, w.p, hidden, eps, st.s)
 }
 
 // DeltaNetWeightsForTest builds the CPU weight struct from plain slices, so a backend test can
@@ -463,7 +466,7 @@ func NewDeltaNetForTest(convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numVa
 		NormW:     normW,
 		OutProj:   linalg.WrapF32(outProj, hidden, valueDim),
 	}
-	return &DeltaNetWeightsForTest{w: w, p: p}, &DeltaStateForTest{s: newDeltaState(p)}
+	return &DeltaNetWeightsForTest{w: w, p: p}, &DeltaStateForTest{s: cpuengine.NewDeltaState(p)}
 }
 
 // SetDeltaCapHook installs/clears the DeltaNet step-3 capture seam. A backend package cannot
@@ -571,15 +574,15 @@ func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, i
 func SetInt4FloatActForTest(on bool) {
 	int4FloatActForTest = on
 	if on {
-		int4FloatActMissed.Store(0)
-		w4a8BatchEnabled, cpuBatchFusedW4A8 = false, false
+		cpuengine.Int4FloatActMissed.Store(0)
+		w4a8BatchEnabled, cpuengine.CPUBatchFusedW4A8 = false, false
 		return
 	}
-	w4a8BatchEnabled, cpuBatchFusedW4A8 = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault), true
+	w4a8BatchEnabled, cpuengine.CPUBatchFusedW4A8 = envBoolDefault("GOINFER_W4A8_BATCH", cpuengine.W4A8BatchDefault), true
 }
 
-// Int4FloatActMissedForTest reports int4FloatActMissed.
-func Int4FloatActMissedForTest() int64 { return int4FloatActMissed.Load() }
+// Int4FloatActMissedForTest reports cpuengine.Int4FloatActMissed.
+func Int4FloatActMissedForTest() int64 { return cpuengine.Int4FloatActMissed.Load() }
 
 // LogitsFromHiddenForTest is logitsFromHidden on a copy of h (a residual before the final norm): the CPU's final norm, LM
 // head and softcap, for a gate that runs a resident's residual through the CPU head.
@@ -598,15 +601,15 @@ func (m *Model) Gemma4BidirImageRowsForTest(ids []int, imageEmbeds []float32, sp
 // layer, the residual after that layer, as HF's hidden_states[l+1] is. nil disarms.
 func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 	if layers == nil {
-		c.captureLayers, c.captured = nil, nil
+		c.c.CaptureLayers, c.c.Captured = nil, nil
 		return
 	}
-	c.captureLayers = slices.Clone(layers)
-	c.captured = make([][]float32, len(layers))
+	c.c.CaptureLayers = slices.Clone(layers)
+	c.c.Captured = make([][]float32, len(layers))
 }
 
 // CapturedForTest returns the rows SetCaptureLayersForTest armed the cache to record, one slice per requested layer.
-func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }
+func (c *KVCache) CapturedForTest() [][]float32 { return c.c.Captured }
 
 // SetStreamDirSwapForTest turns on StreamTranscodeDir's planted defect (layers 0 and 1 written in each other's place) and
 // returns the restore.
@@ -639,10 +642,10 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 	}
 	cache := m.NewCache(len(ids) + len(path))
 	if deep != nil {
-		cache.deepstack = &deepstackRows{spans: spans, rows: deep}
+		cache.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 	}
 	logits, err := m.prefillLogitsQwenVLSpans(ctx, ids, spans, feats, mropePos, cache)
-	cache.deepstack = nil
+	cache.c.Deepstack = nil
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +684,7 @@ func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)
 	attnScoreStatsForTest.Store(st)
 	return func() (int64, int64, float64) {
 		attnScoreStatsForTest.Store(nil)
-		return st.n.Load(), st.over15.Load(), math.Float64frombits(st.maxAbsBits.Load())
+		return st.Total.Load(), st.Over15.Load(), math.Float64frombits(st.MaxBits.Load())
 	}
 }
 
@@ -717,17 +720,19 @@ func (m *Model) WholePromptScratchBytesForTest(promptTokens int) int64 {
 
 // StartMoESelTraceForTest records every moeMLP call's routing (top-k indices and weights) in forward order until
 // TakeMoESelTraceForTest; StopMoESelTraceForTest turns it off.
-func StartMoESelTraceForTest() { moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{} }
+func StartMoESelTraceForTest() {
+	cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = [][]int{}, [][]float32{}
+}
 
 // TakeMoESelTraceForTest returns the routing recorded since the last call, and keeps recording.
 func TakeMoESelTraceForTest() ([][]int, [][]float32) {
-	s, w := moeSelTrace, moeWtsTrace
-	moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{}
+	s, w := cpuengine.MoESelTrace, cpuengine.MoEWtsTrace
+	cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = [][]int{}, [][]float32{}
 	return s, w
 }
 
 // StopMoESelTraceForTest stops the recording.
-func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
+func StopMoESelTraceForTest() { cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = nil, nil }
 
 // SetResidentFeaturesForTest adds the given features to backend's declared set and returns a function that restores it. A backend's build
 // seam that is gated but not yet declared is reachable from its own
@@ -775,23 +780,23 @@ func SetResolveKVHookForTest(f func(backend string, opts Options) (delivered, re
 type kvReadback struct{ n32, n16, n8, nScale int64 }
 
 func readbackCPUKV(c *KVCache) (r kvReadback) {
-	for l := range c.numLayers {
-		r.n32 += int64(len(c.keys[l]) + len(c.vals[l]))
-		if c.keysH != nil {
-			r.n16 += int64(len(c.keysH[l]) + len(c.valsH[l]))
+	for l := range c.c.NumLayers {
+		r.n32 += int64(len(c.c.KeysBuf[l]) + len(c.c.ValsBuf[l]))
+		if c.c.KeysH != nil {
+			r.n16 += int64(len(c.c.KeysH[l]) + len(c.c.ValsH[l]))
 		}
-		if c.keysQ != nil {
-			r.n8 += int64(len(c.keysQ[l]) + len(c.valsQ[l]))
-			r.nScale += int64(len(c.keyScale[l]) + len(c.valScale[l]))
+		if c.c.KeysQ != nil {
+			r.n8 += int64(len(c.c.KeysQ[l]) + len(c.c.ValsQ[l]))
+			r.nScale += int64(len(c.c.KeyScale[l]) + len(c.c.ValScale[l]))
 		}
-		if c.mlaLatent != nil {
-			r.n32 += int64(len(c.mlaLatent[l]))
+		if c.c.MLALatent != nil {
+			r.n32 += int64(len(c.c.MLALatent[l]))
 		}
-		if rg := c.rings[l]; rg != nil {
-			r.n32 += int64(len(rg.k) + len(rg.v))
-			r.n16 += int64(len(rg.kh) + len(rg.vh))
-			r.n8 += int64(len(rg.kq) + len(rg.vq))
-			r.nScale += int64(len(rg.ksc) + len(rg.vsc))
+		if rg := c.c.Rings[l]; rg != nil {
+			r.n32 += int64(len(rg.K) + len(rg.V))
+			r.n16 += int64(len(rg.KH) + len(rg.VH))
+			r.n8 += int64(len(rg.KQ) + len(rg.VQ))
+			r.nScale += int64(len(rg.KSC) + len(rg.VSC))
 		}
 	}
 	return r
@@ -907,8 +912,8 @@ const WebGPUVkFixed = memprice.WebGPUVkFixed
 func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kSc, vSc []float32) ([]float32, error) {
 	a := m.w.Arch
 	cache := m.NewCache(pos + 1)
-	if cache.quant != kvI8 {
-		return nil, fmt.Errorf("decoder: AttendInt8ForTest needs an int8 CPU cache (Options.KVQuant \"i8\"), this one is quant %v", cache.quant)
+	if cache.c.Quant != kvI8 {
+		return nil, fmt.Errorf("decoder: AttendInt8ForTest needs an int8 CPU cache (Options.KVQuant \"i8\"), this one is quant %v", cache.c.Quant)
 	}
 	nH, hd := a.HeadsAt(layer), a.HeadDim
 	kvDim, nKV := a.NumKVHeads*hd, a.NumKVHeads
@@ -926,12 +931,12 @@ func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kS
 	if !found || p.Order != attnBatchedAcc64 {
 		return nil, fmt.Errorf("decoder: AttendInt8ForTest: layer %d's attention is not the per-token batched order", layer)
 	}
-	cache.keysQ[layer], cache.valsQ[layer] = slices.Clone(kQ), slices.Clone(vQ)
-	cache.keyScale[layer], cache.valScale[layer] = slices.Clone(kSc), slices.Clone(vSc)
-	lk, lv := cache.scr.localBufs((pos + 1) * kvDim)
-	nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
+	cache.c.KeysQ[layer], cache.c.ValsQ[layer] = slices.Clone(kQ), slices.Clone(vQ)
+	cache.c.KeyScale[layer], cache.c.ValScale[layer] = slices.Clone(kSc), slices.Clone(vSc)
+	lk, lv := cache.c.Scr.LocalBufs((pos + 1) * kvDim)
+	nKeys := cache.c.DequantGlobalLayer(layer, kvDim, lk, lv)
 	ctx := make([]float32, nH*hd)
-	pool := cache.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-	attendBatchedHeadsP(slices.Clone(q), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, p, a, true, pool)
+	pool := cache.c.Scr.HeadWorkerPool(nH, 1, nKeys, hd, false, true)
+	cpuengine.AttendBatchedHeadsP(slices.Clone(q), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, &cache.c, layer, pos, 1, p, a, true, pool)
 	return ctx, nil
 }

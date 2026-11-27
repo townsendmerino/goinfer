@@ -424,10 +424,10 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 
 		cache := m.NewCache(len(ids) + maxTokens)
 		if deep != nil {
-			cache.deepstack = &deepstackRows{spans: spans, rows: deep}
+			cache.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 		}
 		logits, err := m.prefillLogitsQwenVLSpans(ctx, ids, spans, feats, mropePos, cache)
-		cache.deepstack = nil // the prefill's alone; nothing after it may see the sets
+		cache.c.Deepstack = nil // the prefill's alone; nothing after it may see the sets
 		if err != nil {
 			g.err = err
 			return

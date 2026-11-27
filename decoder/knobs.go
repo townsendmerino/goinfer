@@ -192,3 +192,11 @@ func envKnob(name string) (string, bool) { return os.LookupEnv(name) }
 // ssmResidentEnv reports whether GOINFER_SSM_RESIDENT is set in the environment (a nil snapshot's reading): the model-free
 // admission's. An Architecture carries no knob snapshot; a loaded model's admission reads its own (Model.admitFacts).
 func ssmResidentEnv() bool { v, _ := envKnob(knobSSMResident); return v != "" }
+
+func (k *knobSet) AttnGrouped() bool                   { return k.attnGrouped() }
+func (k *knobSet) FusedAttention() bool                { return k.fusedAttention() }
+func (k *knobSet) MLANaive() bool                      { return k.mlaNaive() }
+func (k *knobSet) MoEExpertMajor() bool                { return k.moeExpertMajor() }
+func (k *knobSet) CPUFastAttention() bool              { return k.cpuFastAttention() }
+func (k *knobSet) BatchedPrefillDisabled() bool        { return k.get(knobBatchedPrefill) == "0" }
+func (k *knobSet) PositiveInt(name string) (int, bool) { return k.positiveInt(name) }

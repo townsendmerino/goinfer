@@ -30,19 +30,19 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	ring.enableRings(W, arch.IsGlobalLayer)
+	ring.c.EnableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(41))
 
 	// Turn 1: fill the ring past its window, so the assembled window is shorter than maxKeys.
 	hist := randVec(rng, startPos*kvDim)
-	ring.commitBatch(0, 0, startPos, hist, hist)
-	ring.advanceTo(startPos)
+	ring.c.CommitBatch(0, 0, startPos, hist, hist)
+	ring.c.AdvanceTo(startPos)
 
 	// Turn 2: a long divergent suffix — the batched prefill of K new positions.
 	k, v, q := randVec(rng, K*kvDim), randVec(rng, K*kvDim), randVec(rng, K*qDim)
 	alk := make([]float32, maxKeys*kvDim)
 	alv := make([]float32, maxKeys*kvDim)
-	base, nRows := ring.batchReadLocal(0, startPos, K, k, v, alk, alv)
+	base, nRows := ring.c.BatchReadLocal(0, startPos, K, k, v, alk, alv)
 	if nRows >= maxKeys {
 		t.Fatalf("the premise broke: the ring window is %d rows, not shorter than maxKeys %d — "+
 			"the ring has not wrapped, so this is a cold-prefill shape", nRows, maxKeys)
@@ -89,16 +89,16 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false })
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	ring.enableRings(W, arch.IsGlobalLayer)
+	ring.c.EnableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(42))
 	hist := randVec(rng, startPos*kvDim)
-	ring.commitBatch(0, 0, startPos, hist, hist)
-	ring.advanceTo(startPos)
+	ring.c.CommitBatch(0, 0, startPos, hist, hist)
+	ring.c.AdvanceTo(startPos)
 
 	k, v, q := randVec(rng, K*kvDim), randVec(rng, K*kvDim), randVec(rng, K*qDim)
 	alk := make([]float32, maxKeys*kvDim)
 	alv := make([]float32, maxKeys*kvDim)
-	base, nRows := ring.batchReadLocal(0, startPos, K, k, v, alk, alv)
+	base, nRows := ring.c.BatchReadLocal(0, startPos, K, k, v, alk, alv)
 	// wantFused=false: this call passes useAcc64=true, which needs `scores` (MatmulQKAcc64 writes
 	// into it) even though fusedOK would otherwise be false anyway for a different reason (useAcc64).
 	pool := newHeadWorkerPool(1, K, maxKeys, hd, false)

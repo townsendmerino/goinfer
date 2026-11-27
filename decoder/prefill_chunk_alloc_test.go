@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,9 +45,9 @@ func chunkWorkingSet(m *Model, C int) int64 {
 // forced collection at every boundary, minus the live heap before the prefill.
 func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChunk, bigPerChunk []int64, peakLive int64) {
 	t.Helper()
-	prevC, prevHook := prefillChunkRows, prefillChunkDone
-	defer func() { prefillChunkRows, prefillChunkDone = prevC, prevHook }()
-	prefillChunkRows = C
+	prevC, prevHook := cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone
+	defer func() { cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone = prevC, prevHook }()
+	cpuengine.PrefillChunkRows = C
 	var mallocs, lastMallocs, big, lastBig uint64
 	read := func() (total, heap uint64) {
 		if live {
@@ -61,7 +62,7 @@ func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChu
 	t0, base := read()
 	last := t0
 	lastMallocs, lastBig = mallocs, big
-	prefillChunkDone = func(chunk int) {
+	cpuengine.PrefillChunkDone = func(chunk int) {
 		total, heap := read()
 		if chunk >= 0 {
 			perChunk = append(perChunk, int64(total-last))

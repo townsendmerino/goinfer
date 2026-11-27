@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"path/filepath"
@@ -23,7 +24,6 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/config"
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -378,7 +378,7 @@ func (m *Model) FlashDecodeHD96() bool { return m.opts.FlashDecodeHD96 }
 func (m *Model) FlashDecodeHD96Default() bool { return m.opts.FlashDecodeHD96Default }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
-// MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
+// MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: cpuengine.TopK slots is the
 // worst setting for the situation this applies to, since it degenerates to fresh-loading every routed expert every token.
 // allocSlots measures free VRAM and caps-and-logs rather than OOMing, so asking for all is safe. Falls back to
 // GOINFER_MOE_CACHE_SLOTS.
@@ -417,7 +417,7 @@ func (e *pinnedRefusal) Is(target error) bool { return target == ErrPinnedContex
 // a field silently ignored that option). Callers set what is specific to their path (the requested quant, the resolved EOS
 // ids, the file mapping), then apply backend names, knobs, streaming and residency in the order their path needs.
 func modelFromOptions(w *darch.Weights, be Backend, opts Options) *Model {
-	// Stamp the activation group on every quantizable weight: the CPU matmul helpers read it from
+	// Stamp the activation group on every quantizable weight: the CPU cpuengine.Matmul helpers read it from
 	// the weight they hold, whichever backend object they run under.
 	if opts.Quant == "q4k" && opts.ActQuantGroup == 0 {
 		// q4k is per-32 by construction (its Q4_K kind cannot run otherwise); its int8 tensors follow.
@@ -473,7 +473,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	// Model after modelFromOptions and before withResidency, where a backend reads it.
 	ctxFromCaller := opts.ResidentContext > 0
 	be, beErr := NewBackend(opts.Backend)
-	// A nil backend means the name was genuinely unknown: abort rather than panic at the first matmul. A non-nil be with a non-nil
+	// A nil backend means the name was genuinely unknown: abort rather than panic at the first cpuengine.Matmul. A non-nil be with a non-nil
 	// beErr is the CPU-fallback note (webgpu/cuda/metal not built in): keep the cpu backend and surface the note.
 	if be == nil {
 		return nil, beErr
@@ -704,94 +704,13 @@ func (m *Model) Close() error {
 // check placed one line too late produces the same error text and the same swap storm (the discipline fitguard.go's
 // weightAllocs applies to loadWeights).
 func (m *Model) NewCache(capHint int) *KVCache {
+	syncCPUHooks()
 	prefillEnters.Add(1)
-	a := m.w.Arch
-	// An MLA family never writes c.keys[l]/c.vals[l] on any layer (the per-layer compressed latent, c.mlaLatent, set up below, is
-	// the whole store), so reserving capHint*kvDim for them is dead weight. kvCapHint=0 makes the reservation itself match what
-	// happens: an empty slice that ordinary append would still grow correctly if anything ever did write to it.
-	kvCapHint := capHint
-	if a.MLA != nil {
-		kvCapHint = 0
+	var ks cpuengine.KnobSource
+	if m.knobs != nil {
+		ks = m.knobs
 	}
-	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it, f16 (Options.KVQuant == "f16") where kvF16OK does;
-	// see Architecture.kvInt8OK for why a family's own loop must opt in. Either stores its K/V in the arrays setQuant reserves, so
-	// the f32 ones would be dead weight too.
-	quant := kvqF32
-	if m.kvI8 && a.KVInt8OK() {
-		quant = kvI8
-	} else if m.kvH && a.KVF16OK() {
-		quant = kvqF16
-	}
-	if quant != kvqF32 {
-		kvCapHint = 0
-	}
-	// A linear/mamba/conv mixer layer (or one of Nemotron's mlp/moe block kinds) never writes c.keys[l]/c.vals[l] either: its
-	// recurrent state (c.delta/c.mamba/c.conv/c.kda, set up below) is the whole store, so it reserves no K/V capacity.
-	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
-	// A ring layer (ringLayerAt, which also decides enableRings below) never reads or grows its append-forever arrays
-	// either, so it reserves none.
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
-		return a.HasNoAttentionKVAt(l) || a.RingLayerAt(l) || a.Gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
-	})
-	c.reserveWidths(kvCapHint, a.KVDimAt)
-	c.knobs, c.scr = m.knobs, newDecodeScratch(a, m.knobs)
-	// Must precede enableRings so local layers inherit the mode.
-	if quant != kvqF32 {
-		c.setQuant(quant, capHint)
-	}
-	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
-	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
-	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever.
-	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.RingLayerAt(l) })
-	defer c.setRowPad(a, kvCapHint) // after every hybrid and MLA field is set, which it declines
-	if a.Gemma4 != nil {
-		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
-	}
-	if a.Qwen35 != nil {
-		// Hybrid cache: KV for the softmax layers + a recurrent DeltaState for each
-		// linear layer. manualPos because the linear layers never Append.
-		c.manualPos = true
-		c.delta = layerStates(a.NumLayers, a.IsLinearLayer, func() *deltaState { return newDeltaState(*a.Qwen35) })
-	}
-	if a.LFM2 != nil {
-		// Hybrid cache: KV for the attention layers + a rolling conv window for each conv layer. manualPos because the conv layers
-		// never Append, so position cannot be inferred from the KV length.
-		c.manualPos = true
-		c.conv = layerStates(a.NumLayers, a.IsConvLayer, newShortConvState)
-	}
-	if a.Granite != nil {
-		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
-		// each mamba layer. manualPos because the mamba layers never Append.
-		c.manualPos = true
-		mp := archparts.Mamba2Params{NHeads: a.Granite.NHeads, HeadDim: a.Granite.HeadDim, DState: a.Granite.DState, NGroups: a.Granite.NGroups, DConv: a.Granite.DConv, Hidden: a.HiddenDim}
-		c.mamba = layerStates(a.NumLayers, a.IsMambaLayer, func() *mamba2State { return newMamba2State(mp) })
-	}
-	if a.Nemotron != nil {
-		// Single-op-block hybrid: only attention layers touch KV (manualPos), mamba
-		// layers carry a Mamba-2 recurrent state, mlp layers neither.
-		c.manualPos = true
-		mp := archparts.Mamba2Params{NHeads: a.Nemotron.NHeads, HeadDim: a.Nemotron.HeadDim, DState: a.Nemotron.DState, NGroups: a.Nemotron.NGroups, DConv: a.Nemotron.DConv, Hidden: a.HiddenDim}
-		c.mamba = layerStates(a.NumLayers, func(l int) bool { return a.Nemotron.BlockKind[l] == archparts.NemoMamba }, func() *mamba2State { return newMamba2State(mp) })
-	}
-	if a.MLA != nil {
-		// DeepSeek MLA: the cache is the per-layer compressed latent, not full K/V.
-		// manualPos because the forward appends via AppendLatent (not the standard
-		// Append) and advances pos once per token after the full layer sweep.
-		c.manualPos = true
-		c.mlaLatent = make([][]float32, a.NumLayers)
-		for l := range c.mlaLatent {
-			if d := a.KVDimAt(l); d > 0 && capHint > 0 { // reserved as K/V are, so a cache at its context holds what the plan prices and no growth past it
-				c.mlaLatent[l] = make([]float32, 0, capHint*d)
-			}
-		}
-	}
-	if a.KDA != nil {
-		// Bailing Hybrid (Ling 3.0): a third hybrid-cache shape. The MLA layers' latent cache is handled by the a.mla block above
-		// (bailingHybridArchitecture sets both), so only the KDA linear layers' recurrent state needs its own array here.
-		c.manualPos = true
-		c.kda = layerStates(a.NumLayers, a.IsLinearLayer, func() *kdaState { return newKDAState(*a.KDA) })
-	}
-	return c
+	return &KVCache{c: *cpuengine.NewCacheForArch(m.w.Arch, capHint, m.kvI8, m.kvH, ks)}
 }
 
 // embedToken writes the residual-stream embedding for token id into dst ([hidden])
@@ -1081,16 +1000,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	} else {
 		counted := false
 		if c := cost.FromContext(r.ctx); c != nil { // the request asked for its cost; the walker counts into c
-			r.cache.cost, r.cache.costPhase, counted = c, cost.Prefill, true
-			defer func() { r.cache.cost = nil }() // a session's cache outlives this generation
+			r.cache.c.Cost, r.cache.c.CostPhase, counted = c, cost.Prefill, true
+			defer func() { r.cache.c.Cost = nil }() // a session's cache outlives this generation
 		}
-		r.cache.planRequest(len(r.prompt), r.maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
+		r.cache.c.PlanRequest(len(r.prompt), r.maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
 		if r.logits, r.err = m.prefillLogits(r.ctx, r.prompt[r.prefillFrom:], r.cache); r.err != nil {
 			r.g.err = r.err
 			return
 		}
 		if counted {
-			r.cache.costPhase = cost.Decode
+			r.cache.c.CostPhase = cost.Decode
 		}
 	}
 	r.chooseDecodePath()
@@ -1132,7 +1051,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
 	// A generation that counts its cost decodes alone: a batched step's work is not attributed per generation.
 
-	if !r.useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(r.cache) == nil && r.cache.cost == nil {
+	if !r.useGPU && m.cpuBatch != nil && cpuengine.CPUBatchCacheEligible(unwrapCache(r.cache)) == nil && r.cache.c.Cost == nil {
 		r.cb = m.cpuBatch
 		r.cb.enterDecode()
 		defer r.cb.exitDecode()
@@ -1252,14 +1171,3 @@ type Generation struct {
 // channel closes. A cancelled or expired context ends the stream with an error that errors.Is matches against ctx.Err()
 // (context.Canceled or context.DeadlineExceeded), whether it fired before the first token or mid-decode.
 func (g *Generation) Err() error { return g.err }
-
-// layerStates is a hybrid cache's per-layer recurrent state: mk's state for each of the n layers where at holds, nil elsewhere.
-func layerStates[T any](n int, at func(l int) bool, mk func() T) []T {
-	out := make([]T, n)
-	for l := range n {
-		if at(l) {
-			out[l] = mk()
-		}
-	}
-	return out
-}

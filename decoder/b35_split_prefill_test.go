@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"slices"
 	"testing"
@@ -18,8 +19,8 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 		t.Fatalf("load ../testdata/qwen35-tiny: %v", err)
 	}
 	defer m.Close()
-	defer func(a int) { deltaNetMinWork = a }(deltaNetMinWork)
-	deltaNetMinWork = 2
+	defer func(a int) { cpuengine.DeltaNetMinWork = a }(cpuengine.DeltaNetMinWork)
+	cpuengine.DeltaNetMinWork = 2
 
 	const n = 61
 	vocab := m.w.Arch.VocabSize
@@ -60,9 +61,9 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 			}
 		}
 	}
-	before := deltaNetFanouts.Load()
+	before := cpuengine.DeltaNetFanouts.Load()
 	ref := prefill()
-	if deltaNetFanouts.Load() == before {
+	if cpuengine.DeltaNetFanouts.Load() == before {
 		t.Fatal("the one-pass prefill never forked the DeltaNet fan-out: the batched path did not run")
 	}
 	for _, b := range []int{2, 30, n - 4} {
@@ -70,15 +71,15 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 		bits(t, "last-row hidden state", ref.last, got.last)
 		deltas, attn := 0, 0
 		for l := range m.w.Arch.NumLayers {
-			if st := ref.cache.delta[l]; st != nil {
+			if st := ref.cache.c.Delta[l]; st != nil {
 				deltas++
-				gs := got.cache.delta[l]
-				bits(t, "DeltaNet state", st.s, gs.s)
-				if len(st.convWin) != len(gs.convWin) {
-					t.Fatalf("b=%d layer %d: conv window %d rows vs %d", b, l, len(st.convWin), len(gs.convWin))
+				gs := got.cache.c.Delta[l]
+				bits(t, "DeltaNet state", st.S, gs.S)
+				if len(st.ConvWin) != len(gs.ConvWin) {
+					t.Fatalf("b=%d layer %d: conv window %d rows vs %d", b, l, len(st.ConvWin), len(gs.ConvWin))
 				}
-				for i := range st.convWin {
-					bits(t, "conv window", st.convWin[i], gs.convWin[i])
+				for i := range st.ConvWin {
+					bits(t, "conv window", st.ConvWin[i], gs.ConvWin[i])
 				}
 				continue
 			}

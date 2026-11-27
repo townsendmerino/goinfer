@@ -1,14 +1,14 @@
 # P41 — R13's grouped decode attention, on against off, across depth (registration, for Francis before any run)
 
 **Registered 2026-11-09, before any sample.** Owner: `docs/queue-performance.md`, P41. It can settle a default
-(`decoder/cpu_tuning_arm64.go:attnGroupedKernels`, on), so Francis approves it before it runs.
+(`internal/runtime/cpuengine/cpu_tuning_arm64.go:AttnGroupedKernels`, on), so Francis approves it before it runs.
 
 **Question.** On arm64, is grouped attention (`GOINFER_ATTN_GROUPED=1`) still at least as fast as per-head (`=0`) at
 every depth where it runs, and still a win deep? It shipped at 1.32x served at depth 8192; no sweep across depth followed.
 
 **Scope.** It runs only where the query-to-KV head ratio is 6 (`attnGroupedNEONSize`) and from 128 attended keys
 (`attnGroupedMinKeys`). Of the bench models that is Qwen2.5-1.5B alone (0.5B and 7B are 7, phi3-mini 1). On amd64 both arms
-run the per-head path (`decoder/cpu_tuning_other.go:attnGroupedKernels` is off: aikit's grouped kernels are NEON only),
+run the per-head path (`internal/runtime/cpuengine/cpu_tuning_other.go:AttnGroupedKernels` is off: aikit's grouped kernels are NEON only),
 so there is no Linux half until an AVX2 port exists.
 
 **Instrument.** The Mac (M1 Pro), by day, quiet, under the exclusive timing lock. `BenchmarkDecodeAtDepth`'s two arms,

@@ -6,7 +6,7 @@
     "mamba2"
   ],
   "own": [
-    "decoder/forward_nemotron.go",
+    "internal/runtime/cpuengine/forward_nemotron.go",
     "internal/runtime/families/arch_nemotron_h.go",
     "internal/runtime/wbuild/gguf_build_nemotron.go"
   ],
@@ -14,7 +14,7 @@
     "testdata/nemotron-tiny",
     "testdata/nemotron3nano-tiny"
   ],
-  "deps_hash": "sha256:ba82e184379ac50350e04204b52dd16b7d8c9e014afc062a4b8f87f326aaf1b9",
+  "deps_hash": "sha256:4fb45055e5b5b6df5023d3097193c41796e41087c6c62c0b72d67fa19fcd4c45",
   "status": "validated",
   "validated_at": "0b74e671",
   "date": "2026-09-18",

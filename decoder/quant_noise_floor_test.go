@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"io/fs"
 	"math"
 	"os"
@@ -49,12 +50,12 @@ func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 	// router tie flips the top-k, and a flipped expert is a DIFFERENT computation, not a small
 	// numerical error. If routing already disagrees CPU-f32 vs CPU-int4, NO resident kernel can
 	// ever match — the divergence is a fixture property, not a kernel bug.
-	routerCapture = true
-	defer func() { routerCapture = false }()
+	cpuengine.RouterCapture = true
+	defer func() { cpuengine.RouterCapture = false }()
 
 	run := func(m *Model) (logits [][]float32, routes [][]int, margins []float32) {
 		routerCaptureReset() // N-27: clears every buffer AND re-arms the cap
-		routerMarginBuf = nil
+		cpuengine.RouterMarginBuf = nil
 		cache := m.NewCache(len(prompt))
 		for i, tok := range prompt {
 			l, err := m.ForwardForTest(tok, cache)
@@ -63,7 +64,7 @@ func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 			}
 			logits = append(logits, slices.Clone(l))
 		}
-		return logits, routerCaptureBuf, routerMarginBuf
+		return logits, cpuengine.RouterCaptureBuf, cpuengine.RouterMarginBuf
 	}
 	lfAll, rf, mgf := run(mf)
 	l4All, r4, mg4 := run(m4)

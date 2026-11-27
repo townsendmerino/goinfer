@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -152,7 +153,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 
 // prefillScratchBytes is a stated approximation, not a full accounting of every backend's prefill scratch. Two terms:
 //
-//  1. Attention scratch: prefillAttnScratchBudget (scratch.go, 256 MiB) is a real, already-enforced hard cap (the batched-prefill
+//  1. Attention scratch: cpuengine.PrefillAttnScratchBudget (scratch.go, 256 MiB) is a real, already-enforced hard cap (the batched-prefill
 //     worker pool throttles its slot count to stay inside it, prefillAttnWorkersK), so this term is never more than the prefill
 //     path already allows itself.
 //  2. MLP/batched-matmul scratch, the dominant term that budget does not cover: gate/up activations for a batched (M-token)
@@ -161,10 +162,10 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 //     upper bound from the model's dimensions, not a profiled number.
 func prefillScratchBytes(cfg *Config, promptTokens int) int64 {
 	if cfg == nil || cfg.IntermediateDim <= 0 || promptTokens <= 0 {
-		return prefillAttnScratchBudget
+		return cpuengine.PrefillAttnScratchBudget
 	}
 	mlp := int64(2*4) * int64(cfg.IntermediateDim) * int64(promptTokens) // gate + up, f32
-	return prefillAttnScratchBudget + mlp
+	return cpuengine.PrefillAttnScratchBudget + mlp
 }
 
 // hostKVF16 reports whether the CPU (host) KV cache this model builds is f16: requested and allowed for the family.

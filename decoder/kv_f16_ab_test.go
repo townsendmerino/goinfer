@@ -36,7 +36,7 @@ func TestKVF16_F3InProcessAB(t *testing.T) {
 			}
 			set := func(f16 bool) {
 				h.m.kvH = f16
-				if got := h.m.NewCache(16).quant == kvqF16; got != f16 {
+				if got := h.m.NewCache(16).c.Quant == kvqF16; got != f16 {
 					t.Fatalf("arm switch did not take: f16=%v, cache f16=%v", f16, got)
 				}
 			}

@@ -248,7 +248,7 @@ func newExpertPager(w *darch.Weights, mapping []byte, budget int64, giwPath stri
 // A no-op for experts the pager does not manage. Safe to call directly and concurrently (mu is held internally), but in
 // pool mode the caller must also hold Lock() across this call and its subsequent reads of the repointed WeightMat
 // fields, or a concurrent touch() can repoint them mid-read (see readMu).
-func (p *expertPager) touch(key unsafe.Pointer) {
+func (p *expertPager) Touch(key unsafe.Pointer) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.pool != nil {

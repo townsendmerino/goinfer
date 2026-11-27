@@ -2,6 +2,7 @@ package decoder
 
 import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"sync/atomic"
@@ -48,12 +49,12 @@ func runDecodeAttend(t *testing.T, arch *darch.Architecture, cache *KVCache, q [
 	keys, vals := cache.Keys(0), cache.Vals(0)
 	ctx := make([]float32, qDim)
 	pool := []headWorkerScratch{{
-		qh: make([]float32, hd), ch: make([]float32, hd),
-		scores:      make([]float32, nKeys),
-		avAcc:       make([]float64, hd),
-		groupScores: make([]float32, nKeys*attnGroupedNEONSize),
-		groupCtx:    make([]float32, hd*attnGroupedNEONSize),
-		groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
+		QH: make([]float32, hd), CH: make([]float32, hd),
+		Scores:      make([]float32, nKeys),
+		AvAcc:       make([]float64, hd),
+		GroupScores: make([]float32, nKeys*attnGroupedNEONSize),
+		GroupCtx:    make([]float32, hd*attnGroupedNEONSize),
+		GroupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 	}}
 	// pos = nKeys-1 (0-indexed): this decode step attends to every key already
 	// appended, matching attendToken's own convention (Append happens
@@ -67,9 +68,9 @@ func runDecodeAttend(t *testing.T, arch *darch.Architecture, cache *KVCache, q [
 // (cpu_tuning_other.go turns it off on non-arm64, where the fallback is slower than per-head).
 func withGroupedKernels(t *testing.T) {
 	t.Helper()
-	prev := attnGroupedKernels
-	attnGroupedKernels = true
-	t.Cleanup(func() { attnGroupedKernels = prev })
+	prev := cpuengine.AttnGroupedKernels
+	cpuengine.AttnGroupedKernels = true
+	t.Cleanup(func() { cpuengine.AttnGroupedKernels = prev })
 }
 
 // TestAttendGroupedHeads_matchesPerHead pins two things: the grouped path is bit-identical to the per-head path
@@ -82,17 +83,17 @@ func TestAttendGroupedHeads_matchesPerHead(t *testing.T) {
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x5119)
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "0")
-	before := atomic.LoadInt64(&attnGroupedRuns)
+	before := atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	ungrouped := runDecodeAttend(t, arch, cache, q, nKeys)
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != 0 {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != 0 {
 		t.Fatalf("GOINFER_ATTN_GROUPED=0: attnGroupedRuns advanced by %d, want 0", got)
 	}
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "1")
-	before = atomic.LoadInt64(&attnGroupedRuns)
+	before = atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	grouped := runDecodeAttend(t, arch, cache, q, nKeys)
 	// Two kv heads' worth of grouped calls, one per kv head (NumKVHeads=2).
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
 		t.Fatalf("GOINFER_ATTN_GROUPED=1: attnGroupedRuns advanced by %d, want %d (one per kv head) — the grouped path did not actually run", got, arch.NumKVHeads)
 	}
 
@@ -112,9 +113,9 @@ func TestAttendGroupedHeads_belowNWinGateStaysUngrouped(t *testing.T) {
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511A)
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "1")
-	before := atomic.LoadInt64(&attnGroupedRuns)
+	before := atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	runDecodeAttend(t, arch, cache, q, nKeys)
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != 0 {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != 0 {
 		t.Fatalf("nKeys=%d (< attnGroupedMinKeys=%d), GOINFER_ATTN_GROUPED=1: attnGroupedRuns advanced by %d, want 0 — the nWin gate did not hold",
 			nKeys, attnGroupedMinKeys, got)
 	}
@@ -137,18 +138,18 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 		pool := make([]headWorkerScratch, arch.NumKVHeads)
 		for i := range pool {
 			pool[i] = headWorkerScratch{
-				qh: make([]float32, hd), ch: make([]float32, hd),
-				scores:      make([]float32, nKeys),
-				avAcc:       make([]float64, hd),
-				groupScores: make([]float32, nKeys*attnGroupedNEONSize),
-				groupCtx:    make([]float32, hd*attnGroupedNEONSize),
-				groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
+				QH: make([]float32, hd), CH: make([]float32, hd),
+				Scores:      make([]float32, nKeys),
+				AvAcc:       make([]float64, hd),
+				GroupScores: make([]float32, nKeys*attnGroupedNEONSize),
+				GroupCtx:    make([]float32, hd*attnGroupedNEONSize),
+				GroupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 			}
 		}
 		// Arm B (kvAttend.groupedLayer) uses pool[0] as the "leader" slot holding
 		// the full-width combined buffers every worker's slice scatters into
 		// — see headWorkerScratch's own doc. Only slot 0 needs them.
-		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
+		pool[0].GroupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
 		return pool
 	}
 
@@ -157,10 +158,10 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 	attendBatchedHeads(q, ungrouped, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, newPool())
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "1")
-	before := atomic.LoadInt64(&attnGroupedRuns)
+	before := atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	grouped := make([]float32, qDim)
 	attendBatchedHeads(q, grouped, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, newPool())
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
 		t.Fatalf("concurrent workers: attnGroupedRuns advanced by %d, want %d", got, arch.NumKVHeads)
 	}
 
@@ -191,15 +192,15 @@ func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
 		pool := make([]headWorkerScratch, n)
 		for i := range pool {
 			pool[i] = headWorkerScratch{
-				qh: make([]float32, hd), ch: make([]float32, hd),
-				scores:      make([]float32, nKeys),
-				avAcc:       make([]float64, hd),
-				groupScores: make([]float32, nKeys*attnGroupedNEONSize),
-				groupCtx:    make([]float32, hd*attnGroupedNEONSize),
-				groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
+				QH: make([]float32, hd), CH: make([]float32, hd),
+				Scores:      make([]float32, nKeys),
+				AvAcc:       make([]float64, hd),
+				GroupScores: make([]float32, nKeys*attnGroupedNEONSize),
+				GroupCtx:    make([]float32, hd*attnGroupedNEONSize),
+				GroupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 			}
 		}
-		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
+		pool[0].GroupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
 		return pool
 	}
 
@@ -209,10 +210,10 @@ func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "1")
 	pool := newPool(maxAttnWorkers)
-	before := atomic.LoadInt64(&attnGroupedRuns)
+	before := atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	grouped := make([]float32, qDim)
 	attendBatchedHeads(q, grouped, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, pool)
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
 		t.Fatalf("attnGroupedRuns advanced by %d, want %d — Arm B did not fire as expected", got, arch.NumKVHeads)
 	}
 
@@ -232,9 +233,9 @@ func TestAttendGroupedHeads_wrongGroupSizeStaysUngrouped(t *testing.T) {
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511B)
 
 	t.Setenv("GOINFER_ATTN_GROUPED", "1")
-	before := atomic.LoadInt64(&attnGroupedRuns)
+	before := atomic.LoadInt64(&cpuengine.AttnGroupedRuns)
 	runDecodeAttend(t, arch, cache, q, nKeys)
-	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != 0 {
+	if got := atomic.LoadInt64(&cpuengine.AttnGroupedRuns) - before; got != 0 {
 		t.Fatalf("group=4 (!= attnGroupedNEONSize=%d): attnGroupedRuns advanced by %d, want 0", attnGroupedNEONSize, got)
 	}
 }

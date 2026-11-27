@@ -272,7 +272,7 @@ func ksO4SetOrder(m *Model, o program.AttnOrder) {
 func ksO4AppendForever(m *Model, capHint int) *KVCache {
 	a := m.w.Arch
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint, a.HasNoAttentionKVAt)
-	c.scr = newDecodeScratch(a, c.knobs)
+	c.c.Scr = newDecodeScratch(a, c.c.Knobs)
 	return c
 }
 

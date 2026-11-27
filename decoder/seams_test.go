@@ -103,7 +103,7 @@ func gateC(t *testing.T, m *Model, ids []int) error {
 		mm := *m
 		mm.prog = &cut
 		cache := mm.NewCache(len(ids))
-		cache.manualPos = true // the cut program never reaches the last layer, whose append would step the position
+		cache.c.ManualPos = true // the cut program never reaches the last layer, whose append would step the position
 		var h []float32
 		for _, id := range ids {
 			if h, err = mm.runLayers(id, cache); err != nil {

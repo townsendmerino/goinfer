@@ -33,10 +33,10 @@ func TestKSO4_ringEqualsAppendForever(t *testing.T) {
 	const steps = 64
 	withRings := m.NewCache(n + steps)
 	appendForever := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, n+steps, a.HasNoAttentionKVAt)
-	appendForever.scr = newDecodeScratch(a, appendForever.knobs)
+	appendForever.c.Scr = newDecodeScratch(a, appendForever.c.Knobs)
 	for l := range a.NumLayers {
-		if (withRings.rings[l] != nil) != a.RingLayerAt(l) || appendForever.rings[l] != nil {
-			t.Fatalf("layer %d: the two caches are not the two layouts compared (ring %v, append-forever ring %v)", l, withRings.rings[l] != nil, appendForever.rings[l] != nil)
+		if (withRings.c.Rings[l] != nil) != a.RingLayerAt(l) || appendForever.c.Rings[l] != nil {
+			t.Fatalf("layer %d: the two caches are not the two layouts compared (ring %v, append-forever ring %v)", l, withRings.c.Rings[l] != nil, appendForever.c.Rings[l] != nil)
 		}
 	}
 	_, _, _, _, _, _, vocab := m.Dims()

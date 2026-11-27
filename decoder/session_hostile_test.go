@@ -36,7 +36,7 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 
 	sess := m.NewSession(0)
 	sess.tokens = nil // pos 0 ⇒ zero tokens; the header guards are what this exercises
-	sess.cache.pos = 0
+	sess.cache.c.PosN = 0
 	clean := sess.Snapshot("model-A")
 
 	// The header layout, from Snapshot's writer: magic, ver(4), id (u32 length + bytes), adapter (u32 length + bytes, v3),
@@ -124,7 +124,7 @@ func TestLoadSession_bodyLengthsMustAgreeWithPos(t *testing.T) {
 	// cache it never rewound — no panic, no error, a session continuing from the wrong KV.
 	sess := m.NewSession(0)
 	sess.tokens = []int{1, 2, 3}
-	sess.cache.pos = 0
+	sess.cache.c.PosN = 0
 	blob := sess.Snapshot("m")
 	if blob == nil {
 		t.Fatal("Snapshot returned nil for a non-recurrent family")
@@ -170,10 +170,10 @@ func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
 	// 1. THE CASE THE OLD BOUND GOT WRONG: pos > 0 with a body that carries no KV payload.
 	sess := m.NewSession(0)
 	sess.tokens = []int{11, 22, 33, 44, 55}
-	sess.cache.pos = len(sess.tokens)
+	sess.cache.c.PosN = len(sess.tokens)
 	blob := sess.Snapshot("m")
 	ref := m.NewCache(0)
-	if perPos := ref.numLayers * ref.kvDim; int64(len(sess.tokens)) <= int64(len(blob))/int64(perPos) {
+	if perPos := ref.c.NumLayers * ref.c.KVDim; int64(len(sess.tokens)) <= int64(len(blob))/int64(perPos) {
 		t.Skipf("this model's geometry (perPos=%d, blob=%d B) does not exercise the old bound; "+
 			"the regression needs a body smaller than pos·perPos", perPos, len(blob))
 	}
@@ -186,11 +186,11 @@ func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
 	//    pos whose cache would not fit in memory is refused BEFORE the allocation. Tokens are made
 	//    to agree with pos so the cheaper len(tokens) check cannot be what rejects it — otherwise
 	//    this would pass without the ceiling existing at all.
-	perPos := int64(ref.numLayers) * int64(ref.kvDim)
+	perPos := int64(ref.c.NumLayers) * int64(ref.c.KVDim)
 	hugePos := int(maxSnapshotCacheBytes/(perPos*8)) + 1024
 	big := m.NewSession(0)
 	big.tokens = make([]int, hugePos)
-	big.cache.pos = hugePos
+	big.cache.c.PosN = hugePos
 	_, err := m.LoadSession(big.Snapshot("m"), "")
 	if se, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("pos=%d would allocate ~%d B and must be refused, got %v",

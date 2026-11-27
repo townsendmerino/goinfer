@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"path/filepath"
@@ -68,7 +69,7 @@ func (d *DFlashDrafter) HasOwnHead() bool { return d.draftVocab > 0 }
 func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 	d.mustHoldWeights()
 	logits := make([]float32, d.draftVocab)
-	matmul(be, &d.lmHead, h, logits, 1)
+	cpuengine.Matmul(be, &d.lmHead, h, logits, 1)
 	i := sampling.Argmax(logits)
 	return i + int(d.d2t[i])
 }
@@ -680,7 +681,7 @@ func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, e
 				i, len(row), want, want/d.hidden, d.hidden)
 		}
 		f := make([]float32, d.hidden)
-		matmul(be, &d.fc, row, f, 1)
+		cpuengine.Matmul(be, &d.fc, row, f, 1)
 		normact.RMS(f, d.hiddenNorm, 1, d.hidden, d.normEps, false)
 		fused[i] = f
 	}
@@ -734,8 +735,8 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 		for i, row := range fusedNew {
 			k := make([]float32, kvDim)
 			v := make([]float32, kvDim)
-			matmul(be, &l.k, row, k, 1)
-			matmul(be, &l.v, row, v, 1)
+			cpuengine.Matmul(be, &l.k, row, k, 1)
+			cpuengine.Matmul(be, &l.v, row, v, 1)
 			normact.RMS(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
 			rope.Apply(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
 			ctx.k[li] = append(ctx.k[li], k)
@@ -808,12 +809,12 @@ func (m *Model) DrafterHeadLogits(h []float32) []float32 {
 	arch := m.w.Arch
 	logits := make([]float32, arch.VocabSize)
 	if arch.TiedLMHead {
-		matmul(m.be, &m.w.Embed, h, logits, 1)
+		cpuengine.Matmul(m.be, &m.w.Embed, h, logits, 1)
 	} else {
-		matmul(m.be, &m.w.LMHead, h, logits, 1)
+		cpuengine.Matmul(m.be, &m.w.LMHead, h, logits, 1)
 	}
 	if arch.FinalLogitSoftcap > 0 {
-		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
+		cpuengine.SoftcapParallel(logits, float32(arch.FinalLogitSoftcap))
 	}
 	if arch.LogitScale != 0 && arch.LogitScale != 1 {
 		inv := float32(1 / arch.LogitScale)
@@ -867,8 +868,8 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	for j := nCtx; j < nKeys; j++ {
 		k := make([]float32, kvDim)
 		v := make([]float32, kvDim)
-		matmul(be, &l.k, xb[j-nCtx], k, 1)
-		matmul(be, &l.v, xb[j-nCtx], v, 1)
+		cpuengine.Matmul(be, &l.k, xb[j-nCtx], k, 1)
+		cpuengine.Matmul(be, &l.v, xb[j-nCtx], v, 1)
 		normact.RMS(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
 		rope.Apply(k, d.nKV, hd, j, d.invFreq, 1)            // V is NOT roped and NOT normed
 		keys[j], vals[j] = k, v
@@ -880,7 +881,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	attnOut := make([]float32, hid)
 	for i := range nBlk {
 		q := make([]float32, qDim)
-		matmul(be, &l.q, xb[i], q, 1)
+		cpuengine.Matmul(be, &l.q, xb[i], q, 1)
 		normact.RMS(q, l.qNorm, d.nHeads, hd, d.normEps, false)
 		rope.Apply(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
 
@@ -916,7 +917,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 				ctxRow[qo+t] = float32(acc / sum)
 			}
 		}
-		matmul(be, &l.o, ctxRow, attnOut, 1)
+		cpuengine.Matmul(be, &l.o, ctxRow, attnOut, 1)
 		for t := range hid {
 			h[i][t] += attnOut[t]
 		}
@@ -929,12 +930,12 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	for i := range nBlk {
 		x := slices.Clone(h[i])
 		normact.RMS(x, l.postAttnNorm, 1, hid, d.normEps, false)
-		matmul(be, &l.gate, x, gate, 1)
-		matmul(be, &l.up, x, up, 1)
+		cpuengine.Matmul(be, &l.gate, x, gate, 1)
+		cpuengine.Matmul(be, &l.up, x, up, 1)
 		for t := range gate {
 			gate[t] = normact.SiLU(gate[t]) * up[t]
 		}
-		matmul(be, &l.down, gate, down, 1)
+		cpuengine.Matmul(be, &l.down, gate, down, 1)
 		for t := range hid {
 			h[i][t] += down[t]
 		}

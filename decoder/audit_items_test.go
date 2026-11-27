@@ -108,27 +108,27 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 	}
 	c := m.NewCache(ctx)
 	want := ctx * a.KVDimAt(wide)
-	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
-		t.Errorf("f32: layer %d reserves %d and %d floats, want %d", wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
+	if cap(c.c.KeysBuf[wide]) != want || cap(c.c.ValsBuf[wide]) != want {
+		t.Errorf("f32: layer %d reserves %d and %d floats, want %d", wide, cap(c.c.KeysBuf[wide]), cap(c.c.ValsBuf[wide]), want)
 	}
 	for i := range tokens {
 		if _, err := m.forward(i+1, c); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(c.keys[wide]) != tokens*a.KVDimAt(wide) {
-		t.Fatalf("VOID: layer %d holds %d floats after %d tokens", wide, len(c.keys[wide]), tokens)
+	if len(c.c.KeysBuf[wide]) != tokens*a.KVDimAt(wide) {
+		t.Fatalf("VOID: layer %d holds %d floats after %d tokens", wide, len(c.c.KeysBuf[wide]), tokens)
 	}
-	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
-		t.Errorf("f32: %d forwards left layer %d at %d and %d floats, not its %d", tokens, wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
+	if cap(c.c.KeysBuf[wide]) != want || cap(c.c.ValsBuf[wide]) != want {
+		t.Errorf("f32: %d forwards left layer %d at %d and %d floats, not its %d", tokens, wide, cap(c.c.KeysBuf[wide]), cap(c.c.ValsBuf[wide]), want)
 	}
 
 	if a.AttnOrder() == attnBatchedAcc64 {
 		t.Error("Gemma 4's attention is the batched kernel, so it can quantize its cache without MoE: setQuant must then reserve each layer at its own width")
 	}
 	shared := loadSharedKVFixture(t) // a separate load: it marks layer 1 shared, and the checks above read it owning
-	if c := shared.NewCache(ctx); cap(c.keys[1]) != 0 || cap(c.vals[1]) != 0 {
-		t.Errorf("a shared layer reserves %d and %d floats", cap(c.keys[1]), cap(c.vals[1]))
+	if c := shared.NewCache(ctx); cap(c.c.KeysBuf[1]) != 0 || cap(c.c.ValsBuf[1]) != 0 {
+		t.Errorf("a shared layer reserves %d and %d floats", cap(c.c.KeysBuf[1]), cap(c.c.ValsBuf[1]))
 	}
 }
 

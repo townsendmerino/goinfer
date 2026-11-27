@@ -107,8 +107,8 @@ func TestQwen3VLImageReal(t *testing.T) {
 		cache := m.NewCache(len(in.IDs) + 1)
 		h := m.embedN(in.IDs)
 		copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], merged)
-		cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(in.IDs))
-		cache.deepstack = ds
+		cache.c.MRopePos, cache.c.MRopeDelta = mp, rope.MRoPEDelta(mp, len(in.IDs))
+		cache.c.Deepstack = ds
 		hN, err := m.runLayersFromEmbedN(context.Background(), h, cache, fast)
 		if err != nil {
 			t.Fatal(err)
@@ -120,12 +120,12 @@ func TestQwen3VLImageReal(t *testing.T) {
 		}
 		return all[(len(in.IDs)-1)*V:], am
 	}
-	real := &deepstackRows{spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, rows: deep}
+	real := &deepstackRows{Spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, Rows: deep}
 	last, am := prefill(real)
 
 	// The production path, through GenerateQwenVLDeepstack's own cache setup, must give the open loop's last logits.
 	pc := m.NewCache(len(in.IDs) + 1)
-	pc.deepstack = real
+	pc.c.Deepstack = real
 	prod, err := m.prefillLogitsQwenVL(context.Background(), in.IDs, merged, imgPos, imgLen, mp, pc)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 	}
 
 	zero := make([]float32, imgLen*hidden)
-	textToo := &deepstackRows{spans: []ImageSpan{{Pos: 0, Len: len(in.IDs)}}}
+	textToo := &deepstackRows{Spans: []ImageSpan{{Pos: 0, Len: len(in.IDs)}}}
 	for _, set := range deep {
 		mean := make([]float32, hidden)
 		for r := range imgLen {
@@ -166,14 +166,14 @@ func TestQwen3VLImageReal(t *testing.T) {
 			}
 			copy(full[p*hidden:], src)
 		}
-		textToo.rows = append(textToo.rows, full)
+		textToo.Rows = append(textToo.Rows, full)
 	}
 	for _, d := range []struct {
 		name string
 		ds   *deepstackRows
 	}{
 		{"(1) DeepStack not added", nil},
-		{"(2) added one layer late", &deepstackRows{spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, rows: append([][]float32{zero}, deep...)}},
+		{"(2) added one layer late", &deepstackRows{Spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, Rows: append([][]float32{zero}, deep...)}},
 		{"(3) added to the text positions too", textToo},
 	} {
 		l, _ := prefill(d.ds)

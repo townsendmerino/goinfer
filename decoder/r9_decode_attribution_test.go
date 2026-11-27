@@ -5,6 +5,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"runtime"
 	"strings"
@@ -402,11 +403,11 @@ func TestR9_cpuTuningAB(t *testing.T) {
 		part func() float64
 	}
 	knobs := []knob{
-		{"activation fan-out", func(on bool) { activationFanoutEnabled = on }, func() float64 { return lastDecodeSplit.act }},
-		{"grouped attention", func(on bool) { attnGroupedKernels = on }, func() float64 { return lastDecodeSplit.core }},
+		{"activation fan-out", func(on bool) { cpuengine.ActivationFanoutEnabled = on }, func() float64 { return lastDecodeSplit.act }},
+		{"grouped attention", func(on bool) { cpuengine.AttnGroupedKernels = on }, func() float64 { return lastDecodeSplit.core }},
 	}
-	origAct, origGrp := activationFanoutEnabled, attnGroupedKernels
-	defer func() { activationFanoutEnabled, attnGroupedKernels = origAct, origGrp }()
+	origAct, origGrp := cpuengine.ActivationFanoutEnabled, cpuengine.AttnGroupedKernels
+	defer func() { cpuengine.ActivationFanoutEnabled, cpuengine.AttnGroupedKernels = origAct, origGrp }()
 	for _, k := range knobs {
 		const pairs = 3
 		var rOn, rOff, pOn, pOff float64

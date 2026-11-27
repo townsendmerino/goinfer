@@ -441,8 +441,8 @@ func (r *genRun) logDecodeTiming() {
 		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
 		logs.Infof("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
 			a, ml, hd, ms(r.clk.fwd)-a-ml-hd)
-		logs.Infof("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
-		logs.Infof("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
+		logs.Infof("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down cpuengine.Matmul %.2f ms /token", gu, act, ad-act)
+		logs.Infof("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o cpuengine.Matmul %.2f ms /token", qkv, aa-qkv-o, o)
 		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(r.clk.fwd), a, ml, hd
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o

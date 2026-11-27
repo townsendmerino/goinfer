@@ -188,11 +188,11 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 				h := fill(hidden, float32(step+2)*0.37)
 				got := gatedDeltaNetStep(nil, h, w, p, hidden, eps, gotSt)
 
-				wantSt.hq.prepare(nil, &w.InProjQKV, h, 1)
-				mixed := matvecWMPre(nil, &w.InProjQKV, &wantSt.hq, h)
+				wantSt.HQ.Prepare(nil, &w.InProjQKV, h, 1)
+				mixed := matvecWMPre(nil, &w.InProjQKV, &wantSt.HQ, h)
 				bt := hybridattn.Matvec(w.InProjB, nv, hidden, h)
 				at := hybridattn.Matvec(w.InProjA, nv, hidden, h)
-				z := matvecWMPre(nil, &w.InProjZ, &wantSt.hq, h)
+				z := matvecWMPre(nil, &w.InProjZ, &wantSt.HQ, h)
 				core := make([]float32, valueDim)
 				deltaNetCore(core, mixed, bt, at, z, w, p, eps, wantSt)
 				want := matvecWM(nil, &w.OutProj, core)
@@ -208,12 +208,12 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 					t.Fatalf("step %d: reference output is all zero", step)
 				}
 				bits(t, got, want, "out")
-				bits(t, gotSt.s, wantSt.s, "state S")
-				if len(gotSt.convWin) != len(wantSt.convWin) {
-					t.Fatalf("step %d: convWin len %d != %d", step, len(gotSt.convWin), len(wantSt.convWin))
+				bits(t, gotSt.S, wantSt.S, "state S")
+				if len(gotSt.ConvWin) != len(wantSt.ConvWin) {
+					t.Fatalf("step %d: convWin len %d != %d", step, len(gotSt.ConvWin), len(wantSt.ConvWin))
 				}
-				for i := range wantSt.convWin {
-					bits(t, gotSt.convWin[i], wantSt.convWin[i], "convWin")
+				for i := range wantSt.ConvWin {
+					bits(t, gotSt.ConvWin[i], wantSt.ConvWin[i], "convWin")
 				}
 			}
 		})

@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,13 +51,13 @@ func TestMEM5VL_peakTier1(t *testing.T) {
 		return ms.HeapInuse
 	}
 	arm := func(label string, C int) (uint64, uint64) {
-		prev, prevDone := prefillChunkRows, prefillChunkDone
-		defer func() { prefillChunkRows, prefillChunkDone = prev, prevDone }()
-		prefillChunkRows = C
+		prev, prevDone := cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone
+		defer func() { cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone = prev, prevDone }()
+		cpuengine.PrefillChunkRows = C
 		cache := m.NewCache(n + 8)
 		base := heap()
 		peak := base
-		prefillChunkDone = func(int) { peak = max(peak, heap()) }
+		cpuengine.PrefillChunkDone = func(int) { peak = max(peak, heap()) }
 		done, sampled := make(chan struct{}), make(chan uint64)
 		go func() {
 			var ms runtime.MemStats
@@ -87,7 +88,7 @@ func TestMEM5VL_peakTier1(t *testing.T) {
 		return peak - base, top - min(top, base)
 	}
 	oneB, oneS := arm("one pass", 1<<30)
-	chB, chS := arm(fmt.Sprintf("passes of %d", prefillChunkRows), prefillChunkRows)
+	chB, chS := arm(fmt.Sprintf("passes of %d", cpuengine.PrefillChunkRows), cpuengine.PrefillChunkRows)
 	fmt.Fprintf(os.Stderr, "[MEM5-VL peak] %s: over base, at a pass boundary %.1f -> %.1f MiB; sampled %.1f -> %.1f MiB\n", name,
 		float64(oneB)/(1<<20), float64(chB)/(1<<20), float64(oneS)/(1<<20), float64(chS)/(1<<20))
 }

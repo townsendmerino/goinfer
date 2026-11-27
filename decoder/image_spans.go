@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+
 import "fmt"
 
 // ImageSpan is one image's placeholder run in a prompt: ids[Pos, Pos+Len)
@@ -8,10 +10,7 @@ import "fmt"
 //
 // A prompt's spans are in prompt order and do not overlap. Each is its own block: two images are never one block, even
 // when they are adjacent and the same size (docs/multimodal.md, "Do not pair images").
-type ImageSpan struct {
-	Pos, Len int
-	Hash     uint64
-}
+type ImageSpan = cpuengine.ImageSpan
 
 // imageSpansTotal is the number of placeholder positions across spans: the rows the concatenated features hold.
 func imageSpansTotal(spans []ImageSpan) int {

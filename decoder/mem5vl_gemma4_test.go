@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"runtime"
 	"sync/atomic"
@@ -22,13 +23,13 @@ func needGemma4Bidir(t *testing.T) {
 // v2KVCaps is the byte capacity of each of c's KV arrays, in a fixed order.
 func v2KVCaps(c *KVCache) []int {
 	var out []int
-	for l := range c.numLayers {
-		out = append(out, 4*cap(c.keys[l]), 4*cap(c.vals[l]))
-		if c.keysH != nil {
-			out = append(out, 2*cap(c.keysH[l]), 2*cap(c.valsH[l]))
+	for l := range c.c.NumLayers {
+		out = append(out, 4*cap(c.c.KeysBuf[l]), 4*cap(c.c.ValsBuf[l]))
+		if c.c.KeysH != nil {
+			out = append(out, 2*cap(c.c.KeysH[l]), 2*cap(c.c.ValsH[l]))
 		}
-		if c.keysQ != nil {
-			out = append(out, cap(c.keysQ[l]), cap(c.valsQ[l]), 4*cap(c.keyScale[l]), 4*cap(c.valScale[l]))
+		if c.c.KeysQ != nil {
+			out = append(out, cap(c.c.KeysQ[l]), cap(c.c.ValsQ[l]), 4*cap(c.c.KeyScale[l]), 4*cap(c.c.ValScale[l]))
 		}
 	}
 	return out
@@ -50,17 +51,17 @@ func v2KVGrown(before, after []int) uint64 {
 // logits and four greedy decode steps after, and the passes it took.
 func v2Run(t *testing.T, m *Model, chunk int) ([][]float32, int64) {
 	t.Helper()
-	prev := prefillChunkRows
-	prefillChunkRows = chunk
-	defer func() { prefillChunkRows = prev }()
+	prev := cpuengine.PrefillChunkRows
+	cpuengine.PrefillChunkRows = chunk
+	defer func() { cpuengine.PrefillChunkRows = prev }()
 	ids, spans, feats, _, _ := v1Prompt(m)
 	cache := m.NewCache(len(ids) + 8)
-	p0 := atomic.LoadInt64(&prefillPasses)
+	p0 := atomic.LoadInt64(&cpuengine.PrefillPasses)
 	lg, err := m.prefillLogitsGemma4VLBidirectionalSpans(context.Background(), ids, feats, spans, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	passes := atomic.LoadInt64(&prefillPasses) - p0
+	passes := atomic.LoadInt64(&cpuengine.PrefillPasses) - p0
 	return v1Decode(t, m, cache, lg), passes
 }
 
@@ -118,15 +119,15 @@ func TestMEM5VL_gemma4BidirBytes(t *testing.T) {
 		feats[i] = float32(i%13) * 0.01
 	}
 	run := func(C int) []uint64 {
-		prev, prevDone := prefillChunkRows, prefillChunkDone
-		defer func() { prefillChunkRows, prefillChunkDone = prev, prevDone }()
-		prefillChunkRows = C
+		prev, prevDone := cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone
+		defer func() { cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone = prev, prevDone }()
+		cpuengine.PrefillChunkRows = C
 		var allocs []uint64
 		cache := m.NewCache(n + 8) // before the baseline: the cache is not the pass's
 		var ms runtime.MemStats
 		runtime.ReadMemStats(&ms)
 		last, caps := ms.TotalAlloc, v2KVCaps(cache)
-		prefillChunkDone = func(i int) {
+		cpuengine.PrefillChunkDone = func(i int) {
 			runtime.ReadMemStats(&ms)
 			now := v2KVCaps(cache)
 			if i >= 0 { // -1 is the KV reserve, read apart from the passes

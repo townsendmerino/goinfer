@@ -31,8 +31,8 @@ func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 		}
 		a := m.w.Arch
 		c := m.NewCache(16)
-		gotI8 := c.quant == kvI8
-		gotRings := c.localAny
+		gotI8 := c.c.Quant == kvI8
+		gotRings := c.c.LocalAny
 		wantI8 := oldInt8(a)
 		wantRings := oldRings(a) && a.SlidingWindow > 0 && hasLocalLayer(a)
 		if gotI8 != wantI8 {

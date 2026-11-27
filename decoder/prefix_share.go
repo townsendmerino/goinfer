@@ -43,51 +43,51 @@ func (m *Model) CanSharePrefix() bool {
 		return false
 	}
 	c := m.NewCache(2)
-	return m.qwen35BatchN(2, c) && c.delta != nil && c.conv == nil && c.mamba == nil && c.kda == nil && c.mlaLatent == nil && !c.localAny
+	return m.qwen35BatchN(2, c) && c.c.Delta != nil && c.c.Conv == nil && c.c.Mamba == nil && c.c.KDA == nil && c.c.MLALatent == nil && !c.c.LocalAny
 }
 
 // copyStateFrom copies src's per-sequence state into c, a fresh cache from the same model: the position, the global layers' KV rows (f32, int8 or f16) and the
 // Gated DeltaNet states, deep, so neither cache can reach the other's memory. It refuses what it does not know how to copy.
 func (c *KVCache) copyStateFrom(src *KVCache) error {
 	switch {
-	case src.conv != nil || src.mamba != nil || src.kda != nil || src.mlaLatent != nil:
+	case src.c.Conv != nil || src.c.Mamba != nil || src.c.KDA != nil || src.c.MLALatent != nil:
 		return fmt.Errorf("decoder: a prefix checkpoint of a conv, Mamba, KDA or MLA cache is not implemented")
-	case src.localAny || src.imgBlocks != nil || src.mropePos != nil || src.captureLayers != nil || src.treeMask != nil:
+	case src.c.LocalAny || src.c.ImgBlocks != nil || src.c.MRopePos != nil || src.c.CaptureLayers != nil || src.c.TreeMask != nil:
 		return fmt.Errorf("decoder: a prefix checkpoint of a windowed, multimodal or capturing cache is not implemented")
-	case c.numLayers != src.numLayers || c.quant != src.quant || (c.delta == nil) != (src.delta == nil):
+	case c.c.NumLayers != src.c.NumLayers || c.c.Quant != src.c.Quant || (c.c.Delta == nil) != (src.c.Delta == nil):
 		return fmt.Errorf("decoder: the checkpoint's cache and the target's differ in shape")
 	}
-	c.pos, c.mropeDelta, c.manualPos, c.rowPad = src.pos, src.mropeDelta, src.manualPos, src.rowPad // rows are copied at src's stride
-	for l := 0; l < src.numLayers; l++ {
-		c.stride[l] = src.stride[l]
-		if src.quant == kvqF16 {
-			c.keysH[l] = append(c.keysH[l][:0], src.keysH[l]...)
-			c.valsH[l] = append(c.valsH[l][:0], src.valsH[l]...)
+	c.c.PosN, c.c.MRopeDelta, c.c.ManualPos, c.c.RowPad = src.c.PosN, src.c.MRopeDelta, src.c.ManualPos, src.c.RowPad // rows are copied at src's stride
+	for l := 0; l < src.c.NumLayers; l++ {
+		c.c.Stride[l] = src.c.Stride[l]
+		if src.c.Quant == kvqF16 {
+			c.c.KeysH[l] = append(c.c.KeysH[l][:0], src.c.KeysH[l]...)
+			c.c.ValsH[l] = append(c.c.ValsH[l][:0], src.c.ValsH[l]...)
 			continue
 		}
-		if src.quant == kvI8 {
-			c.keysQ[l] = append(c.keysQ[l][:0], src.keysQ[l]...)
-			c.valsQ[l] = append(c.valsQ[l][:0], src.valsQ[l]...)
-			c.keyScale[l] = append(c.keyScale[l][:0], src.keyScale[l]...)
-			c.valScale[l] = append(c.valScale[l][:0], src.valScale[l]...)
+		if src.c.Quant == kvI8 {
+			c.c.KeysQ[l] = append(c.c.KeysQ[l][:0], src.c.KeysQ[l]...)
+			c.c.ValsQ[l] = append(c.c.ValsQ[l][:0], src.c.ValsQ[l]...)
+			c.c.KeyScale[l] = append(c.c.KeyScale[l][:0], src.c.KeyScale[l]...)
+			c.c.ValScale[l] = append(c.c.ValScale[l][:0], src.c.ValScale[l]...)
 			continue
 		}
-		c.keys[l] = append(c.keys[l][:0], src.keys[l]...)
-		c.vals[l] = append(c.vals[l][:0], src.vals[l]...)
+		c.c.KeysBuf[l] = append(c.c.KeysBuf[l][:0], src.c.KeysBuf[l]...)
+		c.c.ValsBuf[l] = append(c.c.ValsBuf[l][:0], src.c.ValsBuf[l]...)
 	}
-	for l, st := range src.delta {
+	for l, st := range src.c.Delta {
 		if st == nil {
 			continue
 		}
-		dst := c.delta[l]
+		dst := c.c.Delta[l]
 		if dst == nil {
 			return fmt.Errorf("decoder: layer %d has a recurrent state in the checkpoint and none in the target", l)
 		}
-		dst.convWin = make([][]float32, len(st.convWin))
-		for i, row := range st.convWin {
-			dst.convWin[i] = slices.Clone(row)
+		dst.ConvWin = make([][]float32, len(st.ConvWin))
+		for i, row := range st.ConvWin {
+			dst.ConvWin[i] = slices.Clone(row)
 		}
-		dst.s = append(dst.s[:0], st.s...)
+		dst.S = append(dst.S[:0], st.S...)
 	}
 	return nil
 }

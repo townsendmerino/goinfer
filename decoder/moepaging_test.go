@@ -302,7 +302,7 @@ func TestExpertPager_faultDelta(t *testing.T) {
 		t.Fatalf("faultDelta returned negative counts: minflt=%d majflt=%d", minflt, majflt)
 	}
 	for _, k := range keys {
-		pager.touch(k)
+		pager.Touch(k)
 	}
 	minflt2, majflt2, ok2 := pager.faultDelta()
 	if !ok2 {

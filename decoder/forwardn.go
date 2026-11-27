@@ -3,109 +3,21 @@ package decoder
 import (
 	"context"
 	"fmt"
-	"math"
-	"slices"
-	"sync"
-	"sync/atomic"
 
-	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
-
-	"github.com/townsendmerino/aikit/linalg/attn"
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
-// cpuFastAttention reports whether the live environment enables f32 prefill attention (GOINFER_CPU_FAST_ATTENTION; on unless
-// set to "0", which is what --cpu-exact-prefill sets). It is the reading for a hand-built caller with no Model; a loaded model
-// reads its own snapshot through (*Model).cpuFastAttention. It is read only here: every consumer receives the answer as an
-// explicit argument, so no path can pick it up by accident (see runLayersFromEmbedN).
-//
-// Enabling it gives up two of the exact (acc64) path's guarantees for the model: spec-decode verify == sequential greedy
-// (structurally prevented from applying there) and decode == prefill. A long prompt can therefore produce a different response at
-// temperature 0 than under the exact kernel; decode itself is untouched. It also gives up split-invariance: f32 reassociation makes
-// a prompt's KV depend on how the prompt was chunked, so a Session (a warm prefix, then a divergent suffix) stops matching a
-// one-shot generate over the same tokens. That divergence is accepted (operator decision). TestSessionFastAttnDivergence pins
-// it; the equality itself is gated under the exact kernel by TestSessionNgramSpecParity.
-//
-// It is floored by prompt length (fastAttnMinPrompt). MoE is deliberately not excluded, and nothing here checks the arch.
-// Evidence, measured figures and the decision record: docs/code-notes/decoder.md#cpuFastAttention.
-func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
-
-// cpuFastAttention is the per-model form: off when this model was loaded with Options.ExactPrefill or its attention carries learned
-// sinks (gpt-oss), else the env var's answer. gpt-oss's f32 batched attention failed its fidelity gate against the exact path
-// (docs/measurements/gptoss-cpu-prefill-2026-11-23, G3), so its batched prefill always runs the exact kernel.
-func (m *Model) cpuFastAttention() bool {
-	if m.w != nil && m.w.Arch != nil && m.w.Arch.HasAttnSinks() {
-		return false
-	}
-	return !m.opts.ExactPrefill && m.knobs.cpuFastAttention()
-}
-
-// ExactPrefill reports whether this model was loaded with Options.ExactPrefill — prompt ingestion
-// must take each backend's bit-exact path. Backends consult it next to their own env var.
+// ExactPrefill reports whether this model runs its prefill with bit-exact f64-accumulated attention.
 func (m *Model) ExactPrefill() bool { return m.opts.ExactPrefill }
 
-// fastAttnMinPrompt is the prompt length (K, the suffix being prefilled) below which f32 prefill attention is not used, even
-// when enabled: attention is O(K*nKeys), so the win grows with K while the divergence does not, and a short prompt gets a
-// different answer for almost nothing.
-//
-// 512 is a judgement, not a measured crossover (the smallest K measured with a win over ~15%); a sweep that finds one should move
-// it and say so. It is deliberately not configurable: a knob would be another way for prefill numerics to vary between two runs
-// of the same build. Measurements: docs/code-notes/decoder.md#fastAttnMinPrompt.
-const fastAttnMinPrompt = 512
-
-// attnHeadsParThreshold is the per-call work (K*nKeys, the QKᵀ/AV size driver) below which attendBatchedHeads runs its heads
-// serially through pool[0] instead of fanning out: the same "small work stays serial" rule int4ParThreshold applies. It is 0, so
-// the fan-out is never skipped on size.
-const attnHeadsParThreshold = 0
-
-// attnGroupedNEONSize is the query-head group size (NumHeads/NumKVHeads) the aikit grouped acc64 kernels
-// (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for. Any other ratio still runs correctly through the Go fallback but
-// slower than separate per-head calls, so kvAttend.groupedHeads is gated to exactly this size rather than trusting the kernel's own
-// dispatch to save a mismatched caller.
-const attnGroupedNEONSize = 6
-
-// attnGroupedNEONBlock is the NEON grouped kernels' own block width (8 keys per QK block, 8 dims per AV block). runSplitAligned
-// rounds each worker's slice up to a multiple of it so no slice falls through to the much slower plain-Go grouped kernel for a
-// ragged remainder.
-const attnGroupedNEONBlock = 8
-
-// attnGroupedMinKeys is the number of attended keys below which the per-head path runs unchanged. 128 is the smallest depth
-// either record below measured a win at: a conservative floor, not the cache probe's own crossover (the cache already dedups a GQA
-// group's shared reads below roughly K=1024). Records: docs/measurements/r13-distinct-bytes-probe-2026-09-19.md and
-// docs/measurements/r13-neon-kernel-ab-2026-09-20.md.
-const attnGroupedMinKeys = 128
-
-// knobSet.attnGrouped (knobs.go) reports whether the grouped-kernel decode path may run; on unless GOINFER_ATTN_GROUPED=0, which
-// restores the per-head path. The path also needs attnGroupedKernels (a per-architecture default, on for arm64 only).
-
-// attnGroupedRuns counts kvAttend.groupedHeads/groupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
-// that never runs passes every correctness gate), so a test asserts it nonzero above attnGroupedMinKeys and zero below;
-// moeExpertMajorRuns (mlp.go) is the same idiom.
-var attnGroupedRuns int64
-
-// canBatchN reports whether the batched M=K path applies: K>1 on a family without its own sequential forward, with a gated MLP
-// and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
-// FFN stays per row because the router picks different experts per token.
 func (m *Model) canBatchN(K int) bool {
-	// The program decides (program.batchEligible), not a family list: a restated list once fell a family behind, and a 2-token
-	// prompt ran the dense attention stack over conv layers that load no q/k/v/o.
-	return K > 1 && m.w.Embed.Rows() != 0 && m.program().BatchEligible()
+	e := m.cpuEngine()
+	return e.CanBatchN(K)
 }
 
-// hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
-// linear-attention state), which no positional rewind can restore. It is the arch-side view of KVCache.hasRecurrentState(), read
-// from the dispatch table's Recurrent bit so it can be asked before any cache exists (the resident path has none).
-//
-// One predicate, read everywhere (specRollbackSafe, resident_reuse.go, generate_vl.go): a second hand-written family list is how
-// a family gets missed at a consumer. A new state kind is added to the dispatch table once and every caller follows.
 func (m *Model) hasRecurrentState() bool {
-	// Nil-safe because residentReuseLen is reachable from a Model with no weights loaded (its unit test builds one). A model with no
-	// arch has no family and so no recurrent state.
-	if m == nil || m.w == nil || m.w.Arch == nil {
-		return false
-	}
-	return m.w.Arch.Recurrent()
+	e := m.cpuEngine()
+	return e.HasRecurrentState()
 }
 
 // specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores
@@ -138,907 +50,70 @@ func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bo
 	return true
 }
 
-// forwardLayersN runs the embedding + all transformer layers + final norm over
-// the K tokens in ids — appended as the next K positions of cache — and returns
-// the [K, HiddenDim] post-final-norm hidden states (the LM head is the caller's).
-// The weight matmuls run at M=K, so each weight streams from memory once and is
-// reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays
-// per-position and causal. Bit-identical to K sequential forwards. Assumes
-// canBatchN(len(ids)) — callers check.
 func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
-	t0 := costStart(cache)
-	h := m.embedN(ids)
-	if cache.cost != nil {
-		m.countEmbed(cache, len(ids), false, t0)
-	}
-	return m.runLayersFromEmbedN(reqCtx, h, cache, fastAttn)
+	e := m.cpuEngine()
+	return e.ForwardLayersN(reqCtx, ids, unwrapCache(cache), fastAttn)
 }
 
-// embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
-// times any embedding scale) — the text input to the batched stack.
 func (m *Model) embedN(ids []int) []float32 {
-	return m.embedNInto(make([]float32, len(ids)*m.w.Arch.HiddenDim), ids)
+	e := m.cpuEngine()
+	return e.EmbedN(ids)
 }
 
-// embedNInto is embedN into h, which holds exactly len(ids)*HiddenDim floats.
 func (m *Model) embedNInto(h []float32, ids []int) []float32 {
-	hidden := m.w.Arch.HiddenDim
-	for i, id := range ids {
-		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
-	}
-	if emb := m.program().Embed; emb.Scale != 0 && emb.Scale != 1 {
-		s := float32(emb.Scale)
-		for i := range h {
-			h[i] *= s
-		}
-	}
-	return h
+	e := m.cpuEngine()
+	return e.EmbedNInto(h, ids)
 }
 
-// runLayersFromEmbedN runs the batched layer stack over K pre-embedded rows
-// h [K*HiddenDim] — the batched analog of the streaming runLayersFromEmbed, so a
-// multimodal caller can inject projected vision embeddings at <image> positions
-// (and SetImageBlocks for the bidirectional mask) before the forward. Text rows
-// must already carry the embedding scale; injected vision rows are raw (HF's
-// masked_scatter overwrites the scaled placeholder embed). Returns the [K,
-// HiddenDim] post-final-norm hidden states (the LM head is the caller's).
 func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
-	return m.runLayersFromEmbedNFloor(reqCtx, h, cache, fastAttn, len(h)/m.w.Arch.HiddenDim, nil)
+	e := m.cpuEngine()
+	return e.RunLayersFromEmbedN(reqCtx, h, unwrapCache(cache), fastAttn)
 }
 
-// runLayersFromEmbedNFloor is runLayersFromEmbedN with the fast-attention floor keyed on floorK, the length of the whole
-// suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
-// suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
-func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
-	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps, nil)
-}
-
-// attnTask is one unit of work handed to attnWorkerPool: run fn over the
-// caller's own [lo,hi) slice, tagged with worker index w so fn can index its
-// own per-worker scratch (pool[w] in kvAttend.groupedLayer).
-type attnTask struct {
-	fn        func(w, lo, hi int)
-	w, lo, hi int
-	done      *sync.WaitGroup
-}
-
-// attnWorkerPool is a small set of long-lived goroutines, parked on a channel between rounds and shared by every decode step's
-// attention fan-out. It replaced a fresh goroutine per split: a decoded token does up to 28 layers x 2 kv heads x 2 phases of
-// fan-outs, and the spawn overhead alone outweighed most of the grouped kernel's savings. A persistent pool pays goroutine
-// creation once; each round is a channel send to a parked goroutine. Record:
-// docs/measurements/r13-served-decode-2026-09-20.md.
-type attnWorkerPool struct {
-	tasks chan attnTask
-}
-
-func newAttnWorkerPool(n int) *attnWorkerPool {
-	p := &attnWorkerPool{tasks: make(chan attnTask, n)}
-	for range n {
-		go func() {
-			for t := range p.tasks {
-				t.fn(t.w, t.lo, t.hi)
-				t.done.Done()
-			}
-		}()
-	}
-	return p
-}
-
-// globalAttnWorkerPool is process-wide, not per-Model: total attention fan-out parallelism is bounded by maxAttnWorkers across
-// every concurrent request, the same oversubscription discipline applied within one call.
-var globalAttnWorkerPool = sync.OnceValue(func() *attnWorkerPool {
-	return newAttnWorkerPool(maxAttnWorkers)
-})
-
-// runSplitAligned fans work over the independent-output range [0,n) into up to `workers` contiguous, non-overlapping slices, each
-// width rounded up to a multiple of align, running fn(w, lo, hi) once per non-empty slice: worker 0 inline, the rest via the
-// persistent globalAttnWorkerPool. fn must write only to worker w's own scratch (pool[w]) and to its own disjoint [lo,hi) region of
-// any shared output; no combining is performed, so callers must not need one.
-//
-// The alignment matters: aikit's NEON grouped kernels process their range in 8-wide blocks and fall back to the plain-Go grouped
-// kernel (6-10x slower) for a remainder that does not fill a block. Equal-width splitting would give every worker a ragged
-// remainder; rounding up keeps each slice block-aligned at the cost of slightly uneven work.
-func runSplitAligned(workers, n, align int, fn func(w, lo, hi int)) {
-	if workers <= 1 || n < workers {
-		fn(0, 0, n)
-		return
-	}
-	pool := globalAttnWorkerPool()
-	var wg sync.WaitGroup
-	per := (n + workers - 1) / workers
-	if align > 1 {
-		per = ((per + align - 1) / align) * align
-	}
-	for w := 1; w < workers; w++ {
-		lo, hi := w*per, min((w+1)*per, n)
-		if lo >= hi {
-			continue
-		}
-		wg.Add(1)
-		pool.tasks <- attnTask{fn: fn, w: w, lo: lo, hi: hi, done: &wg}
-	}
-	hi0 := min(per, n)
-	fn(0, 0, hi0)
-	wg.Wait()
-}
-
-// attendTileFor is attendTileForK reading the live environment (tests that build scratch by hand).
-func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
-	return attendTileForK(nil, ws, K, nKeys, hd)
-}
-
-// attendTileForK returns how many query rows kvAttend.oneHead may process at once with this slot: the cache-sized tile from
-// attnRowTileK, clamped to what the slot's buffers hold. The tile is a property of the pool, not of the call: the pool is sized
-// once from maxKeys = startPos+K, but a local layer whose ring has wrapped assembles a shorter window and attnRowTile is inverse
-// in nKeys, so the per-layer tile can exceed the qh the slot was allocated and the Q gather would slice past its length. The
-// slot's capacity is the binding constraint, so the slot decides: with kt <= tile and nKeys <= maxKeys every other slot buffer
-// (scores, ch, kh, vt) fits once qh does. It also covers hand-built scratch in the ring tests.
-func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
-	tile := attnRowTileK(k, K, nKeys)
-	if hd < 1 {
-		return max(1, tile)
-	}
-	if rows := len(ws.qh) / hd; rows >= 1 && tile > rows {
-		tile = rows
-	}
-	return max(1, tile)
-}
-
-// attendBatchedHeads computes grouped-query causal attention for K query positions at once, per head: per KV head it gathers
-// K_head and V_headᵀ once (f32 path), then per query head scores = Q·Kᵀ, a scaled causal/window-masked softmax per row (masked
-// entries zeroed so they drop out of the next matmul), and ctx = scores·V scattered into ctx[K,qDim].
-//
-// With useAcc64 the dots accumulate in f64 and are bit-identical to the per-token walker's attendToken. The f32 path
-// (MatmulBT) reassociates the reduction, so its parity is argmax-exact plus cosine, the standard the GPU residency attention also
-// meets. The softmax exp stays per row in float64. Scratch slices (qh, kh, vt, scores, ch) are caller-owned and reused across
-// layers.
-//
-// keys/vals are the contiguous K/V the gather reads, physical row 0 holding absolute key position `base`: cache.Keys(layer) at
-// base 0 for a global layer; for a local (sliding-window) layer an assembled [base, startPos+K) window, so the ring's wrap is
-// invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
-// (WindowStart/attendHi), mapped to physical columns by s-base.
-func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, attnParamsFor(arch, cache, global), arch, useAcc64, pool)
-}
-
-// attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
-// form (attentionParams). arch supplies the shapes and the knobs.
-func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, 0, base, cache, layer, startPos, K, ap, arch, useAcc64, pool)
-}
-
-// attendBatchedHeadsKV is attendBatchedHeadsP over K/V given either as f32 rows (keys, vals) or as an f16 cache's rows (keysH, valsH,
-// IEEE binary16 bits, keys and vals nil), which the acc64 kernels read in place: bit-identical to widening them into f32 first. f16
-// rows need useAcc64; they skip the grouped kernels, which have no f16 form. rowStride is the elements between one key's row and the
-// next (0: kvDim): a padded cache's rows, read in place.
-func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *darch.Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
-	nH, nKV, hd := arch.HeadsAt(layer), arch.NumKVHeads, arch.HeadDim
-	a := &kvAttend{q: q, ctx: ctx, keys: keys, vals: vals, keysH: keysH, valsH: valsH, base: base, cache: cache, startPos: startPos,
-		K: K, ap: ap, arch: arch, useAcc64: useAcc64, nH: nH, nKV: nKV, hd: hd, qDim: nH * hd, group: nH / nKV, scale: ap.Scale}
-	a.rs = nKV * hd
-	if rowStride != 0 {
-		a.rs = rowStride
-	}
-	a.f16 = keysH != nil
-	if a.f16 && !useAcc64 {
-		panic("decoder: an f16 cache's rows are read in place only by the acc64 kernels")
-	}
-	a.nKeys = len(keys) / a.rs
-	if a.f16 {
-		a.nKeys = len(keysH) / a.rs
-		cache.f16InPlaceReads++
-	}
-	if arch.HasAttnSinks() && ap.Sinks == nil {
-		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
-	}
-	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
-	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
-	// shared `matmul` variable: acc64 calls MatmulQKAcc64/MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
-	// matmul per head (package-level MatmulBT when the head loop is serial, the worker's serial Workspace when not).
-
-	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask, logit softcap,
-	// or attention sinks. Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	a.fusedOK = !useAcc64 && cache.treeMask == nil && ap.Softcap == 0 && ap.Sinks == nil
-	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
-	// treeMask excludes speculative verify (kvAttend.groupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
-	// (not wired); attnGroupedKernels is the per-architecture platform gate.
-	a.groupedOK = useAcc64 && !a.f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
-		a.group == attnGroupedNEONSize && a.nKeys >= attnGroupedMinKeys && cache.knobs.attnGrouped()
-
-	if !useAcc64 {
-		a.f32Heads(pool)
-		return
-	}
-
-	// With more than one pool slot, Arm B (kvAttend.groupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
-	// the other slots idle. With one slot Arm B has nothing to parallelise and the serial arm below already takes the grouped kernel
-	// (runHeadRange's [0,nH) range spans whole groups), so Arm B is skipped rather than adding fork-join cost.
-	if a.groupedOK && len(pool) > 1 {
-		a.groupedLayer(pool)
-		return
-	}
-
-	// The acc64 path (the one every live caller takes): the nH query heads are independent (disjoint ctx writes, no shared mutable
-	// state; kh/vt are unused here). Below the fan-out floor, or with one pool slot or one head, run serially through pool[0]: a
-	// fork-join costs real time the per-head kernels have already shrunk to a few microseconds a head at shallow depth.
-	if len(pool) <= 1 || nH <= 1 || K*a.nKeys < attnHeadsParThreshold {
-		a.runHeadRange(&pool[0], 0, nH)
-		return
-	}
-	workers := min(len(pool), nH)
-	var wg sync.WaitGroup
-	headsPer := (nH + workers - 1) / workers
-	for w := 1; w < workers; w++ {
-		h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
-		if h0 >= h1 {
-			continue
-		}
-		wg.Go(func() {
-			a.runHeadRange(&pool[w], h0, h1)
-		})
-	}
-	h1_0 := min(headsPer, nH)
-	a.runHeadRange(&pool[0], 0, h1_0)
-	wg.Wait()
-}
-
-// kvAttend is one attendBatchedHeadsKV call: its inputs and the shapes derived from them, shared read-only by the head workers.
-// rs is the key row stride, nKeys the keys attended, f16 whether keysH/valsH carry the rows.
-type kvAttend struct {
-	q, ctx, keys, vals              []float32
-	keysH, valsH                    []uint16
-	rs, base, startPos, K           int
-	cache                           *KVCache
-	ap                              attentionParams
-	arch                            *darch.Architecture
-	useAcc64, f16                   bool
-	fusedOK, groupedOK              bool
-	nH, nKV, hd, qDim, group, nKeys int
-	scale                           float64
-}
-
-// sinkMax and sinkSum add query head qh's learned sink to a softmax: to the max-shift, then exp(sink − max) to the denominator. They
-// do nothing when ap.Sinks is nil, so every other family runs the same operations as before.
-func (a *kvAttend) sinkMax(qh int, maxS float64) float64 {
-	if a.ap.Sinks != nil {
-		if sl := float64(a.ap.Sinks[qh]); sl > maxS {
-			return sl
-		}
-	}
-	return maxS
-}
-
-func (a *kvAttend) sinkSum(qh int, maxS, sum float64) float64 {
-	if a.ap.Sinks != nil {
-		return sum + math.Exp(float64(a.ap.Sinks[qh])-maxS)
-	}
-	return sum
-}
-
-// attendRange is the physical key columns [loP, hiP] a query at absolute position pos attends, clamped to the keys present.
-//
-// Absolute attend range [start, hi]; map to physical columns by −base (base = absolute position of column 0). hi is the inclusive
-// upper key bound: pos for a causal text query, or the image-block end for a bidirectional image position (so it also attends to
-// the block's future tokens). Equals pos with no image blocks — inert for text.
-func (a *kvAttend) attendRange(pos int) (loP, hiP int) {
-	loP = a.ap.Start(pos) - a.base
-	hiP = a.cache.attendHi(pos) - a.base
-	if loP < 0 {
-		loP = 0
-	}
-	if hiP >= a.nKeys {
-		hiP = a.nKeys - 1
-	}
-	return loP, hiP
-}
-
-// softmaxRow is query head qh's scaled, soft-capped softmax over one score row's columns [loP, hiP], with the out-of-range entries
-// zeroed so they contribute nothing to the scores·V matmul.
-func (a *kvAttend) softmaxRow(qh int, rowS []float32, loP, hiP int) {
-	nKeys := a.nKeys
-	if loP > hiP {
-		clear(rowS[:nKeys])
-		return
-	}
-	active := rowS[loP : hiP+1]
-	_ = active[len(active)-1]
-	maxS := math.Inf(-1)
-	for s, v := range active {
-		sc := softcapScore(float64(v)*a.scale, a.ap.Softcap)
-		active[s] = float32(sc)
-		if sc > maxS {
-			maxS = sc
-		}
-	}
-	maxS = a.sinkMax(qh, maxS)
-	var sum float64
-	for s, v := range active {
-		e := math.Exp(float64(v) - maxS)
-		active[s] = float32(e)
-		sum += e
-	}
-	sum = a.sinkSum(qh, maxS, sum)
-	inv := 1.0 / sum
-	clear(rowS[:loP])
-	for s, v := range active {
-		active[s] = float32(float64(v) * inv)
-	}
-	clear(rowS[hiP+1 : nKeys])
-}
-
-// softmaxTreeRow is softmaxRow for TREE attention (05): global row gi at position pos attends to the whole committed prefix
-// [loP, batchCol0) plus only its ancestor batch columns (treeMask[gi][j]).
-func (a *kvAttend) softmaxTreeRow(qhead, gi, pos int, rowS []float32) {
-	cache, nKeys := a.cache, a.nKeys
-	loP := a.ap.Start(pos) - a.base
-	batchCol0 := a.startPos - a.base
-	allowed := func(s int) bool {
-		if s < batchCol0 {
-			return s >= loP
-		}
-		j := s - batchCol0
-		return j < a.K && cache.treeMask[gi][j]
-	}
-	maxS := math.Inf(-1)
-	for s := range nKeys {
-		if allowed(s) {
-			sc := softcapScore(float64(rowS[s])*a.scale, a.ap.Softcap)
-			rowS[s] = float32(sc)
-			if sc > maxS {
-				maxS = sc
-			}
-		}
-	}
-	maxS = a.sinkMax(qhead, maxS)
-	var sum float64
-	for s := range nKeys {
-		if allowed(s) {
-			e := math.Exp(float64(rowS[s]) - maxS)
-			rowS[s] = float32(e)
-			sum += e
-		} else {
-			rowS[s] = 0
-		}
-	}
-	sum = a.sinkSum(qhead, maxS, sum)
-	inv := 1.0 / sum
-	for s := range nKeys {
-		if rowS[s] != 0 {
-			rowS[s] = float32(float64(rowS[s]) * inv)
-		}
-	}
-}
-
-// oneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently across heads
-// and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is unchanged and its ctx
-// write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial arm, the worker's own
-// serial Workspace on the head-parallel arm); it is unused on the acc64 path.
-func (a *kvAttend) oneHead(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
-	var fs *fusedScratch
-	if a.fusedOK {
-		fs = ws.fused
-	}
-	K, hd, qDim, nKeys := a.K, a.hd, a.qDim, a.nKeys
-	kvh := qhead / a.group
-	qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
-	// Walk the query rows in tiles. Every step below is row-wise, so splitting rows splits independent outputs, which is what
-	// bit-identity permits. No key-dimension split happens here and none may: it would re-associate the softmax denominator and the AV
-	// fold, exactly what acc64 exists to prevent. The point is memory: scores is tile*nKeys, not K*nKeys, so a worker slot stops
-	// growing with the square of the prompt and the pool can still fan out on a long prompt.
-	//
-	// `i` indexes the tile; `gi` is the global row. Positions and masks use `gi` (startPos+gi, treeRowPos[gi], treeMask[gi]), buffers
-	// use `i`. The tile comes from attendTileForK, not attnRowTile: the slot's capacity binds, and recomputing it from this layer's key
-	// count panicked a warm windowed session.
-	tile := attendTileForK(a.cache.knobs, ws, K, nKeys, hd)
-	for t0 := 0; t0 < K; t0 += tile {
-		kt := min(tile, K-t0)
-		for i := range kt { // gather this tile's Q_head [kt,hd]
-			b := (t0+i)*qDim + qhead*hd
-			copy(qh[i*hd:i*hd+hd], a.q[b:b+hd])
-		}
-		// The fused schedule, when enabled and applicable, replaces the whole QKᵀ/softmax/scores·V sequence for this tile and keeps the
-		// score block resident instead of materializing kt x nKeys (fusedattn.go). It declines, and falls through, for acc64 (whose
-		// bit-identity it would break) and for tree attention (whose per-(row,column) mask is not the contiguous [lo,hi] bound it handles).
-		if fs != nil {
-			for i := range kt {
-				gi := t0 + i
-				pos := a.startPos + gi
-				fs.lo[i] = a.ap.Start(pos) - a.base
-				fs.hi[i] = a.cache.attendHi(pos) - a.base
-			}
-			if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
-				fs.sBlk, fs.tmp, fs.acc, fs.mRun, fs.lRun,
-				kt, hd, nKeys, a.scale, fs.lo[:kt], fs.hi[:kt]) {
-				for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
-					b := (t0+i)*qDim + qhead*hd
-					copy(a.ctx[b:b+hd], ch[i*hd:i*hd+hd])
-				}
-				continue
-			}
-		}
-		// QKᵀ: scores[kt,nKeys] = Q_head[kt,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads keys directly (row stride kvDim, element stride 1),
-		// skipping the kh gather. MatmulQKAcc64 interleaves 8 keys' dot products as concurrent f64 accumulator chains to hide FMA latency;
-		// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
-		// (TestAttendStrided_matchesGatherReference checks it at this stride).
-		if a.f16 {
-			attn.MatmulQKAcc64F16(qh[:kt*hd], a.keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
-		} else if a.useAcc64 {
-			attn.MatmulQKAcc64(qh[:kt*hd], a.keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, a.rs)
-		} else {
-			mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
-		}
-		// Scaled, masked softmax per query row; zero the out-of-range entries
-		// so they contribute nothing to the scores·V matmul below.
-		for i := range kt {
-			gi := t0 + i // global row: positions and masks are indexed by it, buffers by i
-			pos := a.startPos + gi
-			if a.cache.treeRowPos != nil {
-				pos = a.cache.treeRowPos[gi]
-			}
-			rowS := scores[i*nKeys : i*nKeys+nKeys]
-			if a.cache.treeMask != nil {
-				a.softmaxTreeRow(qhead, gi, pos, rowS)
-				continue
-			}
-			loP, hiP := a.attendRange(pos)
-			a.softmaxRow(qhead, rowS, loP, hiP)
-		}
-		// scores·V: ctx_head[kt,hd] = scores[kt,nKeys] · V_head[nKeys,hd]. Acc64 reads vals directly, "as if transposed" (row stride 1,
-		// element stride kvDim), skipping a vt gather and transpose. MatmulAVAcc64 reads V rows contiguously (keys-outer, dims-inner) into
-		// hd independent f64 accumulators; each dim's accumulator sees the same key-ascending adds as the strided walk, so it is
-		// bit-identical.
-		//
-		// A one-row tile (every K=1 decode) writes this head's context straight into ctx: MatmulAVAcc64 overwrites its destination and the
-		// head's hd floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work. A multi-row
-		// tile's [kt,hd] result is not contiguous in ctx (row stride qDim) and keeps the scatter.
-		direct := a.useAcc64 && kt == 1
-		if direct && a.f16 {
-			b := t0*qDim + qhead*hd
-			attn.MatmulAVAcc64F16(scores[:nKeys], a.valsH, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
-		} else if direct {
-			b := t0*qDim + qhead*hd
-			attn.MatmulAVAcc64(scores[:nKeys], a.vals, a.ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, a.rs)
-		} else if a.f16 {
-			attn.MatmulAVAcc64F16(scores[:kt*nKeys], a.valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
-		} else if a.useAcc64 {
-			attn.MatmulAVAcc64(scores[:kt*nKeys], a.vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, a.rs)
-		} else {
-			mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
-		}
-		if !direct {
-			for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
-				b := (t0+i)*qDim + qhead*hd
-				copy(a.ctx[b:b+hd], ch[i*hd:i*hd+hd])
-			}
-		}
-	}
-}
-
-// groupedHeads is the grouped-kernel path: one MatmulQKAcc64Group/MatmulAVAcc64Group pair covers all attnGroupedNEONSize query
-// heads of one kv head, instead of that many oneHead calls re-reading the same K/V rows. The caller must have checked K==1 (decode;
-// M>1 is not wired), no tree mask (its per-(row,column) mask needs oneHead's own branch), and group == attnGroupedNEONSize.
-//
-// Q for these heads is contiguous in q's [K,qDim] layout (and so is ctx), so no gather is needed. Softmax stays per head, row by
-// row, identical to oneHead's non-tree branch: grouping shares the QKᵀ and scores·V loads and folds, never the reduction inside each
-// head's softmax.
-func (a *kvAttend) groupedHeads(kvh int, ws *headWorkerScratch) {
-	group, hd, nKeys := a.group, a.hd, a.nKeys
-	qh0 := kvh * group
-	q := a.q[qh0*hd : qh0*hd+group*hd]
-	gScores := ws.groupScores[:group*nKeys]
-	attn.MatmulQKAcc64Group(q, a.keys, gScores, group, hd, nKeys, kvh*hd, a.rs)
-	loP, hiP := a.attendRange(a.startPos) // K==1 is a precondition, so this call's only row is gi=0
-	for g := range group {
-		a.softmaxRow(qh0+g, gScores[g*nKeys:g*nKeys+nKeys], loP, hiP)
-	}
-	// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
-	// straight into ctx with no scratch copy.
-	gAvAcc := ws.groupAvAcc[:group*hd]
-	attn.MatmulAVAcc64Group(gScores, a.vals, a.ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, a.rs)
-	atomic.AddInt64(&attnGroupedRuns, 1)
-}
-
-// runHeadRange walks qhead across [h0,h1), taking the grouped path for any run of attnGroupedNEONSize heads that starts on a
-// kv-group boundary and fits inside [h0,h1); a worker whose range splits a kv group uses oneHead for that group's heads.
-func (a *kvAttend) runHeadRange(ws *headWorkerScratch, h0, h1 int) {
-	qhead := h0
-	for qhead < h1 {
-		if a.groupedOK && qhead%a.group == 0 && qhead+a.group <= h1 {
-			a.groupedHeads(qhead/a.group, ws)
-			qhead += a.group
-			continue
-		}
-		a.oneHead(qhead, ws, nil)
-		qhead++
-	}
-}
-
-// groupedLayer is the grouped path for a pool of more than one slot (decode, K==1). Arm A (runHeadRange/groupedHeads) needs one
-// worker to own a whole kv group's heads and so collapses worker count to nKV; this keeps the pool busy and still uses the grouped
-// kernel by splitting within each kv head's group: QK by key range, softmax by row, AV by dim range, the three phases joined in
-// between.
-//
-// All three are independent-output splits, not reduction splits (QK reduces over d and is split by key; AV reduces over keys and
-// is split by dim), so no floating-point combining is needed: each worker's slice lands in a disjoint region of the shared buffer
-// by plain copy. The result is bit-identical to the per-head path and to Arm A; TestAttendGroupedLayer_manyWorkers is the check.
-// The softmax phase must stay split: see the note on it below.
-func (a *kvAttend) groupedLayer(pool []headWorkerScratch) {
-	nKV, group, hd, nKeys := a.nKV, a.group, a.hd, a.nKeys
-	splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
-	leader := &pool[0]
-	if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom
-		leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
-	}
-	fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
-	fullCtx := a.ctx[:nKV*group*hd] // kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd]
-
-	runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
-		ws := &pool[w]
-		sliceLen := hi - lo
-		slice := ws.groupScores[:group*sliceLen]
-		for kvh := range nKV {
-			qh0 := kvh * group
-			qg := a.q[qh0*hd : qh0*hd+group*hd]
-			attn.MatmulQKAcc64Group(qg, a.keys, slice, group, hd, sliceLen, kvh*hd+lo*a.rs, a.rs)
-			dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-			for g := range group {
-				copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
-			}
-		}
-	})
-
-	loP, hiP := a.attendRange(a.startPos)
-	// Softmax is split by row (one kv head's one query head) across the workers, as the per-head path already does inside each head's
-	// worker. Running it serially on this goroutine was measured slower than not grouping at all; do not collapse it
-	// (docs/code-notes/decoder.md#attendGroupedLayer.softmax).
-	runSplitAligned(splitWorkers, nKV*group, 1, func(w, lo, hi int) {
-		for row := lo; row < hi; row++ {
-			kvh, g := row/group, row%group
-			rowS := fullScores[kvh*group*nKeys+g*nKeys : kvh*group*nKeys+g*nKeys+nKeys]
-			a.softmaxRow(kvh*group+g, rowS, loP, hiP)
-		}
-	})
-
-	runSplitAligned(splitWorkers, hd, attnGroupedNEONBlock, func(w, d0, d1 int) {
-		ws := &pool[w]
-		sliceHd := d1 - d0
-		sliceCtx := ws.groupCtx[:group*sliceHd]
-		sliceAcc := ws.groupAvAcc[:group*sliceHd]
-		for kvh := range nKV {
-			rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-			attn.MatmulAVAcc64Group(rows, a.vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, a.rs)
-			dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
-			for g := range group {
-				copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])
-			}
-		}
-	})
-
-	atomic.AddInt64(&attnGroupedRuns, int64(nKV))
-}
-
-// gatherKV fills ws's kh/vt for one kv head on the f32 path. It is a pure function of (keys, vals, kvh), so two workers gathering
-// the same kvh into their own buffers produce identical bytes, which is why f32Heads's serial and fan-out arms are bit-identical,
-// not merely close (TestAttendF32Fanout_bitIdentical).
-func (a *kvAttend) gatherKV(ws *headWorkerScratch, kvh int) {
-	keys, vals, hd, rs, nKeys := a.keys, a.vals, a.hd, a.rs, a.nKeys
-	// The fused schedule needs V block-major (a key-range slice of the [hd, nKeys]
-	// layout is not contiguous), so the layout is chosen here at gather time rather
-	// than re-transposed per block.
-	if a.fusedOK && ws.fused != nil {
-		gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, rs, nKeys)
-		return
-	}
-	for s := range nKeys {
-		kvBase := s*rs + kvh*hd
-		copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
-		vrow := vals[kvBase : kvBase+hd]
-		_ = vrow[hd-1]
-		_ = ws.vt[(hd-1)*nKeys+s]
-		for d := range hd {
-			ws.vt[d*nKeys+s] = vrow[d]
-		}
-	}
-}
-
-// f32Heads is the f32 path (the default for prefill above fastAttnMinPrompt).
-func (a *kvAttend) f32Heads(pool []headWorkerScratch) {
-	nH, nKV, group := a.nH, a.nKV, a.group
-	// Fan out over query heads, as the acc64 path does. Every pool slot already owns a full-size kh/vt pair (prefillAttnWorkersK
-	// budgets 2*nKeys*hd per slot), so a worker gathers into its own buffers and nothing is shared across the group. Heads are
-	// assigned in contiguous runs so a worker walks whole kv groups and re-gathers only when kvh changes: at most nKV + workers
-	// gathers, not nH. MatmulBT already fans out over output columns internally; head-level fan-out is what parallelises the gather,
-	// the softmax and the scatter.
-	workers := 1
-	if len(pool) > 1 && nH > 1 && a.K*a.nKeys >= attnHeadsParThreshold {
-		workers = min(len(pool), nH)
-	}
-	if workers <= 1 {
-		// Serial arm: one slot, and the matmul keeps its OWN column-level
-		// fan-out (package-level MatmulBT) since no head-level fan-out is
-		// competing with it. This is the pre-A3 behaviour exactly.
-		ws := &pool[0]
-		for kvh := range nKV {
-			a.gatherKV(ws, kvh)
-			for g := range group {
-				a.oneHead(kvh*group+g, ws, linalg.MatmulBT)
-			}
-		}
-		return
-	}
-	var wg sync.WaitGroup
-	headsPer := (nH + workers - 1) / workers
-	for w := 1; w < workers; w++ {
-		h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
-		if h0 >= h1 {
-			continue
-		}
-		wg.Go(func() {
-			ws := &pool[w]
-			lastKVH := -1
-			for qhead := h0; qhead < h1; qhead++ {
-				if kvh := qhead / group; kvh != lastKVH {
-					a.gatherKV(ws, kvh)
-					lastKVH = kvh
-				}
-				// Serial matmul: the fan-out is at the head level here, and
-				// nesting MatmulBT's column fan-out inside it would
-				// oversubscribe. Bit-identical to the column-parallel form
-				// by MatmulBT's width contract.
-				a.oneHead(qhead, ws, ws.mmWS.MatmulBT)
-			}
-		})
-	}
-	h1_0 := min(headsPer, nH)
-	ws0 := &pool[0]
-	lastKVH0 := -1
-	for qhead := range h1_0 {
-		if kvh := qhead / group; kvh != lastKVH0 {
-			a.gatherKV(ws0, kvh)
-			lastKVH0 = kvh
-		}
-		a.oneHead(qhead, ws0, ws0.mmWS.MatmulBT)
-	}
-	wg.Wait()
-}
-
-// lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
-// [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
 func (m *Model) lmHeadN(h []float32, M int) []float32 {
-	return m.lmHeadNInto(h, M, nil)
+	e := m.cpuEngine()
+	return e.LMHeadN(h, M)
 }
 
-// lmHeadNInto is lmHeadN writing into dst (M*VocabSize long; nil allocates).
-func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
-	hp := &m.program().Head
-	logits := dst
-	if logits == nil {
-		logits = make([]float32, M*m.w.Arch.VocabSize)
-	}
-	if hp.Tied {
-		matmul(m.be, &m.w.Embed, h, logits, M)
-	} else {
-		matmul(m.be, &m.w.LMHead, h, logits, M)
-	}
-	if hp.Softcap > 0 {
-		sc := float32(hp.Softcap)
-		for j, val := range logits {
-			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
-		}
-	}
-	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite logits_scaling divisor): mirrors logitsFromHidden's tail.
-	// The sequential path applies it, so batched prefill/verify must too or forwardN diverges for any LogitScale family.
-	if hp.LogitScale != 0 && hp.LogitScale != 1 {
-		inv := float32(1 / hp.LogitScale)
-		for j := range logits {
-			logits[j] *= inv
-		}
-	}
-	return logits
-}
-
-// forwardN runs a batched forward over ids and returns the logits at every
-// position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
-// K sequential forwards. Falls back to sequential for the non-batched archs. The
-// rows may be the cache's own buffer, valid until the next batched prefill or verify on cache.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
-	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
-	return m.forwardNAttn(reqCtx, ids, cache, false)
+	e := m.cpuEngine()
+	return e.ForwardN(reqCtx, ids, unwrapCache(cache))
 }
 
-// forwardNAttn is forwardN with the attention-kernel choice made by the caller. Speculative verify must run the exact kernel
-// (fastAttn=false) on both arms or its equality argument collapses. A caller that must produce KV identical to Generate's prefill
-// passes cpuFastAttention(), as prefillLogits does; otherwise "token-identical to plain greedy" stops holding at temperature 0 for
-// any prompt over the fastAttnMinPrompt floor.
-func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([][]float32, error) {
-	K := len(ids)
-	if K == 0 {
-		return nil, nil
-	}
-	// Tree verify needs the batched path: the sequential fallback ignores treeRowPos/
-	// treeMask, so tree nodes would be attended as a linear chain (wrong parents) —
-	// error rather than silently mis-verify.
-	if cache.treeMask != nil && !m.canBatchN(K) {
-		return nil, fmt.Errorf("decoder.forwardN: tree verify unsupported on this arch (not batchable)")
-	}
-	// Compute-time LoRA is wired only into the sequential forward, so an active adapter must take the M=1 path (as prefillLogits
-	// does): the batched verify would project every position with the base model and commit base K/V, silently verifying drafts
-	// against the wrong model.
-	if cache.lora != nil || !m.canBatchN(K) {
-		out := make([][]float32, K)
-		for i, id := range ids {
-			l, err := m.forward(id, cache)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = slices.Clone(l) // forward reuses scr.logits — copy
-		}
-		return out, nil
-	}
-	h, err := m.forwardLayersN(reqCtx, ids, cache, fastAttn)
-	if err != nil {
-		return nil, err
-	}
-	vocab := m.w.Arch.VocabSize
-	t0 := costStart(cache)
-	logits := m.lmHeadNInto(h, K, cache.headLogits(K*vocab))
-	if cache.cost != nil {
-		m.countHead(cache, K, t0)
-	}
-	out := make([][]float32, K)
-	for i := range K {
-		out[i] = logits[i*vocab : i*vocab+vocab]
-	}
-	return out, nil
-}
-
-// prefillLogits processes the whole prompt and returns the logits at its last position (the seed for the first generated token),
-// in the cache's own buffer (KVCache.headLogits), valid until the next batched prefill or verify on cache.
-// On the batched archs it runs the layers at M=len(prompt) in one pass (each weight streamed once, reused across all positions)
-// and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
-// sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
 func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
-	// Compute-time LoRA (#7) is wired only into the per-token walker (projQKVToken
-	// + gatedMLPAct), so an active adapter takes the M=1 path — the prompt's K/V must carry
-	// the delta or decode would continue a base-projected context. The RAM-density win
-	// (N adapters share one base) is unaffected; only adapter'd prefill speed regresses.
-	if cache.lora != nil || !m.canBatchN(len(prompt)) {
-		for _, id := range prompt[:len(prompt)-1] {
-			// The sequential fallback checks the context per token: it has no layer batch to bound, and a LoRA'd or non-batchable arch
-			// prefills here.
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if _, err := m.runLayers(id, cache); err != nil {
-				return nil, err
-			}
-		}
-		return m.forward(prompt[len(prompt)-1], cache)
-	}
-	h, err := m.prefillPassesN(ctx, len(prompt), cache, func(dst []float32, lo, hi int) {
-		t0 := costStart(cache)
-		m.embedNInto(dst, prompt[lo:hi])
-		if cache.cost != nil {
-			m.countEmbed(cache, hi-lo, false, t0)
-		}
-	}, nil)
-	if err != nil {
-		return nil, err
-	}
-	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
-	hidden := m.w.Arch.HiddenDim
-	t0 := costStart(cache)
-	logits := m.lmHeadNInto(h[len(h)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)) // the LM head on the last row only
-	if cache.cost != nil {
-		m.countHead(cache, 1, t0)
-	}
-	if len(prompt) >= prefillReleaseRows {
-		releaseHostMemory()
-	}
-	return logits, nil
+	e := m.cpuEngine()
+	return e.PrefillLogits(ctx, prompt, unwrapCache(cache))
 }
 
-// prefillPassesN runs the n rows of a prefill through the batched layers, in passes of at most prefillChunkRows rows when the
-// cache allows it (prefillChunkable) and in one otherwise. embed fills dst with the prefill's rows [lo, hi), embedded and with any
-// image features spliced in. keep, if non-nil, sees each pass's output rows, which start at row lo and are valid only during the
-// call. It returns the last pass's output rows, post final norm.
-//
-// A sliding-window layer's fast attention is not chunk-invariant (its output depends on where the pass's key window starts),
-// so a cache with one keeps the single pass whenever the prefill takes fast attention. A cut never falls inside an image block
-// (KVCache.prefillCut), so every block's rows share a pass.
 func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed func(dst []float32, lo, hi int), keep func(lo int, rows []float32)) ([]float32, error) {
-	fast := m.cpuFastAttention() && n >= fastAttnMinPrompt
-	C := n
-	if cache.prefillChunkable() && !(cache.localAny && fast) {
-		C = prefillChunkRows
-	}
-	hidden, start := m.w.Arch.HiddenDim, cache.Pos()
-	// One working set for every chunk, sized by the first (the largest, unless an image block stretches a later one) and the
-	// whole prefill's keys.
-	ps := &prefillPassScratch{poolKeys: start + n}
-	var h []float32
-	for c0, i := 0, 0; c0 < n; i++ {
-		c1 := cache.prefillCut(start, c0, min(c0+C, n))
-		if i == 1 {
-			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first chunk taught the cache each layer's width
-			if prefillChunkDone != nil {
-				prefillChunkDone(-1) // the KV reserve, which a gate on working buffers reads apart from them
-			}
-		}
-		dst := ps.take(&ps.h, (c1-c0)*hidden)
-		embed(dst, c0, c1)
-		var err error
-		atomic.AddInt64(&prefillPasses, 1)
-		if h, err = m.runLayersFromEmbedNFloor(ctx, dst, cache, m.cpuFastAttention(), n, ps); err != nil {
-			return nil, err
-		}
-		if keep != nil {
-			keep(c0, h)
-		}
-		if prefillChunkDone != nil {
-			prefillChunkDone(i)
-		}
-		c0 = c1
-	}
-	if prefillScratchSeen != nil {
-		prefillScratchSeen(ps)
-	}
-	return h, nil
+	e := m.cpuEngine()
+	return e.PrefillPassesN(ctx, n, unwrapCache(cache), embed, keep)
 }
 
-// prefillScratchSeen, when set (tests only), sees the working set a prefill's passes used, after the last one.
-var prefillScratchSeen func(ps *prefillPassScratch)
-
-// prefillPassScratch is a batched pass's working set. A chunked prefill (Model.prefillLogits) makes one and passes it to
-// every chunk, so the chunks after the first allocate no working buffers; any other caller passes nil and gets fresh ones.
-// take clears what it returns, so a chunk starts from the state a fresh allocation gives.
-type prefillPassScratch struct {
-	h, norm, q, k, v, ctx, att, gate, up, mlpOut, alk, alv, gbuf []float32
-	ws                                                           linalg.Workspace
-	hq                                                           w4a8Act
-	pool                                                         []headWorkerScratch
-	poolWant                                                     bool
-	poolKeys                                                     int                // the whole prefill's keys, which the attention pool is sized for
-	moe                                                          *moeBatchScratch   // the MoE expert-major buffers; nil until a MoE layer runs
-	qwen35                                                       *qwen35PassScratch // qwen3.5's mixer buffers; nil until such a layer runs
+func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
+	e := m.cpuEngine()
+	return e.LMHeadNInto(h, M, dst)
 }
 
-// moeScratch returns the pass's MoE expert-major buffers, starting them on first use so a dense pass carries none.
-func (ps *prefillPassScratch) moeScratch() *moeBatchScratch {
-	if ps.moe == nil {
-		ps.moe = &moeBatchScratch{}
-	}
-	return ps.moe
+func (m *Model) qwen35BatchN(K int, cache *KVCache) bool {
+	e := m.cpuEngine()
+	return e.Qwen35BatchN(K, unwrapCache(cache))
 }
 
-// take returns (*buf)[:n], cleared, growing *buf when it holds less.
-func (ps *prefillPassScratch) take(buf *[]float32, n int) []float32 {
-	if cap(*buf) < n {
-		*buf = make([]float32, n)
-		return *buf
-	}
-	b := (*buf)[:n]
-	clear(b)
-	return b
+func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
+	e := m.cpuEngine()
+	return e.Qwen35BatchNAnyPos(K, unwrapCache(cache))
 }
 
-// prefillChunkRows is how many rows one pass of a long text prefill holds: the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
-// tiny fixture; 2048 in production.
-var prefillChunkRows = 2048
+func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersQwen35N(reqCtx, h, unwrapCache(cache))
+}
 
-// prefillChunkDone, when set (tests only), is called after each chunk of a chunked prefill with its index, and with -1 right
-// after the KV reserve: the chunked-prefill allocation gates read the allocator there.
-var prefillChunkDone func(chunk int)
-
-// prefillPasses counts the batched passes prefillLogits runs, so a test can see that a chunked prefill really chunked: a
-// bit-identity gate cannot tell a prefill that never split from one that split correctly.
-var prefillPasses int64
-
-// prefillReleaseRows is the prompt length from which prefillLogits returns freed memory to the OS once the prefill is done: a
-// long prompt's scratch is garbage by then, and the runtime would otherwise keep it mapped. Shorter prompts skip the forced
-// collection.
-const prefillReleaseRows = 4096
+func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, pleIDs []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersGemma4FromEmbedN(reqCtx, h, pleIDs, spans, unwrapCache(cache))
+}
 
 // prefillLogitsVL prefills a multimodal prompt and returns the last-position
 // logits: the text token embeddings with the projected vision embeddings
@@ -1067,7 +142,7 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 		return nil, err
 	}
 	hidden := m.w.Arch.HiddenDim
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)), nil
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
 }
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
@@ -1147,7 +222,7 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 // absolute sequence position). Two deltas vs prefillLogitsVL (Gemma 3): the image
 // tokens attend CAUSALLY — no bidirectional image block (Qwen's bidirectionality is
 // inside the ViT, not the decoder) — and the rotary uses m-RoPE (rope.At reads
-// cache.mropePos). The merged features are RAW (no embed scale), matching HF's
+// cache.c.MRopePos). The merged features are RAW (no embed scale), matching HF's
 // scatter into inputs_embeds.
 func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsQwenVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageFeats, mropePos, cache)
@@ -1170,28 +245,11 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if len(mropePos) != len(ids) {
 		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
 	}
-	cache.mropePos = mropePos                              // rope.At switches to m-RoPE for this prefill
-	cache.mropeDelta = rope.MRoPEDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
+	cache.c.MRopePos = mropePos                              // rope.At switches to m-RoPE for this prefill
+	cache.c.MRopeDelta = rope.MRoPEDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
 	hN, err := m.prefillSpliced(ctx, ids, spans, imageFeats, cache, false)
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.Arch.VocabSize)), nil
-}
-
-// addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image
-// run: HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l], after decoder layer l.
-func addDeepstack(h []float32, ds *deepstackRows, l, startPos, K, hidden int) {
-	set := ds.rows[l]
-	off := 0 // the first row of this span within the set
-	for _, s := range ds.spans {
-		for p := max(s.Pos, startPos); p < min(s.Pos+s.Len, startPos+K); p++ {
-			dst := h[(p-startPos)*hidden : (p-startPos+1)*hidden]
-			src := set[(off+p-s.Pos)*hidden : (off+p-s.Pos+1)*hidden]
-			for j := range dst {
-				dst[j] += src[j]
-			}
-		}
-		off += s.Len
-	}
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
 }

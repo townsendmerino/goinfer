@@ -23,27 +23,27 @@ func TestSession_cancelledSweepOnAWrappedRingGoesCold(t *testing.T) {
 	arch := ringTestArch(1, nKV, hd, W, func(int) bool { return false }) // all local
 
 	cache := NewKVCache(1, nKV, hd, W, startPos+K, nil)
-	cache.enableRings(W, arch.IsGlobalLayer)
+	cache.c.EnableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(53))
 
 	// Turn 1 completed: startPos positions committed and advanced.
 	hist := randVec(rng, startPos*kvDim)
-	cache.commitBatch(0, 0, startPos, hist, hist)
-	cache.advanceTo(startPos)
-	if cache.rings[0].count <= W {
-		t.Fatalf("the premise broke: ring count %d has not wrapped past W=%d", cache.rings[0].count, W)
+	cache.c.CommitBatch(0, 0, startPos, hist, hist)
+	cache.c.AdvanceTo(startPos)
+	if cache.c.Rings[0].Count <= W {
+		t.Fatalf("the premise broke: ring count %d has not wrapped past W=%d", cache.c.Rings[0].Count, W)
 	}
 
 	// Turn 2, CANCELLED mid-sweep: layer 0 committed, advanceTo never ran.
 	next := randVec(rng, K*kvDim)
-	cache.commitBatch(0, startPos, K, next, next)
+	cache.c.CommitBatch(0, startPos, K, next, next)
 	if cache.Pos() != startPos {
 		t.Fatalf("the premise broke: c.pos = %d, want %d — advanceTo must NOT have run",
 			cache.Pos(), startPos)
 	}
-	if cache.rings[0].count != startPos+K {
+	if cache.c.Rings[0].Count != startPos+K {
 		t.Fatalf("the premise broke: ring count = %d, want %d — the layer must have committed",
-			cache.rings[0].count, startPos+K)
+			cache.c.Rings[0].Count, startPos+K)
 	}
 
 	// The token stream the caller emitted claims more than the cache holds.
@@ -73,12 +73,12 @@ func TestSession_exactRewindStaysWarm(t *testing.T) {
 	arch := ringTestArch(1, nKV, hd, W, func(int) bool { return false })
 
 	cache := NewKVCache(1, nKV, hd, W, 128, nil)
-	cache.enableRings(W, arch.IsGlobalLayer)
+	cache.c.EnableRings(W, arch.IsGlobalLayer)
 	rng := rand.New(rand.NewSource(59))
 	// Never wraps: count stays <= W, so every rewind is exact.
 	const n = 32
-	cache.commitBatch(0, 0, n, randVec(rng, n*kvDim), randVec(rng, n*kvDim))
-	cache.advanceTo(n)
+	cache.c.CommitBatch(0, 0, n, randVec(rng, n*kvDim), randVec(rng, n*kvDim))
+	cache.c.AdvanceTo(n)
 
 	seq := make([]int, n)
 	for i := range seq {

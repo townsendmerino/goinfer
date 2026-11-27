@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
@@ -14,7 +15,7 @@ import (
 // prefillQwen35VLBatched when qwen35BatchNAnyPos allows it and otherwise the per-token prefillQwen35VLPerToken loop,
 // because the recurrent state must see every token in order.
 //
-// It leaves cache.mropePos / cache.rope.MRoPEDelta set so decode past the prompt rotates at seqPos+delta, as
+// It leaves cache.c.MRopePos / cache.rope.MRoPEDelta set so decode past the prompt rotates at seqPos+delta, as
 // prefillLogitsQwenVL does.
 func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	arch := m.w.Arch
@@ -28,41 +29,41 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 	if err := m.checkQwen35VLReady(); err != nil {
 		return nil, err
 	}
-	cache.mropePos = mropePos
-	cache.mropeDelta = rope.MRoPEDelta(mropePos, len(ids))
+	cache.c.MRopePos = mropePos
+	cache.c.MRopeDelta = rope.MRoPEDelta(mropePos, len(ids))
 	if !qwen35VLPerToken && m.qwen35BatchNAnyPos(len(ids), cache) {
 		return m.prefillQwen35VLBatched(ctx, ids, imageFeats, spans, cache)
 	}
 	return m.prefillQwen35VLPerToken(ctx, ids, imageFeats, spans, cache)
 }
 
-// prefillQwen35VLBatched runs every projection as one M=len(ids) matmul, so each weight is read once for the prompt
+// prefillQwen35VLBatched runs every projection as one M=len(ids) cpuengine.Matmul, so each weight is read once for the prompt
 // instead of once per token. The DeltaNet recurrence stays sequential inside runLayersQwen35N; its full-attention layers
-// rotate q and k by cache.mropePos exactly as the per-token loop does. It is not bit-identical to that loop (a batched
-// matmul can reduce in a different order): TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the
-// HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.mropePos
+// rotate q and k by cache.c.MRopePos exactly as the per-token loop does. It is not bit-identical to that loop (a batched
+// cpuengine.Matmul can reduce in a different order): TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the
+// HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.c.MRopePos
 // and rope.MRoPEDelta.
 //
-// The prompt runs in passes of prefillChunkRows rows, each embedding and splicing its own rows: the DeltaNet state and
+// The prompt runs in passes of cpuengine.PrefillChunkRows rows, each embedding and splicing its own rows: the DeltaNet state and
 // conv windows carry in the cache, and the full-attention layers read m-RoPE at absolute positions. A capture or a speculative tree
 // keeps one pass.
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.Arch.HiddenDim
-	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
-		cache.knobs, cache.scr = m.knobs, newDecodeScratch(m.w.Arch, m.knobs)
+	if cache.c.Scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
+		cache.c.Knobs, cache.c.Scr = m.knobs, cpuengine.NewDecodeScratch(m.w.Arch, m.knobs)
 	}
 	n, C := len(ids), len(ids)
-	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {
-		C = prefillChunkRows
+	if cache.c.CaptureLayers == nil && !cache.c.SubCapture && cache.c.TreeRowPos == nil && cache.c.TreeMask == nil {
+		C = cpuengine.PrefillChunkRows
 	}
 	start := cache.Pos()
 	var hn []float32
 	for c0, i := 0, 0; c0 < n; i++ {
 		c1 := min(c0+C, n)
 		if i == 1 {
-			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first pass taught the cache each layer's width
-			if prefillChunkDone != nil {
-				prefillChunkDone(-1)
+			cache.c.ReserveRows(max(start+n, cache.c.PlanRows) - cache.Pos()) // the first pass taught the cache each layer's width
+			if cpuengine.PrefillChunkDone != nil {
+				cpuengine.PrefillChunkDone(-1)
 			}
 		}
 		h := make([]float32, (c1-c0)*hidden) // runLayersQwen35N consumes it
@@ -70,13 +71,13 @@ func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeat
 			m.w.Embed.Row(id, h[r*hidden:(r+1)*hidden])
 		}
 		spliceImageSpansRange(h, spans, imageFeats, hidden, c0, c1)
-		atomic.AddInt64(&prefillPasses, 1)
+		atomic.AddInt64(&cpuengine.PrefillPasses, 1)
 		var err error
 		if hn, err = m.runLayersQwen35N(ctx, h, cache); err != nil {
 			return nil, err
 		}
-		if prefillChunkDone != nil {
-			prefillChunkDone(i)
+		if cpuengine.PrefillChunkDone != nil {
+			cpuengine.PrefillChunkDone(i)
 		}
 		c0 = c1
 	}

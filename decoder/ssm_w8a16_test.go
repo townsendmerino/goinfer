@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"cmp"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"slices"
@@ -141,7 +142,7 @@ func TestSSMW8A16Ceiling(t *testing.T) {
 
 	// W8A16: int8 weights (Quant:"int8" → MatmulBTQ8), f32 activations. attn/MoE/lm_head only;
 	// mamba in/out_proj stay f32 unless GOINFER_SSM_Q8WEIGHTS round-trips them (weights-only int8).
-	ssmQ8WeightsOnly = os.Getenv("GOINFER_SSM_Q8WEIGHTS") != ""
+	cpuengine.SSMQ8WeightsOnly = os.Getenv("GOINFER_SSM_Q8WEIGHTS") != ""
 	wm, err := Load(path, Options{Backend: "cpu", Quant: "int8"})
 	if err != nil {
 		t.Fatalf("load W8A16: %v", err)
@@ -151,7 +152,7 @@ func TestSSMW8A16Ceiling(t *testing.T) {
 	}
 	wDist, wArg := run(wm)
 	wm.Close()
-	ssmQ8WeightsOnly = false
+	cpuengine.SSMQ8WeightsOnly = false
 	mambaNote := "f32 mamba"
 	if os.Getenv("GOINFER_SSM_Q8WEIGHTS") != "" {
 		mambaNote = "int8 mamba weights"
