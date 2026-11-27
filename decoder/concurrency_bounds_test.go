@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -143,22 +144,22 @@ func TestExpertBufferPool_refillErrorPreservesFreeSlot(t *testing.T) {
 	w2 := linalg.WrapInt8(make([]int8, 4), []float32{1}, 1, 4, false)
 	k1 := unsafe.Pointer(&w1)
 	k2 := unsafe.Pointer(&w2)
-	p, err := newExpertBufferPool(f, []poolMember{
-		{key: k1, fields: []expertField{{wm: &w1, kind: fieldInt8, off: 0, n: 4, scales: []float32{1}, rows: 1, cols: 4}}},
-		{key: k2, fields: []expertField{{wm: &w2, kind: fieldInt8, off: 100, n: 4, scales: []float32{1}, rows: 1, cols: 4}}}, // past EOF
+	p, err := paging.NewExpertBufferPool(f, []poolMember{
+		{Key: k1, Fields: []expertField{paging.NewInt8ExpertField(&w1, 0, 4, []float32{1}, 1, 4)}},
+		{Key: k2, Fields: []expertField{paging.NewInt8ExpertField(&w2, 100, 4, []float32{1}, 1, 4)}}, // past EOF
 	}, 4, 1) // 1 slot
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.close()
-	if err := p.ensure(k1); err != nil {
+	defer p.Close()
+	if err := p.Ensure(k1); err != nil {
 		t.Fatalf("first ensure: %v", err)
 	}
-	if err := p.ensure(k2); err == nil {
+	if err := p.Ensure(k2); err == nil {
 		t.Fatal("expected error reading past EOF")
 	}
 	// Slot 0 must remain free (not leaked), so re-ensuring k1 succeeds without panicking on empty lru.
-	if err := p.ensure(k1); err != nil {
+	if err := p.Ensure(k1); err != nil {
 		t.Fatalf("ensure after failed refill: %v", err)
 	}
 }

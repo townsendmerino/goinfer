@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
 	"math"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if d.HostWeightsReleased() || d.DrafterFC().Rows() == 0 || d.DrafterLayer(1).Down.Rows() == 0 || d.st == nil {
+	if d.HostWeightsReleased() || d.DrafterFC().Rows() == 0 || d.DrafterLayer(1).Down.Rows() == 0 || !blockdraft.STHandleOpen(&d.BlockTrunk) {
 		t.Fatal("the fixture loaded without weights or without its mapping")
 	}
 	geo, bs, mask, taps := d.DrafterGeometry(), d.BlockSize(), d.MaskTokenID(), d.TargetLayerIDs()
@@ -107,19 +108,8 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 	if _, err := st.Tensor("fc.weight"); err == nil {
 		t.Error("the mapping is still open after the release of a drafter with no own head")
 	}
-	if d.fc.Rows() != 0 || d.hiddenNorm != nil || d.finalNorm != nil {
-		t.Error("fc or a trunk norm survived the release")
-	}
-	for i := range d.layers {
-		l := &d.layers[i]
-		for _, m := range []*linalg.WeightMat{&l.q, &l.k, &l.v, &l.o, &l.gate, &l.up, &l.down} {
-			if m.Rows() != 0 {
-				t.Errorf("layer %d: a %d-row matrix survived the release", i, m.Rows())
-			}
-		}
-		if l.qNorm != nil || l.kNorm != nil || l.inputNorm != nil || l.postAttnNorm != nil {
-			t.Errorf("layer %d: a norm survived the release", i)
-		}
+	if !blockdraft.TrunkHostWeightsCleared(&d.BlockTrunk) {
+		t.Error("trunk weights/norms still populated after ReleaseHostWeights")
 	}
 	// the weight accessors refuse rather than hand out the zero matrices
 	for name, f := range map[string]func(){
@@ -153,7 +143,7 @@ func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if !d.HasOwnHead() || d.lmHead.Rows() == 0 || d.embed.Rows() == 0 || len(d.d2t) == 0 {
+	if !blockdraft.OwnHeadLoaded(&d.DFlash) {
 		t.Fatal("the fixture loaded without its own head, embedding or d2t")
 	}
 	st := d.st
@@ -163,18 +153,18 @@ func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
 	if _, err := st.Tensor("lm_head.weight"); err == nil {
 		t.Error("the mapping is still open after the release of a drafter with its own head")
 	}
-	if d.lmHead.Rows() != 0 || d.embed.Rows() != 0 || d.d2t != nil {
+	if !blockdraft.OwnHeadCleared(&d.DFlash) {
 		t.Error("the own head, embedding or d2t survived the release")
 	}
 	if !d.HasOwnHead() {
 		t.Error("HasOwnHead is false after the release; it names the output path, not whether the weights are held")
 	}
 	be := &cpuBackend{}
-	row := make([]float32, d.hidden)
+	row := make([]float32, d.DrafterGeometry().Hidden)
 	if _, err := d.DraftBlock(be, [][]float32{row}, [][]float32{row}); !errors.Is(err, ErrDrafterReleased) {
 		t.Errorf("DraftBlock: %v, want ErrDrafterReleased", err)
 	}
-	if _, err := d.FuseContext(be, [][]float32{make([]float32, 2*d.hidden)}); !errors.Is(err, ErrDrafterReleased) {
+	if _, err := d.FuseContext(be, [][]float32{make([]float32, 2*d.DrafterGeometry().Hidden)}); !errors.Is(err, ErrDrafterReleased) {
 		t.Errorf("FuseContext: %v, want ErrDrafterReleased", err)
 	}
 	ctx := d.NewContext() // reads no weights: the incremental entry points below are each reached on their own

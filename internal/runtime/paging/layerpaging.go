@@ -1,4 +1,4 @@
-package decoder
+package paging
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ import (
 // Built only for mmap-backed dense .giw models; nil for MoE (expertPager), heap-backed, or a model small enough to fit
 // the budget whole. An internal mutex guards the paging state: the pager lives on *Model and StreamWeights supports
 // concurrent decode streams.
-type layerPager struct {
+type LayerPager struct {
 	spans  [][][]byte // [layer][weight] page-aligned spans within the mapping
 	window int        // resident layer cap (the layer `window` behind is released)
 	ahead  int        // prefetch distance (layers ahead to Advise WILLNEED)
@@ -43,7 +43,7 @@ type layerPager struct {
 // newLayerPager builds a streaming pager over a dense mmap-backed model, or returns
 // nil when paging doesn't apply (MoE, not mmap-backed, no mapped layer weights, or
 // the budget already holds every layer). budget ≤ 0 selects ~half of available RAM.
-func newLayerPager(w *darch.Weights, mapping []byte, budget int64) *layerPager {
+func NewLayerPager(w *darch.Weights, mapping []byte, budget int64) *LayerPager {
 	if w.Arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
@@ -98,13 +98,13 @@ func newLayerPager(w *darch.Weights, mapping []byte, budget int64) *layerPager {
 	if window >= n {
 		return nil // the whole model fits the budget — no streaming needed
 	}
-	return &layerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, n)}
+	return &LayerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, n)}
 }
 
 // enterLayer is called at the top of the layer loop before layer l is read. It
 // prefetches l and the layer `ahead` of it (so the next fault overlaps this layer's
 // compute) and releases the layer `window` behind (keeping resident RAM bounded).
-func (p *layerPager) EnterLayer(l int) {
+func (p *LayerPager) EnterLayer(l int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, t := range [2]int{l, l + p.ahead} {
@@ -129,7 +129,7 @@ func (p *layerPager) EnterLayer(l int) {
 // so resident RAM returns to ~zero between tokens and stays bounded by `window+ahead`
 // during the loop (the cross-token re-read of one window is negligible for a model
 // that doesn't fit anyway). Idempotent.
-func (p *layerPager) FinishLayers() {
+func (p *LayerPager) FinishLayers() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for l := range p.state {
@@ -145,16 +145,39 @@ func (p *layerPager) FinishLayers() {
 
 // stats returns cumulative (prefetches, evictions) — both non-zero means streaming
 // actually ran (prefetched ahead and released behind).
-func (p *layerPager) stats() (prefetches, evictions int64) {
+func (p *LayerPager) Stats() (prefetches, evictions int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.prefetches, p.evictions
 }
 
 // layerPagerSummary describes a built pager for the load banner.
-func layerPagerSummary(p *layerPager) string {
+func LayerPagerSummary(p *LayerPager) string {
 	if p == nil {
 		return ""
 	}
 	return fmt.Sprintf("dense weight streaming: %d layers, window %d resident", len(p.spans), p.window)
+}
+
+// Window returns the resident layer cap.
+func (p *LayerPager) Window() int { return p.window }
+
+// Spans returns the per-layer mapped weight spans (for tests verifying budget derivation).
+func (p *LayerPager) Spans() [][][]byte { return p.spans }
+
+// Ahead returns the prefetch distance.
+func (p *LayerPager) Ahead() int { return p.ahead }
+
+// ResidentState returns a snapshot of the per-layer resident hints.
+func (p *LayerPager) ResidentState() []bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]bool, len(p.state))
+	copy(out, p.state)
+	return out
+}
+
+// NewTestLayerPager builds a LayerPager directly from spans for concurrency tests.
+func NewTestLayerPager(spans [][][]byte, window, ahead int) *LayerPager {
+	return &LayerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, len(spans))}
 }

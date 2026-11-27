@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
 	"math"
 	"os"
 	"path/filepath"
@@ -57,7 +58,7 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		}
 		// The payload's file offset is its alignment in the (page-aligned) mapping: a multiple of the element size when aligned, odd
 		// otherwise, for every dtype.
-		sf, err := openSTFile(filepath.Join(dir, "model.safetensors"))
+		sf, err := blockdraft.OpenSTFileForTest(filepath.Join(dir, "model.safetensors"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +75,7 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if !s.Streamed() || held.Streamed() {
 			t.Fatalf("odd=%v: Streamed is %v opened and %v loaded", odd, s.Streamed(), held.Streamed())
 		}
-		if s.st != nil {
+		if blockdraft.STHandleOpen(&s.BlockTrunk) {
 			t.Errorf("%s odd=%v: the opened drafter still holds its mapping", c.dtype, odd)
 		}
 		same := func(what string, m *linalg.WeightMat, r DrafterRows) {
@@ -116,11 +117,11 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if a, b := DrafterKVBytesPerPosition(s), DrafterKVBytesPerPosition(held); a != b {
 			t.Errorf("odd=%v: K/V bytes per position %d opened, %d loaded", odd, a, b)
 		}
-		row, be := make([]float32, s.hidden), &cpuBackend{}
+		row, be := make([]float32, s.DrafterGeometry().Hidden), &cpuBackend{}
 		if _, err := s.DraftBlock(be, [][]float32{row}, [][]float32{row}); !errors.Is(err, ErrDrafterStreamed) {
 			t.Errorf("odd=%v: DraftBlock on an opened drafter: %v, want ErrDrafterStreamed", odd, err)
 		}
-		if _, err := s.FuseContext(be, [][]float32{make([]float32, 2*s.hidden)}); !errors.Is(err, ErrDrafterStreamed) {
+		if _, err := s.FuseContext(be, [][]float32{make([]float32, 2*s.DrafterGeometry().Hidden)}); !errors.Is(err, ErrDrafterStreamed) {
 			t.Errorf("odd=%v: FuseContext on an opened drafter: %v, want ErrDrafterStreamed", odd, err)
 		}
 		ctx := s.NewContext()

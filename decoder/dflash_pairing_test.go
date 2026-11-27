@@ -61,10 +61,10 @@ func TestDFlash_pairingDialects(t *testing.T) {
 				got, want int
 			}{
 				{"block_size", d.BlockSize(), c.block},
-				{"trunk layers", len(d.layers), c.layers},
-				{"hidden", d.hidden, c.hidden},
+				{"trunk layers", d.DrafterGeometry().Layers, c.layers},
+				{"hidden", d.DrafterGeometry().Hidden, c.hidden},
 				{"taps", len(d.TargetLayerIDs()), c.taps},
-				{"fc input width", d.fc.Cols(), c.taps * c.hidden},
+				{"fc input width", d.DrafterFC().Cols(), c.taps * c.hidden},
 				{"mask token", d.MaskTokenID(), c.mask},
 			} {
 				if k.got != k.want {
@@ -77,7 +77,7 @@ func TestDFlash_pairingDialects(t *testing.T) {
 			be := &cpuBackend{}
 			ctx := make([][]float32, 12)
 			for i := range ctx {
-				ctx[i] = make([]float32, d.fc.Cols())
+				ctx[i] = make([]float32, d.DrafterFC().Cols())
 				for j := range ctx[i] {
 					ctx[i][j] = float32((i*7+j)%13) / 13
 				}
@@ -88,7 +88,7 @@ func TestDFlash_pairingDialects(t *testing.T) {
 			}
 			blk := make([][]float32, d.BlockSize())
 			for i := range blk {
-				blk[i] = make([]float32, d.hidden)
+				blk[i] = make([]float32, d.DrafterGeometry().Hidden)
 				for j := range blk[i] {
 					blk[i][j] = float32((i*3+j)%11) / 11
 				}
@@ -97,11 +97,11 @@ func TestDFlash_pairingDialects(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DraftBlock: %v", err)
 			}
-			if len(out) != d.BlockSize() || len(out[0]) != d.hidden {
-				t.Fatalf("trunk out %dx%d, want %dx%d", len(out), len(out[0]), d.BlockSize(), d.hidden)
+			if len(out) != d.BlockSize() || len(out[0]) != d.DrafterGeometry().Hidden {
+				t.Fatalf("trunk out %dx%d, want %dx%d", len(out), len(out[0]), d.BlockSize(), d.DrafterGeometry().Hidden)
 			}
 			t.Logf("OK: block=%d taps=%v layers=%d hidden=%d heads=%d/%d",
-				d.BlockSize(), d.TargetLayerIDs(), len(d.layers), d.hidden, d.nHeads, d.nKV)
+				d.BlockSize(), d.TargetLayerIDs(), d.DrafterGeometry().Layers, d.DrafterGeometry().Hidden, d.DrafterGeometry().NumHeads, d.DrafterGeometry().NumKVHeads)
 		})
 	}
 }

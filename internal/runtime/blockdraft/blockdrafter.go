@@ -1,11 +1,14 @@
-package decoder
+package blockdraft
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder/resident"
+)
 
 // blockTrunk implements BlockDrafterWeights once, for every family that embeds it.
 
-func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
-	return DrafterGeometry{
+func (d *BlockTrunk) DrafterGeometry() resident.DrafterGeometry {
+	return resident.DrafterGeometry{
 		Layers:       len(d.layers),
 		Hidden:       d.hidden,
 		NumHeads:     d.nHeads,
@@ -20,25 +23,25 @@ func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
 // The weight accessors panic once the host weights are released (ErrDrafterReleased), and the matrix ones on a streamed
 // drafter too (ErrDrafterStreamed), rather than hand out zero matrices.
 
-func (d *blockTrunk) DrafterFC() *linalg.WeightMat {
+func (d *BlockTrunk) DrafterFC() *linalg.WeightMat {
 	d.mustHoldWeights()
 	return &d.fc
 }
 
-func (d *blockTrunk) DrafterHiddenNorm() []float32 {
+func (d *BlockTrunk) DrafterHiddenNorm() []float32 {
 	d.mustHoldNorms()
 	return d.hiddenNorm
 }
 
-func (d *blockTrunk) DrafterFinalNorm() []float32 {
+func (d *BlockTrunk) DrafterFinalNorm() []float32 {
 	d.mustHoldNorms()
 	return d.finalNorm
 }
 
-func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
+func (d *BlockTrunk) DrafterLayer(i int) resident.DrafterLayerWeights {
 	d.mustHoldWeights()
 	l := &d.layers[i]
-	return DrafterLayerWeights{
+	return resident.DrafterLayerWeights{
 		Q: &l.q, K: &l.k, V: &l.v, O: &l.o,
 		Gate: &l.gate, Up: &l.up, Down: &l.down,
 		QNorm: l.qNorm, KNorm: l.kNorm,
@@ -72,7 +75,7 @@ type StreamedDrafterWeights interface {
 // StreamingDrafterHost is a ResidentDrafterHost whose attach reads a streamed drafter's matrices through its row readers
 // (StreamedDrafterWeights). NewBlockSpec refuses a streamed drafter on any other host, before anything is read.
 type StreamingDrafterHost interface {
-	ResidentDrafterHost
+	resident.DrafterHost
 	StreamsDrafterRows()
 }
 
@@ -81,7 +84,7 @@ type StreamingDrafterHost interface {
 // zero, and an upload of them would draft noise that lossless verify only rejects. A family satisfies it only once its release
 // also guards its own host drafting.
 type ReleasableDrafterWeights interface {
-	BlockDrafterWeights
+	resident.BlockDrafterWeights
 	HostWeightsReleased() bool
 	ReleaseHostWeights() error
 }
@@ -89,8 +92,8 @@ type ReleasableDrafterWeights interface {
 // Compile-time proof that both families satisfy the interfaces through the shared trunk. If a
 // third drafter lands and does NOT embed blockTrunk, this is where that shows up.
 var (
-	_ StreamedDrafterWeights = (*DFlashDrafter)(nil)
-	_ BlockDrafterWeights    = (*DSparkDrafter)(nil) // not releasable: its own heads' host drafting has no release guard
+	_ StreamedDrafterWeights       = (*DFlash)(nil)
+	_ resident.BlockDrafterWeights = (*DSpark)(nil) // not releasable: its own heads' host drafting has no release guard
 )
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
@@ -109,7 +112,7 @@ var (
 //
 // Call it before a held drafter's release (ReleaseHostWeights): its matrix accessors then panic with ErrDrafterReleased. A
 // streamed drafter's estimate reads only dimensions.
-func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
+func EstimateResidentBytes(dw resident.BlockDrafterWeights) int64 {
 	int8Bytes := func(w *linalg.WeightMat) int64 {
 		if w == nil {
 			return 0
@@ -148,7 +151,7 @@ func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 // It is per position so each caller multiplies by the ctx it has in hand: resolveCtxCapFit by its candidate, the real
 // build by the final ctxCap. Plan's chooseCtx only shrinks from the candidate it is asked with, so pricing the
 // planning-time call against the candidate can only over-estimate (safe) or be exact.
-func DrafterKVBytesPerPosition(dw BlockDrafterWeights) int64 {
+func KVBytesPerPosition(dw resident.BlockDrafterWeights) int64 {
 	geo := dw.DrafterGeometry()
 	kvDim := int64(geo.NumKVHeads) * int64(geo.HeadDim)
 	return int64(geo.Layers) * kvDim * 2 /* K+V */ * 4 /* f32 */

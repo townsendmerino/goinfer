@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
 	"io/fs"
 	"math"
 	"os"
@@ -94,8 +95,8 @@ func TestDSpark_referenceParity(t *testing.T) {
 	for _, tr := range g.Traces {
 		t.Run(tr.Name, func(t *testing.T) {
 			ctxLen := tr.Tensors["fused_context"].Shape[0]
-			fused := readRows(t, ref, tr.Name+"/fused_context", ctxLen, d.hidden)
-			blockIn := readRows(t, ref, tr.Name+"/block_in", tr.BlockSize, d.hidden)
+			fused := readRows(t, ref, tr.Name+"/fused_context", ctxLen, d.DrafterGeometry().Hidden)
+			blockIn := readRows(t, ref, tr.Name+"/block_in", tr.BlockSize, d.DrafterGeometry().Hidden)
 
 			// DSpark embeds the block with its OWN table — check that first, since a wrong
 			// embedding would make every later tensor wrong for an uninteresting reason.
@@ -111,9 +112,9 @@ func TestDSpark_referenceParity(t *testing.T) {
 			for i, row := range blockIn {
 				h[i] = slices.Clone(row)
 			}
-			for li := range d.layers {
-				d.layer(be, &d.layers[li], cctx.k[li], cctx.v[li], h)
-				want := readRows(t, ref, tr.Name+"/layer_out."+strconv.Itoa(li), tr.BlockSize, d.hidden)
+			for li := range d.DrafterGeometry().Layers {
+				blockdraft.RunLayer(&d.BlockTrunk, be, li, cctx, h)
+				want := readRows(t, ref, tr.Name+"/layer_out."+strconv.Itoa(li), tr.BlockSize, d.DrafterGeometry().Hidden)
 				cos, maxAbs := compareRows(h, want)
 				t.Logf("layer_out.%d: cosine %.8f maxAbs %.3e", li, cos, maxAbs)
 				if cos < 1-1e-5 {
@@ -125,7 +126,7 @@ func TestDSpark_referenceParity(t *testing.T) {
 			if derr != nil {
 				t.Fatalf("DraftBlockCtx: %v", derr)
 			}
-			wantTrunk := readRows(t, ref, tr.Name+"/trunk_out", tr.BlockSize, d.hidden)
+			wantTrunk := readRows(t, ref, tr.Name+"/trunk_out", tr.BlockSize, d.DrafterGeometry().Hidden)
 			cos, maxAbs := compareRows(trunk, wantTrunk)
 			t.Logf("trunk_out: cosine %.8f maxAbs %.3e (ctx=%d block=%d)", cos, maxAbs, ctxLen, tr.BlockSize)
 			if cos < 1-1e-5 {
@@ -198,8 +199,8 @@ func TestDSpark_targetEndToEnd(t *testing.T) {
 		t.Fatalf("Load(%s): %v", tdir, err)
 	}
 	defer m.Close()
-	if m.w.Arch.HiddenDim != d.hidden {
-		t.Fatalf("target hidden %d != drafter hidden %d", m.w.Arch.HiddenDim, d.hidden)
+	if m.w.Arch.HiddenDim != d.DrafterGeometry().Hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d", m.w.Arch.HiddenDim, d.DrafterGeometry().Hidden)
 	}
 
 	for _, tr := range g.Traces {
@@ -212,7 +213,7 @@ func TestDSpark_targetEndToEnd(t *testing.T) {
 				if err != nil {
 					t.Fatalf("ForwardCapture: %v", err)
 				}
-				row := make([]float32, 0, len(hidden)*d.hidden)
+				row := make([]float32, 0, len(hidden)*d.DrafterGeometry().Hidden)
 				for _, h := range hidden {
 					row = append(row, h...)
 				}

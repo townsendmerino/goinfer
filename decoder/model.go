@@ -662,7 +662,7 @@ func (m *Model) Close() error {
 		return nil
 	}
 	if m.pager != nil {
-		_ = m.pager.close()
+		_ = m.pager.Close()
 		m.pager = nil
 	}
 	m.kvSnaps.releaseAll() // pinned host memory, freed before the device it was pinned for

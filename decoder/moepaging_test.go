@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,7 +71,7 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	if !slicesEqualInt(a, b) {
 		t.Fatalf("paging changed the decode:\n full:  %v\n paged: %v", a, b)
 	}
-	hits, misses, evictions := paged.pager.stats()
+	hits, misses, evictions := paged.pager.Stats()
 	if evictions == 0 {
 		t.Fatalf("pager evicted nothing (hits=%d misses=%d) — budget too large to exercise eviction", hits, misses)
 	}
@@ -134,9 +135,7 @@ func newRealMmapPager(t *testing.T, keys []unsafe.Pointer, spanBytes int64) *exp
 	for i, k := range keys {
 		cache.Add(k, [][]byte{data[int64(i)*spanBytes : int64(i+1)*spanBytes]})
 	}
-	minflt, majflt, ok := processFaultCounts() // matches newExpertPager's own baseline capture
-	return &expertPager{cache: cache, nExperts: len(keys), total: spanBytes * int64(len(keys)),
-		minfltBase: minflt, majfltBase: majflt, faultsOK: ok}
+	return paging.NewTestExpertPager(cache, nil, processFaultCounts)
 }
 
 // TestExpertPaging_touchesEveryFamilyThatBuildsAPager pins that every family whose loader builds a pager
@@ -145,7 +144,7 @@ func newRealMmapPager(t *testing.T, keys []unsafe.Pointer, spanBytes int64) *exp
 // bound under -stream-weights while the banner claims one (gpt-oss, Llama 4 and Nemotron 3 Nano did this;
 // audit M-34). It drives each family's real MoE forward function directly (hand-built minimal
 // Architecture/LayerWeights, as TestNemotron3NanoMoE_forward does) with m.pager wired to a real mmap-backed
-// pager keyed by the addresses (&lw.Experts[e]) the code touches, and asserts pager.stats() shows nonzero
+// pager keyed by the addresses (&lw.Experts[e]) the code touches, and asserts pager.Stats() shows nonzero
 // hits+misses.
 func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 	const hidden, inter = 2, 2
@@ -187,9 +186,9 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 		if _, err := m.gptOssMoE([]float32{1, 1}, lw, arch); err != nil {
 			t.Fatalf("gptOssMoE: %v", err)
 		}
-		hits, misses, _ := pager.stats()
+		hits, misses, _ := pager.Stats()
 		if hits+misses == 0 {
-			t.Fatal("pager.stats() = 0 touches after gptOssMoE — gpt-oss still bypasses the pager (M-34)")
+			t.Fatal("pager.Stats() = 0 touches after gptOssMoE — gpt-oss still bypasses the pager (M-34)")
 		}
 		t.Logf("gpt-oss: hits=%d misses=%d", hits, misses)
 	})
@@ -213,9 +212,9 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 		m := &Model{be: &cpuBackend{}, pager: pager}
 		out := make([]float32, hidden)
 		m.llama4MoE([]float32{1, 1}, out, lw, arch)
-		hits, misses, _ := pager.stats()
+		hits, misses, _ := pager.Stats()
 		if hits+misses == 0 {
-			t.Fatal("pager.stats() = 0 touches after llama4MoE — Llama 4 still bypasses the pager (M-34)")
+			t.Fatal("pager.Stats() = 0 touches after llama4MoE — Llama 4 still bypasses the pager (M-34)")
 		}
 		t.Logf("llama4: hits=%d misses=%d", hits, misses)
 	})
@@ -239,9 +238,9 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 		pager := newRealMmapPager(t, keysOf(experts), 16384)
 		m := &Model{be: &cpuBackend{}, pager: pager}
 		_ = m.nemotronMoE([]float32{1, 1}, lw, arch, hidden)
-		hits, misses, _ := pager.stats()
+		hits, misses, _ := pager.Stats()
 		if hits+misses == 0 {
-			t.Fatal("pager.stats() = 0 touches after nemotronMoE — Nemotron 3 Nano still bypasses the pager (M-34)")
+			t.Fatal("pager.Stats() = 0 touches after nemotronMoE — Nemotron 3 Nano still bypasses the pager (M-34)")
 		}
 		t.Logf("nemotron3nano: hits=%d misses=%d", hits, misses)
 	})
@@ -265,21 +264,21 @@ func TestExpertBufferPool_capNeverExceedsBudget(t *testing.T) {
 	members := make([]poolMember, nMembers)
 	for i := range nMembers {
 		members[i] = poolMember{
-			key:    unsafe.Pointer(&ids[i]),
-			fields: []expertField{{kind: fieldInt8, off: int64(i * fieldBytes), n: fieldBytes}},
+			Key:    unsafe.Pointer(&ids[i]),
+			Fields: []expertField{paging.NewInt8ExpertField(nil, int64(i*fieldBytes), fieldBytes, nil, 0, 0)},
 		}
 	}
 	// budget for 3 slots' worth; minSlots=1 so the budget, not the floor, decides slot count.
-	pool, err := newExpertBufferPool(path, members, int64(3*fieldBytes), 1)
+	pool, err := paging.NewExpertBufferPool(path, members, int64(3*fieldBytes), 1)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	defer pool.close()
-	if got, want := len(pool.slotBuf), 3; got != want {
+	defer pool.Close()
+	if got, want := pool.SlotCount(), 3; got != want {
 		t.Fatalf("slot count = %d, want %d (budget/fieldBytes)", got, want)
 	}
-	if pool.budget() != int64(3*fieldBytes) {
-		t.Errorf("budget() = %d, want %d", pool.budget(), 3*fieldBytes)
+	if pool.Budget() != int64(3*fieldBytes) {
+		t.Errorf("budget() = %d, want %d", pool.Budget(), 3*fieldBytes)
 	}
 }
 
@@ -294,7 +293,7 @@ func TestExpertPager_faultDelta(t *testing.T) {
 		keys[i] = unsafe.Pointer(&ids[i])
 	}
 	pager := newRealMmapPager(t, keys, spanBytes)
-	minflt, majflt, ok := pager.faultDelta()
+	minflt, majflt, ok := pager.FaultDelta()
 	if !ok {
 		t.Skip("no fault-count probe on this platform (faultcount_other.go) — nothing to check")
 	}
@@ -304,7 +303,7 @@ func TestExpertPager_faultDelta(t *testing.T) {
 	for _, k := range keys {
 		pager.Touch(k)
 	}
-	minflt2, majflt2, ok2 := pager.faultDelta()
+	minflt2, majflt2, ok2 := pager.FaultDelta()
 	if !ok2 {
 		t.Fatal("faultDelta became unavailable after touch() calls — was available before")
 	}
