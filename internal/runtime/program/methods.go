@@ -167,6 +167,8 @@ func (a ActKind) String() string {
 		return "ReLU²"
 	case ActGelu:
 		return "GELU"
+	case ActSitu:
+		return "SITU"
 	default:
 		return "unknown"
 	}

@@ -1171,7 +1171,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `cmd/testcmdtags` | `internal/guard/testcmdtags` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/arch`, `decoder/config`, `decoder/fit`, `decoder/quant`, `decoder/resident`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/archparts`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/families`, `internal/runtime/ggufconfig`, `internal/runtime/giw`, `internal/runtime/giwcodec`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/normact`, `internal/runtime/program`, `internal/runtime/rope`, `internal/runtime/sampling`, `internal/testassets`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/testgate`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/arch`, `decoder/config`, `decoder/fit`, `decoder/quant`, `decoder/resident`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/archparts`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/families`, `internal/runtime/ggufconfig`, `internal/runtime/giw`, `internal/runtime/giwcodec`, `internal/runtime/hybridattn`, `internal/runtime/inkling2`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/normact`, `internal/runtime/program`, `internal/runtime/rope`, `internal/runtime/sampling`, `internal/testassets`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/testgate`, `internal/vision`, `multimodal` |
 | `decoder/arch` | `decoder/config`, `internal/runtime/archparts`, `internal/runtime/kvmgr`, `internal/runtime/program`, `internal/runtime/rope` |  |
 | `decoder/fit` | `internal/runtime/mem` |  |
 | `decoder/resident` | `internal/cost`, `internal/runtime/adapter` |  |
@@ -1205,6 +1205,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/runtime/families` | `decoder/arch`, `decoder/config`, `internal/runtime/archparts`, `internal/runtime/ggufconfig`, `internal/runtime/program`, `internal/runtime/rope` |  |
 | `internal/runtime/ggufconfig` | `decoder/config` |  |
 | `internal/runtime/giwcodec` | `decoder/arch`, `decoder/config`, `internal/runtime/archparts`, `internal/runtime/families`, `internal/runtime/program` |  |
+| `internal/runtime/inkling2` | `decoder/arch`, `internal/runtime/archparts`, `internal/runtime/normact`, `internal/runtime/program` |  |
 | `internal/runtime/mamba2` | `internal/runtime/hybridattn` |  |
 | `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` | `internal/testpath` |
 | `internal/runtime/prequant` | `decoder` |  |

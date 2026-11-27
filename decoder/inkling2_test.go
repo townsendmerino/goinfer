@@ -32,6 +32,20 @@ func cosine32(a, b []float32) float64 {
 	return ab / math.Sqrt(aa*bb)
 }
 
+// TestInkling2_noResidentBackend holds the family CPU-only: no resident implements opInkling2, and a backend that admits by
+// feature set must not read it as a plain attention and MoE model.
+func TestInkling2_noResidentBackend(t *testing.T) {
+	m, err := Load(inkling2TinyDir+"/model.gguf", Options{Quant: "f32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, be := range residentBackends {
+		if ResidentEligible(m.w.Arch, be) {
+			t.Errorf("%s admits inkling2_loop as resident", be)
+		}
+	}
+}
+
 // TestInkling2Tiny_matchesTransformers runs the tiny checkpoint token by token through the CPU walker and holds every visit's
 // output and every position's logits to transformers' full-sequence forward of the same weights.
 func TestInkling2Tiny_matchesTransformers(t *testing.T) {

@@ -90,4 +90,7 @@ const (
 	// implements it: residentFeatures derives FeatGatedGELUErf or FeatNonGatedGELUErf,
 	// which no backend declares.
 	ActGelu
+	// ActSitu is Inkling 2's expert activation, 4·tanh(g/4)·sigmoid(g) · 25·tanh(u/25) at the checkpoint's softcaps
+	// (inkling2.Situ); appended for the same reason as ActGelu. Only opInkling2's CPU walker runs it.
+	ActSitu
 )

@@ -311,5 +311,5 @@ func (a *Architecture) inkling2LayerOps(l int) []op {
 	if swa {
 		ink.Window, ink.Extent = a.SlidingWindow, a.SlidingWindow
 	}
-	return []op{{Kind: opInkling2, FFN: ffnParams{Form: ffnMoE, MoE: *a.MoE}, Ink: ink}}
+	return []op{{Kind: opInkling2, FFN: ffnParams{Form: ffnMoE, Act: a.Act, MoE: *a.MoE}, Ink: ink}}
 }

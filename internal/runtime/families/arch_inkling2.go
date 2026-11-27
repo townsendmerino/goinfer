@@ -47,7 +47,7 @@ func inkling2Architecture(cfg *Config) (*darch.Architecture, *archparts.TensorSc
 		Norm:               darch.NormRMS,
 		NormEps:            cfg.RMSNormEps,
 		NormPlacement:      darch.NormPre2,
-		Act:                darch.ActSiLU, // unused: the experts run SITU inside opInkling2
+		Act:                darch.ActSitu,
 		NoPositionEncoding: true,
 		MoE: &MoEConfig{
 			NumExperts:      cfg.NumExperts,

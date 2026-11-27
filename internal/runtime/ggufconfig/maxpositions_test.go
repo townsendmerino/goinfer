@@ -76,10 +76,26 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 		kvBoolArr("mellum.attention.sliding_window_pattern", []bool{true, false}),
 	}, emb)
 
+	inkling := func(arch string) []byte {
+		return buildGGUF([]ggufKV{
+			kvStr("general.architecture", arch),
+			kvU32(arch+".context_length", wantCtx),
+			kvU32(arch+".embedding_length", 8),
+			kvU32(arch+".block_count", 2),
+			kvI32Arr(arch+".attention.head_count", []int32{4, 4}),
+			kvI32Arr(arch+".attention.head_count_kv", []int32{2, 2}),
+			kvU32(arch+".attention.key_length", 2),
+			kvU32(arch+".attention.key_length_swa", 2),
+			kvBoolArr(arch+".attention.sliding_window_pattern", []bool{true, false}),
+			kvU32(arch+".attention.sliding_window", 4),
+			kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6),
+		}, emb)
+	}
 	cases := []struct {
 		name string
 		raw  []byte
 	}{
+		{"inkling2_loop", inkling("inkling2_loop")},
 		{"llama", dense("llama")},
 		{"qwen2", dense("qwen2")},
 		{"qwen3", dense("qwen3")},

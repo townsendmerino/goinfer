@@ -495,6 +495,31 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "inkling2_loop",
+    "model_types": [
+      "inkling2_loop"
+    ],
+    "display_name": "Inkling 2 Mini",
+    "description": "thinkingmachines Inkling-2-Mini (26B-A1.8B): attention-residual blocks, relative-bias attention with per-token sinks and short convolutions, sigmoid-routed SITU MoE, a core of layers run three passes; CPU only",
+    "summary": "Thinking Machines' Inkling-2-Mini, a looped mixture-of-experts (24 layers, 48 layer visits a token), text only, on the CPU.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "none",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SITU (gated)",
+    "tied_lm_head": false,
+    "loaders": "GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "internlm2",
     "model_types": [
       "internlm2"

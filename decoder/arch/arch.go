@@ -546,6 +546,7 @@ const (
 	ActSiLU     = program.ActSiLU
 	ActReLU2    = program.ActReLU2
 	ActGelu     = program.ActGelu
+	ActSitu     = program.ActSitu
 )
 
 // KVRowPad is the row pad, in elements, a CPU cache of this architecture takes at elemBytes per element: one 64 B line when every layer

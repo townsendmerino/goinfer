@@ -43,7 +43,7 @@ type Op struct {
 	Gated  GatedAttnParams  `fp:"gated"`
 	G4     Gemma4AttnParams `fp:"g4"`
 	Norms  NormEpsParams    `fp:"norms"` // opGemma4MoE and opPLE
-	Ink    Inkling2Params   `fp:"ink"`
+	Ink    Inkling2Params   `fp:"ink,omitzero"`
 }
 
 // NormSlot selects which of a layer's norm weights an opNorm applies.

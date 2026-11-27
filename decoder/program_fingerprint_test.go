@@ -174,3 +174,18 @@ func TestProgramFingerprint_realCheckpoints(t *testing.T) {
 		t.Skip("no registered real checkpoint config on this machine")
 	}
 }
+
+// TestProgramFingerprint_omitzeroFieldStillCounts holds the `omitzero` fingerprint tag to its contract: a zero Ink group is
+// left out (so a family's own parameters do not move every other program), and a non-zero one is hashed.
+func TestProgramFingerprint_omitzeroFieldStillCounts(t *testing.T) {
+	plain := &layerProgram{Layers: [][]op{{{Kind: opNorm}}}}
+	a := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: inkling2Params{Phys: 6, Pass: 1}}}}}
+	b := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: inkling2Params{Phys: 6, Pass: 2}}}}}
+	zero := &layerProgram{Layers: [][]op{{{Kind: opInkling2}}}}
+	if programFingerprint(a) == programFingerprint(b) || programFingerprint(a) == programFingerprint(zero) {
+		t.Fatal("a non-zero Ink group does not reach the fingerprint")
+	}
+	if programFingerprint(plain) == programFingerprint(zero) {
+		t.Fatal("two programs of different operation kinds share a fingerprint")
+	}
+}
