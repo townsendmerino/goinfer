@@ -89,7 +89,7 @@ func TestTwoImages_partOrderResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	imgs, err := chatImages(msgs)
-	if err != nil || len(imgs) != 2 || string(imgs[1].data) != "b" {
+	if err != nil || len(imgs) != 2 || string(imgs[1].Data) != "b" {
 		t.Fatalf("an input_image was dropped: %v, %d images", err, len(imgs))
 	}
 	text, ordered := chatMediaText(msgs)
@@ -111,12 +111,12 @@ func TestTwoImages_refusals(t *testing.T) {
 	if m := tooManyImages(maxImagesPerTurn + 1); !strings.Contains(m, "at most 8 images") {
 		t.Errorf("the cap message %q does not name the cap", m)
 	}
-	two := []imageRef{{data: []byte("a")}, {data: []byte("b")}}
+	two := []imageRef{{Data: []byte("a")}, {Data: []byte("b")}}
 	_, err := (&loadedModel{vision: &glmVision{glmOcrTower: &glmOcrTower{}}}).visionPromptN(nil, "", nil, two, false, "")
 	if err == nil || !strings.Contains(err.Error(), "GLM-OCR takes one image") {
 		t.Errorf("GLM-OCR with two images: %v", err)
 	}
-	_, err = (&loadedModel{}).visionPromptN(nil, "", nil, []imageRef{{data: []byte("a")}, {data: []byte("w"), audio: true}}, false, "")
+	_, err = (&loadedModel{}).visionPromptN(nil, "", nil, []imageRef{{Data: []byte("a")}, {Data: []byte("w"), Audio: true}}, false, "")
 	if err == nil || !strings.Contains(err.Error(), "audio clip must be the only media") {
 		t.Errorf("an image and a clip: %v", err)
 	}

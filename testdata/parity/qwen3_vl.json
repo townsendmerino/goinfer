@@ -8,7 +8,7 @@
     "internal/runtime/families/arch_qwen3_vl.go",
     "internal/runtime/families/arch_qwen3.go"
   ],
-  "deps_hash": "sha256:884415b1e435bac94b5e25724bedb03a64a965f3e7f23a1424d0dd7de6647b9a",
+  "deps_hash": "sha256:9c448b7ee1ebc7e32778aff61836eac6e72d54f2f29cd8f4aa4b2bde4cd24a49",
   "status": "validated",
   "validated_at": "7ee05f0a",
   "date": "2026-10-08",

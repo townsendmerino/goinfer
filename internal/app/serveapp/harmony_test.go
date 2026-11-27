@@ -31,35 +31,35 @@ func TestThinkOut_harmonyRealReply(t *testing.T) {
 		}
 		var ab strings.Builder
 		for i := 0; i < len(realGptOssReply); i += pieceLen {
-			ab.WriteString(th.feed(realGptOssReply[i:min(i+pieceLen, len(realGptOssReply))]))
+			ab.WriteString(th.Feed(realGptOssReply[i:min(i+pieceLen, len(realGptOssReply))]))
 		}
-		ab.WriteString(th.finish())
-		return rb.String(), ab.String(), th.endedInReasoning, th
+		ab.WriteString(th.Finish())
+		return rb.String(), ab.String(), th.EndedInReasoning(), th
 	}
 
 	for _, n := range []int{1, 2, 3, 5, 8, 13, 40} {
-		r, a, trunc, _ := run(thinkSettings{mode: chat.ThinkTemplate, format: rfSplit}, n)
+		r, a, trunc, _ := run(thinkSettings{Mode: chat.ThinkTemplate, Format: rfSplit}, n)
 		if r != wantReasoning || a != wantAnswer || trunc {
 			t.Errorf("pieces of %d: reasoning=%q answer=%q truncated=%v", n, r, a, trunc)
 		}
 	}
 
 	// -reasoning-format none restores the old raw output: no router, every marker in content (an operator's escape hatch).
-	if _, a, _, th := run(thinkSettings{mode: chat.ThinkTemplate, format: rfNone}, 7); th != nil || a != realGptOssReply {
+	if _, a, _, th := run(thinkSettings{Mode: chat.ThinkTemplate, Format: rfNone}, 7); th != nil || a != realGptOssReply {
 		t.Errorf("-reasoning-format none must leave the reply untouched, got router=%v answer=%q", th != nil, a)
 	}
 
 	// Cut off while thinking (max_tokens): no answer, and the router says so, so the route reports finish_reason "length".
 	var rb strings.Builder
-	th := newThinkOut(chat.Harmony(), nil, thinkSettings{mode: chat.ThinkTemplate, format: rfSplit}, func(s string) { rb.WriteString(s) })
+	th := newThinkOut(chat.Harmony(), nil, thinkSettings{Mode: chat.ThinkTemplate, Format: rfSplit}, func(s string) { rb.WriteString(s) })
 	cut := realGptOssReply[:len("<|channel|>analysis<|message|>The user asks: what is")]
-	if ans := th.feed(cut) + th.finish(); ans != "" || !th.endedInReasoning || rb.String() != strings.TrimPrefix(cut, "<|channel|>analysis<|message|>") {
-		t.Errorf("cut off in the analysis: answer=%q endedInReasoning=%v reasoning=%q", ans, th.endedInReasoning, rb.String())
+	if ans := th.Feed(cut) + th.Finish(); ans != "" || !th.EndedInReasoning() || rb.String() != strings.TrimPrefix(cut, "<|channel|>analysis<|message|>") {
+		t.Errorf("cut off in the analysis: answer=%q endedInReasoning=%v reasoning=%q", ans, th.EndedInReasoning(), rb.String())
 	}
 
 	// Stop strings are matched on the answer only: a stop string in the analysis does not end the reply.
-	th = newThinkOut(chat.Harmony(), nil, thinkSettings{mode: chat.ThinkTemplate, format: rfSplit}, func(string) {})
-	seen := th.feed(realGptOssReply)
+	th = newThinkOut(chat.Harmony(), nil, thinkSettings{Mode: chat.ThinkTemplate, Format: rfSplit}, func(string) {})
+	seen := th.Feed(realGptOssReply)
 	if _, _, hit := firstStop(seen, []string{"multiplication"}); hit {
 		t.Error("the stop logic was shown the analysis text")
 	}
@@ -115,13 +115,13 @@ func TestApplyBudget_harmony(t *testing.T) {
 	lm := &loadedModel{tk: tk}
 	for _, mode := range []chat.ThinkMode{chat.ThinkAsIs, chat.ThinkTemplate, chat.ThinkOn, chat.ThinkOff} {
 		gr := genRequest{maxTokens: 160}
-		srv.applyBudget(lm, &gr, chat.Harmony().WithThinking(mode), nil, thinkSettings{mode: mode})
+		srv.applyBudget(lm, &gr, chat.Harmony().WithThinking(mode), nil, thinkSettings{Mode: mode})
 		if gr.sp.LogitProcessor == nil || gr.sp.LogitProcessorGate == nil {
 			t.Errorf("mode %v: no gated budget processor for gpt-oss", mode)
 		}
 	}
 	gr := genRequest{maxTokens: 160}
-	srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{budget: 40})
+	srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{Budget: 40})
 	if gr.sp.LogitProcessor == nil {
 		t.Error("a request's own thinking_token_budget must still install the budget")
 	}
@@ -197,22 +197,22 @@ func TestHarmonyBudget_inTheDecodeLoop(t *testing.T) {
 func TestResolveThink_reasoningEffort(t *testing.T) {
 	srv := &server{}
 	for in, want := range map[string]string{"low": "low", "HIGH": "high", " medium": "medium", "none": "", "minimal": "", "bogus": "", "": ""} {
-		ts, err := srv.resolveThink(thinkRequest{reasoningEffort: in})
-		if err != nil || ts.effort != want {
-			t.Errorf("reasoning_effort %q: effort=%q err=%v, want %q", in, ts.effort, err, want)
+		ts, err := srv.resolveThink(thinkRequest{ReasoningEffort: in})
+		if err != nil || ts.Effort != want {
+			t.Errorf("reasoning_effort %q: effort=%q err=%v, want %q", in, ts.Effort, err, want)
 		}
 	}
 	// "none" is still the off switch of the families that have one, untouched by effort.
-	if ts, _ := srv.resolveThink(thinkRequest{reasoningEffort: "none"}); !ts.explicit || ts.mode != chat.ThinkOff || ts.effort != "" {
+	if ts, _ := srv.resolveThink(thinkRequest{ReasoningEffort: "none"}); !ts.Explicit || ts.Mode != chat.ThinkOff || ts.Effort != "" {
 		t.Errorf("none must still turn thinking off and set no effort: %+v", ts)
 	}
 	// An effort does not decide thinking on or off, and an explicit enable_thinking is not disturbed by it.
-	ts, _ := srv.resolveThink(thinkRequest{reasoningEffort: "high"})
-	if ts.explicit {
+	ts, _ := srv.resolveThink(thinkRequest{ReasoningEffort: "high"})
+	if ts.Explicit {
 		t.Errorf("a bare effort must not make the request choose on/off: %+v", ts)
 	}
-	ts, _ = srv.resolveThink(thinkRequest{reasoningEffort: "low", kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("true")}})
-	if !ts.explicit || ts.mode != chat.ThinkOn || ts.effort != "low" {
+	ts, _ = srv.resolveThink(thinkRequest{ReasoningEffort: "low", Kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("true")}})
+	if !ts.Explicit || ts.Mode != chat.ThinkOn || ts.Effort != "low" {
 		t.Errorf("enable_thinking and effort are independent: %+v", ts)
 	}
 
@@ -220,7 +220,7 @@ func TestResolveThink_reasoningEffort(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"reasoning":{"effort":"low"}}`), &rr); err != nil {
 		t.Fatal(err)
 	}
-	if ts, _ := srv.resolveThink(rr.thinkRequest()); ts.effort != "low" {
+	if ts, _ := srv.resolveThink(rr.thinkRequest()); ts.Effort != "low" {
 		t.Errorf("the Responses API's reasoning.effort did not reach the resolution: %+v", ts)
 	}
 }
@@ -229,23 +229,23 @@ func TestResolveThink_reasoningEffort(t *testing.T) {
 func TestTemplateFor_reasoningEffort(t *testing.T) {
 	turns := []chat.Turn{{Role: "user", Content: "Hi"}}
 	oss := &loadedModel{tmpl: chat.Harmony()}
-	if got := oss.templateFor(thinkSettings{effort: "low"}).Render("", turns); !strings.Contains(got, "Reasoning: low\n\n") {
+	if got := oss.templateFor(thinkSettings{Effort: "low"}).Render("", turns); !strings.Contains(got, "Reasoning: low\n\n") {
 		t.Errorf("gpt-oss prompt with effort low:\n%s", got)
 	}
 	if got := oss.templateFor(thinkSettings{}).Render("", turns); !strings.Contains(got, "Reasoning: medium\n\n") {
 		t.Errorf("no effort asked for: the template's own default (medium) must stand:\n%s", got)
 	}
 	// The effort survives -thinking off / on alongside it.
-	if got := oss.templateFor(thinkSettings{effort: "high", explicit: true, mode: chat.ThinkOff}).Render("", turns); !strings.Contains(got, "Reasoning: high\n\n") {
+	if got := oss.templateFor(thinkSettings{Effort: "high", Explicit: true, Mode: chat.ThinkOff}).Render("", turns); !strings.Contains(got, "Reasoning: high\n\n") {
 		t.Errorf("effort lost when the request also chose a thinking mode:\n%s", got)
 	}
 	for _, tm := range []*chat.Template{chat.ChatML(), chat.Llama3()} {
 		other := &loadedModel{tmpl: tm}
-		if a, b := other.templateFor(thinkSettings{effort: "high"}).Render("", turns), tm.Render("", turns); a != b {
+		if a, b := other.templateFor(thinkSettings{Effort: "high"}).Render("", turns), tm.Render("", turns); a != b {
 			t.Errorf("%s: a reasoning_effort moved a non-gpt-oss prompt:\n%s\nvs\n%s", tm.Name(), a, b)
 		}
 	}
-	if got := (&loadedModel{}).templateFor(thinkSettings{effort: "high"}); got != nil {
+	if got := (&loadedModel{}).templateFor(thinkSettings{Effort: "high"}); got != nil {
 		t.Error("a model with no template stays template-less")
 	}
 }
@@ -260,12 +260,12 @@ func TestSettleCalls_harmony(t *testing.T) {
 		th = newThinkOut(chat.Harmony(), nil, ts, func(string) {})
 		var b strings.Builder
 		for i := 0; i < len(reply); i += 6 { // token-sized pieces
-			b.WriteString(th.feed(reply[i:min(i+6, len(reply))]))
+			b.WriteString(th.Feed(reply[i:min(i+6, len(reply))]))
 		}
-		b.WriteString(th.finish())
+		b.WriteString(th.Finish())
 		return b.String(), th
 	}
-	ts := thinkSettings{mode: chat.ThinkTemplate, format: rfSplit}
+	ts := thinkSettings{Mode: chat.ThinkTemplate, Format: rfSplit}
 
 	// With the router: the buffered text has no call in it, the router does.
 	reply := "<|channel|>analysis<|message|>need the weather<|end|><|start|>assistant" + call
@@ -300,7 +300,7 @@ func TestSettleCalls_harmony(t *testing.T) {
 	if calls, lead, _ = settleCalls(chat.ChatML(), chatml, tools, nil); len(calls) != 1 || calls[0].Name != "get_weather" || lead != "Sure." {
 		t.Errorf("chatml: calls=%+v lead=%q", calls, lead)
 	}
-	if (*thinkOut)(nil).toolCalls() != nil {
+	if (*thinkOut)(nil).ToolCalls() != nil {
 		t.Error("a nil router has no calls")
 	}
 }

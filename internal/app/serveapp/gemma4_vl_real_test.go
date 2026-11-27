@@ -102,7 +102,7 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byte, maxTokens int) string {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: question}}
-	vi, err := lm.imagesPrompt(lm.tmpl, "", turns, 0, []imageRef{{mediaType: "image/png", data: imgData}}, false, "", false)
+	vi, err := lm.imagesPrompt(lm.tmpl, "", turns, 0, []imageRef{{MediaType: "image/png", Data: imgData}}, false, "", false)
 	if err != nil {
 		t.Fatalf("imagesPrompt: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 	lm := loadGemma4VLReal(t, modelPath, visionDir, decoder.Options{})
 
 	img := solidColorPNG(t, 128, color.RGBA{R: 220, G: 30, B: 30, A: 255})
-	vi, err := lm.imagesPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: "What color is this image? Answer in one word."}}, 0, []imageRef{{mediaType: "image/png", data: img}}, false, "", false)
+	vi, err := lm.imagesPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: "What color is this image? Answer in one word."}}, 0, []imageRef{{MediaType: "image/png", Data: img}}, false, "", false)
 	if err != nil {
 		t.Fatalf("imagesPrompt: %v", err)
 	}

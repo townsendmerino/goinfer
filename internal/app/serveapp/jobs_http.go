@@ -176,7 +176,7 @@ func (s *server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		events, wait, done := log.Snapshot(pos)
 		for _, e := range events {
-			ss.frame("data: %s\n\n", e)
+			_ = ss.Frame("data: %s\n\n", e)
 		}
 		pos += len(events)
 		if done {

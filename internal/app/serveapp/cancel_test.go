@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 // K1 gate: start a long generation, cancel it by id partway through, and
@@ -96,7 +98,7 @@ func TestServe_cancelByID(t *testing.T) {
 		t.Fatalf("GET /admin/generations: %v", err)
 	}
 	var list struct {
-		Generations []generationSnapshot `json:"generations"`
+		Generations []stores.GenerationSnapshot `json:"generations"`
 	}
 	json.NewDecoder(listResp.Body).Decode(&list)
 	listResp.Body.Close()
@@ -172,7 +174,7 @@ func TestServe_cancelByID(t *testing.T) {
 		t.Fatalf("GET /admin/generations (after): %v", err)
 	}
 	var list2 struct {
-		Generations []generationSnapshot `json:"generations"`
+		Generations []stores.GenerationSnapshot `json:"generations"`
 	}
 	json.NewDecoder(listResp2.Body).Decode(&list2)
 	listResp2.Body.Close()

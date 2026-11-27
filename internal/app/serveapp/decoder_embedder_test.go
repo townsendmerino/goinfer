@@ -58,11 +58,11 @@ func TestDecoderEmbedder_queryPrefix(t *testing.T) {
 	e := newTestDecoderEmbedder(t)
 	const text = "what is the capital of France"
 
-	docIDs, err := e.tokenize(text, false)
+	docIDs, err := e.Tokenize(text, false)
 	if err != nil {
 		t.Fatalf("tokenize doc: %v", err)
 	}
-	queryIDs, err := e.tokenize(text, true)
+	queryIDs, err := e.Tokenize(text, true)
 	if err != nil {
 		t.Fatalf("tokenize query: %v", err)
 	}
@@ -72,19 +72,19 @@ func TestDecoderEmbedder_queryPrefix(t *testing.T) {
 	}
 	// Every sequence ends with the appended EOD — that is the position last-token pooling reads,
 	// and sentence-transformers appends it even though no config file mentions it.
-	if e.appendID < 0 {
+	if e.AppendID() < 0 {
 		t.Fatal("no EOD token resolved — pooling would land on the final content token")
 	}
 	for _, c := range []struct {
 		name string
 		ids  []int
 	}{{"document", docIDs}, {"query", queryIDs}} {
-		if got := c.ids[len(c.ids)-1]; got != e.appendID {
-			t.Errorf("%s form ends with id %d, want the appended EOD %d", c.name, got, e.appendID)
+		if got := c.ids[len(c.ids)-1]; got != e.AppendID() {
+			t.Errorf("%s form ends with id %d, want the appended EOD %d", c.name, got, e.AppendID())
 		}
 	}
 	// The document form is the bare text + EOD (Qwen3-Embedding's document prompt is "").
-	bare, err := e.tk.Encode(text, false)
+	bare, err := e.Tokenizer().Encode(text, false)
 	if err != nil {
 		t.Fatalf("encode bare: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestDecoderEmbedder_queryPrefix(t *testing.T) {
 		t.Errorf("document form is not bare text + EOD: %d ids vs %d+1", len(docIDs), len(bare))
 	}
 	// And the query form is exactly prefix+text + EOD.
-	want, err := e.tk.Encode(qwen3EmbedQueryPrompt+text, false)
+	want, err := e.Tokenizer().Encode(qwen3EmbedQueryPrompt+text, false)
 	if err != nil {
 		t.Fatalf("encode prefixed: %v", err)
 	}
@@ -286,8 +286,8 @@ func TestLoadDecoderEmbedder_requestedBackendReachesTheLoad(t *testing.T) {
 	if !ok {
 		t.Fatalf("s.embed is %T, want *decoderEmbedder", s.embed)
 	}
-	defer de.m.Close()
-	if got := de.m.RequestedBackend(); got != "metal" {
+	defer de.Model().Close()
+	if got := de.Model().RequestedBackend(); got != "metal" {
 		t.Errorf("RequestedBackend() = %q, want %q — loadDecoderEmbedder is not passing -backend "+
 			"through to decoder.Load (M-17: Options{} was left zero-valued)", got, "metal")
 	}
@@ -306,8 +306,8 @@ func TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU(t *testing.T) {
 		t.Fatalf("loadDecoderEmbedder: %v", err)
 	}
 	de := s.embed.(*decoderEmbedder)
-	defer de.m.Close()
-	if got := de.m.RequestedBackend(); got != "cpu" {
+	defer de.Model().Close()
+	if got := de.Model().RequestedBackend(); got != "cpu" {
 		t.Errorf("RequestedBackend() = %q, want %q with no -backend configured", got, "cpu")
 	}
 }
@@ -327,8 +327,8 @@ func TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8(t *testing.T) {
 		t.Fatalf("loadDecoderEmbedder with -embed-quant q8: %v", err)
 	}
 	de := s.embed.(*decoderEmbedder)
-	defer de.m.Close()
-	if got := de.m.Quant(); got != "int8" {
+	defer de.Model().Close()
+	if got := de.Model().Quant(); got != "int8" {
 		t.Errorf("Quant() = %q, want %q — -embed-quant q8 must map to decoder.Options.Quant's "+
 			"own \"int8\" (weight-only), not pass through literally", got, "int8")
 	}
@@ -364,7 +364,7 @@ func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
 	if want <= 0 {
 		t.Fatalf("the fixture's MaxPositions is %d: this test proves nothing", want)
 	}
-	if got := newDecoderEmbedder(m, tk, "", "").maxTokens; got != want {
+	if got := newDecoderEmbedder(m, tk, "", "").MaxTokens(); got != want {
 		t.Errorf("maxTokens %d, want the model's max_position_embeddings %d: 0 leaves only the request's byte cap between a request "+
 			"and about 500k positions of sequential forward under the embed mutex (audit-2026-09-02 C-07), and Architecture.MaxPositions "+
 			"is the GPT-2 learned-position table, 0 for every RoPE family", got, want)
@@ -428,7 +428,7 @@ func (c *doneProbeCtx) Done() <-chan struct{} {
 // check with a live context and can only leave through the wait itself.
 func TestDecoderEmbedder_cancelledWaiterStopsWaiting(t *testing.T) {
 	e := tinyDecoderEmbedder(t)
-	if err := e.acquire(context.Background()); err != nil { // stands in for a long call in flight
+	if err := e.Acquire(context.Background()); err != nil { // stands in for a long call in flight
 		t.Fatal(err)
 	}
 	inner, cancel := context.WithCancel(context.Background())
@@ -452,11 +452,11 @@ func TestDecoderEmbedder_cancelledWaiterStopsWaiting(t *testing.T) {
 			t.Errorf("cancelled waiter returned %v, want context.Canceled", err)
 		}
 	case <-time.After(5 * time.Second):
-		e.release()
+		e.Release()
 		<-done
 		t.Fatal("a cancelled waiter stayed queued behind the call holding the embedder")
 	}
-	e.release()
+	e.Release()
 	if _, _, err := e.EncodeBatchCountedContext(context.Background(), []string{"hello"}, []bool{false}, 0); err != nil {
 		t.Fatalf("the slot was not usable after the cancelled waiter left: %v", err)
 	}

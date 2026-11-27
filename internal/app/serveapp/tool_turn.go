@@ -62,7 +62,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	var stopBeat func()
 	if ss != nil {
 		var cancel context.CancelFunc
-		ctx, cancel = ss.cancelOnFail(ctx) // a failed frame ends the turn
+		ctx, cancel = ss.CancelOnFail(ctx) // a failed frame ends the turn
 		defer cancel()
 		stopBeat = sseHeartbeat(ss)
 		defer stopBeat()
@@ -105,5 +105,5 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 
 // settleCalls is codec.SettleCalls with th's routed calls and reasoning (none for a nil router).
 func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) (calls []chat.ToolCall, lead string, fromReasoning bool) {
-	return codec.SettleCalls(tmpl, raw, tools, th.toolCalls(), th.reasoningText())
+	return codec.SettleCalls(tmpl, raw, tools, th.ToolCalls(), th.ReasoningText())
 }

@@ -11,7 +11,7 @@
   "programs": [
     "testdata/mixtral-tiny"
   ],
-  "deps_hash": "sha256:837f0080122301fe313f9b9955f00fd2cdb016e0b04aef6e4cb5872f66b1a993",
+  "deps_hash": "sha256:f8868839b995e25258f94a4b2a893939db3136faf32d32b82a887a0f728b833c",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

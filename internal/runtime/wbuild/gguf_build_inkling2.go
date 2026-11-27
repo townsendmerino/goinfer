@@ -46,6 +46,7 @@ func (b *ggufBuild) inkling2Layer(l *darch.LayerWeights, i int) error {
 	}
 	for _, t := range vecs {
 		_, data, err := b.g.Tensor(t.Name)
+		b.release(t.Name)
 		if err == nil && len(data) != t.N {
 			err = fmt.Errorf("decoder(gguf-inkling2): %q has %d elements, want %d", t.Name, len(data), t.N)
 		}
@@ -74,6 +75,7 @@ func (b *ggufBuild) inkling2Layer(l *darch.LayerWeights, i int) error {
 // splitGateUpExperts loads a fused [in, 2*inter, nExpert] expert tensor whose first inter rows of each expert are the gate
 // and the next inter the up projection, as one Gate and one Up WeightMat per expert.
 func (b *ggufBuild) splitGateUpExperts(name string, inter, in, nExpert int) (gate, up []linalg.WeightMat, err error) {
+	defer b.release(name)
 	dims, into, err := GGUFScaledRowDequantizer(b.g, name)
 	if err != nil {
 		return nil, nil, err

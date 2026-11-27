@@ -67,7 +67,7 @@ func (s *server) loadPixtralVisionTower(dir string) error {
 
 // prep prepares one image: its merged grid, one [IMG] run per merged row, and the lazy tower and projector.
 func (px *pixtralTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
-	chw, h, w, err := multimodal.PixtralPreprocess(img.data, px.pp)
+	chw, h, w, err := multimodal.PixtralPreprocess(img.Data, px.pp)
 	if err != nil {
 		return imagePrep{}, err
 	}
@@ -79,7 +79,7 @@ func (px *pixtralTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
 	for i := range runLens {
 		runLens[i] = cols
 	}
-	p := imagePrep{n: rows * cols, runLens: runLens, hash: multimodal.HashImageBytes(img.data), block: multimodal.PixtralImageBlock(rows, cols)}
+	p := imagePrep{n: rows * cols, runLens: runLens, hash: multimodal.HashImageBytes(img.Data), block: multimodal.PixtralImageBlock(rows, cols)}
 	p.features = func() ([]float32, error) {
 		patches, g, err := vision.PixtralPatchify(chw, 3, h, w, patch)
 		if err != nil {

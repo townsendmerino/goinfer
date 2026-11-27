@@ -36,6 +36,9 @@ type ggufBuild struct {
 	h                       Hooks
 }
 
+// release drops a converted tensor's mapped pages (releaseTensor); a family builder defers it beside each direct read.
+func (b *ggufBuild) release(name string) { releaseTensor(b.g, name) }
+
 // loadFamily runs the family's own layer loader, or the shared loadLayers for a family without one.
 func (b *ggufBuild) loadFamily() (*darch.Weights, error) {
 	if q := b.arch.Qwen35; q != nil {

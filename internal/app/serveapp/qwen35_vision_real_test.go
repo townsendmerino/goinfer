@@ -100,14 +100,14 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 
 			// (a1) the prompt ids, built by serve's own code path.
 			// `-thinking asis` still renders the pre-thinking bytes: the ids WITHOUT the think block.
-			viAsIs, err := lm.visionPrompt(lm.tmpl.WithThinking(chat.ThinkAsIs), "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
+			viAsIs, err := lm.visionPrompt(lm.tmpl.WithThinking(chat.ThinkAsIs), "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{MediaType: "image/png", Data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt (asis): %v", err)
 			}
 			if !slices.Equal(viAsIs.ids, asis.InputIDs) {
 				t.Fatalf("-thinking asis no longer renders the pre-thinking bytes: %d ids vs serve_ golden's %d", len(viAsIs.ids), len(asis.InputIDs))
 			}
-			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
+			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{MediaType: "image/png", Data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
 			}

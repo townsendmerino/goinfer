@@ -43,7 +43,7 @@ func TestOmitChatHistoryImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(imgs) != 1 || string(imgs[0].data) != "second" {
+	if len(imgs) != 1 || string(imgs[0].Data) != "second" {
 		t.Fatalf("after omission the vision path would see %d image(s) %v, want exactly the newest", len(imgs), imgs)
 	}
 	if got := msgs[0].text(); !strings.Contains(got, "what is this?") || !strings.Contains(got, olderImageNote) {
@@ -64,7 +64,7 @@ func TestOmitChatHistoryImages(t *testing.T) {
 	if n := omitChatHistoryImages(three); n != 2 {
 		t.Errorf("three turns: omitted %d, want 2", n)
 	}
-	if imgs, _ := chatImages(three); len(imgs) != 1 || string(imgs[0].data) != "c" {
+	if imgs, _ := chatImages(three); len(imgs) != 1 || string(imgs[0].Data) != "c" {
 		t.Errorf("three turns: kept %v", imgs)
 	}
 
@@ -113,7 +113,7 @@ func TestOmitAnthropicHistoryImages(t *testing.T) {
 		t.Fatalf("omitted %d, want 1", n)
 	}
 	imgs, err := anthropicImages(&req)
-	if err != nil || len(imgs) != 1 || string(imgs[0].data) != "second" {
+	if err != nil || len(imgs) != 1 || string(imgs[0].Data) != "second" {
 		t.Fatalf("after omission: %d image(s), err %v", len(imgs), err)
 	}
 	if !strings.Contains(string(req.Messages[0].Content), olderImageNote) || !strings.Contains(string(req.Messages[0].Content), `"look"`) {

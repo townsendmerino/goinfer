@@ -38,17 +38,17 @@ func placeImageBlocks(content, msgText string, ordered bool, imgs []imageRef, bl
 	}
 	base, prev := len(content)-len(msgText), 0
 	for _, im := range imgs {
-		if im.at < prev || im.at > len(msgText) {
+		if im.At < prev || im.At > len(msgText) {
 			return strings.Join(blocks, "") + content
 		}
-		prev = im.at
+		prev = im.At
 	}
 	var b strings.Builder
 	cut := 0
 	for k, im := range imgs {
-		b.WriteString(content[cut : base+im.at])
+		b.WriteString(content[cut : base+im.At])
 		b.WriteString(blocks[k])
-		cut = base + im.at
+		cut = base + im.At
 	}
 	b.WriteString(content[cut:])
 	return b.String()
@@ -70,7 +70,7 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 			return visionInput{}, err
 		}
 		if cache {
-			p.features = lm.cachedFeatures(p.features, img.data, lm.towerFamily(false))
+			p.features = lm.cachedFeatures(p.features, img.Data, lm.towerFamily(false))
 		}
 		preps[k], blocks[k] = p, p.block
 	}
@@ -191,7 +191,7 @@ func concatImageFeatures(preps []imagePrep, hidden int) func() ([]float32, error
 
 // cachedFeatures answers tower from this model's per-image cache when it holds raw's encode (withFeatureCache, per image).
 func (lm *loadedModel) cachedFeatures(tower func() ([]float32, error), raw []byte, family string) func() ([]float32, error) {
-	return lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
+	return lm.visionFeatureCache().Wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 }
 
 // visionPromptN is visionPrompt for every image of a message. One medium that is not an image of a multi-image family
@@ -199,11 +199,11 @@ func (lm *loadedModel) cachedFeatures(tower func() ([]float32, error), raw []byt
 // takes several.
 func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []chat.Turn, imgs []imageRef, ordered bool, msgText string) (visionInput, error) {
 	for _, img := range imgs {
-		if img.audio && len(imgs) > 1 {
+		if img.Audio && len(imgs) > 1 {
 			return visionInput{}, fmt.Errorf("an audio clip must be the only media in a request (got %d media parts); send several images, or one clip", len(imgs))
 		}
 	}
-	if len(imgs) == 1 && (imgs[0].audio || lm.glmOcr() != nil || lm.tmpl == nil) {
+	if len(imgs) == 1 && (imgs[0].Audio || lm.glmOcr() != nil || lm.tmpl == nil) {
 		return lm.visionPrompt(tm, system, turns, imgs[0])
 	}
 	if lm.glmOcr() != nil {

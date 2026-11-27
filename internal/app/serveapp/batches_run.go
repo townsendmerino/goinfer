@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 const batchLineWorkers = 8
@@ -36,33 +37,6 @@ func runBatchWorker(n int, next *atomic.Int64, fn func(i int)) {
 		}
 		fn(i)
 	}
-}
-
-// registerBatchJob publishes jobID into batch.JobIDs[i] under batch.mu after registering cancel in js.
-// requestCancel (batches.go) reads the whole JobIDs slice from another goroutine while lines write their own
-// slots; disjoint indices do not save a plain slice write from racing a concurrent read of the slice's backing
-// array. Checking Status under the same lock returns false (and cancels immediately) if the batch is already
-// cancelling, closing the cancel-vs-registration race.
-func registerBatchJob(batch *batchRecord, i int, jobID string, js *jobs.Store, cancel context.CancelFunc) bool {
-	js.SetCancel(jobID, cancel)
-	batch.mu.Lock()
-	if batch.Status == "cancelling" || batch.Status == "cancelled" {
-		batch.mu.Unlock()
-		cancel()
-		return false
-	}
-	batch.JobIDs[i] = jobID
-	batch.mu.Unlock()
-	return true
-}
-
-// setResult records line i's outcome under the batch's own lock. Safe to call concurrently from every line's goroutine:
-// each writes a disjoint index, so only Status and the file-id fields (untouched here) actually need the lock; it is
-// taken anyway, as jobs.Store's mu is, rather than reasoning that a slice-index write never needs it.
-func setResult(batch *batchRecord, i int, r batchLineResult) {
-	batch.mu.Lock()
-	batch.Results[i] = r
-	batch.mu.Unlock()
 }
 
 // hasChatMedia reports whether any message carries an image_url or input_audio content part. It reads part types only, so a
@@ -102,10 +76,6 @@ func hasAnthropicImages(req *anthropicReq) bool {
 	return false
 }
 
-func lineError(customID string, status int, errType, msg string) batchLineResult {
-	return batchLineResult{CustomID: customID, StatusCode: status, ErrType: errType, ErrMsg: msg}
-}
-
 // runBatchChatLine is one line of an OpenAI batch: the same validate -> resolveAndLock -> encode -> prepare -> admission
 // -> drive pipeline that handleCreateJob (jobs_http.go) and runJob (jobs_run.go) run, replicated rather than called
 // because both are tied to a single HTTP handler's or a fire-and-forget job's lifecycle, neither of which fits "run
@@ -113,47 +83,47 @@ func lineError(customID string, status int, errType, msg string) batchLineResult
 // identical shared call, not a second implementation.
 //
 // A validation failure is THIS LINE'S error, never the whole batch's, as in the real batch API.
-func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
+func runBatchChatLine(s *server, batch *stores.BatchRecord, i int, req chatReq) {
 	customID := batch.CustomIDs[i]
-	defer batch.wg.Done()
-	defer batch.lineFinished()
-	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
+	defer batch.DoneLine()
+	defer batch.LineFinished()
+	defer recoverBatchLine(batch, i) // after DoneLine: runs first, so the line's result is set before the batch can finalize
 
-	if batch.isCancelling() {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+	if batch.IsCancelling() {
+		batch.SetResult(i, stores.LineError(customID, statusCancelled, "cancelled", "batch cancelled"))
 		return
 	}
 	if len(req.Messages) == 0 {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"messages is required and must contain at least one message"))
 		return
 	}
 	if hasChatMedia(req.Messages) {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image or audio inputs this pass; use /v1/chat/completions"))
 		return
 	}
 	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support tools this pass; use /v1/chat/completions"))
 		return
 	}
 
 	lm, release := s.resolveAndLock(req.Model)
 	if lm == nil {
-		setResult(batch, i, lineError(customID, 404, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 404, "invalid_request_error",
 			fmt.Sprintf("model %q not found", req.Model)))
 		return
 	}
 	defer release() // held for this line's whole life, same reasoning as runJob (jobs_run.go)
 
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", err.Error()))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
 	ts, terr := s.resolveThink(req.think())
 	if terr != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", terr.Error()))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", terr.Error()))
 		return
 	}
 	tm := lm.templateFor(ts)
@@ -163,12 +133,12 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	bsys, bturns := messagesToTurns(req.Messages)
 	ids, err := lm.promptForT(tm, bsys, bturns)
 	if err != nil {
-		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
+		batch.SetResult(i, stores.LineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
-		setResult(batch, i, lineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
+		batch.SetResult(i, stores.LineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return
 	}
 
@@ -180,9 +150,9 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	// line, not only a running one.
 	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	defer bgCancel()
-	if !registerBatchJob(batch, i, jobID, s.jobs, bgCancel) {
+	if !batch.RegisterJob(i, jobID, s.jobs, bgCancel) {
 		s.jobs.Finish(s.jobs.Get(jobID), jobs.Cancelled, nil, "batch cancelled", nil)
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		batch.SetResult(i, stores.LineError(customID, statusCancelled, "cancelled", "batch cancelled"))
 		return
 	}
 
@@ -190,7 +160,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.Finish(s.jobs.Get(jobID), why.state, nil, why.reason, nil)
-		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
+		batch.SetResult(i, stores.LineError(customID, why.status, why.errType, why.reason))
 		return
 	}
 	defer lm.exit()
@@ -200,7 +170,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if r, failed := driveLineError(bgCtx, customID, gerr, res.cancelReason); failed {
-		setResult(batch, i, r)
+		batch.SetResult(i, r)
 		return
 	}
 
@@ -217,7 +187,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		}},
 		"usage": newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
+	batch.SetResult(i, stores.BatchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }
 
 // runBatchMessageLine is runBatchChatLine's Anthropic twin — one line of a Message Batch,
@@ -225,38 +195,38 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 // identical reason runBatchChatLine mirrors handleCreateJob rather than calling it: reused wholesale
 // where it's expensive (lm.prepare, lm.tryEnter, lm.drive, anthropicStopReason), replicated only in
 // the thin validation glue neither existing handler can be called headless for.
-func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq) {
+func runBatchMessageLine(s *server, batch *stores.BatchRecord, i int, req anthropicReq) {
 	customID := batch.CustomIDs[i]
-	defer batch.wg.Done()
-	defer batch.lineFinished()
-	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
+	defer batch.DoneLine()
+	defer batch.LineFinished()
+	defer recoverBatchLine(batch, i) // after DoneLine: runs first, so the line's result is set before the batch can finalize
 
-	if batch.isCancelling() {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+	if batch.IsCancelling() {
+		batch.SetResult(i, stores.LineError(customID, statusCancelled, "cancelled", "batch cancelled"))
 		return
 	}
 	if req.MaxTokens == nil || *req.MaxTokens <= 0 {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", "max_tokens is required and must be > 0"))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", "max_tokens is required and must be > 0"))
 		return
 	}
 	if len(req.Messages) == 0 {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", "messages must not be empty"))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", "messages must not be empty"))
 		return
 	}
 	if hasAnthropicImages(&req) {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image inputs this pass; use /v1/messages"))
 		return
 	}
 	if mode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support tools this pass; use /v1/messages"))
 		return
 	}
 
 	lm, release := s.resolveAndLock(req.Model)
 	if lm == nil {
-		setResult(batch, i, lineError(customID, 404, "not_found_error",
+		batch.SetResult(i, stores.LineError(customID, 404, "not_found_error",
 			fmt.Sprintf("model %q not found", req.Model)))
 		return
 	}
@@ -264,21 +234,21 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	system, turns, aerr := anthropicTurns(&req)
 	if aerr != nil {
-		setResult(batch, i, lineError(customID, aerr.code, aerr.kind, aerr.msg))
+		batch.SetResult(i, stores.LineError(customID, aerr.code, aerr.kind, aerr.msg))
 		return
 	}
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", err.Error()))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
-		setResult(batch, i, lineError(customID, 400, "invalid_request_error", terr.Error()))
+		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", terr.Error()))
 		return
 	}
 	sm, serr := req.toSampling()
 	if serr != nil {
-		setResult(batch, i, lineError(customID, serr.code, serr.kind, serr.msg))
+		batch.SetResult(i, stores.LineError(customID, serr.code, serr.kind, serr.msg))
 		return
 	}
 	tm := lm.templateFor(ts)
@@ -287,12 +257,12 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	}
 	ids, err := lm.promptForT(tm, system, turns)
 	if err != nil {
-		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
+		batch.SetResult(i, stores.LineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
-		setResult(batch, i, lineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
+		batch.SetResult(i, stores.LineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return
 	}
 
@@ -302,9 +272,9 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	defer bgCancel()
-	if !registerBatchJob(batch, i, jobID, s.jobs, bgCancel) {
+	if !batch.RegisterJob(i, jobID, s.jobs, bgCancel) {
 		s.jobs.Finish(s.jobs.Get(jobID), jobs.Cancelled, nil, "batch cancelled", nil)
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "batch cancelled"))
+		batch.SetResult(i, stores.LineError(customID, statusCancelled, "cancelled", "batch cancelled"))
 		return
 	}
 
@@ -312,7 +282,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.Finish(s.jobs.Get(jobID), why.state, nil, why.reason, nil)
-		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
+		batch.SetResult(i, stores.LineError(customID, why.status, why.errType, why.reason))
 		return
 	}
 	defer lm.exit()
@@ -322,7 +292,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if r, failed := driveLineError(bgCtx, customID, gerr, res.cancelReason); failed {
-		setResult(batch, i, r)
+		batch.SetResult(i, r)
 		return
 	}
 
@@ -341,19 +311,19 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"stop_sequence": seq,
 		"usage":         anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp),
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
+	batch.SetResult(i, stores.BatchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }
 
 // driveLineError is a batch line's result when its drive did not complete: shutdown first, since a drive cut short by it
 // returns its context error, then a failed drive, then a cancelled one. failed is false when the line has output to record.
-func driveLineError(bgCtx context.Context, customID string, gerr error, cancelReason string) (r batchLineResult, failed bool) {
+func driveLineError(bgCtx context.Context, customID string, gerr error, cancelReason string) (r stores.BatchLineResult, failed bool) {
 	switch {
 	case errors.Is(context.Cause(bgCtx), errServerShutdown):
-		return lineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"), true
+		return stores.LineError(customID, http.StatusServiceUnavailable, "server_shutdown", "server shutting down"), true
 	case gerr != nil:
-		return lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()), true
+		return stores.LineError(customID, 500, "api_error", "generation failed: "+gerr.Error()), true
 	case cancelReason != "":
-		return lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+cancelReason), true
+		return stores.LineError(customID, statusCancelled, "cancelled", "generation cancelled: "+cancelReason), true
 	}
-	return batchLineResult{}, false
+	return stores.BatchLineResult{}, false
 }

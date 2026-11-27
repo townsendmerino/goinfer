@@ -2,22 +2,21 @@ package serveapp
 
 import (
 	"bytes"
-	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"mime/multipart"
 	"net/http"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 )
 
 // Request-body size ceilings. Bodies are buffered before validation, so an unbounded body is a memory-exhaustion DoS.
@@ -195,119 +194,16 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // --- SSE ---
 
-// sseWriter owns one SSE response: every frame goes through it, one at a time, under a bounded write deadline. Both
-// the OpenAI and the Anthropic stream paths write through it.
-//
-// It exists because the heartbeat goroutine and the handler write to the same ResponseWriter: the heartbeat owns w
-// while the handler is silent, and the incremental tool paths write prose deltas to it during that same window.
-// net/http's response/bufio.Writer is not safe for concurrent Write and Flush, so concurrent writers produce a ":
-// ping" spliced into a data: line (the client drops or mis-parses the chunk) up to a bufio slice-bounds panic, and a
-// panic in the heartbeat goroutine is outside net/http's per-request recover, so it takes the process.
-//
-// The write deadline is a second defence on the same path. Flush blocks in net.Conn.Write with no deadline, so a
-// client that stops reading without closing would pin the handler inside onText holding the model's queue slot
-// (r.Context() cancels on close, not on a stalled read), and every other request would queue and then 429 for as long
-// as the socket stayed open. It bounds one frame; it is not the server-wide WriteTimeout, which would truncate a
-// legitimately long stream.
-//
-// The first write error is sticky and readable: a stream whose client vanished should stop generating rather than
-// keep pushing frames into a dead socket.
-type sseWriter struct {
-	mu    sync.Mutex
-	w     http.ResponseWriter
-	f     http.Flusher
-	rc    *http.ResponseController
-	onErr func()
-	err   error
-}
+type sseWriter = streamframe.SSEWriter
 
-// sseWriteTimeout bounds one frame's write+flush. A var so tests can drive it. Generous against a
-// slow but live client, short enough that a stalled one frees the decode worker.
-var sseWriteTimeout = 30 * time.Second
-
-// frame writes one preformatted SSE frame under the lock, and is the ONLY place this package
-// writes to a streaming ResponseWriter.
-func (s *sseWriter) frame(format string, args ...any) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err != nil {
-		return s.err // sticky: the client is gone, stop trying
-	}
-	if s.rc != nil {
-		// An unsupported controller is not a stream failure — httptest's recorder has no deadline
-		// support — so the error is deliberately dropped rather than made sticky.
-		_ = s.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
-	}
-	if _, err := fmt.Fprintf(s.w, format, args...); err != nil {
-		s.err = err
-		if s.onErr != nil {
-			s.onErr()
-		}
-		return err
-	}
-	if s.rc != nil {
-		if err := s.rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
-			s.err = err
-			if s.onErr != nil {
-				s.onErr()
-			}
-			return err
-		}
-	} else {
-		s.f.Flush()
-	}
-	return nil
-}
-
-// Err reports the first write failure. Non-nil means the client is gone.
-func (s *sseWriter) Err() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.err
-}
-
-// cancelOnFail derives the generation context for this stream: it ends with parent and at the first failed frame (a
-// write error, or the write deadline a stalled reader trips). parent alone ends only when the client closes, so a reader
-// that stops without closing would keep generation running to max_tokens. A writer that has already failed returns an
-// ended context, and every context derived from one writer ends at its failure. onErr runs under s.mu, so it must only
-// cancel, never take s.mu.
-func (s *sseWriter) cancelOnFail(parent context.Context) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(parent)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err != nil {
-		cancel()
-		return ctx, cancel
-	}
-	if prev := s.onErr; prev != nil {
-		s.onErr = func() { prev(); cancel() }
-	} else {
-		s.onErr = cancel
-	}
-	return ctx, cancel
-}
-
-// newSSEWriter wraps a streaming response. Shared by both protocols' start helpers.
-func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
-	return &sseWriter{w: w, f: f, rc: http.NewResponseController(w)}
-}
-
-// sseJSONSender builds a JSON-payload SSE event sender that calls cancel when a write fails: a stalled-but-open
-// reader is caught by sseWriter.frame's write deadline, not by ctx alone, so cancel here is what stops whatever the
-// caller is streaming progress for. It serves callers that, unlike the two protocol streams, do not already own an
-// sseWriter and a cancelable context together. Marshal errors are dropped: a payload that cannot become JSON has no
-// frame to send or fail.
-func sseJSONSender(w http.ResponseWriter, f http.Flusher, cancel context.CancelFunc) func(event string, payload any) {
-	sw := newSSEWriter(w, f)
-	sw.onErr = cancel
-	return func(event string, payload any) {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			return
-		}
-		_ = sw.frame("event: %s\ndata: %s\n\n", event, b)
-	}
-}
+var (
+	newSSEWriter  = streamframe.NewSSEWriter
+	sseJSONSender = streamframe.JSONSender
+	sseSend       = streamframe.SendData
+	sseDone       = streamframe.SendDone
+	sseErr        = streamframe.SendOpenAIError
+	sseHeartbeat  = streamframe.Heartbeat
+)
 
 func sseStart(w http.ResponseWriter) (*sseWriter, bool) {
 	f, ok := w.(http.Flusher)
@@ -319,65 +215,6 @@ func sseStart(w http.ResponseWriter) (*sseWriter, bool) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	return newSSEWriter(w, f), true
-}
-
-func sseSend(ss *sseWriter, v any) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	ss.frame("data: %s\n\n", b)
-}
-
-func sseDone(ss *sseWriter) {
-	ss.frame("data: [DONE]\n\n")
-}
-
-// sseErr emits an OpenAI-style error object mid-stream (the response is already 200 with headers flushed, so no
-// status code is available). Callers send it in place of the normal finish chunk when a generation fails.
-func sseErr(ss *sseWriter, msg string) {
-	sseSend(ss, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
-}
-
-// sseHeartbeatInterval is how often a buffered generation emits a keep-alive
-// comment frame. A package var, not a const, so tests can drive the mechanism
-// without waiting on wall-clock. 10s is far inside every harness idle timeout we
-// know of (dsh's default is 300s) and costs 8 bytes per tick.
-var sseHeartbeatInterval = 10 * time.Second
-
-// sseHeartbeat keeps a stream alive while the handler is producing nothing to send. The tool paths must buffer the
-// whole generation before they can parse a tool call, so they would otherwise send zero bytes for the entire
-// generation, longer than a client's idle timeout.
-//
-// A comment frame (":" + text) is the right instrument: protocol-legal, carrying no data, and dropped by every SSE
-// parser, so nothing downstream can mistake a keep-alive for content. The buffering guarantee is untouched.
-//
-// The returned stop joins the goroutine before returning, so nothing ticks after the caller's final frame.
-// Serialization against the handler's writes, including the prose deltas the incremental paths emit while the
-// heartbeat runs, comes from sseWriter's lock, not from the join.
-func sseHeartbeat(ss *sseWriter) (stop func()) {
-	done, finished := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(finished)
-		defer recoverHeartbeat()
-		t := time.NewTicker(sseHeartbeatInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
-				ss.frame(": ping\n\n")
-			}
-		}
-	}()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			close(done)
-			<-finished
-		})
-	}
 }
 
 type delta struct {
@@ -592,14 +429,7 @@ func completeUTF8(s string) int {
 // reads back someone else's turns. crypto/rand, not math/rand, because guessability is the whole property; 16 bytes
 // because these ids go in URLs and logs, and 128 bits is beyond enumeration.
 func reqID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand does not fail on any supported platform; if it somehow does, a panic is
-		// correct — silently falling back to a predictable id restores the defect this exists
-		// to close, and would do so invisibly.
-		panic("serveapp: crypto/rand unavailable: " + err.Error())
-	}
-	return hex.EncodeToString(b[:])
+	return stores.MintID()
 }
 
 // humanBytes formats a byte count as MiB/GiB for the startup line (whole MiB is exact here —

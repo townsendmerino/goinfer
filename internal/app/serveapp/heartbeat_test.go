@@ -3,13 +3,15 @@ package serveapp
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 )
 
 // Gates for the SSE heartbeats while the tool path buffers (G19): `stream: true` with tools declared sent no
@@ -45,9 +47,9 @@ const toolsStreamBody = `{
 // claims and both are asserted: the first is what defeats an idle timeout, the
 // second is the buffering guarantee the tool path exists to keep.
 func TestToolStreamHeartbeatsBeforeAnyContent(t *testing.T) {
-	old := sseHeartbeatInterval
-	sseHeartbeatInterval = 50 * time.Millisecond // drive the mechanism, not the wall clock
-	defer func() { sseHeartbeatInterval = old }()
+	old := streamframe.HeartbeatInterval
+	streamframe.HeartbeatInterval = 50 * time.Millisecond // drive the mechanism, not the wall clock
+	defer func() { streamframe.HeartbeatInterval = old }()
 
 	ts := newToolsTestServer(t)
 	defer ts.Close()

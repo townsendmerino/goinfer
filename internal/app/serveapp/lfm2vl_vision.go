@@ -68,7 +68,7 @@ func (s *server) loadLfm2VLVisionTower(dir string) error {
 // prep prepares one image: its tiles (row-major, then the thumbnail), one <image> run per tile, and the lazy tower
 // and projector over each tile in turn.
 func (t *lfm2vlTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
-	layout, err := multimodal.Lfm2VLPreprocess(img.data, t.pp)
+	layout, err := multimodal.Lfm2VLPreprocess(img.Data, t.pp)
 	if err != nil {
 		return imagePrep{}, err
 	}
@@ -78,7 +78,7 @@ func (t *lfm2vlTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
 		n += k
 	}
 	hidden := lm.model.Config().HiddenDim
-	p := imagePrep{n: n, runLens: runLens, hash: multimodal.HashImageBytes(img.data), block: multimodal.Lfm2VLImageBlock(layout, t.pp)}
+	p := imagePrep{n: n, runLens: runLens, hash: multimodal.HashImageBytes(img.Data), block: multimodal.Lfm2VLImageBlock(layout, t.pp)}
 	p.features = func() ([]float32, error) {
 		out := make([]float32, 0, n*hidden)
 		for i, tile := range layout.Tiles {
