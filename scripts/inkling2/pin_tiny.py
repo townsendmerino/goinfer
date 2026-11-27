@@ -1,5 +1,5 @@
-# Usage: python3 scripts/inkling2/pin_tiny.py <out dir>, then scripts/inkling2/convert_tiny.py <out dir> <out dir>/model.gguf;
-# decoder/testdata/inkling2-loop-tiny holds model.gguf and golden.json gzipped. Needs transformers main (8e094f8970 or later).
+# Usage: python3 scripts/inkling2/pin_tiny.py <out dir>, then scripts/inkling2/convert_tiny.py <out dir> <out dir>/inkling2-loop-tiny.gguf;
+# decoder/testdata/inkling2-loop-tiny holds inkling2-loop-tiny.gguf and golden.json gzipped. Needs transformers main (8e094f8970 or later).
 # Builds a random-initialized tiny Inkling2LoopForCausalLM, saves it (HF format), and writes the golden:
 # per-visit decoder-layer outputs and the logits of a 12-token prompt (full-sequence forward), plus a
 # cached incremental forward to check HF's own cache path agrees.

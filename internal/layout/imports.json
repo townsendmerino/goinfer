@@ -898,6 +898,7 @@
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
+      "internal/runtime/inkling2",
       "internal/runtime/kvmgr",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",

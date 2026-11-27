@@ -10,7 +10,7 @@
     "internal/runtime/families/arch_deepseek.go",
     "decoder/mla_int8.go"
   ],
-  "deps_hash": "sha256:3f603a397f5a8280ae7b7840e1c54a028d372bcac6c65433c812c51614648dee",
+  "deps_hash": "sha256:1b9afde77e89fbbe4463baa2d6e065b9f9694f989365514a16b8984a4fd3cad6",
   "status": "validated",
   "validated_at": "d5c5a1d53",
   "date": "2026-10-23",

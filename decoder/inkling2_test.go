@@ -35,7 +35,7 @@ func cosine32(a, b []float32) float64 {
 // TestInkling2_noResidentBackend holds the family CPU-only: no resident implements opInkling2, and a backend that admits by
 // feature set must not read it as a plain attention and MoE model.
 func TestInkling2_noResidentBackend(t *testing.T) {
-	m, err := Load(inkling2TinyDir+"/model.gguf", Options{Quant: "f32"})
+	m, err := Load(inkling2TinyDir+"/inkling2-loop-tiny.gguf", Options{Quant: "f32"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestInkling2Tiny_matchesTransformers(t *testing.T) {
 	if err := json.NewDecoder(gz).Decode(&g); err != nil {
 		t.Fatal(err)
 	}
-	m, err := Load(inkling2TinyDir+"/model.gguf", Options{Quant: "f32"})
+	m, err := Load(inkling2TinyDir+"/inkling2-loop-tiny.gguf", Options{Quant: "f32"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestInkling2Tiny_matchesTransformers(t *testing.T) {
 // TestInkling2_kvPricedAsStored holds the KV plan to the cache: past the window, a local visit's cache still holds every
 // position (Inkling 2 has no rings), so the plan prices every position on every visit.
 func TestInkling2_kvPricedAsStored(t *testing.T) {
-	m, err := Load(inkling2TinyDir+"/model.gguf", Options{Quant: "f32"})
+	m, err := Load(inkling2TinyDir+"/inkling2-loop-tiny.gguf", Options{Quant: "f32"})
 	if err != nil {
 		t.Fatal(err)
 	}

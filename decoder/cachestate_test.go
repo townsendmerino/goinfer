@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"reflect"
 	"slices"
 	"testing"
@@ -28,6 +29,7 @@ var markState = map[cacheState]func(c *KVCache){
 	stateShortConv:   func(c *KVCache) { c.conv = []*shortConvState{} },
 	stateMamba2:      func(c *KVCache) { c.mamba = []*mamba2State{} },
 	stateKDA:         func(c *KVCache) { c.kda = []*kdaState{} },
+	stateInkling2:    func(c *KVCache) { c.ink = []*inkling2.ConvState{} },
 	stateImageBlocks: func(c *KVCache) { c.imgBlocks = [][2]int{{1, 3}} },
 	stateMRoPE:       func(c *KVCache) { c.mropePos = [][3]int{{0, 0, 0}, {1, 1, 1}, {1, 2, 2}}; c.mropeDelta = -1 },
 	stateDeepstack:   func(c *KVCache) { c.deepstack = &deepstackRows{} },
