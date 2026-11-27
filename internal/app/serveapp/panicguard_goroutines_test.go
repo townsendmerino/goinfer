@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 )
 
 // A load that panics from the web UI ends in an error event on that load's stream, releases the single-flight, and leaves the server
@@ -50,10 +51,10 @@ func TestPanicGuard_webLoadPanicIsAnErrorEventAndTheServerKeepsServing(t *testin
 
 // An SSE heartbeat whose write panics ends without taking the process down, and its stop still returns.
 func TestPanicGuard_sseHeartbeatPanicEndsTheHeartbeatOnly(t *testing.T) {
-	old := sseHeartbeatInterval
-	sseHeartbeatInterval = time.Millisecond
-	t.Cleanup(func() { sseHeartbeatInterval = old })
-	stop := sseHeartbeat(&sseWriter{}) // no ResponseWriter: the first ping dereferences nil
+	old := streamframe.HeartbeatInterval
+	streamframe.HeartbeatInterval = time.Millisecond
+	t.Cleanup(func() { streamframe.HeartbeatInterval = old })
+	stop := sseHeartbeat(streamframe.NewSSEWriterRaw(nil, nil)) // no ResponseWriter: the first ping dereferences nil
 	time.Sleep(20 * time.Millisecond)
 	stop()
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 )
 
 // OpenAI Responses API (/v1/responses). Stateless input (input, instructions, text.format, tools, streaming) plus
@@ -51,7 +52,7 @@ type responseReq struct {
 func (r *responseReq) thinkRequest() thinkRequest {
 	tr := thinkRequest{}
 	if r.Reasoning != nil {
-		tr.reasoningEffort = r.Reasoning.Effort
+		tr.ReasoningEffort = r.Reasoning.Effort
 	}
 	return tr
 }
@@ -208,13 +209,15 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		rs := newRespStream(ss, id)
-		rs.mint = mint
-		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		if mint != nil {
+			rs.SetMintBlob(mint.blob)
+		}
+		rs.Emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		if gr.think != nil {
-			gr.think.onReasoning = rs.reasoningDelta
+			gr.think.SetOnReasoning(rs.ReasoningDelta)
 		}
 		var sb strings.Builder
 		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
@@ -223,7 +226,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		defer stopBeat()
 		res, gerr := lm.drive(streamCtx, gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
-			rs.delta(t)
+			rs.Delta(t)
 		})
 		stopBeat()
 		if gerr != nil {
@@ -231,13 +234,13 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			sseDone(ss)
 			return
 		}
-		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(sb.String())}))
-		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens)})
+		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.CloseMessage(sb.String())}))
+		rs.Emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens)})
 		if res.cancelReason != "" {
-			rs.emit("response.cancelled", map[string]any{"reason": res.cancelReason})
+			rs.Emit("response.cancelled", map[string]any{"reason": res.cancelReason})
 		}
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.ReasoningText(), nil)
 		return
 	}
 
@@ -253,7 +256,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	out := withCarrier(nil, mint, req.Include, id, withReasoning(nil, gr.think, id, mint, []any{outputMessage(id+"-msg", sb.String())}))
 	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens))
-	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
+	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.ReasoningText(), nil)
 }
 
 // serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images: the prompt from
@@ -312,19 +315,19 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		rs := newRespStream(ss, id)
-		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		rs.Emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		if gr.think != nil {
-			gr.think.onReasoning = rs.reasoningDelta
+			gr.think.SetOnReasoning(rs.ReasoningDelta)
 		}
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
 		defer stopBeat()
 		res, gerr := lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
-			rs.delta(t)
+			rs.Delta(t)
 		})
 		stopBeat()
 		if gerr != nil {
@@ -332,13 +335,13 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			sseDone(ss)
 			return
 		}
-		out := withReasoning(rs, gr.think, id, nil, []any{rs.closeMessage(sb.String())})
-		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens)})
+		out := withReasoning(rs, gr.think, id, nil, []any{rs.CloseMessage(sb.String())})
+		rs.Emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens)})
 		if res.cancelReason != "" {
-			rs.emit("response.cancelled", map[string]any{"reason": res.cancelReason})
+			rs.Emit("response.cancelled", map[string]any{"reason": res.cancelReason})
 		}
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.ReasoningText(), nil)
 		return
 	}
 	var sb strings.Builder
@@ -353,7 +356,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 	}
 	out := withReasoning(nil, gr.think, id, nil, []any{outputMessage(id+"-msg", sb.String())})
 	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens))
-	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
+	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.ReasoningText(), nil)
 }
 
 // respondTools generates a (buffered) tool-calling response and emits
@@ -418,11 +421,13 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	var rs *respStream
 	if ss != nil {
 		rs = newRespStream(ss, id)
-		rs.mint = mint
-		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
-		onProse = rs.delta
+		if mint != nil {
+			rs.SetMintBlob(mint.blob)
+		}
+		rs.Emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		onProse = rs.Delta
 		if gr.think != nil {
-			gr.think.onReasoning = rs.reasoningDelta
+			gr.think.SetOnReasoning(rs.ReasoningDelta)
 		}
 	}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
@@ -445,9 +450,9 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
 		// well-formed response object with real usage.
 		if ss != nil {
-			resp := responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(t.raw)}), inTok, nComp)
-			rs.emit("response.completed", map[string]any{"response": resp})
-			rs.emit("response.cancelled", map[string]any{"reason": t.cancelReason})
+			resp := responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.CloseMessage(t.raw)}), inTok, nComp)
+			rs.Emit("response.completed", map[string]any{"response": resp})
+			rs.Emit("response.cancelled", map[string]any{"reason": t.cancelReason})
 			sseDone(ss)
 			return
 		}
@@ -461,7 +466,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if rs != nil && wantsCarrier(req.Include) {
 		// a reply with no reasoning and nothing streamed yet: its carrier-only item goes first, before the items below open
 		if enc := mint.blob(""); enc != "" {
-			rs.carrierOnly(enc)
+			rs.CarrierOnly(enc)
 		}
 	}
 	if ss != nil && t.rest != "" {
@@ -474,12 +479,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	var toolCalls []apiToolCall // stored for previous_response_id continuity below
 	if lead != "" {
 		if rs != nil {
-			out = append(out, rs.closeMessage(lead))
+			out = append(out, rs.CloseMessage(lead))
 		} else {
 			out = append(out, outputMessage(id+"-msg", lead))
 		}
-	} else if rs != nil && rs.msg != nil { // prose streamed that the parser then trimmed to nothing: close the item it opened
-		out = append(out, rs.closeMessage(""))
+	} else if rs.MessageOpen() { // prose streamed that the parser then trimmed to nothing: close the item it opened
+		out = append(out, rs.CloseMessage(""))
 	}
 	for i, c := range calls {
 		callID := c.ID
@@ -492,7 +497,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		}
 		out = append(out, fc)
 		if rs != nil {
-			rs.functionCall(fc)
+			rs.FunctionCall(fc)
 		}
 		tc := apiToolCall{ID: callID, Type: "function"}
 		tc.Function.Name = c.Name
@@ -501,7 +506,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	if len(out) == 0 { // model produced nothing parseable → empty message
 		if rs != nil {
-			out = append(out, rs.closeMessage(t.raw))
+			out = append(out, rs.CloseMessage(t.raw))
 		} else {
 			out = append(out, outputMessage(id+"-msg", t.raw))
 		}
@@ -517,14 +522,14 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		resp[fromReasoningField] = true
 	}
 	if req.Stream {
-		rs.emit("response.completed", map[string]any{"response": resp})
+		rs.Emit("response.completed", map[string]any{"response": resp})
 		sseDone(ss)
 	} else {
 		writeJSON(w, http.StatusOK, resp)
 	}
 	// Tool-call continuations round-trip via the next request's input; store the
 	// assistant text (the lead, if any) AND the tool calls for previous_response_id continuity.
-	s.maybeStore(store, id, lm.name, messages, lead, gr.think.reasoningText(), toolCalls)
+	s.maybeStore(store, id, lm.name, messages, lead, gr.think.ReasoningText(), toolCalls)
 }
 
 // maybeStore records this turn's assistant output for a later previous_response_id continuation. serveResponsesWith
@@ -778,16 +783,4 @@ func respStatus(finish string) string {
 	}
 }
 
-func outputMessage(itemID, text string) map[string]any {
-	return map[string]any{
-		"type": "message", "id": itemID, "role": "assistant", "status": "completed",
-		"content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}},
-	}
-}
-
-// sseEvent writes a Responses SSE event (both the event: line and the data: JSON,
-// which itself carries the "type"). Mirrors OpenAI's wire format.
-func sseEvent(ss *sseWriter, event string, payload any) {
-	b, _ := json.Marshal(payload)
-	ss.frame("event: %s\ndata: %s\n\n", event, b)
-}
+var sseEvent = streamframe.SendEvent

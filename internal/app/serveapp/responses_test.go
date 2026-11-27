@@ -263,7 +263,7 @@ func TestRespondTools_callsMaybeStoreWithTheToolCalls(t *testing.T) {
 		j = len(body) - i
 	}
 	fn := body[i : i+j]
-	if !strings.Contains(fn, "s.maybeStore(store, id, lm.name, messages, lead, gr.think.reasoningText(), toolCalls)") {
+	if !strings.Contains(fn, "s.maybeStore(store, id, lm.name, messages, lead, gr.think.ReasoningText(), toolCalls)") {
 		t.Error("respondTools no longer calls maybeStore with toolCalls — a tool-calling turn " +
 			"would again store no ToolCalls, breaking previous_response_id continuity (V-18)")
 	}

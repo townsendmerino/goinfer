@@ -517,6 +517,24 @@
         ]
       },
       "why": "internal/app/serveapp/stores holds the bounded in-memory serving stores (FileStore, BatchStore, GenerationRegistry, FeatureCache, ResponseStore) below serveapp (SA1). It imports only internal/app/serveapp/jobs and internal/batchio and never decoder or serveapp."
+    },
+    {
+      "name": "serveapp-streamframe-leaf",
+      "from": [
+        "internal/app/serveapp/streamframe"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/streamframe": [
+          "chat",
+          "internal/app/serveapp/carriedids",
+          "internal/codec"
+        ]
+      },
+      "why": "internal/app/serveapp/streamframe holds SSE transport, thinking-block splitting, reasoning-token budget resolution, /v1/responses reasoning items, and Responses/Anthropic stream state machines below serveapp (SA2). It never imports decoder or serveapp."
     }
   ],
   "arrows": {
@@ -794,6 +812,7 @@
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -828,6 +847,11 @@
     "internal/app/serveapp/stores": [
       "internal/app/serveapp/jobs",
       "internal/batchio"
+    ],
+    "internal/app/serveapp/streamframe": [
+      "chat",
+      "internal/app/serveapp/carriedids",
+      "internal/codec"
     ],
     "internal/audio": [
       "internal/vision"
@@ -1240,6 +1264,7 @@
       "internal/app/loadflags",
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
       "internal/audio",
       "internal/clef",
       "internal/codec",
@@ -1271,6 +1296,9 @@
     ],
     "internal/app/serveapp/stores": [
       "internal/app/serveapp/jobs"
+    ],
+    "internal/app/serveapp/streamframe": [
+      "chat"
     ],
     "internal/audio": [
       "internal/vision"

@@ -128,7 +128,7 @@ func runThink(t *testing.T, tk *tokenizer.Tokenizer, ids []int, tm *chat.Templat
 	finish, _, stopHit := lm.streamTokens(ctx, cancel, stream, gr, nil, func(s string) { c.WriteString(s) })
 	out := thinkRun{reasoning: r.String(), content: c.String(), finish: finish, stopHit: stopHit, fragments: frags}
 	if gr.think != nil {
-		out.ended = gr.think.endedInReasoning
+		out.ended = gr.think.EndedInReasoning()
 	}
 	return out
 }
@@ -140,7 +140,7 @@ func TestStreamTokens_thinkSplit(t *testing.T) {
 	qwen3 := templateFromGolden(t, "qwen3-4b")
 	nineB := templateFromGolden(t, "qwen3.5-9b").WithThinking(chat.ThinkTemplate) // prompt ends inside an open <think>
 	small := templateFromGolden(t, "qwen3.5-0.8b").WithThinking(chat.ThinkTemplate)
-	split := thinkSettings{format: rfSplit}
+	split := thinkSettings{Format: rfSplit}
 
 	cases := []struct {
 		name  string
@@ -180,11 +180,11 @@ func TestStreamTokens_thinkFormats(t *testing.T) {
 	reply := "<think>\nhmm\n</think>\n\nDone."
 	ids := thinkIDs(vocab, reply, true)
 
-	none := runThink(t, tk, ids, tm, thinkSettings{format: rfNone}, nil, 1000)
+	none := runThink(t, tk, ids, tm, thinkSettings{Format: rfNone}, nil, 1000)
 	if none.content != reply || none.reasoning != "" {
 		t.Fatalf("none: content=%q reasoning=%q, want the raw reply and no reasoning", none.content, none.reasoning)
 	}
-	legacy := runThink(t, tk, ids, tm, thinkSettings{format: rfLegacy}, nil, 1000)
+	legacy := runThink(t, tk, ids, tm, thinkSettings{Format: rfLegacy}, nil, 1000)
 	if legacy.content != reply || legacy.reasoning != "hmm" {
 		t.Fatalf("legacy: content=%q reasoning=%q, want raw content and reasoning %q", legacy.content, legacy.reasoning, "hmm")
 	}
@@ -194,7 +194,7 @@ func TestStreamTokens_thinkFormats(t *testing.T) {
 func TestStreamTokens_thinkUnmanagedIsPassthrough(t *testing.T) {
 	tk, vocab := thinkTokenizer(t, thinkAlphabet)
 	for _, tm := range []*chat.Template{chat.ChatML(), nil} {
-		got := runThink(t, tk, thinkIDs(vocab, "<think>\nx\n</think>\n\nAnswer", true), tm, thinkSettings{format: rfSplit}, nil, 1000)
+		got := runThink(t, tk, thinkIDs(vocab, "<think>\nx\n</think>\n\nAnswer", true), tm, thinkSettings{Format: rfSplit}, nil, 1000)
 		if got.content != "<think>\nx\n</think>\n\nAnswer" || got.reasoning != "" {
 			t.Fatalf("template %v: content=%q reasoning=%q, want the raw text untouched", tm, got.content, got.reasoning)
 		}
@@ -208,7 +208,7 @@ func TestStreamTokens_thinkUnmanagedIsPassthrough(t *testing.T) {
 func TestStreamTokens_thinkStopStrings(t *testing.T) {
 	tk, vocab := thinkTokenizer(t, thinkAlphabet)
 	tm := templateFromGolden(t, "qwen3-4b")
-	split := thinkSettings{format: rfSplit}
+	split := thinkSettings{Format: rfSplit}
 	for _, whole := range []bool{true, false} {
 		name := map[bool]string{true: "tag tokens", false: "tag spelled out"}[whole]
 		t.Run(name, func(t *testing.T) {
@@ -240,12 +240,12 @@ func TestStreamTokens_thinkStopStrings(t *testing.T) {
 		})
 	}
 	// deepseek-legacy: content is the raw text, so a stop in the thinking stops the reply there, as it always did.
-	got := runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{format: rfLegacy}, []string{"END"}, 1000)
+	got := runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{Format: rfLegacy}, []string{"END"}, 1000)
 	if got.stopHit != "END" || got.content != "<think>\nthe word " {
 		t.Fatalf("deepseek-legacy watches the raw text: %+v", got)
 	}
 	// No splitter (-reasoning-format none): the stop logic watches everything, unchanged.
-	got = runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{format: rfNone}, []string{"END"}, 1000)
+	got = runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{Format: rfNone}, []string{"END"}, 1000)
 	if got.stopHit != "END" || got.content != "<think>\nthe word " {
 		t.Fatalf("-reasoning-format none: %+v", got)
 	}
@@ -259,7 +259,7 @@ func TestStreamTokens_thinkReasoningNeverSplitsARune(t *testing.T) {
 	tm := templateFromGolden(t, "qwen3-4b")
 	reply := "<think>\ncaf\u00e9 au lait \u00e9t\u00e9\n</think>\n\nOK \u00e9"
 	for _, whole := range []bool{true, false} {
-		got := runThink(t, tk, thinkIDs(vocab, reply, whole), tm, thinkSettings{format: rfSplit}, nil, 1000)
+		got := runThink(t, tk, thinkIDs(vocab, reply, whole), tm, thinkSettings{Format: rfSplit}, nil, 1000)
 		if got.reasoning != "caf\u00e9 au lait \u00e9t\u00e9" || got.content != "OK \u00e9" {
 			t.Fatalf("whole=%v reasoning=%q content=%q", whole, got.reasoning, got.content)
 		}
@@ -272,7 +272,7 @@ func TestStreamTokens_thinkReasoningNeverSplitsARune(t *testing.T) {
 	// A reply that is cut off mid-rune inside its reasoning: the bytes that are there are still reported at the end.
 	ids := thinkIDs(vocab, "<think>\nab\u00e9", true)
 	ids = ids[:len(ids)-1] // drop the rune's second byte
-	got := runThink(t, tk, ids, tm, thinkSettings{format: rfSplit}, nil, 1000)
+	got := runThink(t, tk, ids, tm, thinkSettings{Format: rfSplit}, nil, 1000)
 	if !strings.HasPrefix(got.reasoning, "ab") {
 		t.Errorf("truncated mid-rune reasoning lost its text: %q", got.reasoning)
 	}
@@ -296,19 +296,19 @@ func TestResolveThink(t *testing.T) {
 		{"server default thinking=off", config{thinking: "off"}, thinkRequest{}, chat.ThinkOff, false, rfSplit, ""},
 		{"server default template", config{thinking: "template"}, thinkRequest{}, chat.ThinkTemplate, false, rfSplit, ""},
 		{"server format none", config{reasoningFmt: "none"}, thinkRequest{}, chat.ThinkTemplate, false, rfNone, ""},
-		{"kwargs enable_thinking true", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("true")}}, chat.ThinkOn, true, rfSplit, ""},
-		{"kwargs enable_thinking false overrides server on", config{thinking: "on"}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}}, chat.ThinkOff, true, rfSplit, ""},
-		{"kwargs win over effort", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}, reasoningEffort: "high"}, chat.ThinkOff, true, rfSplit, ""},
-		{"effort none is off", config{}, thinkRequest{reasoningEffort: "none"}, chat.ThinkOff, true, rfSplit, ""},
-		{"effort medium changes nothing (a bare reasoning_effort must not flip a client's prompt)", config{}, thinkRequest{reasoningEffort: "Medium"}, chat.ThinkTemplate, false, rfSplit, ""},
-		{"effort high under server thinking=on stays on", config{thinking: "on"}, thinkRequest{reasoningEffort: "high"}, chat.ThinkOn, false, rfSplit, ""},
-		{"anthropic enabled", config{}, thinkRequest{anthropicType: "enabled"}, chat.ThinkOn, true, rfSplit, ""},
-		{"anthropic adaptive", config{}, thinkRequest{anthropicType: "adaptive"}, chat.ThinkOn, true, rfSplit, ""},
-		{"anthropic disabled", config{}, thinkRequest{anthropicType: "disabled"}, chat.ThinkOff, true, rfSplit, ""},
-		{"per-request format", config{}, thinkRequest{format: "deepseek-legacy"}, chat.ThinkTemplate, false, rfLegacy, ""},
-		{"enable_thinking must be a bool", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw(`"yes"`)}}, 0, false, 0, "enable_thinking must be a boolean"},
-		{"unknown format is a 400", config{}, thinkRequest{format: "xml"}, 0, false, 0, "reasoning_format"},
-		{"unknown anthropic type is a 400", config{}, thinkRequest{anthropicType: "maybe"}, 0, false, 0, "thinking.type"},
+		{"kwargs enable_thinking true", config{}, thinkRequest{Kwargs: map[string]json.RawMessage{"enable_thinking": raw("true")}}, chat.ThinkOn, true, rfSplit, ""},
+		{"kwargs enable_thinking false overrides server on", config{thinking: "on"}, thinkRequest{Kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}}, chat.ThinkOff, true, rfSplit, ""},
+		{"kwargs win over effort", config{}, thinkRequest{Kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}, ReasoningEffort: "high"}, chat.ThinkOff, true, rfSplit, ""},
+		{"effort none is off", config{}, thinkRequest{ReasoningEffort: "none"}, chat.ThinkOff, true, rfSplit, ""},
+		{"effort medium changes nothing (a bare reasoning_effort must not flip a client's prompt)", config{}, thinkRequest{ReasoningEffort: "Medium"}, chat.ThinkTemplate, false, rfSplit, ""},
+		{"effort high under server thinking=on stays on", config{thinking: "on"}, thinkRequest{ReasoningEffort: "high"}, chat.ThinkOn, false, rfSplit, ""},
+		{"anthropic enabled", config{}, thinkRequest{AnthropicType: "enabled"}, chat.ThinkOn, true, rfSplit, ""},
+		{"anthropic adaptive", config{}, thinkRequest{AnthropicType: "adaptive"}, chat.ThinkOn, true, rfSplit, ""},
+		{"anthropic disabled", config{}, thinkRequest{AnthropicType: "disabled"}, chat.ThinkOff, true, rfSplit, ""},
+		{"per-request format", config{}, thinkRequest{Format: "deepseek-legacy"}, chat.ThinkTemplate, false, rfLegacy, ""},
+		{"enable_thinking must be a bool", config{}, thinkRequest{Kwargs: map[string]json.RawMessage{"enable_thinking": raw(`"yes"`)}}, 0, false, 0, "enable_thinking must be a boolean"},
+		{"unknown format is a 400", config{}, thinkRequest{Format: "xml"}, 0, false, 0, "reasoning_format"},
+		{"unknown anthropic type is a 400", config{}, thinkRequest{AnthropicType: "maybe"}, 0, false, 0, "thinking.type"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -323,8 +323,8 @@ func TestResolveThink(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ts.mode != tc.wantMode || ts.explicit != tc.explicit || ts.format != tc.wantFmt {
-				t.Fatalf("got mode=%v explicit=%v format=%v, want mode=%v explicit=%v format=%v", ts.mode, ts.explicit, ts.format, tc.wantMode, tc.explicit, tc.wantFmt)
+			if ts.Mode != tc.wantMode || ts.Explicit != tc.explicit || ts.Format != tc.wantFmt {
+				t.Fatalf("got mode=%v explicit=%v format=%v, want mode=%v explicit=%v format=%v", ts.Mode, ts.Explicit, ts.Format, tc.wantMode, tc.explicit, tc.wantFmt)
 			}
 		})
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -326,7 +327,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// include_usage needs the real generated-token count (nComp), which no count of emitted chunks can report. Nothing
@@ -464,7 +465,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		anthropicEvent(ss, "message_start", map[string]any{
 			"type": "message_start",
@@ -475,9 +476,10 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			},
 		})
 		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
-		th := &anthropicThink{ss: ss, want: req.wantsThinking()}
-		s.routeThink(lm, &gr, tm, turns, ts, th.push)
-		if th.want {
+		wantThinking := req.wantsThinking()
+		th := streamframe.NewAnthropicThink(ss, wantThinking, nil)
+		s.routeThink(lm, &gr, tm, turns, ts, th.Push)
+		if wantThinking {
 			streamMessagesThinking(ss, th, gr, func(onText func(string)) (turnResult, error) {
 				return lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, onText)
 			})

@@ -80,9 +80,9 @@ func (r *anthropicReq) outputFormat() (*respFormat, *apiErr) {
 func (r *anthropicReq) thinkRequest() thinkRequest {
 	tr := thinkRequest{}
 	if r.Thinking != nil {
-		tr.anthropicType = r.Thinking.Type
+		tr.AnthropicType = r.Thinking.Type
 		if r.Thinking.Type == "enabled" {
-			tr.budget = r.Thinking.BudgetTokens // serve force-closes the block at it (budget.go), clamped to leave room to answer
+			tr.Budget = r.Thinking.BudgetTokens // serve force-closes the block at it (budget.go), clamped to leave room to answer
 		}
 	}
 	return tr

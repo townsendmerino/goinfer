@@ -68,8 +68,8 @@ func TestSettleCalls_callWrittenInsideReasoning(t *testing.T) {
 		"block left open":         callInReasoning,
 		"block closed after call": callInReasoning + "\n</think>\n\n",
 	} {
-		th := newThinkOut(tm, nil, thinkSettings{format: rfSplit}, nil)
-		answer := th.feed(reply) + th.finish()
+		th := newThinkOut(tm, nil, thinkSettings{Format: rfSplit}, nil)
+		answer := th.Feed(reply) + th.Finish()
 		if strings.TrimSpace(answer) != "" {
 			t.Fatalf("%s: the splitter gave answer %q; the case needs the call inside the reasoning", name, answer)
 		}
@@ -79,8 +79,8 @@ func TestSettleCalls_callWrittenInsideReasoning(t *testing.T) {
 		}
 	}
 	// A call drafted in the reasoning is not taken when the model went on to answer in prose: the answer is the turn.
-	th := newThinkOut(tm, nil, thinkSettings{format: rfSplit}, nil)
-	answer := th.feed(callInReasoning+"\nActually I know it.\n</think>\n\nIt returns 5.") + th.finish()
+	th := newThinkOut(tm, nil, thinkSettings{Format: rfSplit}, nil)
+	answer := th.Feed(callInReasoning+"\nActually I know it.\n</think>\n\nIt returns 5.") + th.Finish()
 	if calls, _, _ := settleCalls(tm, answer, []chat.Tool{execTool}, th); len(calls) != 0 {
 		t.Errorf("a prose answer after a call drafted in the reasoning: calls %+v, want none", calls)
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
@@ -75,7 +76,7 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 	const chunkBytes = 256 << 10
 	for off := 0; off < len(f.Bytes); off += chunkBytes {
 		end := min(off+chunkBytes, len(f.Bytes))
-		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		_ = rc.SetWriteDeadline(time.Now().Add(streamframe.WriteTimeout))
 		if _, err := w.Write(f.Bytes[off:end]); err != nil {
 			return
 		}
@@ -268,7 +269,7 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			continue
 		}
-		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		_ = rc.SetWriteDeadline(time.Now().Add(streamframe.WriteTimeout))
 		if _, err := w.Write(lineBytes); err != nil {
 			return
 		}
