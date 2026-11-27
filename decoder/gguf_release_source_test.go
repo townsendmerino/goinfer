@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // mappedRSSOf is this process's resident bytes in the mappings of path (/proc/self/smaps Rss), the pages a load holds.
@@ -41,10 +39,10 @@ func mappedRSSOf(t *testing.T, path string) int64 {
 	return total
 }
 
-// TestGGUFDirectLoad_releasesTheSource holds a direct .gguf load to releasing its source as it converts: just before the
-// mapping closes, the process holds under a quarter of the file resident (Linux; elsewhere the advice does not reclaim).
-// Without the release the whole file stays resident beside the built weights, which on a 27.8 GB checkpoint put the peak
-// past what the box holds.
+// TestGGUFDirectLoad_releasesTheSource holds a direct .gguf build to releasing its source as it converts: with the mapping
+// still open after buildGGUFWeights (the build loadGGUFWeights runs between mapping the file and closing it), the process
+// holds under a quarter of the file resident (Linux; elsewhere the advice does not reclaim). Without the release the whole
+// file stays resident beside the built weights, which on a 27.8 GB checkpoint put the peak past what the box holds.
 func TestGGUFDirectLoad_releasesTheSource(t *testing.T) {
 	path, err := filepath.Abs("../testdata/gemma2-hd-tiny.gguf")
 	if err != nil {
@@ -54,20 +52,15 @@ func TestGGUFDirectLoad_releasesTheSource(t *testing.T) {
 	if err != nil {
 		t.Skipf("no fixture: %v", err)
 	}
-	var held int64 = -1
-	testgate.SetForTest(t, &ggufBuiltHookForTest, func(p string) {
-		if p == path || filepath.Clean(p) == path {
-			held = mappedRSSOf(t, path)
-		}
-	})
-	m, err := Load(path, Options{Quant: "int8", DirectLoad: true})
+	g, err := OpenGGUFMmap(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
-	if held < 0 {
-		t.Fatal("the build hook never ran: the load did not take the direct .gguf path")
+	defer g.Close()
+	if _, err := buildGGUFWeights(g, quantInt8, false, false, false, nil); err != nil {
+		t.Fatal(err)
 	}
+	held := mappedRSSOf(t, path)
 	t.Logf("source %d bytes; %d resident at the end of the build", st.Size(), held)
 	if held*4 > st.Size() {
 		t.Fatalf("%d of the source's %d bytes still resident at the end of the build: the load holds the source beside its weights", held, st.Size())
