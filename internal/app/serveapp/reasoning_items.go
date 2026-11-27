@@ -7,7 +7,6 @@ const reasoningBlobPrefix = streamframe.ReasoningBlobPrefix
 type respStream = streamframe.RespStream
 
 var (
-	reasoningItem        = streamframe.ReasoningItem
 	reasoningItemText    = streamframe.ReasoningItemText
 	reasoningItemCarried = streamframe.ReasoningItemCarried
 	outputMessage        = streamframe.OutputMessage
