@@ -2,7 +2,10 @@
 
 package metal
 
-import "github.com/townsendmerino/goinfer/internal/runtime/mem"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
+)
 
 // The batched expert GEMM (docs/audit-metal-2026-09-30.md): a layer-major
 // paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the group routes to
@@ -74,29 +77,7 @@ func (r *resident) g4BatchEnsure(b *g4Batch, n, entries int, made func(Buffer) B
 // g4BatchEntries lays out a group's moe_batch_gemv entries: for each pool slot the group uses, in first-use order, its
 // pairs (row*k + j, rows counted from the group's first) in order, at most moeBatchB to an entry.
 func g4BatchEntries(slots [][]uint32, topK int) []uint32 {
-	var order []uint32
-	pairs := map[uint32][]uint32{}
-	for i, si := range slots {
-		for j := range topK {
-			s := si[j]
-			if _, ok := pairs[s]; !ok {
-				order = append(order, s)
-			}
-			pairs[s] = append(pairs[s], uint32(i*topK+j))
-		}
-	}
-	var out []uint32
-	for _, s := range order {
-		for ps := pairs[s]; len(ps) > 0; {
-			c := min(len(ps), moeBatchB)
-			e := make([]uint32, 2+moeBatchB)
-			e[0], e[1] = s, uint32(c)
-			copy(e[2:], ps[:c])
-			out = append(out, e...)
-			ps = ps[c:]
-		}
-	}
-	return out
+	return moecache.SlotBatchEntries(slots, topK, moeBatchB)
 }
 
 // encodeG4Phase2Batch encodes a slot group's phase 2 (rows grp, their slot tables already filled) through the batched

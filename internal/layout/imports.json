@@ -975,6 +975,17 @@
         ]
       },
       "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, Gemma 4 row builders, CPU multimodal prefill walkers, and prefill KV upload (VL1-VL3). It never imports decoder."
+    },
+    {
+      "name": "moecache-leaf",
+      "from": [
+        "internal/runtime/moecache"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/runtime/moecache holds host-side MoE expert slot LRU residency, provisional admission rollback, stage demand accounting, and expert-major (row, rank) batch grouping shared across GPU backends (GPU1). It imports no goinfer package."
     }
   ],
   "arrows": {
@@ -1017,6 +1028,7 @@
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
       "internal/runtime/mem",
+      "internal/runtime/moecache",
       "internal/runtime/program",
       "internal/runtime/sampling",
       "internal/vision",
@@ -1045,6 +1057,7 @@
       "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/moecache",
       "internal/runtime/program",
       "internal/vision",
       "multimodal"

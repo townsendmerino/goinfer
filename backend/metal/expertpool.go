@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
 )
 
 // expertSlot is a view of one slot of an expertPool: .At()-offset Buffers onto the pool's contiguous per-field buffers,
@@ -289,67 +290,33 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			delete(p.prefetchLive, e)
 		}
 	}
+	claim, nextLRU := moecache.ClaimBatch(ids, p.slotExpert, p.where, p.lru)
+	p.lru = nextLRU
+	p.hits += claim.Hits
+	p.coldStarts += claim.ColdStarts
+	p.evictions += claim.Evictions
+	if expertPoolDefect == 1 {
+		for _, s := range claim.EvictedSlots {
+			p.markEvicted(s)
+		}
+	}
 	out := make([]expertSlot, len(ids))
-	type miss struct{ idx, expert, slot int }
-	var misses []miss
-	seen := make(map[int]int, len(ids))     // expert id -> slot, for a duplicate id within this call
-	claimed := make(map[int]bool, len(ids)) // slot -> claimed by a miss earlier in THIS batch
-	for i, e := range ids {
-		if s, ok := seen[e]; ok {
-			// A repeat of an id already resolved earlier in this batch counts as a hit even if its first occurrence was a miss (two
-			// sequential ensureResident calls would see the second find it resident). Never double-stage: the first occurrence's miss
-			// entry is what the WaitGroup below waits on.
-			p.hits++
-			out[i] = p.slotView(s)
-			continue
-		}
-		if s, ok := p.where[e]; ok {
-			p.hits++
-			p.touch(s)
-			out[i] = p.slotView(s)
-			seen[e] = s
-			continue
-		}
-		s := p.pickSlot()
-		if claimed[s] {
-			// Out of contract: more DISTINCT misses in one batch than the pool has slots, so pickSlot's eviction fallback landed on a
-			// slot a miss earlier in this batch already claimed; staging both would race two goroutines over one buffer and leave
-			// p.where pointing two experts at one slot. newExpertPool requires N >= the router's top-k to make this unreachable (ids is
-			// one layer's top-k); a caller that violates it gets a loud panic, not silent corruption.
-			panic(fmt.Sprintf("metal expertpool: batch of %d distinct experts exceeds this pool's "+
-				"%d slots (id %d re-picked slot %d) — the caller must ensure N >= top-k", len(ids), len(p.slotExpert), e, s))
-		}
-		claimed[s] = true
-		if old := p.slotExpert[s]; old >= 0 {
-			delete(p.where, old)
-			p.evictions++
-			if expertPoolDefect == 1 {
-				p.markEvicted(s)
-			}
-		} else {
-			p.coldStarts++
-		}
+	for i, s := range claim.Slots {
+		out[i] = p.slotView(s)
+	}
+	if len(claim.Misses) > 0 {
 		if p.distinctExperts == nil {
 			p.distinctExperts = make(map[int]bool)
 		}
-		p.distinctExperts[e] = true
-		// Claim AND touch the slot now, not after staging: pickSlot's eviction fallback reads p.lru's tail, so deferring touch()
-		// would leave p.lru at the pre-batch ordering while slotExpert shows every claimed slot occupied, and a later miss in this
-		// batch could evict a slot another miss already claimed or index p.lru out of range. touch() depends only on the slot
-		// index, not on staged content, so doing it early changes no eviction order.
-		p.slotExpert[s] = e
-		p.touch(s)
-		seen[e] = s
-		misses = append(misses, miss{i, e, s})
-	}
-
-	if len(misses) > 0 {
+		for _, ms := range claim.Misses {
+			p.distinctExperts[ms.Expert] = true
+		}
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var fetchNanos int64
 		var stagePanic any
 		var stageStack []byte
-		for _, ms := range misses {
+		for _, ms := range claim.Misses {
 			wg.Go(func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -363,7 +330,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 					}
 				}()
 				t0 := time.Now()
-				p.stageInto(ms.expert, ms.slot)
+				p.stageInto(ms.Expert, ms.Slot)
 				d := time.Since(t0).Nanoseconds()
 				mu.Lock()
 				fetchNanos += d
@@ -372,25 +339,20 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		}
 		wg.Wait()
 		if stagePanic != nil {
-			for _, ms := range misses {
-				p.slotExpert[ms.slot] = -1
+			for _, ms := range claim.Misses {
+				p.slotExpert[ms.Slot] = -1
 			}
 			logs.Warnf("metal expertpool: staging worker panicked: %v\n%s", stagePanic, stageStack)
 			panic(stagePanic)
 		}
 		p.fetchNanos += fetchNanos
-		// stageNanos is the wall-clock paging-traffic penalty term (ensureResident's own comment); under concurrent staging the sum
-		// of fetchNanos is an upper bound on the WaitGroup's span and keeps the unit consistent with the sequential path.
 		p.stageNanos += fetchNanos
 		if p.stagePread != nil {
-			p.preads += len(misses)
+			p.preads += len(claim.Misses)
 		}
-		p.stages += len(misses)
-		for _, ms := range misses {
-			// where[] is populated only after staging completes, so "resident" means "holds the right bytes", not "claimed" (this pool
-			// has one caller, per ensureResident). touch() already ran in the claiming loop above.
-			p.where[ms.expert] = ms.slot
-			out[ms.idx] = p.slotView(ms.slot)
+		p.stages += len(claim.Misses)
+		for _, ms := range claim.Misses {
+			p.where[ms.Expert] = ms.Slot
 		}
 	}
 	return out
@@ -544,23 +506,10 @@ func (p *expertPool) finishPrefetch() {
 
 // pickSlot returns a free slot if one exists, else the least-recently-used slot (lru tail).
 func (p *expertPool) pickSlot() int {
-	for s, e := range p.slotExpert {
-		if e < 0 {
-			return s
-		}
-	}
-	return p.lru[len(p.lru)-1]
+	return moecache.PickSlot(p.slotExpert, p.lru)
 }
 
-// touch moves slot s to the MRU front of the LRU list (fresh slice — an in-place p.lru[:0] filter
-// would overwrite lru[0] before the loop reads it).
+// touch moves slot s to the MRU front of the LRU list.
 func (p *expertPool) touch(s int) {
-	out := make([]int, 0, len(p.lru)+1)
-	out = append(out, s)
-	for _, x := range p.lru {
-		if x != s {
-			out = append(out, x)
-		}
-	}
-	p.lru = out
+	p.lru = moecache.TouchSlot(p.lru, s)
 }
