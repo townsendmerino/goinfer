@@ -1,6 +1,10 @@
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
 
 // TestResidentDenseWeightBytesFor_webgpuKeepsTheUntiedTableOnTheHost is G-VP1: WebGPU gathers token embeddings on the host and
 // uploads only the LM head, so an untied model's token table is not webgpu device memory, as it is not cuda's.
@@ -20,7 +24,7 @@ func TestResidentDenseWeightBytesFor_webgpuKeepsTheUntiedTableOnTheHost(t *testi
 	for _, backend := range []string{"webgpu", "cuda"} {
 		want := m.ResidentDenseWeightBytes() - table
 		if backend == "cuda" {
-			want += m.cudaDerivedTableBytes() // CUDA's dense line also holds the RoPE and router-bias tables its build derives
+			want += memprice.CUDADerivedTableBytes(m.w, m.Program()) // CUDA's dense line also holds the RoPE and router-bias tables its build derives
 		}
 		if got := m.ResidentDenseWeightBytesFor(backend); got != want {
 			t.Errorf("%s: dense device bytes %d, want %d (the dense total less the %d-byte untied token table)", backend, got, want, table)
@@ -41,11 +45,12 @@ func TestPlan_webgpuPricesVulkansBlocks(t *testing.T) {
 		for _, ctx := range []int{256, 4096} {
 			l := m.deviceLoad("webgpu", PlanRequest{CtxPinned: true})
 			got := l.DenseBytes + l.ExpertBytesFull + l.FixedSlack + l.KV(ctx) + l.StateBytes
-			slot0, _, _ := m.webgpuDeviceBuffers(ctx, false, false)
+			slot0, _, _ := memprice.WebGPUDeviceBuffers(m.w, m.LayerBuffers, ctx, false, false)
 			// The dense line also holds the norm vectors, the expert biases and the derived tables, which the list does not hold: they sit beside the blocks.
-			want := webgpuVkBlocks(slot0) + webgpuVkFixed + m.planSlack("webgpu") + m.denseVectorBytes() + m.expertBiasBytes() + m.webgpuDerivedTableBytes()
-			if !webgpuVulkan {
-				want = m.webgpuDenseLine() + l.ExpertBytesFull + m.planSlack("webgpu") + m.ResidentKVBytes("webgpu", ctx, false, false) + l.StateBytes
+			want := memprice.WebGPUVkBlocks(slot0) + memprice.WebGPUVkFixed + m.planSlack("webgpu") +
+				memprice.DenseVectorBytes(m.w) + memprice.ExpertBiasBytes(m.w) + memprice.WebGPUDerivedTableBytes(m.w)
+			if !memprice.WebGPUVulkan {
+				want = memprice.WebGPUDenseLine(m.w, m.LayerBuffers) + l.ExpertBytesFull + m.planSlack("webgpu") + m.ResidentKVBytes("webgpu", ctx, false, false) + l.StateBytes
 			}
 			if got != want {
 				t.Errorf("%s at %d: the plan prices %d device bytes, M1′ over the build's list %d", dir, ctx, got, want)

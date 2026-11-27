@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // ctxPlanFloor is the smallest context Plan will shrink to before giving up (shrink context
@@ -12,16 +12,11 @@ import (
 // independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = mem.PlanCtxFloor
 
-// kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own): per layer (a per-layer-varying family like Gemma 4 is not approximated by one
-// model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision: f32 4 bytes an element,
-// f16 2, int8 one byte an element plus one f32 scale a KV head a position (what WebGPU's int8 cache holds, as the CPU's does). The per-layer width is Architecture.kvDimAt: zero for a
-// linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.
-//
-// It deliberately does NOT cap a sliding-window layer (kvPositionsAt): this returns a flat per-position rate that the caller
-// multiplies by ctx, while a sliding-window layer's cost flattens at SlidingWindow, so capping it needs tryCtx/chooseCtx to search rather
-// than multiply, and a sliding-window fixture to verify against. The rate stays exact for families without a window (MLA, DeltaNet/Mamba/
-// conv hybrids); a family with both would be overpriced, the safe direction.
+// kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own).
 func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
+	if m.w.Arch != nil {
+		return memprice.WebGPUKVBytesPerPos(m.w.Arch.NumLayers, m.LayerBuffers, f16, i8)
+	}
 	perElem := 4.0
 	if f16 && !i8 {
 		perElem = 2
@@ -29,19 +24,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	bv := m.BackendView()
 	nLayers := bv.NumLayers()
 	var perPos float64
-	if m.w.Arch != nil {
-		for l := range nLayers {
-			for _, b := range m.LayerBuffers(l) {
-				if b.Unit != program.PerPosition {
-					continue
-				}
-				row, scale := webgpuKVRowBytes(b, f16, i8)
-				perPos += float64(row + scale)
-			}
-		}
-		return int64(perPos)
-	}
-	for l := range nLayers { // a model with no resolved architecture: the layer view's own width
+	for l := range nLayers {
 		lv := bv.Layer(l)
 		kvDim := lv.KVHeads() * lv.HeadDim()
 		if i8 && kvDim > 0 {
@@ -53,10 +36,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	return int64(perPos)
 }
 
-// moeGeometry reads what Plan needs about this model's routed experts without touching anything
-// PlanRequest-shaped: total expert count per layer (uniform across layers by construction, same
-// assumption ResidentWeightBytesPaged already makes) and the top-k floor below which even one
-// token's routed set cannot be resident.
+// moeGeometry reads what Plan needs about this model's routed experts.
 func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
 	mo := m.BackendView().Spec().MoE
 	if mo == nil || mo.NumExperts == 0 {
@@ -65,30 +45,14 @@ func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
 	return mo.NumExperts, mo.TopK, true
 }
 
-// WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling, gpu/residency.go's ctxCap before any -ctx request
-// lowers it further via min(): 16384 positions at f32, 32768 at f16 (half the per-token bytes), 65536 at i8 (a quarter). gpu/residency.go
-// calls this function instead of repeating the literals, so the planner's ctx choice and the backend's allocation cannot drift apart: a
-// freeBytes-driven plan could otherwise pick a context above the ceiling, which BuildResident would not honour (min() keeps the ceiling),
-// and the plan's promise would be wrong.
-func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
-	switch {
-	case kvI8:
-		return 65536
-	case kvF16:
-		return 32768
-	default:
-		return 16384
-	}
-}
+// WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling.
+func WebGPUCtxCeiling(kvF16, kvI8 bool) int { return memprice.WebGPUCtxCeilingFor(kvF16, kvI8) }
 
-// MetalCtxDefault, MetalFitDefaultCtx and MetalCtxCeiling are the Metal backend's resident KV capacity: the floor an unpinned load never
-// goes under (and what it takes when the fit is off or cannot judge), the candidate an unpinned load asks Plan for (MetalFitCtx: a coding
-// agent's first turn with headroom, CUDA's figure), and the most an explicit -ctx may ask for. metal/model.go takes its constants from
-// these, so Plan("metal") plans exactly what Metal allocates, as WebGPUCtxCeiling does for webgpu.
+// MetalCtxDefault, MetalFitDefaultCtx and MetalCtxCeiling are the Metal backend's resident KV capacity bounds.
 const (
-	MetalCtxDefault    = 4096
-	MetalFitDefaultCtx = 16384
-	MetalCtxCeiling    = 32768
+	MetalCtxDefault    = memprice.MetalCtxDefault
+	MetalFitDefaultCtx = memprice.MetalFitDefaultCtx
+	MetalCtxCeiling    = memprice.MetalCtxCeiling
 )
 
 // Plan is the planner's pure function: given this model, a candidate backend, how many bytes are
@@ -122,7 +86,7 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots, p.ScratchBytes = Placement(d.Placement), d.Ctx, d.Slots, d.ScratchBytes
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
-	if backend == "webgpu" && webgpuVulkan && p.Placement != PlacementDecline {
+	if backend == "webgpu" && memprice.WebGPUVulkan && p.Placement != PlacementDecline {
 		// The search priced Vulkan's block rounding on the KV term, where it moves with the context; the plan reports it as slack, so
 		// KVBytes is the KV the build allocates (one slot's, as a caller multiplies it) and the total is unchanged.
 		r := m.webgpuBlockRounding(p.Ctx, req.KVF16, req.KVI8)
@@ -218,13 +182,14 @@ func (m *Model) deviceLoad(backend string, req PlanRequest) mem.DeviceLoad {
 	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1,
 		FixedSlack: m.planSlack(backend), StateBytes: m.stateBytes(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
-		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.expertBiasBytes()
+		eb := memprice.ExpertBiasBytes(m.w)
+		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - eb
 		switch backend {
 		case "cpu":
-			_, structs := m.cpuStructBytes()
-			l.ExpertBytesFixed = structs + m.expertBiasBytes()
+			_, structs := memprice.CPUStructBytes(m.w)
+			l.ExpertBytesFixed = structs + eb
 		case "metal":
-			l.ExpertBytesFixed = m.expertBiasBytes()
+			l.ExpertBytesFixed = eb
 		}
 		l.NExperts, l.TopK = nExperts, topK
 	}
@@ -242,13 +207,13 @@ func (m *Model) deviceLoad(backend string, req PlanRequest) mem.DeviceLoad {
 		}
 	case "webgpu":
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
-		l.DenseBytes = m.webgpuDenseLine()
-		if !webgpuVulkan {
+		l.DenseBytes = memprice.WebGPUDenseLine(m.w, m.LayerBuffers)
+		if !memprice.WebGPUVulkan {
 			break
 		}
-		// Vulkan's blocks, not the buffers' sum (webgpu_vulkan.go): the device and the kept host block are fixed, and the block
+		// Vulkan's blocks, not the buffers' sum: the device and the kept host block are fixed, and the block
 		// rounding moves with the context, so it rides on the KV term and the context is searched.
-		l.FixedSlack += webgpuVkFixed
+		l.FixedSlack += memprice.WebGPUVkFixed
 		l.CtxSearch = true
 		l.KV = func(ctx int) int64 {
 			return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.webgpuBlockRounding(ctx, kvF16, kvI8)
@@ -260,6 +225,15 @@ func (m *Model) deviceLoad(backend string, req PlanRequest) mem.DeviceLoad {
 	}
 	l.KV = func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) }
 	return l
+}
+
+func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
+	slot0, _, dense := memprice.WebGPUDeviceBuffers(m.w, m.LayerBuffers, ctx, kvF16, kvI8)
+	var experts int64
+	if _, _, isMoE := m.moeGeometry(); isMoE {
+		experts = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - memprice.ExpertBiasBytes(m.w)
+	}
+	return memprice.WebGPUVkBlocks(slot0) - dense - experts - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
 }
 
 // planTier is the internal/mem tier whose reading is backend's free memory.

@@ -1,10 +1,12 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/runtime/mem"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
 
-// MetalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default, not the operator's
-// (Options.ResidentKVSlotsDefault). `goinfer-chat fit` prices the same count, so its answer is the one a default serve load reaches.
-const MetalDefaultKVSlots = 2
+// MetalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default, not the operator's.
+const MetalDefaultKVSlots = memprice.MetalDefaultKVSlots
 
 // MetalFitMarginBytes is the memory MetalFitCtx leaves under the budget it is given. Metal's load-time guard reads the live budget
 // again after the context is chosen, and a context taken at the exact edge would be halved by it on a drift of a few megabytes

@@ -23,6 +23,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
@@ -145,8 +146,7 @@ func (m *Model) KQuantSavingsForTest(backend string) int64 { return m.kquantSavi
 // name at the widest operation of the layer that declares it: the input the WebGPU decode-scratch figure is priced from.
 func (m *Model) DecodeRowsForTest() []map[string]int {
 	shape := m.Shape()
-	H, V := shape.Hidden, shape.Vocab
-	return m.metalDecodeRows(H, V).layers
+	return memprice.ComputeMetalDecodeRows(m.w.Arch, m.Program(), shape.Hidden, shape.Vocab).Layers
 }
 
 // ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
@@ -889,18 +889,21 @@ func UnregisterBackendForTest(name string) {
 	delete(backendRegistry, name)
 }
 
-// WebGPUDeviceBuffersForTest is webgpuDeviceBuffers: the WebGPU slot census predicts newKVSlot's outcome over the list the planner
+// WebGPUDeviceBuffersForTest is WebGPUDeviceBuffers: the WebGPU slot census predicts newKVSlot's outcome over the list the planner
 // prices.
 func (m *Model) WebGPUDeviceBuffersForTest(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64) {
-	slot0, slotKV, _ = m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	if m == nil {
+		return nil, nil
+	}
+	slot0, slotKV, _ = memprice.WebGPUDeviceBuffers(m.w, m.LayerBuffers, ctx, kvF16, kvI8)
 	return slot0, slotKV
 }
 
-// WebGPUVkBlocksForTest is webgpuVkBlocks, and WebGPUVkFixed the device and kept host block beside it.
-func WebGPUVkBlocksForTest(sizes []int64) int64 { return webgpuVkBlocks(sizes) }
+// WebGPUVkBlocksForTest is memprice.WebGPUVkBlocks, and WebGPUVkFixed the device and kept host block beside it.
+func WebGPUVkBlocksForTest(sizes []int64) int64 { return memprice.WebGPUVkBlocks(sizes) }
 
-// WebGPUVkFixed is webgpuVkFixed.
-const WebGPUVkFixed = webgpuVkFixed
+// WebGPUVkFixed is memprice.WebGPUVkFixed.
+const WebGPUVkFixed = memprice.WebGPUVkFixed
 
 // AttendInt8ForTest is the CPU's production int8 decode attention (attendToken's widened-cache branch: the layer dequantized, then
 // attendBatchedHeadsP with float64 accumulation) for query q at position pos of layer, over an int8 cache holding exactly the given rows:

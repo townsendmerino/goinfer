@@ -79,13 +79,15 @@ SCANS = [
                                             # MM5: KV and state are priced from each layer's operations' declarations
                                             "decoder/statebytes.go", "decoder/membufs.go", "decoder/program.go",
                                             "internal/runtime/program/buffers.go") +
-         NT("internal/runtime/mem")),
+         NT("internal/runtime/mem", "internal/runtime/memprice")),
     # docs/option-state-grid.md is generated from the cache-state table's text (decoder/cachestate.go), and the test also checks the function and test names it cites: any non-test decoder file can move it.
     Scan("decoder", "TestOptionStateGrid_fresh", NT("decoder") + F("decoder/optiongrid_test.go", "docs/option-state-grid.md")),
     # MM5's G-MP4: KV and state pricing names no family or mixer.
-    Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go", "decoder/arch.go", "decoder/fitplan.go", "decoder/webgpu_vulkan.go")),
+    Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go", "decoder/arch.go", "decoder/fitplan.go") + NT("internal/runtime/memprice")),
     # MM5b's G-MS4: Metal's decode scratch pricing names no family, mixer or FFN form.
-    Scan("decoder", "TestMM5b_decodeScratchNamesNoFamily", F("decoder/metal_scratch.go")),
+    Scan("decoder", "TestMM5b_decodeScratchNamesNoFamily", F("decoder/metal_scratch.go", "internal/runtime/memprice/metal.go")),
+    Scan("internal/runtime/memprice", "TestNoFamilySwitchInPricing", NT("internal/runtime/memprice")),
+    Scan("internal/runtime/memprice", "TestDecodeScratchNamesNoFamily", F("internal/runtime/memprice/metal.go")),
     # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
                                                                 "decoder/selftestdata/*", "internal/vision/testdata/*")),

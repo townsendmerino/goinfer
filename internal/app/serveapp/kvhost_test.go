@@ -30,9 +30,9 @@ func TestKVHostBytes_parseAndResolve(t *testing.T) {
 		want int64
 		how  string
 	}{
-		{"auto", 64 * g, 64 * g / 10, "auto: 1/10 of 64.0 GiB"},
-		{"auto", 128 * g, 8 * g, "at most 8.0 GiB"}, // a tenth of this much RAM is over the cap
-		{"auto", 16 * g, 16 * g / 10, "1/10 of 16.0 GiB"},
+		{"auto", 64 * g, 64 * g / 10, "auto: 1/10 of 64.00 GiB"},
+		{"auto", 128 * g, 8 * g, "at most 8.00 GiB"}, // a tenth of this much RAM is over the cap
+		{"auto", 16 * g, 16 * g / 10, "1/10 of 16.00 GiB"},
 		{"auto", 0, 0, "unknown"},
 		{"0", 64 * g, 0, "-kv-host-bytes 0"},
 		{"3G", 64 * g, 3 * g, "-kv-host-bytes 3G"},

@@ -1,11 +1,13 @@
 package decoder
 
 import (
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"slices"
 	"strings"
 	"testing"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // cacheStateBytes is what c's recurrent and conv state holds: the rolling windows and the matrix state, each layer's. A hybrid's scratch
@@ -187,7 +189,7 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	bias := m.expertBiasBytes()
+	bias := memprice.ExpertBiasBytes(m.w)
 	if bias == 0 {
 		t.Fatal("VOID: gptoss_tiny holds no expert biases")
 	}
@@ -202,7 +204,7 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 			t.Errorf("%s: %d fixed on experts with %d of biases", b, l.ExpertBytesFixed, bias)
 		}
 	}
-	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-m.mambaProjSavings("webgpu")-m.residentHostSideBytes("webgpu"); got != want {
+	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-memprice.MambaProjSavings("webgpu", m.w)-memprice.HostSideBytes("webgpu", m.w); got != want {
 		t.Errorf("webgpu's dense figure holds %d past the tensors, want %d", got, want)
 	}
 	// Metal's autoMoESlots reads these: one more slot costs an expert alone, and what is left at no slots holds the biases.
@@ -285,7 +287,7 @@ func TestStateBuffers_granite(t *testing.T) {
 	a := &darch.Architecture{NumLayers: 3, Granite: &archparts.GraniteParams{NHeads: 2, HeadDim: 8, DState: 3, NGroups: 5, DConv: 4},
 		LayerIsMamba: func(l int) bool { return l != 1 }}
 	win, ssm := int64((4-1)*(2*8+2*5*3))*4, int64(2*8*3)*4
-	if got, want := stateBuffers(a), []int64{win, ssm, win, ssm}; !slices.Equal(got, want) {
+	if got, want := memprice.StateBuffers(a), []int64{win, ssm, win, ssm}; !slices.Equal(got, want) {
 		t.Errorf("Granite's state buffers: %v, want %v", got, want)
 	}
 }
@@ -309,7 +311,7 @@ func TestStateBuffers_kdaPerStream(t *testing.T) {
 	if len(want) == 0 {
 		t.Fatal("the config has no KDA layer; the test reads nothing")
 	}
-	if got := stateBuffers(a); !slices.Equal(got, want) {
+	if got := memprice.StateBuffers(a); !slices.Equal(got, want) {
 		t.Errorf("KDA's state buffers: %v, want %v", got, want)
 	}
 }

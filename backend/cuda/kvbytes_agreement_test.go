@@ -418,7 +418,7 @@ func mm5CheckCUDAPools(t *testing.T, f string, m *decoder.Model, r *cudaResident
 			}
 			continue
 		}
-		n := r.kvPools[r.kvGroupOf(l)].blocks * kvBlock // the pool's rows: every slot's blocks and the null block
+		n := r.kvPools[r.kvGroupOf(l)].Blocks() * kvBlock // the pool's rows: every slot's blocks and the null block
 		bufs := map[string]Buffer{"k": r.kc[l], "v": r.vc[l], "latent": r.kc[l]}
 		scales := map[string]Buffer{"k": r.ksc[l], "v": r.vsc[l]}
 		for _, b := range rows {

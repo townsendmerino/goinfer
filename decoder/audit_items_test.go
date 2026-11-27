@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // loadSharedKVFixture is a tiny Gemma 4 with its last layer marked KV-shared, as an E-model's are: the E-model fixture is not tracked, and
@@ -48,7 +49,7 @@ func TestResidentKV_sharedLayersOwnNone(t *testing.T) {
 func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
 	const ctx = 3 // under the fixture's window, so a sliding layer holds ctx rows and no mirror
-	if got, want := kvBytesForCtx(m.w.Arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
+	if got, want := memprice.CPUKVBytesForCtx(m.w.Arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
 		t.Errorf("the host fit prices %d bytes of KV at %d positions, the plan %d", got, ctx, want)
 	}
 	raw, err := os.ReadFile("../testdata/gemma4-moe-kv-tiny/config.json")
@@ -201,8 +202,13 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 		t.Fatal("VOID: no Mamba-2 projection to compare")
 	}
 	base := m.ResidentDenseWeightBytes()
-	structs, _ := m.cpuStructBytes()
-	for be, saved := range map[string]int64{"metal": want - m.metalDerivedDenseBytes(), "webgpu": want + m.residentHostSideBytes("webgpu"), "cuda": want + m.residentHostSideBytes("cuda") - m.cudaDerivedTableBytes(), "cpu": -structs} {
+	structs, _ := memprice.CPUStructBytes(m.w)
+	for be, saved := range map[string]int64{
+		"metal":  want - memprice.MetalDerivedDenseBytes(m.w, m.Program()),
+		"webgpu": want + memprice.HostSideBytes("webgpu", m.w),
+		"cuda":   want + memprice.HostSideBytes("cuda", m.w) - memprice.CUDADerivedTableBytes(m.w, m.Program()),
+		"cpu":    -structs,
+	} {
 		if got := base - m.ResidentDenseWeightBytesFor(be); got != saved {
 			t.Errorf("%s: the dense figure is %d under the tensors' sum, want %d", be, got, saved)
 		}

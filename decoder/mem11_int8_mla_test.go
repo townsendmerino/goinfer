@@ -13,6 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -110,7 +111,7 @@ func TestMEM11_mlaInt8Holding(t *testing.T) {
 						t.Errorf("%s layer %d %s (%s): not linalg.QuantizeInt8 of the f32", quant, l, p.name, []string{"load", "bundle"}[i])
 					}
 				}
-				saved += f32SliceBytes(p.f) - wmBytes(p.q)
+				saved += memprice.F32SliceBytes(p.f) - wmBytes(p.q)
 			}
 		}
 		rb, gb := ref.ResidentWeightBytes(), got.ResidentWeightBytes()

@@ -1,8 +1,12 @@
 package decoder
 
-import "testing"
+import (
+	"testing"
 
-// TestWebGPUDeviceBuffers_sumToTheModel holds webgpuDeviceBuffers' context caches (K and V, MLA's latent; not the recurrent state)
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
+
+// TestWebGPUDeviceBuffers_sumToTheModel holds WebGPUDeviceBuffers' context caches (K and V, MLA's latent; not the recurrent state)
 // to ResidentKVBytes("webgpu") on a fixture of each mixer family, so the block rounding the plan adds is over the caches it counts.
 // The list's matrices are sized as WebGPU uploads them, not as the planner's walk counts them; a WebGPU build holds them to its own
 // buffers (backend/webgpu TestWebGPUDeviceBuffers_inTheBuildsOrder).
@@ -22,7 +26,7 @@ func TestWebGPUDeviceBuffers_sumToTheModel(t *testing.T) {
 			t.Fatalf("%s: %v", dir, err)
 		}
 		const ctx = 512
-		_, slotKV, _ := m.webgpuDeviceBuffers(ctx, false, false)
+		_, slotKV, _ := memprice.WebGPUDeviceBuffers(m.w, m.LayerBuffers, ctx, false, false)
 		var kv int64
 		for _, n := range slotKV {
 			kv += n
