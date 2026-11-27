@@ -35,3 +35,33 @@ type KVHostBudget interface {
 	Dropped() // a kept copy was dropped for room
 	Refused() // a slot's rows did not fit
 }
+
+// KVSnapshotStats summarizes a model's host prefix snapshots and demoted copies, for /admin/status and request logs.
+type KVSnapshotStats struct {
+	Budget         int64            `json:"budget_bytes"`
+	Used           int64            `json:"used_bytes"`
+	Held           int              `json:"held"`
+	Taken          int              `json:"taken"`
+	Restored       int              `json:"restored"`
+	RestoredRows   int64            `json:"restored_rows"`
+	Demoted        int              `json:"demoted"`
+	DemoteDropped  int              `json:"demote_dropped"`
+	Promoted       int              `json:"promoted"`
+	PromotedBlocks int64            `json:"promoted_blocks"`
+	Evicted        int              `json:"evicted"`
+	EvictedUnused  int              `json:"evicted_unused"`
+	Unqualified    int              `json:"unqualified"`
+	TakeNanos      int64            `json:"take_ns"`
+	RestoreNanos   int64            `json:"restore_ns"`
+	Declined       map[string]int   `json:"declined"`
+	LastDecline    string           `json:"last_decline,omitempty"`
+	Snapshots      []KVSnapshotInfo `json:"snapshots,omitempty"`
+}
+
+// KVSnapshotInfo describes one held host prefix snapshot.
+type KVSnapshotInfo struct {
+	Rows     int   `json:"rows"`
+	Bytes    int64 `json:"bytes"`
+	Restores int   `json:"restores"`
+	AgeSecs  int64 `json:"age_s"`
+}

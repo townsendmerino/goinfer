@@ -212,6 +212,23 @@
       "why": "internal/runtime/archparts holds per-family parameter and weight structs and small internal helpers below decoder/arch (SZ12 option (b)). It imports only internal/runtime/hybridattn and internal/runtime/mamba2 and never decoder or decoder/arch."
     },
     {
+      "name": "kvsnap-leaf",
+      "from": [
+        "internal/runtime/kvsnap"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/kvsnap": [
+          "decoder/resident",
+          "internal/runtime/kvmgr"
+        ]
+      },
+      "why": "internal/runtime/kvsnap manages GPU-to-host prefix KV snapshots, LRU byte budgets (resident.KVHostBudget), candidate matching, and boundary/recurrent cut planning below decoder. It imports only decoder/resident and internal/runtime/kvmgr and never decoder."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -482,6 +499,7 @@
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/kvsnap",
       "internal/runtime/logs",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
@@ -695,6 +713,10 @@
       "internal/runtime/families",
       "internal/runtime/program"
     ],
+    "internal/runtime/kvsnap": [
+      "decoder/resident",
+      "internal/runtime/kvmgr"
+    ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
     ],
@@ -895,6 +917,7 @@
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/kvsnap",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/normact",
@@ -1030,6 +1053,9 @@
     ],
     "internal/runtime/families": [
       "decoder/config"
+    ],
+    "internal/runtime/kvsnap": [
+      "internal/runtime/kvmgr"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
