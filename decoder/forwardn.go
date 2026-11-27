@@ -50,34 +50,9 @@ func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bo
 	return true
 }
 
-func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.ForwardLayersN(reqCtx, ids, unwrapCache(cache), fastAttn)
-}
-
 func (m *Model) embedN(ids []int) []float32 {
 	e := m.cpuEngine()
 	return e.EmbedN(ids)
-}
-
-func (m *Model) embedNInto(h []float32, ids []int) []float32 {
-	e := m.cpuEngine()
-	return e.EmbedNInto(h, ids)
-}
-
-func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.RunLayersFromEmbedN(reqCtx, h, unwrapCache(cache), fastAttn)
-}
-
-func (m *Model) lmHeadN(h []float32, M int) []float32 {
-	e := m.cpuEngine()
-	return e.LMHeadN(h, M)
-}
-
-func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
-	e := m.cpuEngine()
-	return e.ForwardN(reqCtx, ids, unwrapCache(cache))
 }
 
 func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
@@ -85,34 +60,14 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 	return e.PrefillLogits(ctx, prompt, unwrapCache(cache))
 }
 
-func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed func(dst []float32, lo, hi int), keep func(lo int, rows []float32)) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.PrefillPassesN(ctx, n, unwrapCache(cache), embed, keep)
-}
-
-func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
-	e := m.cpuEngine()
-	return e.LMHeadNInto(h, M, dst)
-}
-
 func (m *Model) qwen35BatchN(K int, cache *KVCache) bool {
 	e := m.cpuEngine()
 	return e.Qwen35BatchN(K, unwrapCache(cache))
 }
 
-func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
-	e := m.cpuEngine()
-	return e.Qwen35BatchNAnyPos(K, unwrapCache(cache))
-}
-
 func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
 	e := m.cpuEngine()
 	return e.RunLayersQwen35N(reqCtx, h, unwrapCache(cache))
-}
-
-func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, pleIDs []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.RunLayersGemma4FromEmbedN(reqCtx, h, pleIDs, spans, unwrapCache(cache))
 }
 
 // prefillLogitsVL prefills a multimodal prompt and returns the last-position
@@ -142,7 +97,8 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 		return nil, err
 	}
 	hidden := m.w.Arch.HiddenDim
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
+	e := m.cpuEngine()
+	return e.LMHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
 }
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
@@ -180,8 +136,9 @@ func (m *Model) prefillSpliced(ctx context.Context, ids []int, spans []ImageSpan
 		out = make([]float32, len(ids)*hidden)
 		keep = func(lo int, rows []float32) { copy(out[lo*hidden:], rows) }
 	}
-	h, err := m.prefillPassesN(ctx, len(ids), cache, func(dst []float32, lo, hi int) {
-		m.embedNInto(dst, ids[lo:hi])
+	e := m.cpuEngine()
+	h, err := e.PrefillPassesN(ctx, len(ids), unwrapCache(cache), func(dst []float32, lo, hi int) {
+		e.EmbedNInto(dst, ids[lo:hi])
 		spliceImageSpansRange(dst, spans, feats, hidden, lo, hi)
 	}, keep)
 	if all {
@@ -201,16 +158,17 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 	}
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, imageEmbeds, hidden)
+	e := m.cpuEngine()
 	for i := range ids {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		row := h[i*hidden : (i+1)*hidden]
-		out, err := m.runLayersFromEmbed(row, cache)
+		out, err := e.RunLayersFromEmbed(row, unwrapCache(cache))
 		if err != nil {
 			return nil, err
 		}
-		m.finalNorm(out)
+		e.FinalNorm(out)
 	}
 	return h, nil
 }
@@ -251,5 +209,6 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
+	e := m.cpuEngine()
+	return e.LMHeadNInto(hN[len(hN)-hidden:], 1, cache.c.HeadLogits(m.w.Arch.VocabSize)), nil
 }

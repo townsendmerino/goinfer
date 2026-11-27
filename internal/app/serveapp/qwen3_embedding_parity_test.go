@@ -120,7 +120,7 @@ func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
 // TestQwen3Embedding_tokenizerAgreement rather than being blamed on pooling here.
 func pooledFromIDs(t *testing.T, e *decoderEmbedder, ids []int) []float32 {
 	t.Helper()
-	v, err := e.m.HiddenLast(ids)
+	v, err := e.Model().HiddenLast(ids)
 	if err != nil {
 		t.Fatalf("HiddenLast: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestQwen3Embedding_tokenizerAgreement(t *testing.T) {
 	g := loadEmbedGolden(t)
 	e := newQwen3Embedder(t, g)
 	for i, c := range g.Cases {
-		got, err := e.tokenize(c.Text, c.IsQuery)
+		got, err := e.Tokenize(c.Text, c.IsQuery)
 		if err != nil {
 			t.Fatalf("tokenize case %d: %v", i, err)
 		}
@@ -236,7 +236,7 @@ func TestQwen3Embedding_breakItFirst(t *testing.T) {
 	}
 
 	// (b) dropped query prefix — only meaningful on the query cases.
-	bare := newDecoderEmbedder(e.m, e.tk, "", g.DocPrompt)
+	bare := newDecoderEmbedder(e.Model(), e.Tokenizer(), "", g.DocPrompt)
 	ran := false
 	for i, c := range g.Cases {
 		if !c.IsQuery {

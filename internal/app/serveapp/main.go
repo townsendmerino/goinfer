@@ -43,6 +43,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/connect"
 	"github.com/townsendmerino/goinfer/internal/app/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/guard/servecheck"
 	"github.com/townsendmerino/goinfer/pull"
 )
@@ -568,12 +569,12 @@ func newServer(cfg config) (*server, error) {
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
 		responses: newResponseStore(256),
-		gens:      newGenerationRegistry(),
+		gens:      stores.NewGenerationRegistry(),
 		jobs:      jobs,
 		// 256 matches the bounds above: no dedicated -file-cap/-batch-cap flag, and a record past this many old is only evicted
 		// once terminal.
-		files:   newFileStore(256, cfg.maxFileStoreBytes),
-		batches: newBatchStore(256),
+		files:   stores.NewFileStore(256, cfg.maxFileStoreBytes),
+		batches: stores.NewBatchStore(256),
 	}
 	if !cfg.noCarryIDs {
 		if s.idsKey, err = loadIDsKey(cfg.idsKeyFile); err != nil {

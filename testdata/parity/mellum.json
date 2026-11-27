@@ -13,7 +13,7 @@
   "programs": [
     "testdata/mellum21-config"
   ],
-  "deps_hash": "sha256:6ab438ed8965ed5b1c5ada3e3c221dab902d1d6661b697f7c8ec8821ece412aa",
+  "deps_hash": "sha256:6bbdff26ef7df39c40b60b83e0d439ade79dd64752b22b5b9519d968189a9e33",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

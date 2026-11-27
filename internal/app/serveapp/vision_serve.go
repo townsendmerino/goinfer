@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -83,45 +86,45 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 		return vi, err
 	}
 	// One place for every family: the cache sits between the prompt builders and the generate call.
-	return lm.withFeatureCache(vi, img.data, lm.towerFamily(img.audio)), nil
+	return lm.withFeatureCache(vi, img.Data, lm.towerFamily(img.Audio)), nil
 }
 
 // withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode. A miss runs the tower through
 // recoverDeviceTower, so a tower that panics (on any device, for any family) fails the request rather than the server.
 func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family string) visionInput {
 	tower := vi.features
-	vi.features = lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
+	vi.features = lm.visionFeatureCache().Wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 	return vi
 }
 
 // visionFeatureCache is this model's per-image tower-output cache, made on first use and sized then by
 // featureCacheSize.
-func (lm *loadedModel) visionFeatureCache() *featureCache {
-	lm.caches.featOnce.Do(func() { lm.caches.feat = newFeatureCache(lm.featureCacheSize()) })
+func (lm *loadedModel) visionFeatureCache() *stores.FeatureCache {
+	lm.caches.featOnce.Do(func() { lm.caches.feat = stores.NewFeatureCache(lm.featureCacheSize()) })
 	return lm.caches.feat
 }
 
-// featureCacheSize is featureCacheBudgetFor over this model's fit plan, read against the memory available when it is
+// featureCacheSize is stores.FeatureCacheBudgetFor over this model's fit plan, read against the memory available when it is
 // called, so a model loaded since this one is counted. With the fit guard off (GOINFER_NO_FIT_GUARD) or --fit=off it is
-// featureCacheBudget.
+// stores.FeatureCacheBudget.
 func (lm *loadedModel) featureCacheSize() int {
 	if lm.model == nil || lm.model.FitDisabled() {
-		return featureCacheBudget
+		return stores.FeatureCacheBudget
 	}
 	if v, _ := lm.model.Knob("GOINFER_NO_FIT_GUARD"); v != "" {
-		return featureCacheBudget
+		return stores.FeatureCacheBudget
 	}
 	_, kvBytes, _, budgetBytes, known := lm.model.FitBudgetSummary()
-	n := featureCacheBudgetFor(known, budgetBytes, kvBytes)
-	if n < featureCacheBudget {
+	n := stores.FeatureCacheBudgetFor(known, budgetBytes, kvBytes)
+	if n < stores.FeatureCacheBudget {
 		fmt.Fprintf(os.Stderr, "vision: the image feature cache holds %d MiB, not %d: that is what the fit budget leaves after this model's KV\n",
-			n>>20, featureCacheBudget>>20)
+			n>>20, stores.FeatureCacheBudget>>20)
 	}
 	return n
 }
 
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
-	if img.audio && lm.audio != nil {
+	if img.Audio && lm.audio != nil {
 		return lm.audio.prompt(lm, tm, system, turns, img)
 	}
 	if lm.tmpl == nil {
@@ -137,7 +140,7 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 	if _, ok := lm.vision.(qwenGridTower); ok {
 		return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
 	}
-	if img.audio {
+	if img.Audio {
 		return visionInput{}, fmt.Errorf("this model has no audio tower")
 	}
 	return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
@@ -176,25 +179,7 @@ func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32,
 // image kills the whole server. The request fails with the reason; the server and the other requests live. Every tower passes
 // through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features
 // (Gemma 3's SigLIP, Gemma 4's image and audio towers included) at withFeatureCache.
-func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			hint := ""
-			if rErr, ok := r.(error); ok {
-				if mem.DeviceOutOfMemory(rErr) {
-					hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
-				}
-				out, err = nil, fmt.Errorf("the %s tower failed (%w)%s", family, rErr, hint)
-				return
-			}
-			if mem.DeviceOutOfMemory(fmt.Errorf("%v", r)) {
-				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
-			}
-			out, err = nil, fmt.Errorf("the %s tower failed (%v)%s", family, r, hint)
-		}
-	}()
-	return fn()
-}
+var recoverDeviceTower = towerfit.RecoverDeviceTower
 
 // towerFamily names this model's tower for an error message and the feature cache's key: the audio tower's family for
 // a clip, else the vision tower's.
@@ -219,11 +204,11 @@ func (lm *loadedModel) towerFamily(audio bool) string {
 // recognition rather than an image with nothing to do. The task is chosen by the user's own text ("Text Recognition:",
 // "Formula Recognition:", "Table Recognition:", multimodal.GlmOcrPrompt*).
 func (lm *loadedModel) glmOcrVisionPrompt(g *glmVision, tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
-	pv, grid, err := multimodal.QwenPreprocess(img.data, g.pp)
+	pv, grid, err := multimodal.QwenPreprocess(img.Data, g.pp)
 	if err != nil {
 		return visionInput{}, err
 	}
-	imgHash := multimodal.HashImageBytes(img.data)
+	imgHash := multimodal.HashImageBytes(img.Data)
 	n := multimodal.QwenMergedTokens(grid, g.merge)
 	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
 		return visionInput{}, err
@@ -266,7 +251,7 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 
 // serveVisionChatWith runs the multimodal generation. Reached ONLY through withModel (liveness RLock held).
 func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req chatReq, imgs []imageRef, lm *loadedModel) {
-	if imgs[0].audio {
+	if imgs[0].Audio {
 		if !lm.audioCapable() {
 			writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
 			return
@@ -325,7 +310,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// include_usage needs the real generated-token count (nComp), which no count of emitted chunks can report. Nothing
@@ -463,7 +448,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		anthropicEvent(ss, "message_start", map[string]any{
 			"type": "message_start",
@@ -474,9 +459,10 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			},
 		})
 		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
-		th := &anthropicThink{ss: ss, want: req.wantsThinking()}
-		s.routeThink(lm, &gr, tm, turns, ts, th.push)
-		if th.want {
+		wantThinking := req.wantsThinking()
+		th := streamframe.NewAnthropicThink(ss, wantThinking, nil)
+		s.routeThink(lm, &gr, tm, turns, ts, th.Push)
+		if wantThinking {
 			streamMessagesThinking(ss, th, gr, func(onText func(string)) (turnResult, error) {
 				return lm.driveVL(streamCtx, gr, vi, s.gens, s.jobs, onText)
 			})

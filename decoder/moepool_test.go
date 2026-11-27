@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -65,11 +66,11 @@ func buildPoolMembers(t *testing.T, canonical []linalg.WeightMat, mapping []byte
 	members := make([]poolMember, len(canonical))
 	for i := range live {
 		keys[i] = unsafe.Pointer(&live[i])
-		f, ok := buildExpertField(&live[i], base, end)
+		f, ok := paging.BuildExpertField(&live[i], base, end)
 		if !ok {
 			t.Fatalf("buildExpertField rejected expert %d (expected mmap-contained int4 canonical)", i)
 		}
-		members[i] = poolMember{key: keys[i], fields: []expertField{f}}
+		members[i] = poolMember{Key: keys[i], Fields: []expertField{f}}
 	}
 	return members, live, keys
 }
@@ -87,11 +88,11 @@ func TestExpertBufferPool_refillIsByteExact(t *testing.T) {
 	path, mapping, canonical := int4PoolFixture(t, 3)
 	members, live, keys := buildPoolMembers(t, canonical, mapping)
 
-	pool, err := newExpertBufferPool(path, members, int64(len(members))*int64(1<<20), 1)
+	pool, err := paging.NewExpertBufferPool(path, members, int64(len(members))*int64(1<<20), 1)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	t.Cleanup(func() { _ = pool.close() })
+	t.Cleanup(func() { _ = pool.Close() })
 
 	x := make([]float32, canonical[0].Cols())
 	rng := rand.New(rand.NewSource(2))
@@ -100,7 +101,7 @@ func TestExpertBufferPool_refillIsByteExact(t *testing.T) {
 	}
 
 	for i, k := range keys {
-		if err := pool.ensure(k); err != nil {
+		if err := pool.Ensure(k); err != nil {
 			t.Fatalf("ensure(%d): %v", i, err)
 		}
 		wantQ4, wantScales, wantGroup, ok := Int4F32(&canonical[i])
@@ -132,7 +133,7 @@ func TestExpertBufferPool_refillIsByteExact(t *testing.T) {
 			}
 		}
 	}
-	if hits, misses, evictions := pool.stats(); hits != 0 || misses != int64(len(keys)) || evictions != 0 {
+	if hits, misses, evictions := pool.Stats(); hits != 0 || misses != int64(len(keys)) || evictions != 0 {
 		t.Fatalf("stats: hits=%d misses=%d evictions=%d, want hits=0 misses=%d evictions=0", hits, misses, evictions, len(keys))
 	}
 }
@@ -149,21 +150,21 @@ func TestExpertBufferPool_topKNeverSelfEvicts(t *testing.T) {
 
 	// A budget of exactly ONE expert's worth would normally clamp to 1 slot -- minSlots=topK
 	// must override that up to topK.
-	pool, err := newExpertBufferPool(path, members, int64(members[0].fields[0].n), topK)
+	pool, err := paging.NewExpertBufferPool(path, members, int64(members[0].Fields[0].ByteLen()), topK)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	t.Cleanup(func() { _ = pool.close() })
-	if got := len(pool.slotBuf); got != topK {
+	t.Cleanup(func() { _ = pool.Close() })
+	if got := pool.SlotCount(); got != topK {
 		t.Fatalf("slot count = %d, want %d (minSlots clamp)", got, topK)
 	}
 
 	for _, k := range keys {
-		if err := pool.ensure(k); err != nil {
+		if err := pool.Ensure(k); err != nil {
 			t.Fatalf("ensure: %v", err)
 		}
 	}
-	if hits, misses, evictions := pool.stats(); evictions != 0 {
+	if hits, misses, evictions := pool.Stats(); evictions != 0 {
 		t.Fatalf("stats: hits=%d misses=%d evictions=%d, want evictions=0 (topK distinct experts must all fit)", hits, misses, evictions)
 	}
 }
@@ -175,32 +176,32 @@ func TestExpertBufferPool_evictsLeastRecent(t *testing.T) {
 	path, mapping, canonical := int4PoolFixture(t, 5)
 	members, _, keys := buildPoolMembers(t, canonical, mapping)
 
-	pool, err := newExpertBufferPool(path, members, int64(members[0].fields[0].n)*4, 4)
+	pool, err := paging.NewExpertBufferPool(path, members, int64(members[0].Fields[0].ByteLen())*4, 4)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	t.Cleanup(func() { _ = pool.close() })
+	t.Cleanup(func() { _ = pool.Close() })
 
 	for _, k := range keys[:4] {
-		if err := pool.ensure(k); err != nil {
+		if err := pool.Ensure(k); err != nil {
 			t.Fatalf("ensure: %v", err)
 		}
 	}
-	if _, ok := pool.where[keys[0]]; !ok {
+	if pool.SlotOf(keys[0]) < 0 {
 		t.Fatal("expert 0 should still be resident before the 5th touch")
 	}
-	if err := pool.ensure(keys[4]); err != nil {
+	if err := pool.Ensure(keys[4]); err != nil {
 		t.Fatalf("ensure(4): %v", err)
 	}
-	if _, ok := pool.where[keys[0]]; ok {
+	if pool.SlotOf(keys[0]) >= 0 {
 		t.Fatal("expert 0 (least-recently-used) should have been evicted by the 5th distinct touch")
 	}
-	if hits, misses, evictions := pool.stats(); hits != 0 || misses != 5 || evictions != 1 {
+	if hits, misses, evictions := pool.Stats(); hits != 0 || misses != 5 || evictions != 1 {
 		t.Fatalf("stats: hits=%d misses=%d evictions=%d, want hits=0 misses=5 evictions=1", hits, misses, evictions)
 	}
 	// Re-touching expert 0 now must be a genuine miss that correctly re-fetches it (not stale
 	// data from whatever slot it lands in).
-	if err := pool.ensure(keys[0]); err != nil {
+	if err := pool.Ensure(keys[0]); err != nil {
 		t.Fatalf("ensure(0) again: %v", err)
 	}
 	wantOut := matmulOut(&canonical[0], make([]float32, canonical[0].Cols()))
@@ -225,12 +226,12 @@ func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 	path, mapping, canonical := int4PoolFixture(t, nExperts)
 	members, _, keys := buildPoolMembers(t, canonical, mapping)
 
-	pool, err := newExpertBufferPool(path, members, int64(members[0].fields[0].n)*nSlots, nSlots)
+	pool, err := paging.NewExpertBufferPool(path, members, int64(members[0].Fields[0].ByteLen())*nSlots, nSlots)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	t.Cleanup(func() { _ = pool.close() })
-	pager := &expertPager{pool: pool, nExperts: nExperts}
+	t.Cleanup(func() { _ = pool.Close() })
+	pager := paging.NewTestExpertPager(nil, pool, processFaultCounts)
 
 	x := make([]float32, canonical[0].Cols())
 	wantOuts := make([][]float32, nExperts)
@@ -266,7 +267,7 @@ func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 	if n := len(errs); n > 0 {
 		t.Fatalf("%d/%d reads observed wrong-expert data under concurrent Lock/touch/read (cross-stream slot-reuse race)", n, goroutines*itersEach)
 	}
-	if _, _, evictions := pool.stats(); evictions == 0 {
+	if _, _, evictions := pool.Stats(); evictions == 0 {
 		t.Fatal("no evictions occurred -- test didn't actually exercise slot reuse under contention")
 	}
 }

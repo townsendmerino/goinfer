@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/guard/swapguard"
 )
 
@@ -161,10 +162,10 @@ func TestSwapGuard_off(t *testing.T) {
 // s.gens.cancelAll; the swap guard's own trip path must never call it.
 func TestSwapGuard_neverCancelsInFlight(t *testing.T) {
 	t.Setenv("GOINFER_SWAP_GUARD", "100")
-	s := &server{gens: newGenerationRegistry()}
+	s := &server{gens: stores.NewGenerationRegistry()}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	g := s.gens.register("in-flight-test", "test-model", cancel)
+	g := s.gens.Register("in-flight-test", "test-model", cancel)
 
 	r := &scriptedSwapReader{seq: []int64{1_000_000_000, 1_000_000_000 + 200_000_000}}
 	s.armSwapGuard(r.Read)
@@ -176,8 +177,8 @@ func TestSwapGuard_neverCancelsInFlight(t *testing.T) {
 		t.Fatal("the swap guard trip cancelled an in-flight generation's context — it must only refuse NEW admissions")
 	default:
 	}
-	if g.reason() != "" {
-		t.Fatalf("the swap guard trip set a cancel reason on an in-flight generation: %q", g.reason())
+	if g.Reason() != "" {
+		t.Fatalf("the swap guard trip set a cancel reason on an in-flight generation: %q", g.Reason())
 	}
 }
 

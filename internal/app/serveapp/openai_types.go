@@ -94,9 +94,9 @@ type chatReq struct {
 
 // think is the request's thinking controls as think.go's input.
 func (r *chatReq) think() thinkRequest {
-	tr := thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
+	tr := thinkRequest{Kwargs: r.ChatTemplateKwargs, ReasoningEffort: r.ReasoningEffort, Format: r.ReasoningFormat}
 	if r.ThinkingTokenBudget != nil {
-		tr.budget = *r.ThinkingTokenBudget
+		tr.Budget = *r.ThinkingTokenBudget
 	}
 	return tr
 }

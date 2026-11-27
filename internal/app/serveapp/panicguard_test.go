@@ -3,21 +3,23 @@ package serveapp
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
-// One batch may hold maxBatchLines requests; the body cap alone admits millions of minimal lines, each a goroutine and a parsed request.
+// One batch may hold stores.MaxBatchLines requests; the body cap alone admits millions of minimal lines, each a goroutine and a parsed request.
 // No model is needed: the 413 is decided before any line runs.
 func TestBatches_lineCountIsCapped(t *testing.T) {
-	srv := &server{files: newFileStore(8, 0), batches: newBatchStore(8)}
+	srv := &server{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStore(8)}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 
-	rows := make([]string, maxBatchLines+1)
+	rows := make([]string, stores.MaxBatchLines+1)
 	for i := range rows {
 		rows[i] = fmt.Sprintf(`{"custom_id":"c%d","method":"POST","url":"/v1/chat/completions","body":{}}`, i)
 	}
@@ -32,7 +34,7 @@ func TestBatches_lineCountIsCapped(t *testing.T) {
 		t.Errorf("OpenAI dialect: status %d, message %q; want 413 naming the cap", resp.StatusCode, oa.Error.Message)
 	}
 
-	reqs := make([]map[string]any, maxBatchLines+1)
+	reqs := make([]map[string]any, stores.MaxBatchLines+1)
 	for i := range reqs {
 		reqs[i] = map[string]any{"custom_id": fmt.Sprintf("c%d", i), "params": map[string]any{}}
 	}
@@ -41,14 +43,11 @@ func TestBatches_lineCountIsCapped(t *testing.T) {
 	if resp2.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("Anthropic dialect: status %d, want 413", resp2.StatusCode)
 	}
-	srv.batches.mu.Lock()
-	n := len(srv.batches.batches)
-	srv.batches.mu.Unlock()
-	if n != 0 {
+	if n := srv.batches.Len(); n != 0 {
 		t.Errorf("a refused batch must not be created (%d in the store)", n)
 	}
-	if batchTooLarge(httptest.NewRecorder(), maxBatchLines) {
-		t.Errorf("a batch of exactly %d lines must be accepted", maxBatchLines)
+	if batchTooLarge(httptest.NewRecorder(), stores.MaxBatchLines) {
+		t.Errorf("a batch of exactly %d lines must be accepted", stores.MaxBatchLines)
 	}
 }
 
@@ -58,19 +57,17 @@ func TestBatches_lineCountIsCapped(t *testing.T) {
 func TestPanicGuard_runBatchChatLineFailsAloneAndTheBatchStillFinalizes(t *testing.T) {
 	// A registered model with nothing loaded behind it: the line resolves it, then dereferences what a real model has.
 	s := &server{models: map[string]*loadedModel{"m": {name: "m"}}}
-	bs := newBatchStore(4)
-	b := bs.create("openai_chat", "/v1/chat/completions", "24h", "file_x", []string{"a", "b"})
+	bs := stores.NewBatchStore(4)
+	b := bs.Create("openai_chat", "/v1/chat/completions", "24h", "file_x", []string{"a", "b"})
 	good := chatReq{} // an empty request fails validation before it reaches the registry: line b is an ordinary 400
 	bad := chatReq{Model: "m", Messages: []chatMessage{{Role: "user", Content: json.RawMessage(`"hi"`)}}}
 	go runBatchChatLine(s, b, 0, bad)
 	go runBatchChatLine(s, b, 1, good)
-	b.wg.Wait()
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if r := b.Results[0]; r.CustomID != "a" || r.StatusCode != 500 || r.ErrMsg != "internal error" {
+	b.Wait()
+	if r := b.ResultAt(0); r.CustomID != "a" || r.StatusCode != 500 || r.ErrMsg != "internal error" {
 		t.Errorf("the panicking line's result = %+v; want a 500 'internal error' under its own custom_id, set before the batch could finalize", r)
 	}
-	if r := b.Results[1]; r.CustomID != "b" || r.StatusCode != 400 {
+	if r := b.ResultAt(1); r.CustomID != "b" || r.StatusCode != 400 {
 		t.Errorf("the other line's result was disturbed: %+v", r)
 	}
 }
@@ -103,15 +100,13 @@ func TestPanicGuard_runJobFailsTheJobAndClosesItsStream(t *testing.T) {
 }
 
 func TestPanicGuard_finalizeBatchMarksTheBatchFailed(t *testing.T) {
-	s := &server{batches: newBatchStore(4)} // no file store: assembling the output file dereferences it
-	b := s.batches.create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"a"})
-	setResult(b, 0, lineError("a", 400, "invalid_request_error", "x"))
-	b.wg.Done()
+	s := &server{batches: stores.NewBatchStore(4)} // no file store: assembling the output file dereferences it
+	b := s.batches.Create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"a"})
+	b.SetResult(0, stores.LineError("a", 400, "invalid_request_error", "x"))
+	b.DoneLine()
 	s.finalizeBatch(b.ID)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.Status != "failed" || b.CompletedAt == nil {
-		t.Errorf("batch after a finalizer panic: status %q, completed %v; want failed and stamped", b.Status, b.CompletedAt)
+	if b.Status() != "failed" || b.CompletedAt() == nil {
+		t.Errorf("batch after a finalizer panic: status %q, completed %v; want failed and stamped", b.Status(), b.CompletedAt())
 	}
 }
 

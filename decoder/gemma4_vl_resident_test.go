@@ -124,8 +124,8 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	if len(m.boundBlocksForTest()) != 1 {
 		t.Fatalf("resImgBlocks = %v, want exactly 1 entry after a resident-committed image turn", m.boundBlocksForTest())
 	}
-	if got := m.boundBlocksForTest()[0]; got.start != g.ImageTokenStart || got.end != g.ImageTokenStart+g.NImageTokens || got.hash != testImgHash {
-		t.Errorf("resImgBlocks[0] = %+v, want {start:%d end:%d hash:%d}",
+	if got := m.boundBlocksForTest()[0]; got.Start != g.ImageTokenStart || got.End != g.ImageTokenStart+g.NImageTokens || got.Hash != testImgHash {
+		t.Errorf("resImgBlocks[0] = %+v, want {Start:%d end:%d hash:%d}",
 			got, g.ImageTokenStart, g.ImageTokenStart+g.NImageTokens, uint64(testImgHash))
 	}
 	if nLayers := m.w.Arch.NumLayers; len(rf.uploadKVs) != nLayers {
@@ -328,13 +328,13 @@ func TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse(t *testing.T)
 	// [text 100,101] [image: 3 soft-tokens, all id 900 — content-independent] [text 200,201]
 	prompt := []int{100, 101, 900, 900, 900, 200, 201}
 	generated := []int{300, 301}
-	m.residentCommitIDs(prompt, generated, []residentImageBlock{{start: 2, end: 5, hash: 0xC0FFEE}}, nil)
+	m.residentCommitIDs(prompt, generated, []residentImageBlock{{Start: 2, End: 5, Hash: 0xC0FFEE}}, nil)
 
 	if len(m.boundBlocksForTest()) != 1 {
 		t.Fatalf("resImgBlocks = %v, want exactly 1 entry", m.boundBlocksForTest())
 	}
-	if got := m.boundBlocksForTest()[0]; got.start != 2 || got.end != 5 || got.hash != 0xC0FFEE {
-		t.Errorf("resImgBlocks[0] = %+v, want {start:2 end:5 hash:0xC0FFEE}", got)
+	if got := m.boundBlocksForTest()[0]; got.Start != 2 || got.End != 5 || got.Hash != 0xC0FFEE {
+		t.Errorf("resImgBlocks[0] = %+v, want {Start:2 end:5 hash:0xC0FFEE}", got)
 	}
 
 	// A SECOND, DIFFERENT image (different hash) at the identical span, same placeholder ids —

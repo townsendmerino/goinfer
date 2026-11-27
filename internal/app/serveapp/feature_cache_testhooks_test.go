@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 // cacheSizeAt is the budget of the feature cache lm makes on its first image with avail bytes of memory available, and
@@ -16,16 +17,16 @@ func cacheSizeAt(lm *loadedModel, avail int64) (size int, budgetBytes, kvBytes i
 	restore := decoder.SetHostRAMAvailableForTest(avail)
 	defer restore()
 	_, kvBytes, _, budgetBytes, known = lm.model.FitBudgetSummary()
-	return lm.visionFeatureCache().budget, budgetBytes, kvBytes, known
+	return lm.visionFeatureCache().Budget(), budgetBytes, kvBytes, known
 }
 
-// Through the cache's real constructor on a loaded model: ample memory keeps featureCacheBudget; tight memory gives the
+// Through the cache's real constructor on a loaded model: ample memory keeps stores.FeatureCacheBudget; tight memory gives the
 // fit plan's leftover after its KV; and a plan with nothing left caches no image, so the tower runs on every resend.
 func TestVisionFeatureCache_sizedByTheFitPlan(t *testing.T) {
 	t.Run("ample", func(t *testing.T) {
 		_, lm := tinyServed(t)
-		if got, _, _, known := cacheSizeAt(lm, 1<<40); !known || got != featureCacheBudget {
-			t.Errorf("1 TiB available: cache %d (plan priced %v), want featureCacheBudget %d", got, known, featureCacheBudget)
+		if got, _, _, known := cacheSizeAt(lm, 1<<40); !known || got != stores.FeatureCacheBudget {
+			t.Errorf("1 TiB available: cache %d (plan priced %v), want FeatureCacheBudget %d", got, known, stores.FeatureCacheBudget)
 		}
 	})
 	t.Run("tight", func(t *testing.T) {
@@ -35,8 +36,8 @@ func TestVisionFeatureCache_sizedByTheFitPlan(t *testing.T) {
 		if !known {
 			t.Fatal("the tiny model's fit plan is unpriced; the tight case needs a priced one")
 		}
-		if want := budget - kvAt; want <= 0 || want >= featureCacheBudget || int64(got) != want {
-			t.Errorf("cache %d, want the plan's leftover %d (budget %d - KV %d), strictly between 0 and %d", got, want, budget, kvAt, featureCacheBudget)
+		if want := budget - kvAt; want <= 0 || want >= stores.FeatureCacheBudget || int64(got) != want {
+			t.Errorf("cache %d, want the plan's leftover %d (budget %d - KV %d), strictly between 0 and %d", got, want, budget, kvAt, stores.FeatureCacheBudget)
 		}
 	})
 	t.Run("nothing left", func(t *testing.T) {
@@ -57,7 +58,7 @@ func TestVisionFeatureCache_sizedByTheFitPlan(t *testing.T) {
 	})
 }
 
-// With the fit guard off, or --fit=off, the cache keeps featureCacheBudget however little memory is available.
+// With the fit guard off, or --fit=off, the cache keeps stores.FeatureCacheBudget however little memory is available.
 func TestVisionFeatureCache_fitOffKeepsTheFullBudget(t *testing.T) {
 	p := filepath.Join("../../../testdata/glm-tiny.gguf")
 	if _, err := os.Stat(p); err != nil {
@@ -74,8 +75,8 @@ func TestVisionFeatureCache_fitOffKeepsTheFullBudget(t *testing.T) {
 		lm := &loadedModel{name: "tiny", model: m}
 		got, _, _, _ := cacheSizeAt(lm, 1)
 		_ = m.Close()
-		if got != featureCacheBudget {
-			t.Errorf("%s, 1 byte available: cache %d, want featureCacheBudget %d", name, got, featureCacheBudget)
+		if got != stores.FeatureCacheBudget {
+			t.Errorf("%s, 1 byte available: cache %d, want FeatureCacheBudget %d", name, got, stores.FeatureCacheBudget)
 		}
 	}
 }

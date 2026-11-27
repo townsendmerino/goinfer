@@ -2,11 +2,12 @@ package serveapp
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"os"
 	"runtime/debug"
-	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 // A panic on a goroutine a handler spawned is not recovered by net/http (which recovers only its own handler goroutine), so it
@@ -14,23 +15,19 @@ import (
 // deferred call: the panic fails that one job or line, with a generic message to the client and the stack on stderr, and the server
 // keeps serving. Each must be the deferred function itself (recover only works there), registered AFTER any wg.Done so it runs first.
 
-// maxBatchLines bounds the requests in one batch. Each line becomes a goroutine and a parsed request before any admission queue sees
-// it, and the body cap alone (64 MiB) admits millions of minimal lines.
-const maxBatchLines = 10000
-
 func batchTooLarge(w http.ResponseWriter, n int) bool {
-	if n <= maxBatchLines {
+	if n <= stores.MaxBatchLines {
 		return false
 	}
-	writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", maxBatchLines, n))
+	writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", stores.MaxBatchLines, n))
 	return true
 }
 
 // recoverBatchLine fails line i of a batch when its goroutine panics.
-func recoverBatchLine(batch *batchRecord, i int) {
+func recoverBatchLine(batch *stores.BatchRecord, i int) {
 	if r := recover(); r != nil {
 		fmt.Fprintf(os.Stderr, "serve: batch %s line %d panicked: %v\n%s", batch.ID, i, r, debug.Stack())
-		setResult(batch, i, lineError(batch.CustomIDs[i], http.StatusInternalServerError, "api_error", "internal error"))
+		batch.SetResult(i, stores.LineError(batch.CustomIDs[i], http.StatusInternalServerError, "api_error", "internal error"))
 	}
 }
 
@@ -46,23 +43,6 @@ func (s *server) recoverJob(id string, log *jobs.EventLog, created int64) {
 				log.Append(e)
 			}
 		}
-	}
-}
-
-// recoverFinalize keeps a panic while a batch's output is assembled from taking the process down: the batch is marked failed.
-func (s *server) recoverFinalize(b *batchRecord) {
-	if r := recover(); r != nil {
-		fmt.Fprintf(os.Stderr, "serve: finalizing batch %s panicked: %v\n%s", b.ID, r, debug.Stack())
-		b.Status = "failed"
-		now := time.Now()
-		b.CompletedAt = &now
-	}
-}
-
-// recoverHeartbeat ends an SSE heartbeat whose write panicked; the response it pinged carries on without keep-alives.
-func recoverHeartbeat() {
-	if r := recover(); r != nil {
-		fmt.Fprintf(os.Stderr, "serve: SSE heartbeat panicked: %v\n%s", r, debug.Stack())
 	}
 }
 

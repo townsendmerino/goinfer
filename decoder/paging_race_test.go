@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"sync"
 	"testing"
 	"unsafe"
@@ -17,7 +18,7 @@ func TestLayerPager_concurrentNoRace(t *testing.T) {
 	for i := range spans {
 		spans[i] = [][]byte{make([]byte, 4096)} // non-empty so state[] actually toggles (Advise no-ops on heap mem)
 	}
-	p := &layerPager{spans: spans, window: 4, ahead: 1, state: make([]bool, n)}
+	p := paging.NewTestLayerPager(spans, 4, 1)
 	var wg sync.WaitGroup
 	for range 6 {
 		wg.Go(func() {
@@ -26,7 +27,7 @@ func TestLayerPager_concurrentNoRace(t *testing.T) {
 					p.EnterLayer(l)
 				}
 				p.FinishLayers()
-				_, _ = p.stats()
+				_, _ = p.Stats()
 			}
 		})
 	}
@@ -41,13 +42,13 @@ func TestExpertPager_concurrentNoRace(t *testing.T) {
 		keys[i] = unsafe.Pointer(new([8]byte))
 		cache.Add(keys[i], [][]byte{make([]byte, 4096)})
 	}
-	p := &expertPager{cache: cache, nExperts: nExp, total: nExp * 4096}
+	p := paging.NewTestExpertPager(cache, nil, processFaultCounts)
 	var wg sync.WaitGroup
 	for g := range 6 {
 		wg.Go(func() {
 			for iter := range 50 {
 				p.Touch(keys[(iter+g)%nExp])
-				_, _, _ = p.stats()
+				_, _, _ = p.Stats()
 			}
 		})
 	}

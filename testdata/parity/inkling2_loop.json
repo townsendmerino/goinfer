@@ -17,7 +17,7 @@
     "scripts/inkling2/pin_tiny.py",
     "scripts/inkling2/convert_tiny.py"
   ],
-  "deps_hash": "sha256:99ac8641f6800471c715dc878eb6388ef60b5069a439c7398ebf545ef898e3d4",
+  "deps_hash": "sha256:592812b5c222879ff199e696da6c759ffb44fc69601bd25cdb276e711c9f0d18",
   "status": "experimental",
   "validated_at": "3d272d8c",
   "date": "2026-11-26",

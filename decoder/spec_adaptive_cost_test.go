@@ -3,6 +3,8 @@ package decoder
 import (
 	"context"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/specdecode"
 )
 
 // metalLikeCost is Metal's step-kernel verify curve (metal/batch.go stepVerifyCost): a fixed overhead, then nearly flat.
@@ -15,8 +17,8 @@ var metalLikeCost = []float64{0, 1, 1.79, 1.95, 2.11, 2.25, 2.38, 2.52, 2.65, 3.
 func TestAdaptiveDepth_costCurve(t *testing.T) {
 	depth := func(alpha float64) int {
 		a := &AdaptiveDepth{MaxDraft: 8, Theta: 0.15, Cost: metalLikeCost}
-		a.ensure()
-		a.alpha = alpha
+		specdecode.EnsureAdaptive(a)
+		specdecode.SetAlpha(a, alpha)
 		return a.Depth(8)
 	}
 	if d := depth(0.95); d != 7 {
@@ -29,13 +31,13 @@ func TestAdaptiveDepth_costCurve(t *testing.T) {
 	}
 	// The linear rule on the same stream: floor(ln 0.15 / ln 0.4) = 2, i.e. it drafts.
 	lin := &AdaptiveDepth{MaxDraft: 8, Theta: 0.15}
-	lin.ensure()
-	lin.alpha = 0.4
+	specdecode.EnsureAdaptive(lin)
+	specdecode.SetAlpha(lin, 0.4)
 	if d := lin.Depth(8); d == 0 {
 		t.Errorf("linear rule at alpha 0.4: depth 0 — the comparison this test draws is gone")
 	}
 	a := &AdaptiveDepth{Cost: metalLikeCost}
-	a.ensure()
+	specdecode.EnsureAdaptive(a)
 	if a.ProbeEvery != 64 {
 		t.Errorf("ProbeEvery with a cost curve = %d, want 64", a.ProbeEvery)
 	}

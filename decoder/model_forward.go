@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 )
@@ -112,59 +111,14 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	return e.RunLayers(id, unwrapCache(cache))
 }
 
-func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.RunLayersFromEmbed(h, unwrapCache(cache))
-}
-
-func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.RunLayersFromEmbedPLE(h, pleID, unwrapCache(cache))
-}
-
 func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 	e := m.cpuEngine()
 	return e.Forward(id, unwrapCache(cache))
 }
 
-func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	e := m.cpuEngine()
-	return e.ForwardFromEmbed(h, unwrapCache(cache))
-}
-
-func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
-	e := m.cpuEngine()
-	return e.LogitsFromHidden(h, unwrapCache(cache))
-}
-
-func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
-	e := m.cpuEngine()
-	return e.LogitsFromNormed(h, unwrapCache(cache))
-}
-
 func (m *Model) finalNorm(h []float32) {
 	e := m.cpuEngine()
 	e.FinalNorm(h)
-}
-
-func (m *Model) countHead(cache *KVCache, n int, t0 time.Time) {
-	e := m.cpuEngine()
-	e.CountHead(unwrapCache(cache), n, t0)
-}
-
-func (m *Model) gemma4PLEInputs(h []float32, id int, out []float32) {
-	e := m.cpuEngine()
-	e.Gemma4PLEInputs(h, id, out)
-}
-
-func (m *Model) gemma4PLEInputsScratch(h []float32, id int, out, tmp []float32) {
-	e := m.cpuEngine()
-	e.Gemma4PLEInputsScratch(h, id, out, tmp)
-}
-
-func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
-	e := m.cpuEngine()
-	return e.ForwardCapture(id, unwrapCache(cache), layers)
 }
 
 // ForwardCapture runs one forward for token id and returns the next-token logits plus the residual stream after each layer in
@@ -180,7 +134,8 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 		return nil, nil, err
 	}
 	defer done()
-	logits, hidden, err = m.forwardCapture(id, cache, layers)
+	e := m.cpuEngine()
+	logits, hidden, err = e.ForwardCapture(id, unwrapCache(cache), layers)
 	return logits, hidden, m.closeErr(context.Background(), err)
 }
 

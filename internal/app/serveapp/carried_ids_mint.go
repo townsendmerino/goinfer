@@ -27,10 +27,10 @@ func (s *server) mintFor(lm *loadedModel, r *http.Request, gr genRequest) *carri
 // which ends the reasoning block. "" (the v1 text blob) when there are no ids to carry, or a stop string ended the turn
 // (its ids then run past the text the client received).
 func (m *carriedMint) blob(text string) string {
-	if m == nil || m.out == nil || m.out.stopHit {
+	if m == nil || m.out == nil || m.out.StopHit {
 		return ""
 	}
-	ids, whole := m.out.ids, m.out.done
+	ids, whole := m.out.IDs, m.out.Done
 	if !whole {
 		cut := -1
 		for i, id := range slices.Backward(ids) {
@@ -73,10 +73,10 @@ func withCarrier(rs *respStream, mint *carriedMint, include []string, id string,
 		return items
 	}
 	if rs != nil {
-		if !rs.carrierOnly(enc) {
+		if !rs.CarrierOnly(enc) {
 			return items
 		}
-		return append([]any{rs.rsnDone}, items...)
+		return append([]any{rs.ReasoningDoneItem()}, items...)
 	}
 	return append([]any{reasoningItem(id+"-rs", "", enc)}, items...)
 }

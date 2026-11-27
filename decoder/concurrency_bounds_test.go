@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
+	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -24,10 +26,7 @@ import (
 )
 
 func testResidentBatcher(lo, hi int) *residentBatcher {
-	b := &residentBatcher{maxHolders: hi, slotBusy: make([]bool, hi)}
-	b.cond = sync.NewCond(&b.mu)
-	b.lo, b.hi, b.wait = lo, hi, time.Millisecond
-	return b
+	return residency.NewTestBatcher(lo, hi, time.Millisecond)
 }
 
 func TestBatcher_claimExclusiveBlockedWhileBusy(t *testing.T) {
@@ -38,18 +37,18 @@ func TestBatcher_claimExclusiveBlockedWhileBusy(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		b.exclusive(func() {
+		b.Exclusive(func() {
 			close(entered)
 			<-release
 		})
 	}()
 	<-entered
-	if b.claimExclusive(&resBusy) {
+	if b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive succeeded while batcher busy flag was held")
 	}
 	close(release)
 	<-done
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive failed after batcher became idle")
 	}
 }
@@ -59,58 +58,58 @@ func TestBatcher_claimExclusiveAndAdaptiveMutualExclusion(t *testing.T) {
 	var resBusy int32
 
 	// Whole-generation exclusive claim blocks adaptive entry.
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("initial claimExclusive failed")
 	}
-	if b.claimAdaptive(&resBusy) {
+	if b.ClaimAdaptive(&resBusy) {
 		t.Fatal("claimAdaptive succeeded while whole-generation resBusy was held")
 	}
 	atomic.StoreInt32(&resBusy, 0)
 
 	// Active adaptive generation blocks whole-generation exclusive claim, and can take round claims when alone.
-	if !b.claimAdaptive(&resBusy) {
+	if !b.ClaimAdaptive(&resBusy) {
 		t.Fatal("claimAdaptive failed when idle")
 	}
-	if b.claimExclusive(&resBusy) {
+	if b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive succeeded while an adaptive generation was active")
 	}
-	if !b.claimAdaptiveRound(&resBusy) {
+	if !b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound failed for a lone adaptive generation")
 	}
 	// A second adaptive generation may still register while the first holds its round claim,
 	// after which neither can claim a solo round so both join the batcher cleanly.
-	if !b.claimAdaptive(&resBusy) {
+	if !b.ClaimAdaptive(&resBusy) {
 		t.Fatal("second claimAdaptive failed while first held only a round claim")
 	}
 	atomic.StoreInt32(&resBusy, 0)
-	if b.claimAdaptiveRound(&resBusy) {
+	if b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound succeeded with two concurrent adaptive generations")
 	}
-	b.releaseAdaptive()
-	if !b.claimAdaptiveRound(&resBusy) {
+	b.ReleaseAdaptive()
+	if !b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound failed after second adaptive generation released")
 	}
 	atomic.StoreInt32(&resBusy, 0)
-	b.releaseAdaptive()
+	b.ReleaseAdaptive()
 
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive failed after all adaptive generations released")
 	}
 }
 
 func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
 	b := testResidentBatcher(2, 2)
-	b.step = func([]*batchReq) { panic("boom in StepBatch") }
-	b.enterDecode()
-	b.enterDecode()
-	defer b.exitDecode()
-	defer b.exitDecode()
-	q1 := &batchReq{solo: func() error { return nil }}
-	q2 := &batchReq{solo: func() error { return nil }}
+	b.Step = func([]*batchReq) { panic("boom in StepBatch") }
+	b.EnterDecode()
+	b.EnterDecode()
+	defer b.ExitDecode()
+	defer b.ExitDecode()
+	q1 := &batchReq{Solo: func() error { return nil }}
+	q2 := &batchReq{Solo: func() error { return nil }}
 	var wg sync.WaitGroup
 	var err1, err2 error
-	wg.Go(func() { err1 = b.forward(q1) })
-	wg.Go(func() { err2 = b.forward(q2) })
+	wg.Go(func() { err1 = b.Forward(q1) })
+	wg.Go(func() { err2 = b.Forward(q2) })
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -129,7 +128,7 @@ func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
 	}
 	// Batcher must still be usable afterwards (b.busy cleared).
 	ran := false
-	b.exclusive(func() { ran = true })
+	b.Exclusive(func() { ran = true })
 	if !ran {
 		t.Fatal("exclusive did not run after recovered step panic")
 	}
@@ -144,22 +143,22 @@ func TestExpertBufferPool_refillErrorPreservesFreeSlot(t *testing.T) {
 	w2 := linalg.WrapInt8(make([]int8, 4), []float32{1}, 1, 4, false)
 	k1 := unsafe.Pointer(&w1)
 	k2 := unsafe.Pointer(&w2)
-	p, err := newExpertBufferPool(f, []poolMember{
-		{key: k1, fields: []expertField{{wm: &w1, kind: fieldInt8, off: 0, n: 4, scales: []float32{1}, rows: 1, cols: 4}}},
-		{key: k2, fields: []expertField{{wm: &w2, kind: fieldInt8, off: 100, n: 4, scales: []float32{1}, rows: 1, cols: 4}}}, // past EOF
+	p, err := paging.NewExpertBufferPool(f, []poolMember{
+		{Key: k1, Fields: []expertField{paging.NewInt8ExpertField(&w1, 0, 4, []float32{1}, 1, 4)}},
+		{Key: k2, Fields: []expertField{paging.NewInt8ExpertField(&w2, 100, 4, []float32{1}, 1, 4)}}, // past EOF
 	}, 4, 1) // 1 slot
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.close()
-	if err := p.ensure(k1); err != nil {
+	defer p.Close()
+	if err := p.Ensure(k1); err != nil {
 		t.Fatalf("first ensure: %v", err)
 	}
-	if err := p.ensure(k2); err == nil {
+	if err := p.Ensure(k2); err == nil {
 		t.Fatal("expected error reading past EOF")
 	}
 	// Slot 0 must remain free (not leaked), so re-ensuring k1 succeeds without panicking on empty lru.
-	if err := p.ensure(k1); err != nil {
+	if err := p.Ensure(k1); err != nil {
 		t.Fatalf("ensure after failed refill: %v", err)
 	}
 }

@@ -29,7 +29,8 @@ func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadN(hN[len(hN)-hidden:], 1), nil
+	e := m.cpuEngine()
+	return e.LMHeadN(hN[len(hN)-hidden:], 1), nil
 }
 
 // GenerateAudio streams a continuation for a prompt whose ids hold a run of audioLen placeholders at audioPos, replaced by the embeddings features returns. features is invoked once.

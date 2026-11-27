@@ -165,7 +165,7 @@ every repeat, decaying to a 1-token reply, with `gen.Err()` nil throughout. The 
 `TestPagerDeterminism/reuse-on` FAILS and `/reuse-off` (`GOINFER_NO_RESIDENT_REUSE=1`) PASSES 5/5
 byte-identical, on the same load, same box.
 
-`residentReuseLen` (`decoder/resident_reuse.go`) gates only on the env flag and the token-id
+`residentReuseLen` (`internal/runtime/residency/reuse.go`) gates only on the env flag and the token-id
 match — there is **no recurrent-state exclusion**, though the rest of the tree already refuses this
 family for exactly this reason (`decoder/deltanet.go`: the conv ring and matrix state are "NOT
 position-truncatable (why qwen3_5_moe falls back from prefix reuse / speculative)"; `decoder/forwardn.go`'s

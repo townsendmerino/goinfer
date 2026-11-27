@@ -1,622 +1,71 @@
 package decoder
 
-import (
-	"errors"
-	"fmt"
-	"runtime"
-	"slices"
-	"sync"
-	"sync/atomic"
-	"time"
+import "github.com/townsendmerino/goinfer/internal/runtime/residency"
+
+type (
+	tokenCoalescer     = residency.TokenCoalescer
+	residentBatcher    = residency.Batcher
+	ResidentBatchStats = residency.BatchStats
+	batchReq           = residency.BatchReq
+	chunkReq           = residency.ChunkReq
 )
 
-// The batched resident decode: several generations decoding on one resident at once, each on its own
-// resident KV slot, their decode tokens joined into shared steps.
-//
-// A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
-// single-sequence forward, a batched step, the slot bookkeeping) runs one at a time, inside the batcher's exclusive
-// section. What the batcher adds is what runs there at a decode token: the batcher coalesces the tokens every decoding
-// generation submits into one run. A run of at least lo batch-eligible tokens goes to BatchStepperAvailable.StepBatch
-// (every row bit-identical to that sequence's own Forward); anything else, a lone generation above all, runs
-// production's own per-sequence call unchanged, so a request served alone takes exactly the path it takes without the batcher.
-//
-// Generations join at token boundaries: a run starts once every decoding generation has submitted, or once the oldest
-// submission has waited batchStragglerWait (a generation whose consumer is slow to read its stream must not stall the
-// rest). A newcomer's prefill runs between runs, whole or in chunks (Options.ResidentPrefillChunk), and takes precedence
-// over the next run. On a resident that takes ragged steps a chunk instead rides the next run, one step with the decode
-// rows; elsewhere yieldToDecode
-// lets one run go between chunks.
-
-// batchStragglerWait bounds how long a submitted token waits for the other decoding generations' tokens before its run
-// starts without them. Host work between two tokens is far below a batched step's cost, so this is a small fraction of
-// a step when it fires, and it fires only for a straggler.
-const batchStragglerWait = 4 * time.Millisecond
-
-// tokenCoalescer is the token-joining core shared by the resident's residentBatcher and the CPU's cpuBatcher
-// (cpu_batch.go): generations submit one decode token each, and a run serves the tokens pending once every decoding
-// generation has submitted or the straggler window has expired — in one batched step (step) when it has at least lo
-// tokens, else each through its own production call. What it does not know is what a run holds: the resident batcher
-// adds slot holders and an exclusive section; the CPU batcher adds nothing, since a CPU model has no single device.
-type tokenCoalescer struct {
-	lo, hi int // a batched step serves lo..hi tokens
-	wait   time.Duration
-	// step serves a run of at least lo tokens in one batched step, setting every token's out or err.
-	step func(run []*batchReq)
-	// ride serves a run that carries a prefill chunk: one step of the chunk and the run's tokens, setting the chunk's err
-	// and every token's out or err. nil where chunks do not ride (rideChunk is then never called).
-	ride func(c *chunkReq, run []*batchReq)
-
-	mu          sync.Mutex
-	cond        *sync.Cond
-	busy        bool // a run or an exclusive section is in progress
-	exclWaiting int  // exclusive sections waiting — a run does not start ahead of them
-	decoders    int  // generations inside their decode loop
-	pending     []*batchReq
-	chunks      []*chunkReq // prefill chunks waiting for a run; a run carries at most one
-	freeAt      time.Time   // when the last run or exclusive section ended
-	timerAt     time.Time
-	stats       ResidentBatchStats
-}
-
-func (c *tokenCoalescer) init() { c.cond = sync.NewCond(&c.mu) }
-
-// residentBatcher is a Model's batched-decode coordinator (Model.EnableResidentConcurrency): the shared coalescing core plus the
-// resident's slot holders. A resident is one command queue, so its runs and exclusive sections are one at a time.
-type residentBatcher struct {
-	tokenCoalescer
-	stepper    ResidentForward // a BatchStepperAvailable; its StepBatch goes through stepOn
-	maxHolders int             // generations that may hold a slot at once
-
-	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
-	adaptive int    // adaptive speculative generations active on the batcher; guarded by mu
-	slotBusy []bool // resident KV slots a holder is using; guarded by mu
-	// holding: the one holder, decoding alone, keeps the resident (busy) across its tokens (holdSolo), so a chained forward
-	// stays queued on the device between them; guarded by mu.
-	holding bool
-}
-
-// ResidentBatchStats counts what the resident batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
-// and how many steps there were, the tokens that ran as production's per-sequence call, and how many runs started
-// because the straggler window expired rather than because every decoding generation had submitted.
-//
-// The durations are wall time with the resident held: RunNs inside decode runs, ExclusiveNs inside every exclusive
-// section, and PrefillNs inside the ones that are prefill passes (PrefillPasses of them). ExclusiveNs - PrefillNs is
-// slot bookkeeping. They attribute a served cell's time without timing anything else.
-type ResidentBatchStats struct {
-	Runs, Steps, StepTokens, SoloTokens, StragglerRuns int
-	// HeldTokens are the tokens a lone holder ran with the resident held across them (holdSolo: the chained decode), and
-	// Holds how many times a hold was taken. They are not in Runs or SoloTokens.
-	HeldTokens, Holds             int
-	StepSizes                     [batchStatsSizes]int // StepSizes[b] = steps of b sequences
-	PrefillPasses                 int
-	RunNs, ExclusiveNs, PrefillNs int64
-	// RidePasses are the prefill chunks that rode a run (rideChunk), RideRows the decode rows those runs carried beside them,
-	// and RideNs their wall time, which RunNs does not include.
-	RidePasses, RideRows int
-	RideNs               int64
-}
-
-const batchStatsSizes = 17
+const (
+	batchStragglerWait = residency.BatchStragglerWait
+	mc3HoldSendGrace   = residency.MC3HoldSendGrace
+	prefillTailMin     = residency.PrefillTailMin
+)
 
 // ResidentBatchStats is a snapshot of the batcher's counters; zero when the batcher is not enabled.
 func (m *Model) ResidentBatchStats() ResidentBatchStats {
 	if m.batcher == nil {
 		return ResidentBatchStats{}
 	}
-	m.batcher.mu.Lock()
-	defer m.batcher.mu.Unlock()
-	return m.batcher.stats
+	return m.batcher.Stats()
 }
 
-// batchReq is one generation's decode token: a resident one (seq) or a CPU one (id on cache).
-type batchReq struct {
-	seq   ResidentBatchSeq
-	id    int               // CPU (cpuBatcher): the token to decode
-	cache *KVCache          // CPU: the generation's own session cache
-	solo  func() error      // production's own call for this token (resident: binds the generation's slot first)
-	out   *ResidentBatchOut // set when a batched step served it
-	err   error
-	done  bool
-	at    time.Time
-}
-
-// chunkReq is one prefill chunk waiting to ride a run: its ragged sequence (a Prefill one) and the step's verdict on it.
-type chunkReq struct {
-	seq  ResidentRaggedSeq
-	err  error
-	done bool
-	at   time.Time
-}
-
-// EnableResidentConcurrency lets up to n generations use this model's resident at once, and returns the n it
-// allowed: 1 — nothing enabled — unless the resident can batch (BatchStepperAvailable) over at least two KV slots, and
-// never more than the slot count, since each running generation holds a slot. Call it before any generation starts.
+// EnableResidentConcurrency lets up to n generations use this model's resident at once.
 func (m *Model) EnableResidentConcurrency(n int) int {
 	lo, hi, ok := stepBatchRange(m.resident)
 	if !ok || n < 2 {
-		return 1 // a recurrent family has one slot unless its backend keeps that state per slot (residentSlotCount)
+		return 1
 	}
-	slots := m.residentSlotCount()
+	slots := m.resHost().SlotCount()
 	if hi < 2 || slots < 2 {
 		return 1
 	}
 	n = min(n, slots)
-	b := &residentBatcher{stepper: m.resident, maxHolders: n, slotBusy: make([]bool, slots)}
-	b.lo, b.hi, b.wait, b.step = max(lo, 2), hi, batchStragglerWait, b.stepResident
-	if canStep(m.resident, stepBatch{Pass: passRagged, Ragged: []ResidentRaggedSeq{{Embs: stepProbe}}}) {
-		b.ride = b.rideResident
+	stepSeqs := func(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error) {
+		sr, err := stepOn(m.resident, stepBatch{Pass: passSeqs, Seqs: seqs})
+		return sr.Batch, err
 	}
-	b.init()
-	m.batcher = b
+	var stepRagged func([]ResidentRaggedSeq) ([]ResidentRaggedOut, error)
+	if canStep(m.resident, stepBatch{Pass: passRagged, Ragged: []ResidentRaggedSeq{{Embs: stepProbe}}}) {
+		stepRagged = func(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error) {
+			sr, err := stepOn(m.resident, stepBatch{Pass: passRagged, Ragged: seqs})
+			return sr.Ragged, err
+		}
+	}
+	m.batcher = residency.NewBatcher(m.resident, n, slots, lo, hi, stepSeqs, stepRagged)
 	return n
 }
 
-// ResidentConcurrency is how many generations may use the resident at once: EnableResidentConcurrency's result, 1 when
-// it was never enabled.
+// ResidentConcurrency is how many generations may use the resident at once.
 func (m *Model) ResidentConcurrency() int {
 	if m.batcher == nil {
 		return 1
 	}
-	return m.batcher.maxHolders
+	return m.batcher.MaxHolders()
 }
 
 // SetSpecAdaptive turns the "speculate when alone, batch under load" candidate on or off.
-// Call it once at load, before any generation starts. It has no
-// effect unless EnableResidentConcurrency also enabled a batcher — with no batcher, genNgramInto's
-// exclusive claim behaves exactly as it does with this off.
 func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
 
 // ResidentBatchCapable reports whether EnableResidentConcurrency could enable anything on this model.
 func (m *Model) ResidentBatchCapable() bool {
 	_, hi, ok := stepBatchRange(m.resident)
-	if !ok || m.residentSlotCount() < 2 {
+	if !ok || m.resHost().SlotCount() < 2 {
 		return false
 	}
 	return hi >= 2
-}
-
-// claim takes one of the batcher's holder places. It fails while an exclusive resident claim (tryClaimResident: the
-// paths the batcher does not batch — speculation, vision, adapters) is held, and when every place is taken.
-func (b *residentBatcher) claim(resBusy *int32) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if atomic.LoadInt32(resBusy) != 0 || b.holders >= b.maxHolders {
-		return false
-	}
-	b.holders++
-	return true
-}
-
-// release gives a holder place back.
-func (b *residentBatcher) release() {
-	b.mu.Lock()
-	b.holders--
-	b.cond.Broadcast()
-	b.mu.Unlock()
-}
-
-// holdSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
-// the resident: one holder, decoding, nothing pending and no exclusive section waiting. That is how a chained decode
-// runs under the batcher: the chain keeps the next token's forward queued on the device between tokens, and nothing else may
-// touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a hold was kept
-// from an earlier call, release (the chain's Stop) runs first with the resident still held, then the hold ends. The
-// caller then submits the token through forward as usual. A newcomer (another holder's claim, its prefill's exclusive
-// section) therefore waits at most until this holder's next token.
-func (b *residentBatcher) holdSolo(fn func() error, release func()) (ok bool, err error) {
-	b.mu.Lock()
-	alone := b.holders == 1 && b.decoders == 1 && b.exclWaiting == 0 && len(b.pending) == 0
-	switch {
-	case b.holding && !alone:
-		b.mu.Unlock()
-		b.releaseHold(release)
-		return false, nil
-	case !b.holding && (!alone || b.busy):
-		b.mu.Unlock()
-		return false, nil
-	case !b.holding:
-		b.busy, b.holding = true, true
-		b.stats.Holds++
-	}
-	b.mu.Unlock()
-	t0 := time.Now()
-	err = runSolo(fn)
-	b.mu.Lock()
-	b.stats.HeldTokens++
-	b.stats.RunNs += time.Since(t0).Nanoseconds()
-	b.mu.Unlock()
-	return true, err
-}
-
-// releaseHold ends a hold holdSolo kept: release (the chain's Stop) runs first, with the resident still held, then the
-// resident is free again. A no-op when no hold is kept. Every exit from a decode loop that may hold calls it before
-// anything else on the batcher (the commit's exclusive section waits for the resident, so a kept hold would deadlock it).
-func (b *residentBatcher) releaseHold(release func()) {
-	b.mu.Lock()
-	held := b.holding
-	b.mu.Unlock()
-	if !held {
-		return
-	}
-	defer func() {
-		b.mu.Lock()
-		b.holding, b.busy = false, false
-		b.freeAt = time.Now()
-		b.cond.Broadcast()
-		b.mu.Unlock()
-	}()
-	release()
-}
-
-// mc3HoldSendGrace is how long a holder keeping the resident (holdSolo) waits for its consumer to take a token before it
-// lets go of the hold: a consumer that is not reading must not keep a newcomer waiting on the resident. Streaming
-// clients read at once, so the grace is short and the hold is kept across them.
-const mc3HoldSendGrace = 2 * time.Millisecond
-
-// isHolding reports whether a hold is kept (the decode loop asks before a token send that might block).
-func (b *residentBatcher) isHolding() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.holding
-}
-
-// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder or adaptive
-// generation is active and no batch/exclusive run is in progress.
-func (b *residentBatcher) claimExclusive(resBusy *int32) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.holders == 0 && b.adaptive == 0 && !b.busy && atomic.CompareAndSwapInt32(resBusy, 0, 1)
-}
-
-// claimAdaptive registers an adaptive speculative generation on the batcher. It fails when a whole-generation
-// exclusive caller (tryClaimResident: adaptive == 0 with resBusy set) currently owns the resident.
-func (b *residentBatcher) claimAdaptive(resBusy *int32) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.adaptive == 0 && atomic.LoadInt32(resBusy) != 0 {
-		return false
-	}
-	b.adaptive++
-	return true
-}
-
-// releaseAdaptive unregisters an adaptive speculative generation from the batcher.
-func (b *residentBatcher) releaseAdaptive() {
-	b.mu.Lock()
-	b.adaptive--
-	b.cond.Broadcast()
-	b.mu.Unlock()
-}
-
-// claimAdaptiveRound is an adaptive speculative generation's per-round probe for whether it is the sole
-// resident user: it succeeds only with no batched holders and no other adaptive generation active, setting
-// resBusy so no batched holder joins mid-round while preserving exclusive()'s own serialization.
-func (b *residentBatcher) claimAdaptiveRound(resBusy *int32) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.holders == 0 && b.adaptive == 1 && atomic.CompareAndSwapInt32(resBusy, 0, 1)
-}
-
-// exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
-func (b *tokenCoalescer) exclusive(fn func()) { b.exclusiveKind(false, fn) }
-
-// prefillExclusive is exclusive for a prefill pass, counted in PrefillPasses and PrefillNs as well.
-func (b *tokenCoalescer) prefillExclusive(fn func()) { b.exclusiveKind(true, fn) }
-
-func (b *tokenCoalescer) exclusiveKind(prefill bool, fn func()) {
-	b.mu.Lock()
-	b.exclWaiting++
-	for b.busy {
-		b.cond.Wait()
-	}
-	b.exclWaiting--
-	b.busy = true
-	b.mu.Unlock()
-	t0 := time.Now()
-	defer func() {
-		d := time.Since(t0).Nanoseconds()
-		b.mu.Lock()
-		b.stats.ExclusiveNs += d
-		if prefill {
-			b.stats.PrefillPasses++
-			b.stats.PrefillNs += d
-		}
-		b.busy = false
-		b.freeAt = time.Now()
-		b.cond.Broadcast()
-		b.mu.Unlock()
-	}()
-	fn()
-}
-
-// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
-// prefill, and the chunks must all run that same path. Chunking is sound only where the resident's prefill is
-// chunk-invariant, the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal), so a reply never depends
-// on whether others were decoding.
-const prefillTailMin = 8
-
-// decoding reports how many holders are inside their decode loop.
-func (b *tokenCoalescer) decoding() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.decoders
-}
-
-// yieldToDecode lets the decoding generations run one step before a prefilling generation takes the resident for its
-// next chunk: it returns once a run has started (or when nobody is decoding, or after a bounded wait — a decoder whose
-// consumer has stalled must not hold the prefill up indefinitely).
-func (b *tokenCoalescer) yieldToDecode() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	start := b.stats.Runs
-	deadline := time.Now().Add(50 * time.Millisecond)
-	for b.stats.Runs == start && b.decoders > 0 && time.Now().Before(deadline) {
-		b.armLocked(deadline)
-		b.cond.Wait()
-	}
-}
-
-// enterDecode / exitDecode bracket a holder's decode loop: a run waits for tokens from exactly the holders inside one.
-func (b *tokenCoalescer) enterDecode() {
-	b.mu.Lock()
-	b.decoders++
-	b.mu.Unlock()
-}
-
-func (b *tokenCoalescer) exitDecode() {
-	b.mu.Lock()
-	b.decoders--
-	b.cond.Broadcast() // a run may have been waiting for this holder's token
-	b.mu.Unlock()
-}
-
-// markSlot records a holder's slot as in use (true) or free (false).
-func (b *residentBatcher) markSlot(slot int, busy bool) {
-	b.mu.Lock()
-	if slot >= 0 && slot < len(b.slotBusy) {
-		b.slotBusy[slot] = busy
-	}
-	b.mu.Unlock()
-	if slot >= 0 {
-		SubsystemsOf(b.stepper).KV.SetKVSlotBusy(slot, busy)
-	}
-}
-
-// busySlots is a snapshot of the slots holders are using, for residentAcquire (called inside exclusive).
-func (b *residentBatcher) busySlots() []bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return slices.Clone(b.slotBusy)
-}
-
-// forward submits one decode token and returns once a run has served it: q.out is set when a batched step did, and
-// otherwise q.solo ran (production's own call, with its own results).
-func (b *tokenCoalescer) forward(q *batchReq) error {
-	b.mu.Lock()
-	q.at = time.Now()
-	b.pending = append(b.pending, q)
-	b.cond.Broadcast()
-	b.serveLocked(func() bool { return q.done })
-	b.mu.Unlock()
-	return q.err
-}
-
-// rideChunk submits one prefill chunk and returns once a run has carried it in one step with the decode tokens pending
-// then. It joins a run as a token does: once every decoding generation has submitted, or the straggler window has expired,
-// or nobody is decoding. A non-nil error means the step did not take the chunk; the run's tokens were served without it
-// and the caller prefills from the chunk's start another way.
-func (b *tokenCoalescer) rideChunk(c *chunkReq) error {
-	b.mu.Lock()
-	c.at = time.Now()
-	b.chunks = append(b.chunks, c)
-	b.cond.Broadcast()
-	b.serveLocked(func() bool { return c.done })
-	b.mu.Unlock()
-	return c.err
-}
-
-// serveLocked waits until done reports true, starting a run whenever one can start: whichever waiter finds the resident
-// free runs the pending tokens, and the oldest pending chunk with them, for everyone. b.mu is held.
-func (b *tokenCoalescer) serveLocked(done func() bool) {
-	for !done() {
-		if !b.busy && b.exclWaiting == 0 && (len(b.pending) > 0 || len(b.chunks) > 0) {
-			// The straggler window opens when a run could start: at the oldest submission or when the resident came free,
-			// whichever is later. Timed from submission alone, a token submitted during a run has already "waited" the whole run
-			// when it ends, starts one at once without the others, and the generations phase-lock into split runs every token.
-			var start time.Time
-			if len(b.pending) > 0 {
-				start = b.pending[0].at
-			}
-			if len(b.chunks) > 0 && (start.IsZero() || b.chunks[0].at.Before(start)) {
-				start = b.chunks[0].at
-			}
-			if b.freeAt.After(start) {
-				start = b.freeAt
-			}
-			if all := len(b.pending) >= b.decoders; all || time.Since(start) >= b.wait {
-				if !all {
-					b.stats.StragglerRuns++
-				}
-				b.stats.Runs++
-				n := min(len(b.pending), b.hi)
-				run := b.pending[:n:n]
-				b.pending = slices.Clone(b.pending[n:])
-				var c *chunkReq
-				if len(b.chunks) > 0 {
-					c = b.chunks[0]
-					b.chunks = slices.Clone(b.chunks[1:])
-				}
-				b.busy = true
-				b.mu.Unlock()
-				t0 := time.Now()
-				bug := b.execRun(c, run)
-				b.mu.Lock()
-				if d := time.Since(t0).Nanoseconds(); c != nil {
-					b.stats.RideNs += d
-					if c.err == nil {
-						b.stats.RidePasses++
-						b.stats.RideRows += len(run)
-					}
-				} else {
-					b.stats.RunNs += d
-				}
-				b.busy = false
-				b.freeAt = time.Now()
-				for _, r := range run {
-					r.done = true
-				}
-				if c != nil {
-					c.done = true
-				}
-				b.cond.Broadcast()
-				if bug != nil {
-					// A programming bug crashes loudly, as runGen's recover lets it (mem.RepanicBug), but only after busy is clear,
-					// the run's waiters are failed and b.mu is released: a caller up the stack that recovers it (net/http does)
-					// must not inherit a held lock or a resident marked busy forever.
-					b.mu.Unlock()
-					panic(bug)
-				}
-				continue
-			}
-			b.armLocked(start.Add(b.wait))
-		}
-		b.cond.Wait()
-	}
-}
-
-// armLocked wakes the waiters at deadline (so a straggler's absence is noticed); b.mu held.
-func (b *tokenCoalescer) armLocked(deadline time.Time) {
-	if !b.timerAt.IsZero() && !deadline.Before(b.timerAt) {
-		return
-	}
-	b.timerAt = deadline
-	time.AfterFunc(time.Until(deadline), func() {
-		b.mu.Lock()
-		if b.timerAt.Equal(deadline) {
-			b.timerAt = time.Time{}
-		}
-		b.cond.Broadcast()
-		b.mu.Unlock()
-	})
-}
-
-// execRun runs a batched step or prefill ride, converting a panic into an error for every waiting caller in the run so
-// serveLocked always releases b.busy and wakes waiters instead of deadlocking. A runtime.Error (a programming bug) is also
-// returned, for serveLocked to re-panic once the batcher is consistent again.
-func (b *tokenCoalescer) execRun(c *chunkReq, run []*batchReq) (bug any) {
-	defer func() {
-		if p := recover(); p != nil {
-			if _, ok := p.(runtime.Error); ok {
-				bug = p
-			}
-			err := fmt.Errorf("decoder: batched step panicked: %v", p)
-			if c != nil && c.err == nil {
-				c.err = err
-			}
-			for _, r := range run {
-				if r.out == nil && r.err == nil {
-					r.err = err
-				}
-			}
-		}
-	}()
-	if c != nil {
-		b.ride(c, run)
-	} else {
-		b.runTokens(run)
-	}
-	return nil
-}
-
-// runTokens serves one run: in one batched step (step) when it has at least lo tokens, else every token through its
-// own production call. The resident batcher holds the resident across it.
-func (b *tokenCoalescer) runTokens(run []*batchReq) {
-	if len(run) >= b.lo {
-		b.step(run)
-		b.mu.Lock()
-		b.stats.Steps++
-		b.stats.StepTokens += len(run)
-		b.stats.StepSizes[min(len(run), batchStatsSizes-1)]++
-		b.mu.Unlock()
-		return
-	}
-	for _, r := range run {
-		r.err = runSolo(r.solo)
-		b.mu.Lock()
-		b.stats.SoloTokens++
-		b.mu.Unlock()
-	}
-}
-
-// stepResident is the resident batcher's step: one StepBatch over the run's sequences.
-func (b *residentBatcher) stepResident(run []*batchReq) {
-	seqs := make([]ResidentBatchSeq, len(run))
-	for i, r := range run {
-		seqs[i] = r.seq
-	}
-	sr, err := stepOn(b.stepper, stepBatch{Pass: passSeqs, Seqs: seqs})
-	out := sr.Batch
-	if errors.Is(err, ErrKVPoolFull) {
-		// A row past its share found no block. The step maps every row's blocks before it writes anything, so it wrote nothing:
-		// run each token on its own, and only the row that cannot get a block ends.
-		for _, r := range run {
-			r.err = runSolo(r.solo)
-		}
-		return
-	}
-	if err == nil && len(out) != len(run) {
-		err = fmt.Errorf("decoder: StepBatch returned %d rows for %d sequences", len(out), len(run))
-	}
-	for i, r := range run {
-		if err != nil {
-			r.err = err
-		} else {
-			r.out = &out[i]
-		}
-	}
-}
-
-// rideResident is the resident batcher's ride: one StepRagged of the chunk (first) and one decode row for each of the
-// run's tokens. A decode row equals its StepBatch row bit for bit, and the chunk equals the same pass of its prompt's
-// prefill (RaggedStepperAvailable's contract). When the step fails, the chunk takes the error back to mc3Prefill and the
-// run is served as a run without it: a step that fails has written nothing, or the bits a re-run writes at the same
-// positions.
-func (b *residentBatcher) rideResident(c *chunkReq, run []*batchReq) {
-	seqs := make([]ResidentRaggedSeq, 0, len(run)+1)
-	seqs = append(seqs, c.seq)
-	for _, r := range run {
-		seqs = append(seqs, ResidentRaggedSeq{Slot: r.seq.Slot, Pos: r.seq.Pos, Embs: [][]float32{r.seq.Emb}, Draw: r.seq.Draw})
-	}
-	sr, err := stepOn(b.stepper, stepBatch{Pass: passRagged, Ragged: seqs})
-	if err == nil && len(sr.Ragged) != len(seqs) {
-		err = fmt.Errorf("decoder: StepRagged returned %d sequences for %d", len(sr.Ragged), len(seqs))
-	}
-	for i := 0; err == nil && i < len(run); i++ {
-		if o := sr.Ragged[i+1]; run[i].seq.Draw == nil && len(o.Logits) != 1 {
-			err = fmt.Errorf("decoder: StepRagged returned %d logits rows for a decode row", len(o.Logits))
-		}
-	}
-	if err != nil {
-		c.err = err
-		b.runTokens(run)
-		return
-	}
-	for i, r := range run {
-		o := sr.Ragged[i+1]
-		if r.seq.Draw != nil {
-			r.out = &ResidentBatchOut{ID: o.ID}
-		} else {
-			r.out = &ResidentBatchOut{Logits: o.Logits[0], ID: -1}
-		}
-	}
-}
-
-// runSolo runs one token's production call, turning a panic into its error: a run serves every generation in it
-// (and, on the resident, holds the resident for them), so it must not unwind past them.
-func runSolo(solo func() error) (err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("decoder: forward panicked: %v", p)
-		}
-	}()
-	return solo()
 }

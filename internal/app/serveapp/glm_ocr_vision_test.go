@@ -197,7 +197,7 @@ func TestGlmOcr_visionPromptIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}
+	img := imageRef{MediaType: "image/png", Data: glmOcrTestPNG(t)}
 	// ids HF gives for [gMASK]<sop><|user|>\n<|begin_of_image|><|image|>x64<|end_of_image|>{prompt}<|assistant|>\n
 	head := []int{59248, 59250, 59253, 10, 59256}
 	for _, tc := range []struct {
@@ -312,7 +312,7 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}
-	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}
+	img := imageRef{MediaType: "image/png", Data: glmOcrTestPNG(t)}
 	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Text Recognition:"}} }
 
 	vi, err := lm.visionPrompt(tmpl, "", turns(), img)
@@ -327,7 +327,7 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 	for i := range want {
 		want[i] = float32(i)
 	}
-	lm.visionFeatureCache().put(sha256.Sum256(img.data), want)
+	lm.visionFeatureCache().Put(sha256.Sum256(img.Data), want)
 	vi2, err := lm.visionPrompt(tmpl, "", turns(), img)
 	if err != nil {
 		t.Fatal(err)

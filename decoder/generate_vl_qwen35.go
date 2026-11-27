@@ -31,7 +31,8 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 	}
 	cache.c.MRopePos = mropePos
 	cache.c.MRopeDelta = rope.MRoPEDelta(mropePos, len(ids))
-	if !qwen35VLPerToken && m.qwen35BatchNAnyPos(len(ids), cache) {
+	e := m.cpuEngine()
+	if !qwen35VLPerToken && e.Qwen35BatchNAnyPos(len(ids), unwrapCache(cache)) {
 		return m.prefillQwen35VLBatched(ctx, ids, imageFeats, spans, cache)
 	}
 	return m.prefillQwen35VLPerToken(ctx, ids, imageFeats, spans, cache)
@@ -81,7 +82,8 @@ func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeat
 		}
 		c0 = c1
 	}
-	return m.logitsFromNormed(hn[len(hn)-hidden:], cache), nil
+	e := m.cpuEngine()
+	return e.LogitsFromNormed(hn[len(hn)-hidden:], unwrapCache(cache)), nil
 }
 
 // prefillQwen35VLPerToken is the original loop, kept for the families and caches qwen35BatchNAnyPos excludes (a layer pager, a
@@ -100,11 +102,13 @@ func (m *Model) prefillQwen35VLPerToken(ctx context.Context, ids []int, imageFea
 		}
 		h := all[i*hidden : (i+1)*hidden]
 		var err error
-		if last, err = m.runLayersFromEmbed(h, cache); err != nil {
+		e := m.cpuEngine()
+		if last, err = e.RunLayersFromEmbed(h, unwrapCache(cache)); err != nil {
 			return nil, err
 		}
 	}
-	return m.logitsFromHidden(last, cache), nil
+	e := m.cpuEngine()
+	return e.LogitsFromHidden(last, unwrapCache(cache)), nil
 }
 
 // qwen35VLPerToken is a test seam: true forces prefillLogitsQwen35VL's one-token-at-a-time loop, so a test can run both paths over

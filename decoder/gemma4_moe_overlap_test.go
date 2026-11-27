@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -132,7 +133,7 @@ func gemma4MmapPager(w *archparts.Gemma4MoEWeights, mapping []byte, budgetExpert
 	for _, m := range members {
 		cache.Add(m.key, m.spans)
 	}
-	return &expertPager{cache: cache, nExperts: len(w.ExpertsGateUp), total: perExpert * int64(len(w.ExpertsGateUp))}
+	return paging.NewTestExpertPager(cache, nil, processFaultCounts)
 }
 
 // gemma4PoolPager builds a real pread pool over the same fixture, mirroring newExpertPager's
@@ -145,25 +146,25 @@ func gemma4PoolPager(t *testing.T, w *archparts.Gemma4MoEWeights, path string, m
 	members := make([]poolMember, len(w.ExpertsGateUp))
 	var perExpert int64
 	for e := range w.ExpertsGateUp {
-		guF, ok := buildExpertField(&w.ExpertsGateUp[e], base, end)
+		guF, ok := paging.BuildExpertField(&w.ExpertsGateUp[e], base, end)
 		if !ok {
-			t.Fatalf("buildExpertField(gateUp[%d]) rejected", e)
+			t.Fatalf("paging.BuildExpertField(gateUp[%d]) rejected", e)
 		}
-		dnF, ok := buildExpertField(&w.ExpertsDown[e], base, end)
+		dnF, ok := paging.BuildExpertField(&w.ExpertsDown[e], base, end)
 		if !ok {
-			t.Fatalf("buildExpertField(down[%d]) rejected", e)
+			t.Fatalf("paging.BuildExpertField(down[%d]) rejected", e)
 		}
-		members[e] = poolMember{key: unsafe.Pointer(&w.ExpertsGateUp[e]), fields: []expertField{guF, dnF}}
+		members[e] = poolMember{Key: unsafe.Pointer(&w.ExpertsGateUp[e]), Fields: []expertField{guF, dnF}}
 		if perExpert == 0 {
-			perExpert = int64(guF.n + dnF.n)
+			perExpert = int64(guF.ByteLen() + dnF.ByteLen())
 		}
 	}
-	pool, err := newExpertBufferPool(path, members, perExpert*int64(budgetExperts), minSlots)
+	pool, err := paging.NewExpertBufferPool(path, members, perExpert*int64(budgetExperts), minSlots)
 	if err != nil {
 		t.Fatalf("newExpertBufferPool: %v", err)
 	}
-	t.Cleanup(func() { _ = pool.close() })
-	return &expertPager{pool: pool, nExperts: len(w.ExpertsGateUp)}
+	t.Cleanup(func() { _ = pool.Close() })
+	return paging.NewTestExpertPager(nil, pool, processFaultCounts)
 }
 
 // TestGemma4MoEFFN_overlapBitIdentical is Lever 3's correctness gate: reordering the router
@@ -198,13 +199,13 @@ func TestGemma4MoEFFN_overlapBitIdentical(t *testing.T) {
 
 	mmapPager := gemma4MmapPager(w, mapping, 3) // 3-of-6 experts resident: forces real eviction
 	gotMmap := runAll(mmapPager)
-	if hits, misses, evictions := mmapPager.stats(); evictions == 0 {
+	if hits, misses, evictions := mmapPager.Stats(); evictions == 0 {
 		t.Fatalf("mmap-mode pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
 
 	poolPager := gemma4PoolPager(t, w, path, mapping, 3, topK)
 	gotPool := runAll(poolPager)
-	if hits, misses, evictions := poolPager.stats(); evictions == 0 {
+	if hits, misses, evictions := poolPager.Stats(); evictions == 0 {
 		t.Fatalf("pool-mode pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
 
@@ -275,7 +276,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	if n := len(fails); n > 0 {
 		t.Fatalf("%d/%d concurrent calls observed wrong output (cross-stream slot-reuse race)", n, goroutines*itersEach)
 	}
-	if _, _, evictions := poolPager.stats(); evictions == 0 {
+	if _, _, evictions := poolPager.Stats(); evictions == 0 {
 		t.Fatal("no evictions occurred -- test didn't actually exercise slot reuse under contention")
 	}
 }

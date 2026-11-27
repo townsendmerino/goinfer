@@ -36,7 +36,7 @@ func TestTranscodeTimed_reportsBothPhases(t *testing.T) {
 	}
 	const pause, floor = 80 * time.Millisecond, 40 * time.Millisecond
 	ctx := withSidecarTestHooks(context.Background(), sidecarTestHooks{
-		wrapSink: func(w io.Writer) io.Writer { return &slowOnce{w: w, d: pause} },
+		WrapSink: func(w io.Writer) io.Writer { return &slowOnce{w: w, d: pause} },
 	})
 	transcodeSelfCheck = func(path string) error { time.Sleep(pause); return selfCheck(path) }
 	t.Cleanup(func() { transcodeSelfCheck = selfCheck })

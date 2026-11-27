@@ -641,7 +641,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		_ = sw.frame("event: %s\ndata: %s\n\n", event, b)
+		_ = sw.Frame("event: %s\ndata: %s\n\n", event, b)
 	}
 	send("start", map[string]any{"name": name})
 

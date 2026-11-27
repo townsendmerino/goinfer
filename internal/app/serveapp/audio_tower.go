@@ -114,7 +114,7 @@ const gemma4AudioMaxSeconds = 30
 // newline on either side). The run is generated through GenerateGemma4VL, which splices any media run the same way: rows
 // unscaled, PAD for PLE's token-identity term.
 func (g *gemma4Audio) clipPrompt(lm *loadedModel, tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
+	wav, err := multimodal.ParseWAV(clip.Data)
 	if err != nil {
 		return visionInput{}, err
 	}
@@ -160,7 +160,7 @@ func (g *gemma4Audio) clipPrompt(lm *loadedModel, tm *chat.Template, system stri
 	if ln != n {
 		return visionInput{}, fmt.Errorf("audio placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", ln, n)
 	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: ln, gemma4: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.Data), imgPos: pos, imgLen: ln, gemma4: true}, nil
 }
 
 // qwenASRAudio is a Qwen3-ASR checkpoint's audio encoder and projector, which live beside the decoder in its own
@@ -201,7 +201,7 @@ func (q *qwenASRAudio) encoder() (*audio.QwenASREncoder, error) {
 // model still writes the name and <asr_text>). The encoder runs lazily inside features(). The reply is the model's raw "language <Name><asr_text><transcription>", the word
 // supplied from the prompt via replyPrefix, so completion_tokens does not count it. Text in the user turn is not part of the template and is ignored, the system message is passed through.
 func (q *qwenASRAudio) clipPrompt(lm *loadedModel, system string, clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
+	wav, err := multimodal.ParseWAV(clip.Data)
 	if err != nil {
 		return visionInput{}, err
 	}
@@ -233,7 +233,7 @@ func (q *qwenASRAudio) clipPrompt(lm *loadedModel, system string, clip imageRef)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true, replyPrefix: multimodal.QwenASRLanguageWord}, nil
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.Data), imgPos: pos, imgLen: n, asr: true, replyPrefix: multimodal.QwenASRLanguageWord}, nil
 }
 
 // voxtralAudio is Voxtral Mini's audio tower and projector, which live beside the decoder in its own safetensors.
@@ -286,7 +286,7 @@ func (v *voxtralAudio) encoder(name string) (*audio.VoxtralAudio, error) {
 // 30 s window at a time (the clip is padded up to whole windows), into the transcription request mistral_common lays out (multimodal.VoxtralPrompt, with no language: the model detects
 // it). The tower and projector run lazily inside features(). The reply is the model's raw text; text in the user turn is ignored, the system message is not used.
 func (v *voxtralAudio) clipPrompt(lm *loadedModel, clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
+	wav, err := multimodal.ParseWAV(clip.Data)
 	if err != nil {
 		return visionInput{}, err
 	}
@@ -318,5 +318,5 @@ func (v *voxtralAudio) clipPrompt(lm *loadedModel, clip imageRef) (visionInput, 
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.Data), imgPos: pos, imgLen: n, asr: true}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -42,7 +43,7 @@ func skipUnlessExpertsPage(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	if total, _, _ := mappedExpertBytes(m.w, m.mmap); total == 0 {
+	if total, _, _ := paging.MappedExpertBytes(m.w, m.mmap); total == 0 {
 		t.Skipf("%d-byte pages leave %s's expert tensors no page-aligned interior to page", os.Getpagesize(), filepath.Base(path))
 	}
 }
@@ -129,7 +130,7 @@ func TestMappedMoEWorkingSet_isThePagersArithmetic(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mapped.Close()
-	total, _, n := mappedExpertBytes(mapped.w, mapped.mmap)
+	total, _, n := paging.MappedExpertBytes(mapped.w, mapped.mmap)
 	if total <= 0 || n == 0 {
 		t.Fatalf("VOID: the fixture maps no expert bytes (total %d, %d experts)", total, n)
 	}
@@ -138,7 +139,7 @@ func TestMappedMoEWorkingSet_isThePagersArithmetic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if paged.pager == nil || paged.pager.total != total || paged.pager.nExperts != n {
+		if paged.pager == nil || paged.pager.TotalMappedBytes() != total || paged.pager.ExpertCount() != n {
 			t.Fatalf("budget %d: the pager manages %+v; the mapped accounting reads %d bytes over %d experts", budget, paged.pager, total, n)
 		}
 		want, wok := moeWorkingSetPrediction(paged)

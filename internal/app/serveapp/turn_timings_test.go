@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -32,7 +33,7 @@ func turnWireServer(t *testing.T, reply string) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{gens: newGenerationRegistry(), jobs: jobs}
+	s := &server{gens: stores.NewGenerationRegistry(), jobs: jobs}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))

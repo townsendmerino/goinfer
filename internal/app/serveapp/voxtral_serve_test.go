@@ -94,7 +94,7 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		windows int
 	}{{"6 s", 96000, 1}, {"35 s", 560000, 2}} {
 		wav := sineWAV(c.samples, 16000)
-		vi, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{mediaType: "audio/wav", data: wav, audio: true})
+		vi, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{MediaType: "audio/wav", Data: wav, Audio: true})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -144,10 +144,10 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 // TestVoxtralPrompt_refusals: a clip over the cost bound, a non-WAV, and a model the tokenizer of which has no [AUDIO] (loadVoxtral) are refused by name.
 func TestVoxtralPrompt_refusals(t *testing.T) {
 	lm, _ := tinyVoxtralLM(t)
-	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
+	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{Data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), Audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
 		t.Errorf("a %d s clip: want the cost-bound refusal, got %v", voxtralMaxSeconds+10, err)
 	}
-	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{data: []byte("not a wav"), audio: true}); err == nil {
+	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{Data: []byte("not a wav"), Audio: true}); err == nil {
 		t.Error("a non-WAV was accepted")
 	}
 	s := &server{models: map[string]*loadedModel{"m": {name: "m", tk: lm.tk}}}
