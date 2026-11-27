@@ -94,17 +94,13 @@ func censusConfig(path string, dir bool) (*Config, error) {
 	return ggufConfig(g)
 }
 
-// censusWorkers is the build's worker count every census prices at (the fit guard's in-flight source term scales with it), so
-// the golden does not depend on the runner's core count.
-const censusWorkers = 4
-
-// buildCensus computes every group. The probe fake is installed for the whole run and the worker count is pinned
-// (censusWorkers), so no reading of this machine enters it.
+// buildCensus computes every group. The probe fake is installed for the whole run, so no reading of this machine enters it:
+// it prices a build of 4 workers on a system that reclaims released pages (the fit guard's in-flight source term), on every
+// runner and every OS.
 func buildCensus(t *testing.T) *census {
 	t.Helper()
-	fake := &probe.Fake{}
+	fake := &probe.Fake{Workers: 4, ReclaimsReleased: true}
 	useProbe(t, fake)
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(censusWorkers))
 	for _, b := range []string{"cuda", "metal", "webgpu"} {
 		defer setCompiled(b, false)()
 	}

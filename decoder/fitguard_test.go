@@ -3,7 +3,6 @@ package decoder
 import (
 	"errors"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -728,8 +727,8 @@ func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
 	}
 }
 
-// TestFitGuard_pricesTheSourceInFlight holds the source term to what a releasing build holds at once: on Linux the smaller
-// of the file and one largest tensor per layer worker, elsewhere (where releasing is only a hint) the whole file.
+// TestFitGuard_pricesTheSourceInFlight holds the source term to what a releasing build holds at once: where released pages
+// are reclaimed the smaller of the file and one largest tensor per layer worker, elsewhere the whole file.
 func TestFitGuard_pricesTheSourceInFlight(t *testing.T) {
 	const gguf = "../testdata/gemma2-hd-tiny.gguf"
 	g, err := OpenGGUFMmap(gguf)
@@ -756,8 +755,8 @@ func TestFitGuard_pricesTheSourceInFlight(t *testing.T) {
 	}
 	probe := fitCheckFor(gguf, "int8", quantInt8, Options{})
 	want := file
-	if runtime.GOOS == "linux" {
-		want = min(file, ggufInFlightSourceBytes(g, runtime.GOMAXPROCS(0)))
+	if reclaimsReleasedPages() {
+		want = min(file, ggufInFlightSourceBytes(g, buildWorkers()))
 	}
 	if probe.srcFileBytes != want {
 		t.Fatalf("fitCheckFor priced the source at %d, want %d", probe.srcFileBytes, want)

@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -41,6 +41,10 @@ const fitWarnRatio = mem.WarnRatio
 
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
+
+// buildWorkers and reclaimsReleasedPages are the machine facts the source term reads (ggufInFlightSourceBytes), indirected like
+// hostRAM so the census and the tests price one machine rather than this one.
+var buildWorkers, reclaimsReleasedPages = probe.BuildWorkers, probe.ReclaimsReleasedPages
 
 // hostRAMAvailable is the same indirection for CURRENTLY AVAILABLE memory (prefill_budget.go): a live figure, never cached, unlike
 // hostRAM's total-RAM snapshot.
@@ -72,10 +76,10 @@ type fitCheck struct {
 	// and a safetensors directory's loader has its own accounting. Zero when not applicable, so a fitCheck literal built elsewhere is
 	// unaffected. The measurement: docs/code-notes/decoder.md#fitCheck.srcFileBytes.
 	//
-	// On Linux the build releases each tensor's pages once it is converted (wbuild's releaseTensor, held for every builder by
-	// TestWbuild_everyTensorReadReleases), so the mapping holds one tensor per layer worker at once: srcFileBytes is the
-	// smaller of the file and that bound (ggufInFlightSourceBytes). Elsewhere the release is only a hint to the kernel, and
-	// the whole file is priced.
+	// Where released pages are reclaimed (reclaimsReleasedPages: Linux), the build releases each tensor's pages once it is
+	// converted (wbuild's releaseTensor, held for every builder by TestWbuild_everyTensorReadReleases), so the mapping holds one
+	// tensor per layer worker at once: srcFileBytes is the smaller of the file and that bound (ggufInFlightSourceBytes).
+	// Elsewhere, or with the worker count unknown, the whole file is priced.
 	srcFileBytes int64
 
 	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf: the
@@ -533,8 +537,8 @@ func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read f
 		if !opts.StreamWeights {
 			if n, ok := GGUFFileBytes(path); ok { // a split set's whole size, not its first shard's
 				f.srcFileBytes = n
-				if err == nil && runtime.GOOS == "linux" {
-					f.srcFileBytes = min(n, ggufInFlightSourceBytes(g, runtime.GOMAXPROCS(0)))
+				if w := buildWorkers(); err == nil && w > 0 && reclaimsReleasedPages() {
+					f.srcFileBytes = min(n, ggufInFlightSourceBytes(g, w))
 				}
 			}
 		}

@@ -18,6 +18,8 @@ func useProbe(t *testing.T, r probe.Reader) {
 	t.Helper()
 	savedRAM, savedAvail, savedColdAvail, savedColdRAM, savedColdRes, savedSidecar, savedFaults :=
 		hostRAM, hostRAMAvailable, coldAvailBytes, coldRAMBytes, coldResidentFraction, sidecarHostRAM, processFaultCounts
+	savedWorkers, savedReclaims := buildWorkers, reclaimsReleasedPages
+	buildWorkers, reclaimsReleasedPages = r.BuildWorkers, r.ReclaimsReleasedPages
 	hostRAM, hostRAMAvailable = r.Physical, r.Available
 	coldAvailBytes, coldRAMBytes, coldResidentFraction = r.Available, r.Physical, r.ResidentFraction
 	sidecarHostRAM, processFaultCounts = r.Physical, r.FaultCounts
@@ -25,6 +27,7 @@ func useProbe(t *testing.T, r probe.Reader) {
 	t.Cleanup(func() {
 		hostRAM, hostRAMAvailable, coldAvailBytes, coldRAMBytes, coldResidentFraction, sidecarHostRAM, processFaultCounts =
 			savedRAM, savedAvail, savedColdAvail, savedColdRAM, savedColdRes, savedSidecar, savedFaults
+		buildWorkers, reclaimsReleasedPages = savedWorkers, savedReclaims
 		resetAvailProbeCache()
 	})
 }
@@ -67,6 +70,9 @@ func TestMemProbe_seamsReadTheProbe(t *testing.T) {
 		if !ok {
 			t.Errorf("%s = %d, outside the probe's %d..%d on five tries", name, got, lo, hi)
 		}
+	}
+	if buildWorkers() != probe.BuildWorkers() || reclaimsReleasedPages() != probe.ReclaimsReleasedPages() {
+		t.Error("buildWorkers or reclaimsReleasedPages does not read the probe")
 	}
 	if _, ok := SwapUsedBytes(); func() bool { _, pok := probe.SwapUsed(); return pok }() != ok {
 		t.Error("SwapUsedBytes and probe.SwapUsed disagree on whether swap is known")
