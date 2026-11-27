@@ -58,7 +58,7 @@ func TestPrepare_rejectsUnboundedTopLogprobs(t *testing.T) {
 // clean end, and the client would read truncated text as complete. "length" is truthful in both cases and a
 // signal clients already act on. Audit M-23.
 func TestStreamTokens_externallyCancelledIsTruncatedNotClean(t *testing.T) {
-	lm := &loadedModel{tk: &tokenizer.Tokenizer{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: &tokenizer.Tokenizer{}}}
 	gr := genRequest{maxTokens: 64}
 
 	// A stream that ends without the budget being reached: the "clean stop" shape.
@@ -477,7 +477,7 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 // N-18.
 func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 	tools := []chat.Tool{{Name: "get_weather"}, {Name: "get_time"}}
-	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
 
 	err := constrainForcedTool(lm, &genRequest{}, nil, true, "", tools)
 	if err == nil {

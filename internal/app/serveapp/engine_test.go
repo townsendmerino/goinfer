@@ -41,7 +41,7 @@ func (e nilReportEngine) Start(context.Context, engine.Request) *engine.Stream {
 // TestDrive_engineWithNoReportFunc: drive reads the report through its Stream at every use, so an engine with a nil
 // report function streams and finishes like the scripted seam (no logprobs, no reuse, no error) instead of panicking.
 func TestDrive_engineWithNoReportFunc(t *testing.T) {
-	lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: nilReportEngine{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: &tokenizer.Tokenizer{}}, modelScriptedSeam: modelScriptedSeam{fakeEngine: nilReportEngine{}}}
 	res, err := lm.drive(context.Background(), genRequest{maxTokens: 4}, nil, nil, func(string) {})
 	if res.finish != "stop" || res.nComp != 0 || res.logprobs != nil || res.stopHit != "" || res.reused != (prefillReuse{}) || res.cancelReason != "" || err != nil {
 		t.Fatalf("drive on a nil-report engine = (%+v, %v), want a clean stop and nothing else", res, err)
@@ -83,7 +83,7 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		{"bidirectional", with(one, func(v *visionInput) { v.spans = multi }), engine.MediaImage, multi, false, nil, 0},
 	} {
 		var got engine.Request
-		lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: mediaEngine{&got}, vision: &qwen25Vision{merge: 2, imgTok: 151655}}
+		lm := &loadedModel{modelIdentity: modelIdentity{tk: &tokenizer.Tokenizer{}}, modelModalities: modelModalities{vision: &qwen25Vision{merge: 2, imgTok: 151655}}, modelScriptedSeam: modelScriptedSeam{fakeEngine: mediaEngine{&got}}}
 		ran := false
 		c.vi.features = func() ([]float32, error) { ran = true; return nil, nil }
 		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}

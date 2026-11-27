@@ -613,6 +613,23 @@
       "why": "internal/app/serveapp/netguard provides loopback DNS-rebinding and browser cross-origin guards, constant-time API-key auth, request body caps, in-flight admission, and JSON error framing below serveapp (SA4). It imports no goinfer package."
     },
     {
+      "name": "serveapp-banner-leaf",
+      "from": [
+        "internal/app/serveapp/banner"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/banner": [
+          "decoder",
+          "internal/runtime/mem"
+        ]
+      },
+      "why": "internal/app/serveapp/banner formats startup status lines for loaded generative models, KV pools, concurrency settings, and server route summaries from resolved Facts below serveapp (SA5). It never imports serveapp."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -922,6 +939,7 @@
       "internal/app/loadflags",
       "internal/app/pullcmd",
       "internal/app/serveapp/adminsock",
+      "internal/app/serveapp/banner",
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/embedders",
       "internal/app/serveapp/jobs",
@@ -949,6 +967,10 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/banner": [
+      "decoder",
+      "internal/runtime/mem"
     ],
     "internal/app/serveapp/carriedids": [
       "chat",
@@ -1426,6 +1448,9 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/banner": [
+      "decoder"
     ],
     "internal/app/serveapp/carriedids": [
       "chat",

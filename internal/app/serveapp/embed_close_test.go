@@ -35,7 +35,7 @@ func (e *blockEncoder) Close() error {
 // handlerCloser.Close waits for a running /v1/embeddings encode before closing the embedder, and a request after it is a 503.
 func TestEmbeddings_closeWaitsForTheEncodeAndLaterRequestsGet503(t *testing.T) {
 	enc := &blockEncoder{stubEncoder: stubEncoder{dim: 4}, started: make(chan struct{}, 1), release: make(chan struct{})}
-	s := &server{embed: enc, embedDim: 4, embedID: "block-embed"}
+	s := &server{embedService: embedService{embed: enc, embedDim: 4, embedID: "block-embed"}}
 	running := make(chan int, 1)
 	go func() { running <- postEmbed(t, s, `{"model":"block-embed","input":["a"]}`).Code }()
 	<-enc.started

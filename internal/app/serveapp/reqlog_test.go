@@ -162,7 +162,7 @@ func TestRequestLog_wiredIntoTheGenerationRoutes(t *testing.T) {
 // (summed over the request's generations) and a lazy tool-union turn that armed adds lazy=armed; a request that did neither keeps the
 // line without them.
 func TestRequestLog_speculationFields(t *testing.T) {
-	lm := &loadedModel{name: "m"}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "m"}}
 	tr := &reqTrace{start: time.Now()}
 	tr.generated(lm, genRequest{}, &genReport{SpecDrafted: 11, SpecAccepted: 9, LazyArmed: true}, nil)
 	tr.generated(lm, genRequest{}, &genReport{SpecDrafted: 4, SpecAccepted: 1}, nil)

@@ -79,7 +79,7 @@ func tinyVoxtralLM(t *testing.T) (*loadedModel, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm := &loadedModel{model: m, tk: tk, name: "voxtral-tiny", audio: &voxtralAudio{dir: dir}}
+	lm := &loadedModel{modelIdentity: modelIdentity{model: m, tk: tk, name: "voxtral-tiny"}, modelModalities: modelModalities{audio: &voxtralAudio{dir: dir}}}
 	t.Cleanup(lm.closeEntryNatives) // the lazily loaded tower keeps its checkpoint mapped until Close
 	return lm, dir
 }
@@ -150,7 +150,7 @@ func TestVoxtralPrompt_refusals(t *testing.T) {
 	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{Data: []byte("not a wav"), Audio: true}); err == nil {
 		t.Error("a non-WAV was accepted")
 	}
-	s := &server{models: map[string]*loadedModel{"m": {name: "m", tk: lm.tk}}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m", tk: lm.tk}}}}}
 	if err := s.loadVoxtral("dir", "cpu"); err != nil {
 		t.Errorf("loadVoxtral with an [AUDIO] token: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestVoxtralPrompt_refusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s = &server{models: map[string]*loadedModel{"m": {name: "m", tk: tk}}}
+	s = &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m", tk: tk}}}}}
 	if err := s.loadVoxtral("dir", "cpu"); err == nil || !strings.Contains(err.Error(), "[AUDIO]") {
 		t.Errorf("a tokenizer with no [AUDIO]: want a named refusal, got %v", err)
 	}

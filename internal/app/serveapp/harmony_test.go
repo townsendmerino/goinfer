@@ -112,7 +112,7 @@ func harmonyTokenizer(t *testing.T) (*tokenizer.Tokenizer, map[string]int) {
 func TestApplyBudget_harmony(t *testing.T) {
 	srv := &server{}
 	tk, _ := harmonyTokenizer(t)
-	lm := &loadedModel{tk: tk}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk}}
 	for _, mode := range []chat.ThinkMode{chat.ThinkAsIs, chat.ThinkTemplate, chat.ThinkOn, chat.ThinkOff} {
 		gr := genRequest{maxTokens: 160}
 		srv.applyBudget(lm, &gr, chat.Harmony().WithThinking(mode), nil, thinkSettings{Mode: mode})
@@ -131,7 +131,7 @@ func TestApplyBudget_harmony(t *testing.T) {
 		t.Error("a turn too short to hold the header and the forced sequence must get no budget")
 	}
 	gr = genRequest{maxTokens: 160}
-	srv.applyBudget(&loadedModel{tk: tk, spec: true}, &gr, chat.Harmony(), nil, thinkSettings{})
+	srv.applyBudget(&loadedModel{modelIdentity: modelIdentity{tk: tk}, modelSpecConfig: modelSpecConfig{spec: true}}, &gr, chat.Harmony(), nil, thinkSettings{})
 	if gr.sp.LogitProcessor != nil {
 		t.Error("speculative decoding on: a processor would silently disable the drafter")
 	}
@@ -228,7 +228,7 @@ func TestResolveThink_reasoningEffort(t *testing.T) {
 // templateFor: the effort lands in gpt-oss's system block and in no other model's prompt.
 func TestTemplateFor_reasoningEffort(t *testing.T) {
 	turns := []chat.Turn{{Role: "user", Content: "Hi"}}
-	oss := &loadedModel{tmpl: chat.Harmony()}
+	oss := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.Harmony()}}
 	if got := oss.templateFor(thinkSettings{Effort: "low"}).Render("", turns); !strings.Contains(got, "Reasoning: low\n\n") {
 		t.Errorf("gpt-oss prompt with effort low:\n%s", got)
 	}
@@ -240,7 +240,7 @@ func TestTemplateFor_reasoningEffort(t *testing.T) {
 		t.Errorf("effort lost when the request also chose a thinking mode:\n%s", got)
 	}
 	for _, tm := range []*chat.Template{chat.ChatML(), chat.Llama3()} {
-		other := &loadedModel{tmpl: tm}
+		other := &loadedModel{modelIdentity: modelIdentity{tmpl: tm}}
 		if a, b := other.templateFor(thinkSettings{Effort: "high"}).Render("", turns), tm.Render("", turns); a != b {
 			t.Errorf("%s: a reasoning_effort moved a non-gpt-oss prompt:\n%s\nvs\n%s", tm.Name(), a, b)
 		}
@@ -313,7 +313,7 @@ func TestSettleCalls_harmony(t *testing.T) {
 func TestApplyBudget_harmonyMustCallOpensTheCall(t *testing.T) {
 	srv := &server{}
 	tk, vocab := harmonyTokenizer(t)
-	lm := &loadedModel{tk: tk}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk}}
 	forced := func(gr genRequest) []int {
 		t.Helper()
 		srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{})
@@ -368,7 +368,7 @@ func TestForcedCall_harmonyBudgetCloseParsesAsACall(t *testing.T) {
 	srv := &server{}
 	tk, vocab := harmonyTokenizer(t)
 	gr := genRequest{maxTokens: 160, callPostCheck: true}
-	srv.applyBudget(&loadedModel{tk: tk}, &gr, chat.Harmony(), nil, thinkSettings{})
+	srv.applyBudget(&loadedModel{modelIdentity: modelIdentity{tk: tk}}, &gr, chat.Harmony(), nil, thinkSettings{})
 	g := []int{vocab["<|channel|>"], vocab["analysis"], vocab["<|message|>"]}
 	var forcedIDs []int
 	for len(g) < gr.maxTokens {

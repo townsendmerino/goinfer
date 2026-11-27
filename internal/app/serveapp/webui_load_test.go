@@ -190,7 +190,7 @@ func fakeLoads(t *testing.T, gate func(ctx context.Context)) *[]modelSpec {
 		if ctx.Err() != nil {
 			return nil, errors.New("load was cancelled with the request")
 		}
-		return &loadedModel{name: spec.name}, nil
+		return &loadedModel{modelIdentity: modelIdentity{name: spec.name}}, nil
 	}
 	return &calls
 }

@@ -1,546 +1,96 @@
 package serveapp
 
-import (
-	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"strconv"
-	"strings"
+import "github.com/townsendmerino/goinfer/internal/app/serveapp/banner"
 
-	"github.com/townsendmerino/goinfer/decoder"
+type bannerFacts = banner.Facts
+
+const (
+	harnessCtx = banner.HarnessCtx
+	kvI8Cost   = banner.KVI8Cost
 )
 
-// The startup banner is the UI.
-//
-// A harness user reads exactly one thing before their first request: the lines `serve` prints before it says it is
-// listening. Everything below is a fact the runtime already knows, so nobody has to discover one request at a time
-// that their agent loop re-prefills every turn (the dsh
-// recipe in docs/server.md: "set expectations, don't let the harness discover them").
-//
-// The banner is built as a function returning lines, not a run of Fprintf calls, so a test can assert it against the
-// runtime's own state (TestBanner_tellsTheTruth). A banner that drifts from what the server does is worse than no
-// banner.
+var (
+	samplingLine = banner.SamplingLine
+	harnessLine  = banner.HarnessLine
+)
 
-// bannerFacts is everything the banner reports, read off the runtime once. Split out so the
-// banner is a pure function of resolved state and can be asserted against that state in a
-// test — without a GPU, and without capturing stderr.
-type bannerFacts struct {
-	decodePath   string
-	headTable    string // the embedding / LM-head table's precision (decoder.Model.HeadTable); "" when unknown
-	prefillPath  string
-	resident     bool // the model decodes through the resident runner (⇒ stateless, no prefix reuse)
-	snapshots    bool // the resident can hold prefix snapshots in host memory (decoder.Model.KVSnapshotsSupported)
-	hasTemplate  bool
-	toolCallForm bool // the template exposes a constrainable tool-call form
-	spec         bool
-	blockDrafter bool
-
-	// The context cap, KV at that cap, and what remains of the RAM budget, printed at every load and not only when
-	// something is tight: a load reading "79% of budget" and a first request swapping at 14 GB RSS are the same load,
-	// with no line connecting them.
-	fitKnown       bool
-	fitCtx         int
-	fitKVBytes     int64
-	fitWeightBytes int64
-	fitBudgetBytes int64
-
-	// The context a text request is ACTUALLY held to (contextWindow — the function prepare enforces and
-	// /v1/models publishes as context_window), and the model's own maximum, so the banner can say which of
-	// the two bound it. 0 = unknown.
-	ctxWindow    int
-	maxPositions int
-
-	// ctxNote is how the resident backend arrived at its context when no -ctx set it (decoder.Model.ResidentContextNote:
-	// "fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"); "" when the backend gives none.
-	ctxNote string
-
-	// harnessKVBytes is the KV one resident slot would hold at harnessCtx positions (decoder.Model.ResidentContextKVBytes),
-	// the price harnessLine quotes; 0 off the resident path.
-	harnessKVBytes int64
-
-	// kv is each cache the load built, with the precision requested, the one delivered, and why they differ
-	// (decoder.Model.KVPrecisionReports): the resident cache, or the CPU cache off the resident path.
-	kv []decoder.KVPrecisionReport
-
-	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
-	residentReuseOff bool
-
-	// residentDecline: why a backend that was asked for did not build a resident path (decoder.Model.ResidentDecline), "" when it did or none was asked.
-	residentDecline string
-
-	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots); 1 for
-	// a backend or family without them, 0 off the resident path.
-	kvSlots int
-	// kvPool and kvShare: the positions a resident's shared KV pool holds and each conversation's guaranteed share
-	// (decoder.Model.ResidentKVPool); zeros without a pool. kvPoolDetail is the rest of that pool, and kvShareState and kvShareWhy
-	// whether a request can take another conversation's KV rows (decoder.Model.KVShareState).
-	kvPool, kvShare          int
-	kvPoolDetail             decoder.KVPoolDetail
-	kvShareState, kvShareWhy string
-
-	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
-	towerReserve int64
-
-	// concurrent: how many generations of this model run at once (loadedModel.concurrent).
-	concurrent int
-
-	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
-	// (decoder.Model.EnableCPUBatch).
-	cpuBatched bool
-
-	// sampling: the checkpoint's recommended sampling (decoder.Config.Sampling), nil when it carries none.
-	sampling *decoder.RecommendedSampling
+func (cfg config) bannerConfig() banner.Config {
+	return banner.Config{
+		Ctx:            cfg.load.Ctx,
+		KVSessions:     cfg.kvSessions,
+		KVSessionsSet:  cfg.kvSessionsSet,
+		KVHostBytes:    cfg.kvHostBytes,
+		KVHostBytesHow: cfg.kvHostBytesHow,
+		KVDemote:       cfg.kvDemote,
+		MaxConcurrent:  cfg.maxConcurrent,
+		PrefillChunk:   cfg.prefillChunk,
+		CPUBatch:       cfg.cpuBatch,
+	}
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
 	_, prefillWhy := lm.model.PrefillPath()
 	f := bannerFacts{
-		decodePath:   lm.model.DecodePath(),
-		headTable:    lm.model.HeadTable(),
-		prefillPath:  prefillWhy,
-		resident:     lm.model.ResidentActive(),
-		snapshots:    lm.model.KVSnapshotsSupported(),
-		hasTemplate:  lm.tmpl != nil,
-		spec:         lm.spec,
-		blockDrafter: lm.blockSpec != nil,
+		DecodePath:   lm.model.DecodePath(),
+		HeadTable:    lm.model.HeadTable(),
+		PrefillPath:  prefillWhy,
+		Resident:     lm.model.ResidentActive(),
+		Snapshots:    lm.model.KVSnapshotsSupported(),
+		HasTemplate:  lm.tmpl != nil,
+		Spec:         lm.spec,
+		BlockDrafter: lm.blockSpec != nil,
 	}
 	if lm.tmpl != nil {
-		_, _, _, _, f.toolCallForm = lm.tmpl.ToolCallWrapper()
+		_, _, _, _, f.ToolCallForm = lm.tmpl.ToolCallWrapper()
 	}
-	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
-	f.ctxWindow = lm.contextWindow(lm.adapter == "")
-	f.maxPositions = lm.model.Config().MaxPositions
-	f.kv = lm.model.KVPrecisionReports()
-	f.ctxNote = lm.model.ResidentContextNote()
-	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
-	f.kvSlots = lm.model.ResidentKVSlots()
-	f.kvPoolDetail = lm.model.ResidentKVPool()
-	f.kvShareState, f.kvShareWhy = lm.model.KVShareState()
-	f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
-	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
-	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
+	f.FitCtx, f.FitKVBytes, f.FitWeightBytes, f.FitBudgetBytes, f.FitKnown = lm.model.FitBudgetSummary()
+	f.CtxWindow = lm.contextWindow(lm.adapter == "")
+	f.MaxPositions = lm.model.Config().MaxPositions
+	f.KV = lm.model.KVPrecisionReports()
+	f.CtxNote = lm.model.ResidentContextNote()
+	f.HarnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
+	f.KVSlots = lm.model.ResidentKVSlots()
+	f.KVPoolDetail = lm.model.ResidentKVPool()
+	f.KVShareState, f.KVShareWhy = lm.model.KVShareState()
+	f.KVPool, f.KVShare = f.KVPoolDetail.Positions, f.KVPoolDetail.Guaranteed
 	if lm.model.EffectiveBackend() != "cpu" {
-		f.residentDecline = lm.model.ResidentDecline()
+		f.ResidentDecline = lm.model.ResidentDecline()
 	}
-	f.concurrent = lm.concurrent
-	f.sampling = lm.sampling
+	f.Concurrent = lm.concurrent
+	f.Sampling = lm.sampling
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
-		f.residentReuseOff = true
+		f.ResidentReuseOff = true
 	}
 	return f
 }
 
-// modelBanner returns the resolved-state lines for one loaded model, in the order a harness user wants them: what it
-// is, where it runs, how much context, whether turns are reused, what it can do. The caller indents each line two
-// spaces to sit under the "loaded ..." line.
 func modelBanner(lm *loadedModel, cfg config) []string {
 	f := factsOf(lm)
-	f.towerReserve = towerReserve(cfg, lm.source)
+	f.TowerReserve = towerReserve(cfg, lm.source)
 	return modelBannerFrom(f, cfg)
 }
 
 func modelBannerFrom(f bannerFacts, cfg config) []string {
-	var out []string
-
-	// Where it runs. RESOLVED, not requested: both the resident decode path and the batched
-	// prefill fall back silently, so a model can report a GPU backend and still take one
-	// forward per prompt token.
-	out = append(out, "decode path: "+f.decodePath)
-	out = append(out, "prefill path: "+f.prefillPath)
-	if f.headTable != "" { // the table every token streams, and the one --embed-int4 changes by backend
-		line := "head table: " + f.headTable
-		if f.headTable == "int4" {
-			line += " (--embed-int4; --embed-int4=false pins int8)"
-		}
-		out = append(out, line)
-	}
-	out = append(out, samplingLine(f.sampling))
-
-	// How much context, and at what KV precision: the two numbers that decide whether a harness's turn fits at all.
-	// The line prints the resolved limit, ctxWindow (what prepare enforces and /v1/models publishes), and says what
-	// set it. The limit is min(model maximum, resident KV cap), and neither "backend default" nor the -ctx value is
-	// that; an invisible default found out by degradation is the exact complaint users make about other local
-	// servers. cfg.load.Ctx is the requested -ctx for this model (the caller passes the per-model ctx= override when
-	// there is one).
-	ctxLine := "context: "
-	byDefault := "backend default" // what set an unrequested context: the backend's own account of it when it gives one
-	if f.ctxNote != "" {
-		byDefault = f.ctxNote
-	}
-	switch {
-	case f.ctxWindow <= 0:
-		ctxLine += "unknown (the model declares no maximum)"
-	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions && cfg.load.Ctx > 0:
-		ctxLine += fmt.Sprintf("%d tokens (--ctx; model maximum %d)", f.ctxWindow, f.maxPositions)
-	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
-		ctxLine += fmt.Sprintf("%d tokens (%s; model maximum %d — raise with --ctx)", f.ctxWindow, byDefault, f.maxPositions)
-	case f.maxPositions == 0 && cfg.load.Ctx > 0:
-		// A config that declares no max_position_embeddings (Gemma 3's): the figure is the resident KV capacity, not
-		// a model limit.
-		ctxLine += fmt.Sprintf("%d tokens (--ctx; the model declares no maximum)", f.ctxWindow)
-	case f.maxPositions == 0:
-		ctxLine += fmt.Sprintf("%d tokens (%s; the model declares no maximum — raise with --ctx)", f.ctxWindow, byDefault)
-	case cfg.load.Ctx > f.ctxWindow:
-		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.load.Ctx)
-	default:
-		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
-	}
-	// On the CPU path the window is the model's whole maximum (-ctx is the GPU-resident KV capacity and caps nothing
-	// here) and KV is allocated per request, so this figure and the "fit:" KV cost below are a ceiling a request
-	// reaches only by filling the window. Said here, beside the figure: after a CUDA decline the two lines otherwise
-	// read as the same question with different answers.
-	cpuNote := ""
-	if cpuCeiling := f.ctxWindow > 0 && !f.resident && f.ctxWindow == f.maxPositions; cpuCeiling {
-		cpuNote += " — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held"
-		if f.residentDecline != "" {
-			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
-		}
-	}
-	ctxLine += kvBannerPart(f.kv, strings.HasPrefix(f.decodePath, "cuda-resident"))
-	ctxLine += cpuNote
-	out = append(out, ctxLine)
-	if l := harnessLine(f); l != "" {
-		out = append(out, l)
-	}
-
-	// The memory this context cap actually costs, and what is left: the line a harness user needs to judge whether
-	// their own turn size fits, before finding out from swap. fitBudgetBytes is priced against currently available
-	// memory (decoder.FitBudgetSummary), read after the model is already resident, so the weights are already
-	// excluded from it by the OS's own accounting. Subtracting them again would double-count a footprint that is not
-	// there (the bug AdmitPrefillMemory once had at request time). Weights are still shown, for the reader's own
-	// arithmetic.
-	// A resident of two or more slots holds every slot's KV from the load, so the line prices its pool (the resident's own account),
-	// not one conversation's cap.
-	if f.fitKnown {
-		kv, what := f.fitKVBytes, fmt.Sprintf("%d-token cap needs", f.fitCtx)
-		if f.resident && f.kvSlots > 1 && f.kvPoolDetail.Bytes > 0 {
-			kv, what = f.kvPoolDetail.Bytes, fmt.Sprintf("%d KV slots at a %d-token cap hold", f.kvSlots, f.fitCtx)
-		}
-		fitLine := fmt.Sprintf(
-			"fit: %s %s KV (weights %s, budget %s, %s left for a request's own prefill)",
-			what, mem.GiB(kv), mem.GiB(f.fitWeightBytes),
-			mem.GiB(f.fitBudgetBytes), mem.GiB(f.fitBudgetBytes-kv))
-		if !f.resident && f.ctxWindow > 0 && f.fitCtx == f.maxPositions { // the CPU path's ceiling, as the context line says
-			fitLine += " — a ceiling, reached only by a request that fills the window"
-		}
-		out = append(out, fitLine)
-	}
-
-	// Prefix reuse, and why when it is off or narrower than it sounds: the line that makes an agent loop's per-turn
-	// re-prefill visible before it is paid for. A resident model does not use the CPU-side session LRU (its KV lives
-	// on the device; see loadedModel.drive), but its own cache reuses the prefix committed by the last generation
-	// (decoder/resident_reuse.go): a continuing conversation prefills only its new suffix, and a different
-	// conversation re-prefills in full.
-	if f.resident && f.kvSlots > 0 && f.ctxWindow > 0 {
-		out = append(out, kvPlanLine(f, cfg))
-		if l := kvPoolBannerLine(f); l != "" {
-			out = append(out, l)
-		}
-	}
-	switch {
-	case f.resident && f.residentReuseOff:
-		out = append(out, "session reuse: OFF — GOINFER_NO_RESIDENT_REUSE is set, so every turn re-prefills its whole prompt")
-	case f.resident && f.kvSlots > 1:
-		line := fmt.Sprintf("session reuse: on the GPU cache, %d conversations kept resident — each reuses its own prefix; "+
-			"a further one takes the least recently used slot and re-prefills", f.kvSlots)
-		if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet && strings.HasPrefix(f.decodePath, "metal") {
-			line += fmt.Sprintf(" (--kv-sessions not given: Metal keeps %d by default, and a memory guard may keep fewer; --kv-sessions %d asks for %d)",
-				f.kvSlots, cfg.kvSessions, cfg.kvSessions)
-		} else if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet {
-			// Not Metal: the Metal wording would misreport the count a CUDA card was granted.
-			line += fmt.Sprintf(" (--kv-sessions not given: the default asks for %d and the memory guard allowed %d; --kv-sessions %d asks for %d)",
-				cfg.kvSessions, f.kvSlots, cfg.kvSessions, cfg.kvSessions)
-		} else if cfg.kvSessions > f.kvSlots {
-			line += fmt.Sprintf(" (--kv-sessions %d; the memory guard allowed %d)", cfg.kvSessions, f.kvSlots)
-		}
-		out = append(out, line)
-	case f.resident:
-		why := "--kv-sessions applies to the CPU path only"
-		if cfg.kvSessions > 1 {
-			why = fmt.Sprintf("--kv-sessions %d asked for more, but this backend or model family keeps one GPU KV slot, "+
-				"or the memory guard allowed only one", cfg.kvSessions)
-		}
-		out = append(out, "session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; "+
-			"switching to another conversation re-prefills its whole prompt ("+why+")")
-	case cfg.kvSessions > 0:
-		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
-	default:
-		out = append(out, "session reuse: OFF (--kv-sessions 0)")
-	}
-
-	if f.resident {
-		switch {
-		case cfg.kvHostBytes <= 0:
-			how := cfg.kvHostBytesHow
-			if how == "" {
-				how = "-kv-host-bytes 0"
-			}
-			out = append(out, "prefix snapshots: OFF ("+how+")")
-		case !f.snapshots:
-			out = append(out, "prefix snapshots: not on this backend or model family")
-		default:
-			out = append(out, fmt.Sprintf("prefix snapshots: budget %s (%s), 0 B held; host memory is held only while a snapshot is "+
-				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", mem.GiB(cfg.kvHostBytes), cfg.kvHostBytesHow))
-			if cfg.kvDemote {
-				out = append(out, "released conversations: kept in that budget where the backend can, and brought back when they return")
-			}
-		}
-	}
-
-	// What it can do, in the terms a harness asks about.
-	var feats []string
-	switch {
-	case !f.hasTemplate:
-		feats = append(feats, "no chat template — raw completion only")
-	case f.toolCallForm:
-		feats = append(feats, "tools (constrainable call form)")
-	default:
-		feats = append(feats, "tools: parse-only (a named tool_choice cannot be constrained on this template)")
-	}
-	feats = append(feats, "structured output")
-	if f.spec {
-		feats = append(feats, "speculative: n-gram")
-	}
-	if f.blockDrafter {
-		feats = append(feats, "speculative: block drafter")
-	}
-	out = append(out, "features: "+strings.Join(feats, " · "))
-	return out
+	return banner.ModelLines(f, cfg.bannerConfig())
 }
 
-// serverBanner returns the once-per-process lines: which routes a client can actually call.
-// A harness speaks exactly one of these families, and "which URL do I point it at" is the
-// first question every integration recipe has to answer.
 func serverBanner(s *server, cfg config) []string {
-	// The generation routes are always registered (a model can be loaded after startup); with none
-	// loaded yet they answer 404 "model not found", and the line says so.
-	gen := "/v1/chat/completions /v1/completions /v1/responses /v1/messages"
-	if len(s.models) == 0 {
-		gen += " (after a model is loaded)"
-	}
-	routes := []string{gen, "/v1/embeddings"}
-	if len(s.speech) > 0 {
-		routes = append(routes, "/v1/audio/transcriptions")
-	}
-	if cfg.web {
-		routes = append(routes, "/ (web UI)")
-	}
-	if cfg.allowAdmin {
-		routes = append(routes, "/admin/models/{load,unload}", "/admin/generations", "/admin/generations/{id}/cancel")
-	}
-	out := []string{"routes: " + strings.Join(routes, " ")}
-	// Load cost, split by phase. The split is what makes it actionable: "load 9.2s" is a number to be annoyed by,
-	// "9.2s, 82% build" says the disk is not the problem and a different quant might be. Printed only for a model
-	// whose loader instrumented it.
+	loadSum := ""
 	for _, lm := range s.models {
 		if sum := lm.model.LoadProfile().Summary(); sum != "" {
-			out = append(out, sum)
-			break // one line; a zoo would otherwise print one per model
+			loadSum = sum
+			break
 		}
 	}
-	if !cfg.web {
-		out = append(out, "web UI: off (-web enables a browser UI at / for chat and model pulls)")
-	}
-	return out
+	return banner.ServerLines(banner.ServerConfig{
+		HasModels:   len(s.models) > 0,
+		HasSpeech:   len(s.speech) > 0,
+		Web:         cfg.web,
+		AllowAdmin:  cfg.allowAdmin,
+		LoadSummary: loadSum,
+	})
 }
 
-// concurrencyLine says how many generations of a model run at once (-max-concurrent) and why fewer than asked when
-// that happens; "" when nothing needs saying. It is not part of the load-time banner: setConcurrency decides after
-// every model, adapter and vision tower has loaded, so a line printed with the banner would report the undecided
-// value.
 func concurrencyLine(f bannerFacts, cfg config) string {
-	switch {
-	case f.concurrent > 1 && f.resident:
-		line := fmt.Sprintf("concurrency: %d generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent)", f.concurrent)
-		if cfg.maxConcurrent > f.concurrent {
-			line += fmt.Sprintf("; %d asked, capped by the %d resident KV slots (--kv-sessions)", cfg.maxConcurrent, f.kvSlots)
-		}
-		if cfg.prefillChunk > 0 {
-			line += fmt.Sprintf("; a long prompt arriving mid-decode prefills in %d-token chunks (-prefill-chunk)", cfg.prefillChunk)
-		}
-		return line
-	case f.concurrent > 1:
-		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
-		if f.cpuBatched {
-			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
-		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
-			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights)"
-		}
-		if cfg.maxConcurrent > f.concurrent {
-			line += fmt.Sprintf("; %d asked, capped by --kv-sessions %d", cfg.maxConcurrent, cfg.kvSessions)
-		}
-		return line
-	case cfg.maxConcurrent > 1 && f.resident:
-		return fmt.Sprintf("concurrency: one generation at a time — -max-concurrent %d needs a resident that "+
-			"batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)", cfg.maxConcurrent)
-	case cfg.maxConcurrent > 1:
-		return fmt.Sprintf("concurrency: one generation at a time — -max-concurrent %d applies to CPU models "+
-			"and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)", cfg.maxConcurrent)
-	}
-	return ""
-}
-
-// harnessCtx is the resident context a coding agent's session needs: its first request with room to continue, and the
-// candidate the GPU backends' fit-by-default context asks for (decoder.MetalFitDefaultCtx, cuda's fitDefaultCtx).
-const harnessCtx = 16384
-
-// harnessFirstRequest is the size in tokens of the first request a coding agent sends (system prompt and tool schemas;
-// opencode's measured 11,137).
-const harnessFirstRequest = 11137
-
-// harnessLine is the startup warning for a GPU-resident model whose context is under harnessCtx: whether an agent
-// harness's first request fits at all, and the --ctx that holds a session with what its KV costs across this load's
-// slots. "" when the context is enough, unknown, or not a resident one (the CPU path allocates KV per request).
-func harnessLine(f bannerFacts) string {
-	if !f.resident || f.ctxWindow <= 0 || f.ctxWindow >= harnessCtx {
-		return ""
-	}
-	line := fmt.Sprintf("harness: %d tokens is short for a coding agent — its first request is about 11k tokens (opencode: %d)",
-		f.ctxWindow, harnessFirstRequest)
-	if f.ctxWindow <= harnessFirstRequest {
-		line += " and will be refused (context_length_exceeded)"
-	} else {
-		line += fmt.Sprintf(", which leaves %d for the session", f.ctxWindow-harnessFirstRequest)
-	}
-	switch {
-	case f.maxPositions > 0 && f.maxPositions < harnessCtx:
-		return line + fmt.Sprintf("; the model's own maximum is %d, so --ctx cannot raise it to %d", f.maxPositions, harnessCtx)
-	case f.harnessKVBytes > 0:
-		slots := max(f.kvSlots, 1)
-		noun := "slots"
-		if slots == 1 {
-			noun = "slot"
-		}
-		return line + fmt.Sprintf("; --ctx %d holds it for %s of KV (%d %s)", harnessCtx,
-			mem.GiB(int64(slots)*f.harnessKVBytes), slots, noun)
-	}
-	return line + fmt.Sprintf("; --ctx %d holds it", harnessCtx)
-}
-
-// kvPlanLine is the "KV plan" line: what the resident plan chose and, when it is less than was asked for, why. The
-// numbers are the resolved ones (decoder.Model.ResidentKVSlots and the enforced context window), not the request; the
-// reasons are those the banner can state without the planner's own arithmetic: slots asked for beyond those granted,
-// an explicit -ctx, and the VRAM held back for a CUDA vision tower.
-func kvPlanLine(f bannerFacts, cfg config) string {
-	noun := "conversations"
-	if f.kvSlots == 1 {
-		noun = "conversation"
-	}
-	line := fmt.Sprintf("KV plan: %d %s x %d positions", f.kvSlots, noun, f.ctxWindow)
-	if f.kvPool > 0 && f.kvShare > 0 && f.kvShare < f.ctxWindow {
-		// one conversation may use more than its share of a shared pool (cuda/kvpool.go), so the product above would overstate it
-		line = fmt.Sprintf("KV plan: a %d-position pool for %d %s; each is guaranteed %d, and one can use up to %d", f.kvPool, f.kvSlots, noun,
-			f.kvShare, f.ctxWindow)
-	}
-	var why []string
-	if cfg.kvSessions > f.kvSlots {
-		why = append(why, fmt.Sprintf("%d asked for", cfg.kvSessions))
-	}
-	if cfg.load.Ctx > 0 {
-		why = append(why, fmt.Sprintf("--ctx %d", cfg.load.Ctx))
-	}
-	if f.towerReserve > 0 {
-		why = append(why, fmt.Sprintf("%s held back for the vision tower", mem.GiB(f.towerReserve)))
-	}
-	if len(why) > 0 {
-		line += " (" + strings.Join(why, "; ") + ")"
-	}
-	return line
-}
-
-// kvPoolBannerLine names a resident's shared KV pool: its tokens and block
-// size, precision and device bytes, the layer groups that hold pools and what a window group keeps, the sharing scope, and how much of
-// it one conversation can use. A sliding-window layer keeps only a conversation's newest rows, so a windowed pool never reads as all
-// one conversation's. "" without a pool.
-func kvPoolBannerLine(f bannerFacts) string {
-	d := f.kvPoolDetail
-	if d.Positions <= 0 || d.BlockRows <= 0 {
-		return ""
-	}
-	groups := "group: "
-	if len(d.Groups) > 1 {
-		groups = "groups: "
-	}
-	groups += strings.Join(d.Groups, ", ")
-	if d.WindowRows > 0 {
-		groups += fmt.Sprintf(", whose sliding-window layers keep a conversation's newest %s rows", commaInt(d.WindowRows))
-	}
-	scope := "a prompt can take another conversation's KV rows"
-	if f.kvShareState != "on" {
-		scope = "no conversation takes another's KV rows (" + f.kvShareWhy + ")"
-	}
-	use := "one conversation can use all of it"
-	if f.ctxWindow > 0 && (f.ctxWindow < d.Positions || d.WindowRows > 0) {
-		use = fmt.Sprintf("one conversation can use up to %s of them", commaInt(f.ctxWindow))
-	}
-	return fmt.Sprintf("KV pool: %s tokens in blocks of %d (%s, %s; %s); %s; %s.", commaInt(d.Positions), d.BlockRows, d.Precision,
-		kvPoolBytes(d.Bytes), groups, scope, use)
-}
-
-// kvPoolBytes is n as the banner prints a pool: GiB from 1 GiB up, MiB below it.
-func kvPoolBytes(n int64) string {
-	if n >= 1<<30 {
-		return mem.GiB(n)
-	}
-	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
-}
-
-// commaInt is n with thousands separators.
-func commaInt(n int) string {
-	s := strconv.Itoa(n)
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
-	}
-	return s
-}
-
-// samplingLine says which sampling a request that leaves fields out gets: the checkpoint's recommended values and where
-// they came from, what is recorded but not applied, or that there are none and the server default applies.
-func samplingLine(rs *decoder.RecommendedSampling) string {
-	if rs == nil {
-		return "sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary"
-	}
-	set := rs.Applied()
-	line := "sampling: " + rs.Source + " recommends "
-	if len(set) == 0 {
-		line += "nothing the sampler applies"
-	} else {
-		line += strings.Join(set, ", ") + ", applied to the fields a request leaves out"
-	}
-	if rs.RepetitionPenalty != nil {
-		line += "; not applied: repetition_penalty " + strconv.FormatFloat(*rs.RepetitionPenalty, 'g', -1, 64) +
-			" (it divides logits; the sampler's penalties are subtractive)"
-	}
-	return line
-}
-
-// kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
-// reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
-// "lossy" marks f16 or i8 that the operator asked for by name. A CUDA resident's i8 cache (cudaResident: the load's decode path is
-// cuda-resident) also names its measured cost, which was measured there and nowhere else (docs/kv-precision-matrix.md, "Measured cost").
-// kvI8Cost is CUDA int8 KV's measured cost, as the banner states it: the fidelity and speed results of docs/measurements/cuda-kv-i8-2026-11/s6-registration.md (and s4-registration.md's).
-const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill near f16's"
-
-func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
-	if len(reps) == 0 {
-		return " · KV f32"
-	}
-	var s strings.Builder
-	for i, r := range reps {
-		label := "KV"
-		if i > 0 {
-			label = "CPU KV"
-		}
-		note := "requested " + r.Requested
-		if r.Reason != "" && r.Requested != r.Delivered {
-			note += ": " + r.Reason
-		}
-		if (r.Delivered == "f16" || r.Delivered == "i8") && r.Delivered == r.Requested {
-			note += ", lossy"
-			if r.Delivered == "i8" && r.Cache == "resident" && cudaResident {
-				note += ": " + kvI8Cost
-			}
-		}
-		s.WriteString(" · " + label + " " + r.Delivered + " (" + note + ")")
-	}
-	return s.String()
+	return banner.ConcurrencyLine(f, cfg.bannerConfig())
 }

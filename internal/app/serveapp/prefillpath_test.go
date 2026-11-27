@@ -34,8 +34,8 @@ func tinyServed(t *testing.T) (*server, *loadedModel) {
 		t.Fatalf("load tiny fixture: %v", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	lm := &loadedModel{name: "tiny", model: m}
-	return &server{models: map[string]*loadedModel{"tiny": lm}}, lm
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "tiny", model: m}}
+	return &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"tiny": lm}}}, lm
 }
 
 // TestServe_modelsReportsResolvedPaths: /v1/models must carry the paths a model actually got, so a

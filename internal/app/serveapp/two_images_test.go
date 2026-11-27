@@ -112,7 +112,7 @@ func TestTwoImages_refusals(t *testing.T) {
 		t.Errorf("the cap message %q does not name the cap", m)
 	}
 	two := []imageRef{{Data: []byte("a")}, {Data: []byte("b")}}
-	_, err := (&loadedModel{vision: &glmVision{glmOcrTower: &glmOcrTower{}}}).visionPromptN(nil, "", nil, two, false, "")
+	_, err := (&loadedModel{modelModalities: modelModalities{vision: &glmVision{glmOcrTower: &glmOcrTower{}}}}).visionPromptN(nil, "", nil, two, false, "")
 	if err == nil || !strings.Contains(err.Error(), "GLM-OCR takes one image") {
 		t.Errorf("GLM-OCR with two images: %v", err)
 	}
