@@ -127,7 +127,7 @@ func stateSpecsByFamily(a *darch.Architecture, l int) []StateSpec {
 		return mamba(archparts.Mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
 	case a.Inkling2 != nil:
 		kv := a.NumKVHeads * a.HeadDim
-		return []StateSpec{{"window", (a.Inkling2.ConvK - 1) * (2*kv + 2*a.HiddenDim)}}
+		return []StateSpec{{Name: "window", Floats: (a.Inkling2.ConvK - 1) * (2*kv + 2*a.HiddenDim)}}
 	case a.Nemotron != nil && a.Nemotron.BlockKind[l] == archparts.NemoMamba:
 		n := a.Nemotron
 		return mamba(archparts.Mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})
