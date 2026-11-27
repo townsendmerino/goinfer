@@ -16,7 +16,7 @@
     "internal/runtime/families/arch_laguna.go",
     "internal/runtime/wbuild/gguf_build_laguna.go"
   ],
-  "deps_hash": "sha256:42d7858ea8398b17dd5bd7a9ba5f8273ae3c68c81b0d68b30712e0e1d008a847",
+  "deps_hash": "sha256:dd18668ab23ee08e2e2093af2a6a8da007fcca278cf27622ff4ba767abbb24f7",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
