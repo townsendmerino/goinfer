@@ -58,12 +58,12 @@ func TestLayerPaging_bitExact(t *testing.T) {
 	if !slicesEqualInt(a, b) {
 		t.Fatalf("dense streaming changed the decode:\n full:  %v\n paged: %v", a, b)
 	}
-	pf, ev := paged.layerPager.stats()
+	pf, ev := paged.layerPager.Stats()
 	if pf == 0 || ev == 0 {
 		t.Fatalf("streaming did not run (prefetches=%d evictions=%d)", pf, ev)
 	}
 	t.Logf("dense streaming byte-identical over %d tokens at window=%d; prefetches=%d evictions=%d",
-		len(a), paged.layerPager.window, pf, ev)
+		len(a), paged.layerPager.Window(), pf, ev)
 }
 
 // TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe is S4 item 2's WIRING gate (task-never-swap-2026-09.md):
@@ -109,7 +109,7 @@ func TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe(t *testing.T) {
 			t.Fatal("no layer pager built with a modest live-available figure — " +
 				"resolveWeightCacheBudget is not wired into Load")
 		}
-		t.Logf("window=%d", paged.layerPager.window)
+		t.Logf("window=%d", paged.layerPager.Window())
 	})
 	t.Run("generous live probe means the model fits, no pager needed", func(t *testing.T) {
 		defer injectHostRAMAvailable(t, 10<<30)() // 10 GB available -> 5 GB budget, well past 1.66 GB total
@@ -162,9 +162,9 @@ func TestLayerPager_residentBytesWithinBudget(t *testing.T) {
 	if p == nil {
 		t.Fatal("paged load built no layer pager")
 	}
-	layerBytes := make([]int64, len(p.spans))
+	layerBytes := make([]int64, len(p.Spans()))
 	var maxLayer int64
-	for l, spans := range p.spans {
+	for l, spans := range p.Spans() {
 		for _, s := range spans {
 			layerBytes[l] += int64(len(s))
 		}
@@ -172,13 +172,13 @@ func TestLayerPager_residentBytesWithinBudget(t *testing.T) {
 			maxLayer = layerBytes[l]
 		}
 	}
-	t.Logf("budget=%d maxLayer=%d window=%d ahead=%d", budget, maxLayer, p.window, p.ahead)
-	if p.window <= p.ahead+2 {
-		t.Skipf("budget=%d (maxLayer=%d) clamped window=%d to the correctness floor (ahead+2=%d) — pick a larger budget to exercise the budget-derived case", budget, maxLayer, p.window, p.ahead+2)
+	t.Logf("budget=%d maxLayer=%d window=%d ahead=%d", budget, maxLayer, p.Window(), p.Ahead())
+	if p.Window() <= p.Ahead()+2 {
+		t.Skipf("budget=%d (maxLayer=%d) clamped window=%d to the correctness floor (ahead+2=%d) — pick a larger budget to exercise the budget-derived case", budget, maxLayer, p.Window(), p.Ahead()+2)
 	}
 	residentBytes := func() int64 {
 		var b int64
-		for l, resident := range p.state {
+		for l, resident := range p.ResidentState() {
 			if resident {
 				b += layerBytes[l]
 			}
@@ -187,14 +187,14 @@ func TestLayerPager_residentBytesWithinBudget(t *testing.T) {
 	}
 
 	var peak int64
-	for l := range p.spans {
+	for l := range p.Spans() {
 		p.EnterLayer(l)
 		if b := residentBytes(); b > peak {
 			peak = b
 		}
 	}
-	t.Logf("budget=%d window=%d ahead=%d peak resident=%d", budget, p.window, p.ahead, peak)
+	t.Logf("budget=%d window=%d ahead=%d peak resident=%d", budget, p.Window(), p.Ahead(), peak)
 	if peak > budget {
-		t.Errorf("peak resident bytes %d exceeds requested budget %d (window=%d, ahead=%d — resident set peaks at window+ahead layers)", peak, budget, p.window, p.ahead)
+		t.Errorf("peak resident bytes %d exceeds requested budget %d (window=%d, ahead=%d — resident set peaks at window+ahead layers)", peak, budget, p.Window(), p.Ahead())
 	}
 }

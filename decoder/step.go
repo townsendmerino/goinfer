@@ -445,16 +445,6 @@ func stepBatchRange(r any) (lo, hi int, ok bool) {
 	return lo, hi, true
 }
 
-// stepMarkAlign is PrefillMarkedAvailable's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
-// when r cannot mark a prefill (canStep refuses a passRows batch with At).
-func stepMarkAlign(r any) (align int, ok bool) {
-	pf := SubsystemsOf(r).Prefill
-	if !pf.PrefillMarkedAvailable() {
-		return 0, false
-	}
-	return pf.PrefillMarkAlign(), true
-}
-
 // canDecode reports whether m's resident offers the decode-token shape with output out (canStep on a passToken batch).
 func (m *Model) canDecode(out stepOut) bool {
 	if m.resident == nil {

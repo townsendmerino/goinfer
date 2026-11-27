@@ -475,10 +475,10 @@ func TestKV2_copyIntoASlotWithAFloor(t *testing.T) {
 	m.kv.Commit(dst, m.kvRootIn(nil, ""), slices.Clone(B), nil, len(B), m.kvClassMap())
 	share := func(prompt []int, reuse int) (int, int) {
 		t.Helper()
-		acq := kvAcquired{reuse: reuse, slot: dst, src: -1}
+		acq := kvAcquired{Reuse: reuse, Slot: dst, Src: -1}
 		before := rf.copies
 		m.residentShare(prompt, nil, nil, KVScope{}, &acq)
-		return rf.copies - before, acq.shared
+		return rf.copies - before, acq.Shared
 	}
 	score := func(prompt []int, prefix int) int {
 		t.Helper()

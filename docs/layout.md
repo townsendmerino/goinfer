@@ -55,6 +55,11 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `internal/testassets/` | the heavy-test-asset resolver over `testdata/assets.json` (`Lookup`): the one predicate for whether an asset is present, imported by test wrappers (`decoder.AssetPathForTest`, decoder's `assetPath`); a leaf importing no goinfer package and not `testing` (rule `testassets-leaf` in `internal/layout/imports.json`) |
 | `internal/runtime/normact/` | the CPU forward's row norms (`RMS`, `RMSInto`, `Layer`, `LayerInto`) and elementwise activations (`SiLU`, `ReLU2`, `GELUErf`, `GELUTanh`); a leaf importing no goinfer package that `decoder` calls (rule `normact-leaf` in `internal/layout/imports.json`) |
 | `internal/runtime/kvsnap/` | GPU-to-host prefix KV snapshot LRU store, `resident.KVHostBudget` accounting, candidate/covering matching, and boundary/recurrent cut planning below `decoder` (rule `kvsnap-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/paging/` | MoE expert paging, pread expert buffer pool, and dense layer paging below `decoder` (rule `paging-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/blockdraft/` | DFlash and DSpark block drafters, weight streaming, and resident byte estimators below `decoder` (rule `blockdraft-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/residency/` | resident subsystem resolution, KV scope, resident decode batcher, slot reuse/sharing, host snapshot orchestration, and recurrent checkpoints below `decoder` (rule `residency-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/sidecar/` | `.giw` sidecar transcoding, GGUF metadata extraction, projected and LoRA sidecars, and readback helpers below `decoder` (rule `sidecar-leaf` in `internal/layout/imports.json`) |
+| `internal/runtime/specdecode/` | speculative decoding drafters, trace collection, adaptive depth, optimistic-forward overlap, and verification loops below `decoder` (rule `specdecode-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |

@@ -263,8 +263,9 @@ func (m *Model) promptLogitsMany(ctx context.Context, prompts [][]int) ([][]floa
 		return nil, err
 	}
 	out := make([][]float32, len(hs))
+	e := m.cpuEngine()
 	for i, h := range hs {
-		out[i] = m.lmHeadN(h, 1)
+		out[i] = e.LMHeadN(h, 1)
 	}
 	return out, nil
 }

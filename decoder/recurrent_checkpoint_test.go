@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"slices"
 	"testing"
 )
@@ -45,7 +46,13 @@ func (r *ckptResident) RestoreRecurrentCheckpoint() error {
 // ckptTurn plays one generation's bookkeeping on m as generateInto does on the resident path: acquire under a checkpoint scope,
 // forget, (prefill), save, commit. It returns the acquire.
 func ckptTurn(m *Model, prompt, reply []int, lora *loraRuntime) kvAcquired {
-	acq := m.residentAcquireIn(prompt, nil, lora, nil, KVScope{checkpoint: m.recurrentCheckpointer() != nil})
+	acq := m.residentAcquireIn(prompt, nil, lora, nil, func() KVScope {
+		var sc KVScope
+		if m.recurrentCheckpointer() != nil {
+			sc = residency.ScopeWithCheckpoint(sc, true)
+		}
+		return sc
+	}())
 	m.residentForgetIDs()
 	m.residentCheckpointSave(prompt)
 	m.residentCommitIDs(prompt, reply, nil, lora)
@@ -118,8 +125,8 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				saved := slices.Clone(r.live)
 				r.live = []float32{9, 9, 9} // the decode moved the live state past the prompt
 				acq := ckptTurn(m, rerender, reply, nil)
-				if acq.reuse != len(prompt) || acq.ckptRestored != len(prompt) || r.restores != 1 {
-					t.Fatalf("reuse %d, restored at %d, %d restores: want the checkpoint at %d restored once", acq.reuse, acq.ckptRestored, r.restores, len(prompt))
+				if acq.Reuse != len(prompt) || acq.CkptRestored != len(prompt) || r.restores != 1 {
+					t.Fatalf("reuse %d, restored at %d, %d restores: want the checkpoint at %d restored once", acq.Reuse, acq.CkptRestored, r.restores, len(prompt))
 				}
 				if !slices.Equal(r.live, saved) {
 					t.Errorf("after the restore the live state is %v, want turn 1's %v", r.live, saved)
@@ -129,8 +136,8 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				m = recurrent(r)
 				ckptTurn(m, prompt, reply, nil)
 				ext := append(append(slices.Clone(prompt), reply...), kvSeq(20, 4)...)
-				if acq := ckptTurn(m, ext, nil, nil); acq.reuse != len(prompt)+len(reply) || r.restores != 0 {
-					t.Errorf("a strict extension: reuse %d with %d restores, want %d with none", acq.reuse, r.restores, len(prompt)+len(reply))
+				if acq := ckptTurn(m, ext, nil, nil); acq.Reuse != len(prompt)+len(reply) || r.restores != 0 {
+					t.Errorf("a strict extension: reuse %d with %d restores, want %d with none", acq.Reuse, r.restores, len(prompt)+len(reply))
 				}
 				// A divergence before c, a resent prompt, and a suffix under the final-pass minimum stay cold.
 				for name, p := range map[string][]int{
@@ -141,8 +148,8 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 					r := newCkptResident()
 					m := recurrent(r)
 					ckptTurn(m, prompt, reply, nil)
-					if acq := ckptTurn(m, p, nil, nil); acq.reuse != 0 || r.restores != 0 {
-						t.Errorf("%s: reuse %d with %d restores, want a cold prefill", name, acq.reuse, r.restores)
+					if acq := ckptTurn(m, p, nil, nil); acq.Reuse != 0 || r.restores != 0 {
+						t.Errorf("%s: reuse %d with %d restores, want a cold prefill", name, acq.Reuse, r.restores)
 					}
 				}
 				// A failed restore falls back to a cold prefill.
@@ -150,16 +157,16 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				m = recurrent(r)
 				ckptTurn(m, prompt, reply, nil)
 				r.failRes = true
-				if acq := ckptTurn(m, rerender, nil, nil); acq.reuse != 0 || acq.ckptDeclined == "" {
-					t.Errorf("a failed restore: reuse %d, declined %q, want 0 and a reason", acq.reuse, acq.ckptDeclined)
+				if acq := ckptTurn(m, rerender, nil, nil); acq.Reuse != 0 || acq.CkptDeclined == "" {
+					t.Errorf("a failed restore: reuse %d, declined %q, want 0 and a reason", acq.Reuse, acq.CkptDeclined)
 				}
 			},
 			hExactUnlessWrapped: func(t *testing.T, s cacheState) {
 				gone := &ckptWindowResident{ckptResident: newCkptResident(), dropped: true}
 				m := recurrent(gone)
 				ckptTurn(m, prompt, reply, nil)
-				if acq := ckptTurn(m, rerender, nil, nil); acq.reuse != 0 || gone.restores != 0 {
-					t.Errorf("with the window dropped: reuse %d with %d restores, want a cold prefill and no restore", acq.reuse, gone.restores)
+				if acq := ckptTurn(m, rerender, nil, nil); acq.Reuse != 0 || gone.restores != 0 {
+					t.Errorf("with the window dropped: reuse %d with %d restores, want a cold prefill and no restore", acq.Reuse, gone.restores)
 				}
 			},
 			hColdOnMismatch: func(t *testing.T, s cacheState) {
@@ -169,8 +176,8 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				r := newCkptResident()
 				m := recurrent(r)
 				ckptTurn(m, prompt, reply, &loraRuntime{name: "a"})
-				if acq := ckptTurn(m, rerender, nil, &loraRuntime{name: "a"}); acq.reuse != 0 || r.restores != 0 {
-					t.Errorf("another adapter runtime: reuse %d with %d restores, want 0", acq.reuse, r.restores)
+				if acq := ckptTurn(m, rerender, nil, &loraRuntime{name: "a"}); acq.Reuse != 0 || r.restores != 0 {
+					t.Errorf("another adapter runtime: reuse %d with %d restores, want 0", acq.Reuse, r.restores)
 				}
 			},
 			hRefused: func(t *testing.T, s cacheState) {
@@ -180,9 +187,9 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				m := recurrent(r)
 				ckptTurn(m, prompt, reply, nil)
 				claims := []residentImageClaim{{Start: len(prompt) + 2, Len: 4, Hash: 5}}
-				acq := m.residentAcquireIn(rerender, claims, nil, nil, KVScope{checkpoint: true})
-				if acq.reuse != 0 || r.restores != 0 {
-					t.Errorf("a request with an image span: reuse %d with %d restores, want 0", acq.reuse, r.restores)
+				acq := m.residentAcquireIn(rerender, claims, nil, nil, residency.ScopeWithCheckpoint(KVScope{}, true))
+				if acq.Reuse != 0 || r.restores != 0 {
+					t.Errorf("a request with an image span: reuse %d with %d restores, want 0", acq.Reuse, r.restores)
 				}
 			},
 		},
