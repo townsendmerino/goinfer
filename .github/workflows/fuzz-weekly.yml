@@ -38,6 +38,7 @@ jobs:
           - { pkg: tokenizer, fn: FuzzParseTokenizerJSON }
           - { pkg: tokenizer, fn: FuzzReadGGUFMeta }
           - { pkg: tokenizer, fn: FuzzLoadTekken }
+          - { pkg: tokenizer, fn: FuzzLoadPack }
           - { pkg: multimodal, fn: FuzzParseQwen3PreprocessConfig }
           # serving request parsers (a panic here is a remote DoS on the server)
           - { pkg: internal/app/serveapp, fn: FuzzServeChatRequest }
