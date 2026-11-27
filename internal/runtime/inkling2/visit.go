@@ -29,15 +29,10 @@ type Token struct {
 }
 
 // ConvState is one visit's four short-convolution windows: K, V, the attention output and the FFN output.
-type ConvState struct{ K, V, Attn, FFN ConvWindow }
+type ConvState struct{ K, V, Attn, FFN [][]float32 }
 
 // Reset empties the windows.
-func (s *ConvState) Reset() {
-	s.K.Reset()
-	s.V.Reset()
-	s.Attn.Reset()
-	s.FFN.Reset()
-}
+func (s *ConvState) Reset() { s.K, s.V, s.Attn, s.FFN = s.K[:0], s.V[:0], s.Attn[:0], s.FFN[:0] }
 
 func unitRMSCopy(x []float32) []float32 {
 	n := make([]float32, len(x))

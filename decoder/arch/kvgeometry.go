@@ -58,6 +58,8 @@ func (a *Architecture) KVGeometry() KVGeometry {
 			state("mamba2", i)
 		case a.IsConvLayer(i):
 			state("shortconv", i)
+		case a.Inkling2 != nil:
+			state("inkling2", i) // every visit also stores KV: its four conv windows are beside it
 		}
 		if a.HasNoAttentionKVAt(i) {
 			continue
@@ -74,7 +76,7 @@ func (a *Architecture) KVGeometry() KVGeometry {
 		switch l4 := a.Llama4; {
 		case l4 != nil && l4.ChunkSize > 0 && i < len(l4.UseRope) && l4.UseRope[i]:
 			grp.Retention, grp.Span = KVRetainChunk, l4.ChunkSize
-		case a.SlidingWindow > 0 && !a.IsGlobalLayer(i):
+		case a.SlidingWindow > 0 && !a.IsGlobalLayer(i) && a.Inkling2 == nil: // Inkling 2's local visits keep every position (KVPositionsAt)
 			grp.Retention, grp.Span = KVRetainWindow, a.SlidingWindow
 		}
 		at := -1

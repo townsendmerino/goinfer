@@ -129,7 +129,7 @@ func TestControl_matchesTransformers(t *testing.T) {
 func TestConv_matchesTransformers(t *testing.T) {
 	g := readOps(t).Conv
 	ch := len(g.X) / g.N
-	var win ConvWindow
+	var win [][]float32
 	got := make([]float32, 0, len(g.X))
 	for p := range g.N {
 		x := append([]float32(nil), g.X[p*ch:(p+1)*ch]...)
@@ -143,7 +143,7 @@ func TestDynConv_matchesTransformers(t *testing.T) {
 	g := readOps(t).Dynconv
 	ch := len(g.X) / g.N
 	nd := len(g.Dyn) / g.N
-	var win ConvWindow
+	var win [][]float32
 	got := make([]float32, 0, len(g.X))
 	for p := range g.N {
 		x := append([]float32(nil), g.X[p*ch:(p+1)*ch]...)

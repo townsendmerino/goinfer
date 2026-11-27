@@ -115,40 +115,34 @@ func Control(x, m, down, gain, forget []float32, rank int, eps float64) {
 	}
 }
 
-// ConvWindow is one short convolution's history: the inputs before the current position, oldest first, zero before the
-// sequence starts.
-type ConvWindow struct {
-	rows [][]float32 // one less than the kernel width at most, oldest first
-}
+// A conv window is one short convolution's history: the inputs before the current position, oldest first, one less than
+// the kernel width at most; empty before the sequence starts.
 
-// Reset empties the window.
-func (w *ConvWindow) Reset() { w.rows = w.rows[:0] }
-
-// push appends x and keeps the last k-1 rows.
-func (w *ConvWindow) push(x []float32, k int) {
-	if len(w.rows) == k-1 && k > 1 {
-		old := w.rows[0]
-		copy(w.rows, w.rows[1:])
-		w.rows[k-2] = append(old[:0], x...)
+// pushWindow appends x to w and keeps the last k-1 rows.
+func pushWindow(w *[][]float32, x []float32, k int) {
+	if len(*w) == k-1 && k > 1 {
+		old := (*w)[0]
+		copy(*w, (*w)[1:])
+		(*w)[k-2] = append(old[:0], x...)
 		return
 	}
-	w.rows = append(w.rows, append([]float32(nil), x...))
+	*w = append(*w, append([]float32(nil), x...))
 }
 
-// back returns the input lag positions before the current one, or nil before the sequence start.
-func (w *ConvWindow) back(lag int) []float32 {
-	i := len(w.rows) - lag
+// windowBack returns the input lag positions before the current one, or nil before the sequence start.
+func windowBack(w [][]float32, lag int) []float32 {
+	i := len(w) - lag
 	if i < 0 {
 		return nil
 	}
-	return w.rows[i]
+	return w[i]
 }
 
 // Conv runs the causal depthwise short convolution with its residual on one position, in place on x ([channels]), and
 // pushes x's input into the window. taps is [channels, k] with tap k-1 weighting the current position. dyn, when non-nil, is
 // the dynamic taps ([heads, k], tap lag weighting the input lag positions back), shared by the channels/heads channels of each
 // head: the output is then (static + dynamic + x)/sqrt(2k+1), else (static + x)/sqrt(k+1).
-func Conv(x []float32, taps []float32, k int, dyn []float32, win *ConvWindow) {
+func Conv(x []float32, taps []float32, k int, dyn []float32, win *[][]float32) {
 	ch := len(x)
 	in := append([]float32(nil), x...)
 	div := math.Sqrt(float64(k + 1))
@@ -164,7 +158,7 @@ func Conv(x []float32, taps []float32, k int, dyn []float32, win *ConvWindow) {
 			s += float64(dyn[(c/hw)*k]) * float64(in[c])
 		}
 		for lag := 1; lag < k; lag++ {
-			p := win.back(lag)
+			p := windowBack(*win, lag)
 			if p == nil {
 				break
 			}
@@ -175,7 +169,7 @@ func Conv(x []float32, taps []float32, k int, dyn []float32, win *ConvWindow) {
 		}
 		x[c] = float32((s + float64(in[c])) / div)
 	}
-	win.push(in, k)
+	pushWindow(win, in, k)
 }
 
 // Situ is the experts' activation, in place on gate: betaG·tanh(g/betaG)·sigmoid(g) · betaU·tanh(u/betaU).
