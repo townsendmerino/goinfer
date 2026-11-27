@@ -934,6 +934,6 @@ func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kS
 	nKeys := cache.c.DequantGlobalLayer(layer, kvDim, lk, lv)
 	ctx := make([]float32, nH*hd)
 	pool := cache.c.Scr.HeadWorkerPool(nH, 1, nKeys, hd, false, true)
-	cpuengine.AttendBatchedHeadsP(slices.Clone(q), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache.c, layer, pos, 1, p, a, true, pool)
+	cpuengine.AttendBatchedHeadsP(slices.Clone(q), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, &cache.c, layer, pos, 1, p, a, true, pool)
 	return ctx, nil
 }

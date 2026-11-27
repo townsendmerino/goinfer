@@ -280,36 +280,38 @@ var kvCacheNotState = map[string]string{
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as
 // hasRecurrentState does: a recurrent kind is held from NewCache on, whether or not a token has run.
-func (c *KVCache) holdsState(s cacheState) bool {
+func (c *KVCache) holdsState(s cacheState) bool { return holdsCacheState(&c.c, c.lora, s) }
+
+func holdsCacheState(cc *cpuengine.Cache, lora *loraRuntime, s cacheState) bool {
 	switch s {
 	case statePositional:
-		return len(c.c.KeysBuf) > 0 || len(c.c.KeysQ) > 0 || len(c.c.KeysH) > 0
+		return len(cc.KeysBuf) > 0 || len(cc.KeysQ) > 0 || len(cc.KeysH) > 0
 	case stateRing:
-		return c.c.LocalAny
+		return cc.LocalAny
 	case stateInt8KV:
-		return c.c.Quant == kvI8
+		return cc.Quant == kvI8
 	case stateMLALatent:
-		return len(c.c.MLALatent) > 0
+		return len(cc.MLALatent) > 0
 	case stateDeltaNet:
-		return c.c.Delta != nil
+		return cc.Delta != nil
 	case stateShortConv:
-		return c.c.Conv != nil
+		return cc.Conv != nil
 	case stateMamba2:
-		return c.c.Mamba != nil
+		return cc.Mamba != nil
 	case stateKDA:
-		return c.c.KDA != nil
+		return cc.KDA != nil
 	case stateImageBlocks:
-		return len(c.c.ImgBlocks) > 0
+		return len(cc.ImgBlocks) > 0
 	case stateMRoPE:
-		return c.c.MRopePos != nil || c.c.MRopeDelta != 0
+		return cc.MRopePos != nil || cc.MRopeDelta != 0
 	case stateDeepstack:
-		return c.c.Deepstack != nil
+		return cc.Deepstack != nil
 	case stateCapture:
-		return c.c.CaptureLayers != nil || c.c.SubCapture || c.c.LayerInputs != nil
+		return cc.CaptureLayers != nil || cc.SubCapture || cc.LayerInputs != nil
 	case stateTree:
-		return c.c.TreeMask != nil || c.c.TreeRowPos != nil
+		return cc.TreeMask != nil || cc.TreeRowPos != nil
 	case stateAdapter:
-		return c.lora != nil
+		return lora != nil
 	}
 	// An unknown kind is held: every caller asks "may I proceed", and the safe answer for a kind
 	// this switch does not know is no. TestCacheStateGrid_holdsStateKnowsEveryKind keeps it unreached.
@@ -319,8 +321,12 @@ func (c *KVCache) holdsState(s cacheState) bool {
 // holdsStateHandled reports whether c holds any kind whose cell on path p is h. It is how the
 // lifecycle paths read the grid instead of hand-listing kinds.
 func (c *KVCache) holdsStateHandled(p lifecyclePath, h stateHandling) bool {
+	return holdsCacheStateHandled(&c.c, c.lora, p, h)
+}
+
+func holdsCacheStateHandled(cc *cpuengine.Cache, lora *loraRuntime, p lifecyclePath, h stateHandling) bool {
 	for _, s := range cacheStates {
-		if cacheStateGrid[s][p].h == h && c.holdsState(s) {
+		if cacheStateGrid[s][p].h == h && holdsCacheState(cc, lora, s) {
 			return true
 		}
 	}
@@ -328,7 +334,5 @@ func (c *KVCache) holdsStateHandled(p lifecyclePath, h stateHandling) bool {
 }
 
 func init() {
-	cpuengine.SetInexactRewindCheck(func(c *cpuengine.Cache) bool {
-		return (&KVCache{c: c}).holdsStateHandled(lcRewind, hInexact)
-	})
+	cpuengine.SetInexactRewindCheck(func(cc *cpuengine.Cache) bool { return holdsCacheStateHandled(cc, nil, lcRewind, hInexact) })
 }

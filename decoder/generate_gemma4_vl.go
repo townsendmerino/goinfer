@@ -112,7 +112,7 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		}
 		c0 = c1
 	}
-	t0 := cpuengine.CostStart(cache.c)
+	t0 := cpuengine.CostStart(&cache.c)
 	lg := m.logitsFromNormed(hLast, cache) // the walker applied the head's norm
 	if cache.c.Cost != nil {
 		m.countHead(cache, 1, t0)

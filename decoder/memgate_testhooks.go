@@ -35,7 +35,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			h.root(weights, f.Name, w.Field(i))
 		}
 	}
-	cv := reflect.ValueOf(c.c).Elem()
+	cv := reflect.ValueOf(&c.c).Elem()
 	for i := range cv.NumField() {
 		name := cv.Type().Field(i).Name
 		if cpuCacheIgnored[name] {

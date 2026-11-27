@@ -57,7 +57,7 @@ var (
 // KVCache holds the per-sequence CPU attention KV cache and recurrent mixer states.
 // It is a Hard-tier handle over internal/runtime/cpuengine.Cache; not goroutine-safe.
 type KVCache struct {
-	c    *cpuengine.Cache
+	c    cpuengine.Cache
 	lora *loraRuntime // active compute-time LoRA adapter (for Session/KV-key identity)
 }
 
@@ -70,13 +70,13 @@ func unwrapCache(c *KVCache) *cpuengine.Cache {
 	} else if c.c.LoRALayers != nil {
 		c.c.LoRALayers = nil
 	}
-	return c.c
+	return &c.c
 }
 
 // NewKVCache allocates an empty cache for a model with the given geometry.
 func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer func(l int) bool) *KVCache {
 	syncCPUHooks()
-	return &KVCache{c: cpuengine.NewCache(numLayers, numKVHeads, headDim, window, capHint, skipLayer)}
+	return &KVCache{c: *cpuengine.NewCache(numLayers, numKVHeads, headDim, window, capHint, skipLayer)}
 }
 
 func (c *KVCache) Append(layer int, k, v []float32) int {

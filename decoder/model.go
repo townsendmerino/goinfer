@@ -709,7 +709,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	if m.knobs != nil {
 		ks = m.knobs
 	}
-	return &KVCache{c: cpuengine.NewCacheForArch(m.w.Arch, capHint, m.kvI8, m.kvH, ks)}
+	return &KVCache{c: *cpuengine.NewCacheForArch(m.w.Arch, capHint, m.kvI8, m.kvH, ks)}
 }
 
 // embedToken writes the residual-stream embedding for token id into dst ([hidden])
