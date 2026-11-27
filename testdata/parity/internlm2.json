@@ -10,7 +10,7 @@
     "scripts/pin_internlm2_tiny.py",
     "internal/runtime/families/arch_internlm2.go"
   ],
-  "deps_hash": "sha256:1c75068fe05c8a15f58736e760346c2dc886e796607da6b1fc0e6759ebdbee0b",
+  "deps_hash": "sha256:5aef692f30815603cf6748ffbb8318e15457d7dfffed00a49cc906f30cf92f62",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
