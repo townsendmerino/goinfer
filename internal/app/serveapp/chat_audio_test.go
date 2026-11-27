@@ -79,8 +79,8 @@ func TestOmitChatHistory_audio(t *testing.T) {
 	if err != nil || len(media) != 1 || !media[0].Audio || len(media[0].Data) != len(wavBytes(320, 16000)) {
 		t.Fatalf("after omission: %d media items, err %v; want the newest clip only", len(media), err)
 	}
-	if !strings.Contains(msgs[0].text(), olderAudioNote) || !strings.Contains(msgs[2].text(), olderImageNote) {
-		t.Errorf("the notes are missing: %q / %q", msgs[0].text(), msgs[2].text())
+	if !strings.Contains(msgs[0].Text(), olderAudioNote) || !strings.Contains(msgs[2].Text(), olderImageNote) {
+		t.Errorf("the notes are missing: %q / %q", msgs[0].Text(), msgs[2].Text())
 	}
 }
 

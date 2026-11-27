@@ -1,6 +1,9 @@
 package serveapp
 
-import "github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
+import (
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
+)
 
 const fromReasoningField = streamframe.FromReasoningField
 
@@ -9,20 +12,11 @@ type (
 	turnOutcome = streamframe.TurnOutcome
 )
 
-var markEmptyResponse = streamframe.MarkEmptyResponse
+var (
+	markEmptyResponse = streamframe.MarkEmptyResponse
+	finishChunk       = wirecore.FinishChunk
+)
 
 func emptyAnswerOf(gr genRequest, finish, stopHit string, calls, nComp int) *emptyAnswer {
 	return streamframe.EmptyAnswerOf(gr.outcome, gr.think, finish, stopHit, calls, nComp)
-}
-
-func finishChunk(id string, created int64, model, finish string, e *emptyAnswer, fromReasoning bool) map[string]any {
-	c := chatChunk(id, created, model, delta{}, &finish)
-	ch := c["choices"].([]any)[0].(map[string]any)
-	if e != nil {
-		ch["goinfer_empty_answer"] = e
-	}
-	if fromReasoning {
-		ch[fromReasoningField] = true
-	}
-	return c
 }

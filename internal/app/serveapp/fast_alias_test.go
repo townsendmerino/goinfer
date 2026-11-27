@@ -304,8 +304,8 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 		"chat": {func() thinkRequest {
 			r := chatReq{ChatTemplateKwargs: on, ReasoningEffort: "high", ThinkingTokenBudget: &budget}
 			r.MaxTokens, r.MaxCompletionTokens = &big, &one
-			r.applyFast()
-			return r.think()
+			r.ApplyFast()
+			return r.Think()
 		}, nil},
 		"responses": {func() thinkRequest {
 			r := responseReq{Reasoning: &struct {
@@ -330,12 +330,12 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 	}
 	c := chatReq{}
 	c.MaxTokens, c.MaxCompletionTokens = &big, &one
-	c.applyFast()
+	c.ApplyFast()
 	if *c.MaxTokens != big || *c.MaxCompletionTokens != one {
 		t.Errorf("chat limits: max_tokens %d, max_completion_tokens %d, want %d and %d untouched", *c.MaxTokens, *c.MaxCompletionTokens, big, one)
 	}
 	k := chatReq{ChatTemplateKwargs: on}
-	k.applyFast()
+	k.ApplyFast()
 	if string(on["enable_thinking"]) != "true" {
 		t.Error("applyFast edited the caller's chat_template_kwargs in place")
 	}

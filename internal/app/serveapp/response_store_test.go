@@ -20,7 +20,7 @@ func TestResponseEntryBytes_countsCarriedIDs(t *testing.T) {
 	bare := []chatMessage{{Content: rawStr(strings.Repeat("x", 10))}}
 	withIDs := []chatMessage{{
 		Content: rawStr(strings.Repeat("x", 10)),
-		carried: &idsCarrier{Blob: &idsBlob{Text: "abc", IDs: make([]int, 1000)}},
+		Carried: &idsCarrier{Blob: &idsBlob{Text: "abc", IDs: make([]int, 1000)}},
 	}}
 	if got, want := responseMessagesBytes("", withIDs)-responseMessagesBytes("", bare), 3+8*1000; got != want {
 		t.Errorf("a 1000-id blob adds %d bytes to the entry's size, want %d", got, want)

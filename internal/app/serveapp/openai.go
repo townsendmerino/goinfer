@@ -314,7 +314,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast()
+		req.ApplyFast()
 	}
 	req.Tools = dropUnrunnableTools(w, req.Tools)
 	if err := validateN(req.N); err != nil {
@@ -342,7 +342,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// The vision stream has no logprobs field, so a stream:true request would silently drop them: the text route's rule (400).
-		if req.Stream && req.sampling.Logprobs {
+		if req.Stream && req.Sampling.Logprobs {
 			writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 			return
 		}
@@ -365,13 +365,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ts, terr := s.resolveThink(req.think())
+	ts, terr := s.resolveThink(req.Think())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
-	if req.sampling.constrainsOutput() {
+	if req.Sampling.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	system, turns := messagesToTurns(req.Messages)
@@ -380,8 +380,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	req.sampling.confidenceOK = true // written back below
-	gr, err := lm.prepareTurn(req.sampling, tm, system, turns, nil, ids)
+	req.Sampling.ConfidenceOK = true // written back below
+	gr, err := lm.prepareTurn(req.Sampling, tm, system, turns, nil, ids)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
@@ -425,7 +425,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		sseSend(ss, finishChunk(id, created, lm.name, res.finish, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false))
 		if gr.conf != nil {
-			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.Payload()})
 		}
 		if res.cancelReason != "" {
 			// One final SSE event naming the reason, so a client cannot mistake this for a natural stop even though
@@ -470,7 +470,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
-		resp["goinfer_confidence"] = gr.conf.payload()
+		resp["goinfer_confidence"] = gr.conf.Payload()
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }
@@ -508,8 +508,8 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
-	req.sampling.confidenceOK = true // written back below
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	req.Sampling.ConfidenceOK = true // written back below
+	gr, err := lm.prepare(req.Sampling, ids, lm.residentPath())
 	if err != nil {
 		writePrepareErr(w, err)
 		return
@@ -543,7 +543,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &res.finish))
 		if gr.conf != nil {
-			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.Payload()})
 		}
 		if res.cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": res.cancelReason}})
@@ -569,7 +569,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
-		resp["goinfer_confidence"] = gr.conf.payload()
+		resp["goinfer_confidence"] = gr.conf.Payload()
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }

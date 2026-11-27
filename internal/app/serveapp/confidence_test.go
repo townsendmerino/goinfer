@@ -29,8 +29,8 @@ func TestConfidence_refusals(t *testing.T) {
 		want string
 	}{
 		{"a route that does not write it back", sampling{Confidence: true, ResponseFormat: schema}, "supported on"},
-		{"no response_format", sampling{Confidence: true, confidenceOK: true}, "needs response_format"},
-		{"json_object", sampling{Confidence: true, confidenceOK: true, ResponseFormat: &respFormat{Type: "json_object"}}, "needs response_format"},
+		{"no response_format", sampling{Confidence: true, ConfidenceOK: true}, "needs response_format"},
+		{"json_object", sampling{Confidence: true, ConfidenceOK: true, ResponseFormat: &respFormat{Type: "json_object"}}, "needs response_format"},
 	} {
 		if _, err := lm.prepare(c.sm, []int{1, 2, 3}, false); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want an error containing %q", c.name, err, c.want)
@@ -40,7 +40,7 @@ func TestConfidence_refusals(t *testing.T) {
 
 func TestConfResult_payload(t *testing.T) {
 	var c confResult
-	if b, _ := json.Marshal(c.payload()); string(b) != "[]" {
+	if b, _ := json.Marshal(c.Payload()); string(b) != "[]" {
 		t.Errorf("no qualifying field: %s, want []", b)
 	}
 }

@@ -89,7 +89,7 @@ func chatMediaText(msgs []chatMessage) (string, bool) {
 	if media < 0 {
 		return "", false
 	}
-	return msgs[media].text(), media == lastUser
+	return msgs[media].Text(), media == lastUser
 }
 
 func contentHasMedia(raw json.RawMessage) bool {

@@ -29,7 +29,7 @@ func TestResponses_toolLoopItemsSurviveDecoding(t *testing.T) {
 		t.Fatalf("got %d messages, want 3: %+v", len(msgs), msgs)
 	}
 
-	if msgs[0].Role != "user" || msgs[0].text() != "weather in Paris?" {
+	if msgs[0].Role != "user" || msgs[0].Text() != "weather in Paris?" {
 		t.Errorf("plain message turn changed: %+v", msgs[0])
 	}
 
@@ -58,7 +58,7 @@ func TestResponses_toolLoopItemsSurviveDecoding(t *testing.T) {
 	if out.ToolCallID != "call_1" {
 		t.Errorf("tool result lost its call_id: %q", out.ToolCallID)
 	}
-	if got := out.text(); got != "18C and raining" {
+	if got := out.Text(); got != "18C and raining" {
 		t.Errorf("tool result text = %q, want %q — an empty tool turn IS the defect", got, "18C and raining")
 	}
 }

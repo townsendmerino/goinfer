@@ -49,14 +49,14 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ts, terr := s.resolveThink(req.think())
+	ts, terr := s.resolveThink(req.Think())
 	if terr != nil {
 		release()
 		writeErr(w, http.StatusBadRequest, terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
-	if req.sampling.constrainsOutput() {
+	if req.Sampling.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	jsys, jturns := messagesToTurns(req.Messages)
@@ -66,7 +66,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	gr, err := lm.prepare(req.Sampling, ids, lm.residentPath())
 	if err != nil {
 		release()
 		writeErr(w, prepareErrStatus(err), err.Error())

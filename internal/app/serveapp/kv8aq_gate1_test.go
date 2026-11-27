@@ -115,7 +115,7 @@ func kv8aqBoundary(t *testing.T, s *server, lm *loadedModel, body string, ids []
 		t.Fatal(err)
 	}
 	req.Tools, _ = functionTools(req.Tools)
-	th, err := s.resolveThink(req.think())
+	th, err := s.resolveThink(req.Think())
 	if err != nil {
 		t.Fatal(err)
 	}

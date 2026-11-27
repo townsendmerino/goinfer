@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
 )
 
 // A panic on a goroutine a handler spawned is not recovered by net/http (which recovers only its own handler goroutine), so it
@@ -58,14 +59,9 @@ func recoverDrain(name string) {
 // strings are matched against the tail each step; a tool-name union is a branch per tool at every step of the name). Each cap is far
 // above what a real request carries and rejects with a 400 before any work.
 const (
-	maxStopSequences    = 16 // OpenAI documents 4
-	maxToolsPerRequest  = 128
-	maxLogitBiasEntries = 1024 // each entry is applied to every step's logits
+	maxStopSequences    = wirecore.MaxStopSequences
+	maxToolsPerRequest  = wirecore.MaxToolsPerRequest
+	maxLogitBiasEntries = wirecore.MaxLogitBiasEntries
 )
 
-func checkToolCount(n int) error {
-	if n > maxToolsPerRequest {
-		return fmt.Errorf("a request may declare at most %d tools (got %d)", maxToolsPerRequest, n)
-	}
-	return nil
-}
+var checkToolCount = wirecore.CheckToolCount
