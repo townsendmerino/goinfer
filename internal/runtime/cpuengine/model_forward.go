@@ -38,7 +38,10 @@ func (m *Engine) RunLayers(id int, cache *Cache) ([]float32, error) {
 	hidden := arch.HiddenDim
 	h := scr.h // residual stream (reused per stream; fully overwritten below)
 	t0 := CostStart(cache)
-	m.W.Embed.Row(id, h) // f32 copy, or int8 dequant when quantized
+	m.W.Embed.Row(id, h)                    // f32 copy, or int8 dequant when quantized
+	if hw := arch.Inkling2Head; hw != nil { // Inkling 2 normalizes a token's embedding (an image row skips it)
+		normact.RMS(h, hw.EmbedNorm, 1, hidden, arch.NormEps, false)
+	}
 	// Embedding scale (Gemma = √hidden; 0/1 = none). NOTE: HF computes this
 	// normalizer as sqrt(hidden) cast to the model's dtype — bf16 for a bf16
 	// checkpoint (≈25.25 here) — then multiplies. We use the f32 value

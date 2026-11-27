@@ -18,7 +18,7 @@ var OpCostNames = [...]string{
 	opNorm: "norm", opProjQKV: "proj_qkv", opQKNorm: "qk_norm", opRope: "rope", opAttnTemp: "attn_temp",
 	opAttention: "attention", opOutGate: "out_gate", opProjO: "proj_o", opFFN: "ffn", opResidual: "residual", opMLA: "mla",
 	opKDA: "kda", opShortConv: "short_conv", opMamba2: "mamba2", opDeltaNet: "delta_net", opGatedAttn: "gated_attn",
-	opGemma4Attn: "gemma4_attn", opGemma4MoE: "gemma4_moe", opPLE: "ple", opLayerScale: "layer_scale",
+	opGemma4Attn: "gemma4_attn", opGemma4MoE: "gemma4_moe", opPLE: "ple", opLayerScale: "layer_scale", opInkling2: "inkling2",
 }
 
 // The stages around the layers, which the program does not list as operations.

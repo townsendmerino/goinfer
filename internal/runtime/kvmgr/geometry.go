@@ -39,7 +39,7 @@ type Group struct {
 
 // State is one kind of recurrent state: per sequence, mutated in place per token, with no row per position.
 type State struct {
-	Kind   string // "deltanet", "mamba2", "shortconv", "kda"
+	Kind   string // "deltanet", "mamba2", "shortconv", "kda", "inkling2"
 	Layers []int
 }
 

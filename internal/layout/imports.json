@@ -171,6 +171,7 @@
           "internal/runtime/f16",
           "internal/runtime/families",
           "internal/runtime/hybridattn",
+          "internal/runtime/inkling2",
           "internal/runtime/kvmgr",
           "internal/runtime/logs",
           "internal/runtime/mamba2",
@@ -867,6 +868,7 @@
       "internal/cost",
       "internal/runtime/archparts",
       "internal/runtime/hybridattn",
+      "internal/runtime/inkling2",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
       "internal/runtime/mamba2",
@@ -891,6 +893,11 @@
       "decoder/config",
       "internal/runtime/archparts",
       "internal/runtime/families",
+      "internal/runtime/program"
+    ],
+    "internal/runtime/inkling2": [
+      "decoder/arch",
+      "internal/runtime/normact",
       "internal/runtime/program"
     ],
     "internal/runtime/kvsnap": [
@@ -1134,6 +1141,7 @@
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
+      "internal/runtime/inkling2",
       "internal/runtime/kvmgr",
       "internal/runtime/kvsnap",
       "internal/runtime/mem",

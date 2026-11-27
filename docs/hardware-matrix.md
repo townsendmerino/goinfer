@@ -25,6 +25,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Gemma 4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
+| Inkling 2 Mini | ✅ | CPU | CPU | CPU |
 | InternLM2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Kimi K2 | ✅ | ✅ resident | ✅ resident | CPU |
 | LFM2.5 | ✅ | CPU | CPU | CPU |
@@ -105,6 +106,9 @@ admission runs.
 | Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
 | Granite-4.0-H | CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); layer 0: operation 2 (residual): cuda does not implement a residual scale (0.22) |
 | Granite-4.0-H | Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); layer 0: operation 2 (residual): metal does not implement a residual scale (0.22) |
+| Inkling 2 Mini | WebGPU | runner shape: own forward, not bridged; missing: `gated-act-unknown` |
+| Inkling 2 Mini | CUDA | runner shape: own forward, not bridged; layer 0: operation 0 (inkling2): cuda has no step for it |
+| Inkling 2 Mini | Metal | runner shape: own forward, not bridged; layer 0: operation 0 (inkling2): metal has no step for it |
 | Kimi K2 | Metal | router capacity: 384 experts, the kernel routes 256 |
 | LFM2.5 | WebGPU | runner shape: own forward, not bridged; missing: `short-conv` |
 | LFM2.5 | CUDA | runner shape: own forward, not bridged; layer 0: operation 1 (short-conv): cuda has no step for it |

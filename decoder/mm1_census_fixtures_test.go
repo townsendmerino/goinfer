@@ -82,6 +82,7 @@ var censusFixtures = []string{
 	"selftestdata/qwen35-tiny",
 	"selftestdata/qwen35vl-tiny",
 	"testdata/gptoss_tiny.gguf",
+	"testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf",
 	"testdata/internlm2-tiny",
 	"testdata/internlm3-tiny",
 	"testdata/laguna-m1-tiny",

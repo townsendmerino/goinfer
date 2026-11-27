@@ -70,6 +70,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Granite 4.2** — IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers
 
+> **Inkling 2 Mini** — thinkingmachines Inkling-2-Mini (26B-A1.8B): attention-residual blocks, relative-bias attention with per-token sinks and short convolutions, sigmoid-routed SITU MoE, a core of layers run three passes; CPU only
+
 > **InternLM2** — InternLM2 dense — llama math, renamed tensors + grouped fused wqkv
 
 > **LFM2.5** — Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)
@@ -129,6 +131,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision tower) | yes | full-oracle 100.0%/0.98972 |
 | Granite 4.2 | `granite` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
+| Inkling 2 Mini | `inkling2_loop` | sparse, no-shared | interleave | no | none | RMSNorm, pre-norm | SITU (gated) | no | GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | InternLM2 | `internlm2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | LFM2.5 | `lfm2`, `lfm2_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text (+ vision tower) | no | full-oracle 100.0%/1.00000 |
 | Laguna | `laguna` | sparse +shared | interleave | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99884 |
