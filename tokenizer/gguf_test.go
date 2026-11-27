@@ -205,3 +205,34 @@ func loadGoldenAt(t *testing.T, path string) tokGolden {
 	}
 	return g
 }
+
+// TestLoadGGUF_inkling2Parity holds the tokenizer built from the Inkling-2-Mini GGUF's metadata (pre "inkling2") to the
+// release's tokenizer.json, id for id (testdata/inkling2_tokenizer_golden.json, scripts/inkling2/pin_tokenizer.py).
+func TestLoadGGUF_inkling2Parity(t *testing.T) {
+	g := loadGoldenAt(t, "../testdata/inkling2_tokenizer_golden.json")
+	path := modelPath("inkling-2-mini/Inkling-2-Mini-Q8_0.gguf")
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no Inkling-2-Mini GGUF at %s", path)
+	}
+	gg, err := LoadGGUF(path)
+	if err != nil {
+		t.Fatalf("LoadGGUF: %v", err)
+	}
+	if gg.preDecline != "" || !gg.ignoreMerges || gg.preShape != shapeO200k {
+		t.Fatalf("GGUF knobs: decline %q, ignoreMerges %v, shape %v; want o200k with ignore_merges", gg.preDecline, gg.ignoreMerges, gg.preShape)
+	}
+	for _, c := range g.Cases {
+		t.Run(caseName(c.Text), func(t *testing.T) {
+			got, err := gg.Encode(c.Text, false)
+			if err != nil {
+				t.Fatalf("Encode: %v", err)
+			}
+			if !equalInts(got, c.IDs) {
+				t.Errorf("GGUF Encode(%q)\n  got  %v\n  want %v\n  toks %v", c.Text, got, c.IDs, c.Tokens)
+			}
+			if d, err := gg.Decode(got); err != nil || d != c.Decode {
+				t.Errorf("Decode = %q (%v), want %q", d, err, c.Decode)
+			}
+		})
+	}
+}
