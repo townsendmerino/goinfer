@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/batchplan"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -1149,26 +1150,28 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 		return nil, e
 	}
 	ids := make([]int, 0, len(embeddings))
-	for from := 0; from < len(embeddings); {
-		n := min(batchMaxSeqs, len(embeddings)-from)
+	err := batchplan.StepPieces(len(embeddings), batchMaxSeqs, func(from, n int, _ bool) error {
 		if n == 1 {
 			lg, err := a.Forward(embeddings[from], startPos+from)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			ids = append(ids, argmaxF32(lg))
-		} else {
-			seqs := make([]batchSeq, n)
-			for i := range n {
-				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
-			}
-			_, got, err := r.forwardMultiInto(seqs, true)
-			if err != nil {
-				return nil, err
-			}
-			ids = append(ids, got...)
+			return nil
 		}
-		from += n
+		seqs := make([]batchSeq, n)
+		for i := range n {
+			seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
+		}
+		_, got, err := r.forwardMultiInto(seqs, true)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, got...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return ids, nil
 }
@@ -1237,43 +1240,43 @@ func (a *metalResident) prefillByStepSrc(ctx context.Context, src rowSource, sta
 			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
 		}
 	}()
-	for from := 0; from < src.n; {
+	if err := batchplan.StepPieces(src.n, batchMaxSeqs, func(from, n int, last bool) error {
 		if e := ctx.Err(); e != nil {
-			return nil, e
+			return e
 		}
-		n := min(batchMaxSeqs, src.n-from)
-		last := from+n == src.n
 		piece := src.rows(from, from+n)
 		if n == 1 {
 			lg, err := a.Forward(piece[0], startPos+from)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			logits = lg
-		} else {
-			seqs := make([]batchSeq, n)
-			for i := range n {
-				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: piece[i]}
-			}
-			mode := multiNoHead // a piece before the last needs only its K/V
+			return nil
+		}
+		seqs := make([]batchSeq, n)
+		for i := range n {
+			seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: piece[i]}
+		}
+		mode := multiNoHead // a piece before the last needs only its K/V
+		if last {
+			mode = multiLastRow
+		}
+		if stepPrefillAllHeads { // the route as it was, for the test that compares the two
+			mode = multiArgmax
 			if last {
-				mode = multiLastRow
-			}
-			if stepPrefillAllHeads { // the route as it was, for the test that compares the two
-				mode = multiArgmax
-				if last {
-					mode = multiFull
-				}
-			}
-			rows, _, err := r.forwardMultiOut(seqs, mode)
-			if err != nil {
-				return nil, err
-			}
-			if last {
-				logits = rows[n-1]
+				mode = multiFull
 			}
 		}
-		from += n
+		rows, _, err := r.forwardMultiOut(seqs, mode)
+		if err != nil {
+			return err
+		}
+		if last {
+			logits = rows[n-1]
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if err := r.takeExecErr(); err != nil {
 		return nil, err

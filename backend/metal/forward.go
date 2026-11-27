@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/batchplan"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -150,11 +151,7 @@ func (r *resident) writePosUniforms(u posUniforms, pos, rp int) {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 		u.uFANSplit.SetU32(uint32(r.attnFASplitFor(pos+1, r.attnFANKV)))
 	}
-	scale := float32(1)
-	if r.attnTempBeta != 0 {
-		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
-	}
-	u.uQTempScale.Floats()[0] = scale
+	u.uQTempScale.Floats()[0] = batchplan.AttnTempScale(pos, r.attnTempBeta, r.attnTempOrigMaxPos)
 }
 
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
@@ -788,11 +785,7 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 		}
 		r.batchUPos[m].SetU32(uint32(pos))
 		r.batchUNKeys[m].SetU32(uint32(pos + 1))
-		scale := float32(1)
-		if r.attnTempBeta != 0 {
-			scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
-		}
-		r.batchUQTempScale[m].Floats()[0] = scale
+		r.batchUQTempScale[m].Floats()[0] = batchplan.AttnTempScale(pos, r.attnTempBeta, r.attnTempOrigMaxPos)
 	}
 
 	// Encode all N tokens in LAYER-MAJOR order into a SINGLE command buffer and single compute encoder.

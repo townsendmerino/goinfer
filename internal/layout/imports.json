@@ -986,6 +986,22 @@
         "*"
       ],
       "why": "internal/runtime/moecache holds host-side MoE expert slot LRU residency, provisional admission rollback, stage demand accounting, and expert-major (row, rank) batch grouping shared across GPU backends (GPU1). It imports no goinfer package."
+    },
+    {
+      "name": "batchplan-leaf",
+      "from": [
+        "internal/runtime/batchplan"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/batchplan": [
+          "decoder/resident"
+        ]
+      },
+      "why": "internal/runtime/batchplan holds multi-sequence ragged sequence ordering, consecutive-slot row validation, post-RoPE query temperature scaling, and step-width piece slicing shared across GPU backends (GPU2). It imports only decoder/resident and the standard library."
     }
   ],
   "arrows": {
@@ -1025,6 +1041,7 @@
       "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/batchplan",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
       "internal/runtime/mem",
@@ -1052,6 +1069,7 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/batchplan",
       "internal/runtime/f16",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
@@ -1488,6 +1506,9 @@
     "internal/runtime/archparts": [
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2"
+    ],
+    "internal/runtime/batchplan": [
+      "decoder/resident"
     ],
     "internal/runtime/blockdraft": [
       "decoder/resident",
@@ -1981,6 +2002,9 @@
     "internal/guard/swapguard": [
       "decoder",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/batchplan": [
+      "decoder/resident"
     ],
     "internal/runtime/blockdraft": [
       "decoder/resident",

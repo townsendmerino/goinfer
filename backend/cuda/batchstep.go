@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/batchplan"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -124,23 +125,17 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 		r.stepChunk = raggedChunk{rows: len(s.Embs), pos: s.Pos, slot: s.Slot, promptLen: s.Prefill.PromptLen, last: s.Prefill.Last, exact: r.raggedPlantForTest == 3}
 		defer func() { r.stepChunk = raggedChunk{} }()
 	}
+	if err := batchplan.CheckDistinctSlots("cuda ragged step", r.KVSlots(), seqs, order); err != nil {
+		return nil, err
+	}
 	var embs [][]float32
 	var rows []stepRow
-	seen := make(map[int]bool, len(seqs))
 	for _, i := range order {
 		s := seqs[i]
-		switch {
-		case s.Slot < 0 || s.Slot >= r.KVSlots():
-			return nil, fmt.Errorf("cuda ragged step: sequence %d names KV slot %d of %d", i, s.Slot, r.KVSlots())
-		case seen[s.Slot]:
-			return nil, fmt.Errorf("cuda ragged step: KV slot %d is named by two sequences", s.Slot)
-		case len(s.Embs) == 0:
-			return nil, fmt.Errorf("cuda ragged step: sequence %d has no rows", i)
-		case !r.kvRoomFor(s.Pos, len(s.Embs)):
+		if !r.kvRoomFor(s.Pos, len(s.Embs)) {
 			return nil, fmt.Errorf("cuda ragged step: sequence %d's %d rows at position %d do not fit the windowed KV (window %d + %d slack)",
 				i, len(s.Embs), s.Pos, r.kvWindow, r.kvSlack)
 		}
-		seen[s.Slot] = true
 		for j, e := range s.Embs {
 			rw := stepRow{slot: s.Slot, pos: s.Pos + j}
 			switch {
@@ -182,29 +177,7 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 // with no draw, its rows inside its prompt and ending it exactly when it is the prompt's Last pass, so its class and its head are
 // its pass's), then the others in their order.
 func raggedOrder(seqs []decoder.ResidentRaggedSeq) ([]int, error) {
-	order := make([]int, 0, len(seqs))
-	for i, s := range seqs {
-		if s.Prefill == nil {
-			continue
-		}
-		switch {
-		case len(order) > 0:
-			return nil, fmt.Errorf("cuda ragged step: sequences %d and %d are both prefill chunks; a step takes one", order[0], i)
-		case s.Draw != nil:
-			return nil, fmt.Errorf("cuda ragged step: sequence %d is a prefill chunk with a draw", i)
-		case s.Prefill.PromptLen < s.Pos+len(s.Embs):
-			return nil, fmt.Errorf("cuda ragged step: sequence %d's chunk ends at %d, past its prompt's %d", i, s.Pos+len(s.Embs), s.Prefill.PromptLen)
-		case s.Prefill.Last != (s.Pos+len(s.Embs) == s.Prefill.PromptLen):
-			return nil, fmt.Errorf("cuda ragged step: sequence %d's chunk ends at %d of a %d-row prompt with Last %v", i, s.Pos+len(s.Embs), s.Prefill.PromptLen, s.Prefill.Last)
-		}
-		order = append(order, i)
-	}
-	for i, s := range seqs {
-		if s.Prefill == nil {
-			order = append(order, i)
-		}
-	}
-	return order, nil
+	return batchplan.RaggedOrder("cuda ragged step", seqs)
 }
 
 // raggedChunkDecline is why this model's step cannot take a prefill chunk, or nil: the chunk runs prefillCore's attention and
@@ -516,8 +489,5 @@ func (r *cudaResident) stepDraw(d *decoder.ResidentBatchDraw) (int, error) {
 // qTempScaleAt is the post-RoPE query scale at pos (Ministral 3, FeatAttnTemp; 1 for every other family) — launchToken's
 // own expression, shared so a step row computes exactly its decode's.
 func (r *cudaResident) qTempScaleAt(pos int) float32 {
-	if r.attnTempBeta == 0 {
-		return 1
-	}
-	return float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
+	return batchplan.AttnTempScale(pos, r.attnTempBeta, r.attnTempOrigMaxPos)
 }

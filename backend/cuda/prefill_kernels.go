@@ -4,13 +4,13 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"strconv"
 	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
+	"github.com/townsendmerino/goinfer/internal/runtime/batchplan"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -159,9 +159,7 @@ func (r *cudaResident) attnTempRows(startPos, M int) (gpu.KernelArg, error) {
 	}
 	if key := [2]int{startPos, M}; key != r.qTempRowsKey {
 		rows := make([]float32, M)
-		for m := range rows {
-			rows[m] = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(startPos+m)/r.attnTempOrigMaxPos)))
-		}
+		batchplan.FillAttnTempRows(rows, startPos, r.attnTempBeta, r.attnTempOrigMaxPos)
 		if e := gpu.Upload(r.qTempRowsB, rows); e != nil {
 			return ArgNull(), e
 		}
