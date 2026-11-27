@@ -122,3 +122,15 @@ func TestInkling2_detectsBareVocab(t *testing.T) {
 		t.Fatalf("Detect = %v, %v", tp, err)
 	}
 }
+
+type allTokens struct{}
+
+func (allTokens) TokenID(string) (int, bool) { return 1, true }
+
+// TestInkling2_noReasoningBudget: Inkling 2 thinks in a message, not a delimited block, so it takes no budget (and the
+// budget's builder must not read a reasoning spec it does not have).
+func TestInkling2_noReasoningBudget(t *testing.T) {
+	if b := Inkling2().NewReasoningBudgetFor(allTokens{}, nil, 64); b != nil {
+		t.Fatal("a reasoning budget for Inkling 2")
+	}
+}
