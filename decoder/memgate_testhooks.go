@@ -4,12 +4,12 @@ package decoder
 
 import (
 	"cmp"
-	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"reflect"
 	"slices"
 	"strings"
 	"unsafe"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
@@ -38,11 +38,8 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	}
 	cv := reflect.ValueOf(&c.c).Elem()
 	for _, f := range reflect.VisibleFields(cv.Type()) {
-		if f.Anonymous {
-			continue
-		}
 		name := f.Name
-		if cpuCacheIgnored[name] {
+		if f.Anonymous || cpuCacheIgnored[name] {
 			continue
 		}
 		ln, ok := cpuCacheLines[name]
