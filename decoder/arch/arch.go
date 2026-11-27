@@ -179,6 +179,14 @@ type Architecture struct {
 	// gptoss, which also sets per-head sinks alongside its clamped interleaved-SwiGLU MoE;
 	// hasAttnSinks() unifies both for loader validation, residency, and FeatAttnSink.
 	AttnSinks bool
+
+	// Inkling2, when non-nil, marks an Inkling 2 decoder (inkling2, inkling2_loop). NumLayers counts layer visits
+	// (Inkling2.Visits), each one opInkling2 holding the whole layer: attention-residual mixes, the relative-bias attention
+	// with per-token sinks and short convolutions, the SITU MoE, and on the loop's later passes the message controllers.
+	// Weights are per physical layer; Weights.Layers holds one entry per visit, sharing the physical layer's tensors.
+	Inkling2 *archparts.Inkling2Params
+	// Inkling2Head is the model-level tensors the forward reads besides the embedding, the final norm and the head.
+	Inkling2Head *archparts.Inkling2HeadWeights
 }
 
 // AttnChunkStart returns the first key position a query at pos may attend on this layer, or 0
@@ -270,9 +278,10 @@ func (a *Architecture) HasNoAttentionKVAt(i int) bool {
 
 // KVPositionsAt returns how many of ctx cache positions layer i's K/V must hold resident: ctx for an ordinary layer, or
 // SlidingWindow once ctx exceeds it for a local layer under a sliding-window architecture (the ring never grows past its
-// window). Meaningless but harmless for a layer kvDimAt prices at zero (the caller multiplies the two).
+// window). Meaningless but harmless for a layer kvDimAt prices at zero (the caller multiplies the two). Inkling 2's local
+// visits store every position (its cache has no rings), so they are priced at ctx.
 func (a *Architecture) KVPositionsAt(i, ctx int) int {
-	if a.SlidingWindow > 0 && !a.IsGlobalLayer(i) && ctx > a.SlidingWindow {
+	if a.SlidingWindow > 0 && !a.IsGlobalLayer(i) && ctx > a.SlidingWindow && a.Inkling2 == nil {
 		return a.SlidingWindow
 	}
 	return ctx
@@ -538,6 +547,7 @@ const (
 	ActSiLU     = program.ActSiLU
 	ActReLU2    = program.ActReLU2
 	ActGelu     = program.ActGelu
+	ActSitu     = program.ActSitu
 )
 
 // KVRowPad is the row pad, in elements, a CPU cache of this architecture takes at elemBytes per element: one 64 B line when every layer
@@ -545,7 +555,7 @@ const (
 // It is the one eligibility rule; KVCache.setRowPad and the plan's price both read it. A ring, an MLA latent or hybrid recurrent
 // state declines it, as does a per-layer KV width.
 func (a *Architecture) KVRowPad(elemBytes int) int {
-	if a.KVRowPadAlign == 0 || a.MLA != nil || a.Gemma4 != nil || a.Qwen35 != nil || a.LFM2 != nil || a.Granite != nil || a.Nemotron != nil || a.KDA != nil {
+	if a.KVRowPadAlign == 0 || a.MLA != nil || a.Gemma4 != nil || a.Qwen35 != nil || a.LFM2 != nil || a.Granite != nil || a.Nemotron != nil || a.KDA != nil || a.Inkling2 != nil {
 		return 0
 	}
 	kvDim := a.NumKVHeads * a.HeadDim
@@ -555,4 +565,19 @@ func (a *Architecture) KVRowPad(elemBytes int) int {
 		}
 	}
 	return archparts.KVRowPadElems(kvDim, elemBytes, a.KVRowPadAlign)
+}
+
+// WeightLayerOf is the first layer whose weights layer i shares: i itself, except on an Inkling 2 loop model, where a later
+// visit of a core layer holds a copy of its first visit's LayerWeights. A sum over the weights counts only layers it returns
+// themselves for.
+func (a *Architecture) WeightLayerOf(i int) int {
+	p := a.Inkling2
+	if p == nil || p.LoopPasses <= 1 {
+		return i
+	}
+	v := p.Visits()
+	if i < 0 || i >= len(v) || v[i].Pass == 0 {
+		return i
+	}
+	return v[i].Phys
 }

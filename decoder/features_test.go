@@ -140,7 +140,10 @@ var archFeatureProfile = map[string][]darch.ResidentFeature{
 	// LFM2/LFM2.5: FeatShortConv is what keeps this CPU-only. Strip it and the profile is
 	// {FeatQKNorm} — which every resident backend implements, so all three would admit a
 	// family none of them can run. Same shape as laguna's FeatAttnOutputGateSoftplus above.
-	"lfm2":             {darch.FeatQKNorm, darch.FeatShortConv},
+	"lfm2": {darch.FeatQKNorm, darch.FeatShortConv},
+	// inkling2_loop: a sigmoid-routed MoE with SITU experts (an activation no gated kernel has), a final softcap and sliding
+	// layers. Its visits are one opInkling2 each, which RunnerShapeDeclineSSM declines before any feature is read.
+	"inkling2_loop":    {darch.FeatFinalLogitSoftcap, darch.FeatGatedActUnknown, darch.FeatMoE, darch.FeatSlidingWindow},
 	"lfm2_vl":          {darch.FeatQKNorm, darch.FeatShortConv}, // S10: LFM2-VL's text_config is lfm2
 	"qwen3_5_moe_text": {darch.FeatMoE, darch.FeatMoEGatedShared, darch.FeatPartialRotary, darch.FeatQKNorm, darch.FeatRMSAddOne, darch.FeatDeltaNet},
 	// Gemma, VERIFIED against the real checkpoints via RequiredResidentFeatures. gemma4 needs the FINAL-logit softcap (one
@@ -225,9 +228,10 @@ var admissionGolden = map[string][]string{
 	"spark2_5": {},
 	// lfm2: no resident backend implements the gated short conv (FeatShortConv) or its
 	// rolling window, so every one declines. CPU-only until a bridge lands.
-	"lfm2":    {},
-	"lfm2_vl": {}, // the same lfm2 decoder
-	"gpt2":    {"metal"},
+	"lfm2":          {},
+	"inkling2_loop": {}, // CPU only: every backend declines its opInkling2 visits (TestInkling2_noResidentBackend)
+	"lfm2_vl":       {}, // the same lfm2 decoder
+	"gpt2":          {"metal"},
 	// gpt_oss reaches ALL THREE backends, each on end-to-end evidence: metal on the tiny fixture (TestGptOssResidentParity);
 	// cuda on the real 20B, resident on an 8 GB card through --moe-cache-experts (TestGptOssResidentParityCUDA), the stronger
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels

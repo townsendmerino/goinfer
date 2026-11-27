@@ -1,6 +1,8 @@
 package cpuengine
 
-// CacheRecurrent holds the in-place rolling mixer states (Gated DeltaNet, LFM2 short-conv, Mamba-2, KDA)
+import "github.com/townsendmerino/goinfer/internal/runtime/inkling2"
+
+// CacheRecurrent holds the in-place rolling mixer states (Gated DeltaNet, LFM2 short-conv, Mamba-2, KDA, Inkling 2)
 // and DeepSeek MLA's compressed-KV latent arrays for one sequence.
 type CacheRecurrent struct {
 	// RecurrentResets counts ResetRecurrent calls: a diagnostic the test that proves a clean session does not zero its state twice
@@ -31,6 +33,9 @@ type CacheRecurrent struct {
 	// [headDim,headDim]-per-head matrix state) for the linear layers (nil entry on the MLA
 	// layers, which use MLALatent above instead; nil slice on every other family).
 	KDA []*KDAState
+
+	// Ink is each Inkling 2 visit's four short-convolution windows; nil for other families.
+	Ink []*inkling2.ConvState
 }
 
 // AppendLatent stores one position's MLA latent (the compressed KV || rope-key vector)
@@ -53,7 +58,7 @@ func (r *CacheRecurrent) Latent(layer int) []float32 { return r.MLALatent[layer]
 // conversation's window into the next (TruncateTo(0) leaving it intact) and reports a partial rewind exact, so a rewound prefix
 // is warm-reused over stale windows. recurrent_census_test.go asks the struct, so a new kind cannot be missed.
 func (r *CacheRecurrent) HasRecurrentState() bool {
-	return r.Mamba != nil || r.Delta != nil || r.Conv != nil || r.KDA != nil
+	return r.Mamba != nil || r.Delta != nil || r.Conv != nil || r.KDA != nil || r.Ink != nil
 }
 
 // ResetRecurrent re-zeroes the rolling state of every recurrent kind (Mamba-2, Gated DeltaNet, LFM2 conv, KDA: conv windows and
@@ -88,6 +93,11 @@ func (r *CacheRecurrent) ResetRecurrent() {
 			for i := range st.S {
 				st.S[i] = 0
 			}
+		}
+	}
+	for _, st := range r.Ink {
+		if st != nil {
+			st.Reset()
 		}
 	}
 }

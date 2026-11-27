@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // mlaOpParamsAt is layer l's opMLA parameters.
@@ -56,6 +57,9 @@ func (a *Architecture) LayerOps(l int, hasExperts bool) []op {
 
 	if a.Llama4 != nil {
 		return a.llama4LayerOps(l, input, ffn)
+	}
+	if a.Inkling2 != nil {
+		return a.inkling2LayerOps(l)
 	}
 	if a.Gemma4 != nil {
 		return a.gemma4LayerOps(l, hasExperts)
@@ -183,6 +187,8 @@ func (a *Architecture) AttnOrder() attnOrder {
 		return attnQuery
 	case a.Gemma4 != nil:
 		return attnGemma4
+	case a.Inkling2 != nil:
+		return attnInkling2
 	}
 	return attnBatchedAcc64
 }
@@ -291,4 +297,19 @@ func (a *Architecture) llama4LayerOps(l int, input func(normSlot) op, ffn func(o
 		f.FFN = ffnParams{Form: ffnLlama4MoE, Act: a.Act, MoE: *a.MoE}
 	}
 	return append(ops, f, op{Kind: opResidual})
+}
+
+// inkling2LayerOps is one Inkling 2 layer visit: a single opInkling2 on the residual, reading the visit's physical layer,
+// with the routing on its FFN.
+func (a *Architecture) inkling2LayerOps(l int) []op {
+	p := a.Inkling2
+	v := p.Visits()[l]
+	swa := p.SWA[v.Phys]
+	ink := program.Inkling2Params{Phys: v.Phys, Pass: v.Pass, Boundary: v.Boundary, SWA: swa, Eps: a.NormEps,
+		QKClip: p.QKClip, RelClip: p.RelClip, LogFloor: p.LogFloor, LogAlpha: p.LogAlpha, ConvK: p.ConvK,
+		Extent: p.RelExtent, SituBeta: p.SituBeta, SituUp: p.SituLinearBeta}
+	if swa {
+		ink.Window, ink.Extent = a.SlidingWindow, a.SlidingWindow
+	}
+	return []op{{Kind: opInkling2, FFN: ffnParams{Form: ffnMoE, Act: a.Act, MoE: *a.MoE}, Ink: ink}}
 }

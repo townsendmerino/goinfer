@@ -5,6 +5,7 @@ import (
 	"errors"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"reflect"
 	"slices"
 	"testing"
@@ -29,6 +30,7 @@ var markState = map[cacheState]func(c *KVCache){
 	stateShortConv:   func(c *KVCache) { c.c.Conv = []*shortConvState{} },
 	stateMamba2:      func(c *KVCache) { c.c.Mamba = []*mamba2State{} },
 	stateKDA:         func(c *KVCache) { c.c.KDA = []*kdaState{} },
+	stateInkling2:    func(c *KVCache) { c.c.Ink = []*inkling2.ConvState{} },
 	stateImageBlocks: func(c *KVCache) { c.c.ImgBlocks = [][2]int{{1, 3}} },
 	stateMRoPE:       func(c *KVCache) { c.c.MRopePos = [][3]int{{0, 0, 0}, {1, 1, 1}, {1, 2, 2}}; c.c.MRopeDelta = -1 },
 	stateDeepstack:   func(c *KVCache) { c.c.Deepstack = &deepstackRows{} },

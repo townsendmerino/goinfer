@@ -229,6 +229,9 @@ func (r *Reasoning) suffix(m ThinkMode) []Segment {
 // WithThinking returns t rendering thinking mode m. A family without a Reasoning spec returns t unchanged — the
 // fail-toward-today's-bytes rule — so the caller needs no per-family branch.
 func (t *Template) WithThinking(m ThinkMode) *Template {
+	if t != nil && t.name == "inkling2" && m != t.think {
+		return t.inklingWith(t.effort, m)
+	}
 	if t == nil || t.reason == nil || m == t.think {
 		return t
 	}
@@ -271,6 +274,9 @@ func (t *Template) PromptOpensThink() bool {
 func (t *Template) ThinkingPossible() bool {
 	if t != nil && t.name == "harmony" {
 		return true // gpt-oss has no off form in its prompt: every reply opens an analysis message, whatever the mode
+	}
+	if t != nil && t.name == "inkling2" {
+		return t.think != ThinkOff // effort 0 asks for no thinking message; the model may still write one
 	}
 	if t == nil || t.reason == nil {
 		return false

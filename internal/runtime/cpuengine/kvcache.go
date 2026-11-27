@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -1081,6 +1082,11 @@ func NewCacheForArch(a *darch.Architecture, capHint int, kvI8, kvH bool, knobs K
 	if a.KDA != nil {
 		c.ManualPos = true
 		c.KDA = layerStates(a.NumLayers, a.IsLinearLayer, func() *KDAState { return NewKDAState(*a.KDA) })
+	}
+	if a.Inkling2 != nil {
+		// Every visit holds KV and four conv windows; manualPos because walkToken advances once per token after the visits.
+		c.ManualPos = true
+		c.Ink = layerStates(a.NumLayers, func(int) bool { return true }, func() *inkling2.ConvState { return new(inkling2.ConvState) })
 	}
 	return c
 }

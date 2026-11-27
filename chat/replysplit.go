@@ -28,6 +28,9 @@ func (t *Template) NewReplySplitter(turns []Turn) *ReplySplitter {
 	if t != nil && t.name == "harmony" {
 		return &ReplySplitter{sp: newHarmonySplitter()}
 	}
+	if t != nil && t.name == "inkling2" {
+		return &ReplySplitter{sp: &inklingSplitter{}}
+	}
 	sp := t.NewReasoningSplitter(turns)
 	if sp == nil {
 		return nil
@@ -62,6 +65,9 @@ func (r *ReplySplitter) ToolCalls() []ToolCall {
 	}
 	if h, ok := r.sp.(*harmonySplitter); ok {
 		return harmonyToolCalls(h.calls)
+	}
+	if s, ok := r.sp.(*inklingSplitter); ok {
+		return inklingToolCalls(s.calls)
 	}
 	return nil
 }

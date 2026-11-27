@@ -25,6 +25,7 @@ const (
 	OpGemma4MoE                    // the residual in place: Gemma 4's parallel dense ‖ MoE block, which returns the whole layer output
 	OpPLE                          // the residual in place: Gemma 4's per-layer-embedding branch
 	OpLayerScale                   // the residual in place: × the layer's learned output scalar, when it has one
+	OpInkling2                     // the residual in place: one Inkling 2 layer visit (inkling2Visit), on the token's attention-residual blocks and the visit's KV and conv state
 )
 
 const (
@@ -64,6 +65,7 @@ const (
 	AttnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
 	AttnMLA                               // the family attends through opMLA, over a latent cache
 	AttnGemma4                            // the family attends through opGemma4Attn (gemma4Attend: float32 matmuls)
+	AttnInkling2                          // the family attends inside opInkling2 (inkling2.Attend: float64 dots and accumulation)
 )
 
 const (
@@ -88,4 +90,7 @@ const (
 	// implements it: residentFeatures derives FeatGatedGELUErf or FeatNonGatedGELUErf,
 	// which no backend declares.
 	ActGelu
+	// ActSitu is Inkling 2's expert activation, 4·tanh(g/4)·sigmoid(g) · 25·tanh(u/25) at the checkpoint's softcaps
+	// (inkling2.Situ); appended for the same reason as ActGelu. Only opInkling2's CPU walker runs it.
+	ActSitu
 )

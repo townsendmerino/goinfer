@@ -125,6 +125,9 @@ func stateSpecsByFamily(a *darch.Architecture, l int) []StateSpec {
 	case a.Granite != nil && a.IsMambaLayer(l):
 		g := a.Granite
 		return mamba(archparts.Mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
+	case a.Inkling2 != nil:
+		kv := a.NumKVHeads * a.HeadDim
+		return []StateSpec{{Name: "window", Floats: (a.Inkling2.ConvK - 1) * (2*kv + 2*a.HiddenDim)}}
 	case a.Nemotron != nil && a.Nemotron.BlockKind[l] == archparts.NemoMamba:
 		n := a.Nemotron
 		return mamba(archparts.Mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})
@@ -132,9 +135,10 @@ func stateSpecsByFamily(a *darch.Architecture, l int) []StateSpec {
 	return nil
 }
 
-// checkpointByFamily is the family-keyed checkpoint list: every state buffer, except on a KDA or short-conv model, which keeps none.
+// checkpointByFamily is the family-keyed checkpoint list: every state buffer, except on a KDA, short-conv or Inkling 2 model, which
+// keeps none.
 func checkpointByFamily(a *darch.Architecture) []int64 {
-	if a.KDA != nil || a.LFM2 != nil {
+	if a.KDA != nil || a.LFM2 != nil || a.Inkling2 != nil {
 		return nil
 	}
 	var out []int64
@@ -173,7 +177,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 			return
 		}
 		for fam, on := range map[string]bool{"DeltaNet": a.Qwen35 != nil, "short conv": a.LFM2 != nil, "KDA": a.KDA != nil, "Granite Mamba-2": a.Granite != nil,
-			"Nemotron-H Mamba-2": a.Nemotron != nil} {
+			"Nemotron-H Mamba-2": a.Nemotron != nil, "Inkling 2": a.Inkling2 != nil} {
 			if on {
 				families[fam] = true
 			}

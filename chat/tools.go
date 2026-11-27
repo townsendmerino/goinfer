@@ -70,6 +70,8 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 		return harmonySegments(t.harmonyEffort(), system, turns, tools)
 	case "flint":
 		return t.renderFlintTools(system, turns, tools)
+	case "inkling2":
+		return t.inkling2Segments(system, turns, tools)
 	}
 	return t.RenderSegments(system, turns) // gemma3 etc.: no native tool template
 }
@@ -77,7 +79,7 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 // SupportsTools reports whether this family has a tool-calling template.
 func (t *Template) SupportsTools() bool {
 	switch t.name {
-	case "chatml", "mellum2", "mistral", "llama3", "gemma4", "harmony", "flint":
+	case "chatml", "mellum2", "mistral", "llama3", "gemma4", "harmony", "flint", "inkling2":
 		return true
 	}
 	return false
@@ -131,6 +133,8 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 		return parseHarmonyTools(out)
 	case "flint":
 		return parseFlintTools(out, nil)
+	case "inkling2":
+		return parseInklingTools(out)
 	}
 	return nil, out
 }

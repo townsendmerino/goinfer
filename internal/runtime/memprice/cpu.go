@@ -82,8 +82,11 @@ func CPUStructBytes(w *darch.Weights) (dense, experts int64) {
 	dense = int64(unsafe.Sizeof(*w)) + int64(cap(w.Layers))*int64(unsafe.Sizeof(darch.LayerWeights{})) +
 		int64(len(w.KQuant))*int64(unsafe.Sizeof((*int8)(nil))+unsafe.Sizeof(archparts.KQuantSrc{}))
 	for i := range w.Layers {
+		if w.Arch != nil && w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer shares the first visit's structs
+		}
 		l := &w.Layers[i]
-		dense += ptrSize(l.Delta) + ptrSize(l.QAttn) + ptrSize(l.ShortConv) + ptrSize(l.Mamba) + ptrSize(l.MLA) + ptrSize(l.KDA) + ptrSize(l.Gemma4MoE)
+		dense += ptrSize(l.Delta) + ptrSize(l.QAttn) + ptrSize(l.ShortConv) + ptrSize(l.Mamba) + ptrSize(l.MLA) + ptrSize(l.KDA) + ptrSize(l.Gemma4MoE) + ptrSize(l.Inkling)
 		experts += int64(cap(l.Experts)) * int64(unsafe.Sizeof(archparts.ExpertWeights{}))
 		if mo := l.Gemma4MoE; mo != nil {
 			experts += int64(cap(mo.ExpertsGateUp)+cap(mo.ExpertsDown)) * int64(unsafe.Sizeof(linalg.WeightMat{}))

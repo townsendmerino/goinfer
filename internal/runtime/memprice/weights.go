@@ -86,8 +86,21 @@ func DenseVectorBytes(w *darch.Weights) int64 {
 		return 0
 	}
 	n := F32SliceBytes(w.FinalNorm, w.FinalNormBias, w.PerLayerProjNorm)
+	if w.Arch != nil && w.Arch.Inkling2Head != nil {
+		n += F32SliceBytes(w.Arch.Inkling2Head.EmbedNorm, w.Arch.Inkling2Head.OutputResQuery)
+	}
 	for i := range w.Layers {
+		if w.Arch != nil && w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer: its tensors are the first visit's
+		}
 		l := &w.Layers[i]
+		if x := l.Inkling; x != nil {
+			n += F32SliceBytes(x.QClip, x.RelClip, x.RelBias, x.KConv, x.VConv, x.AttnConv, x.FFConv, x.KInpNorm, x.VInpNorm,
+				x.AttnResQuery, x.FFNResQuery, x.MsgQuery)
+			for c := range x.Ctrl {
+				n += F32SliceBytes(x.Ctrl[c].Down, x.Ctrl[c].Gain, x.Ctrl[c].Forget)
+			}
+		}
 		n += F32SliceBytes(l.QBias, l.KBias, l.VBias, l.OBias, l.QNorm, l.KNorm, l.PreAttnNorm, l.PreAttnNormBias, l.PostAttnNorm,
 			l.UpBias, l.DownBias, l.PreMLPNorm, l.PreMLPNormBias, l.PostMLPNorm, l.RouterBias, l.AttnSinks, l.PostPLENorm,
 			l.SharedExpert.GateBias, l.SharedExpert.UpBias, l.SharedExpert.DownBias)
@@ -169,6 +182,9 @@ func WeightBytesSplit(w *darch.Weights, in func([]byte) bool) (dense, mmapDense 
 	var fullExpertBytes, mmapExpertBytes []int64
 	var expertCounts []int
 	for i := range w.Layers {
+		if w.Arch != nil && w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer: its tensors are the first visit's
+		}
 		l := &w.Layers[i]
 		for _, mat := range []*linalg.WeightMat{
 			&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj,
@@ -214,6 +230,11 @@ func WeightBytesSplit(w *darch.Weights, in func([]byte) bool) (dense, mmapDense 
 		}
 		if mb := l.Mamba; mb != nil {
 			dense += F32SliceBytes(mb.InProj, mb.ConvW, mb.OutProj) + WMBytes(&mb.InQ) + WMBytes(&mb.OutQ)
+		}
+		if x := l.Inkling; x != nil {
+			for _, m := range []*linalg.WeightMat{&x.SinkProj, &x.Rel, &x.KConvProj, &x.VConvProj} {
+				count(m)
+			}
 		}
 		if sc := l.ShortConv; sc != nil {
 			count(&sc.InProj)

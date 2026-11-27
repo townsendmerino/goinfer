@@ -226,7 +226,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
-		if len(dims) != 2 || dims[0] != in || dims[1] != out {
+		if len(dims) != 2 || dims[0] != in || (dims[1] != out && !paddedVocabRows(arch, dims[1], out)) {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
 		// into reads the mapping and writes dst alone, so every row range shares it.
@@ -421,35 +421,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	b := &ggufBuild{arch: arch, g: g, w: w, quant: quant, needCanonical: needCanonical, skipRow4: skipRow4, sink: sink, abort: abort, h: h,
 		hidden: hidden, streamMat: streamMat, mat: mat, vec: vec, vnorm: vnorm, stackedExperts: stackedExperts, hd: hd, permMat: permMat, cfg: cfg, embInto: embInto, id: id, fusedSplit: fusedSplit}
 
-	if q := arch.Qwen35; q != nil {
-		return b.loadQwen35(q)
-	}
-
-	if arch.GPTOSS != nil {
-		return b.loadGptOss()
-	}
-
-	if arch.Laguna != nil {
-		return b.loadLaguna()
-	}
-
-	if gp := arch.Granite; gp != nil {
-		return b.loadGranite(gp)
-	}
-
-	if npar := arch.Nemotron; npar != nil {
-		return b.loadNemotron(npar)
-	}
-
-	if g4 := arch.Gemma4; g4 != nil {
-		return b.loadGemma4(g4)
-	}
-
-	if lp := arch.Llama4; lp != nil {
-		return b.loadLlama4(lp)
-	}
-
-	return b.loadLayers()
+	return b.loadFamily()
 }
 
 // GGUFScaledRowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale` tensor is present (llama.cpp
