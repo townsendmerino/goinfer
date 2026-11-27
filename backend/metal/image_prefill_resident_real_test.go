@@ -29,6 +29,8 @@ import (
 //
 // Bar: the resident path's worst cosine >= production's worst - 0.005, and every argmax difference against the reference an
 // R10 near-tie (the reference's own p(other) >= half p(top)). The planted defect must miss that bar. GOINFER_HEAVY_TESTS=1.
+var s3Images = []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"}
+
 func TestImagePrefillResident_gemma3Real(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")

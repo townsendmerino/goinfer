@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sync"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -52,7 +54,7 @@ type g4vAccel struct {
 	ropeCos, ropeSin      Buffer
 }
 
-func newG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
+func NewG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
 	w, err := enc.Weights()
 	if err != nil {
 		return nil, fmt.Errorf("metal: %w", err)
@@ -63,14 +65,14 @@ func newG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
 			c.NumAttentionHeads, c.HeadDim, c.HiddenSize)
 	}
 	a := &g4vAccel{cfg: c, theta: w.RopeTheta}
-	a.eg2Ops, err = newEG2Ops(g4vMSL, map[string]*Pipeline{"g4v_pos_add": &a.gp.posAdd, "g4v_clamp": &a.gp.clamp,
+	a.eg2Ops, err = newEG2Ops(kernels.G4vMSL, map[string]*Pipeline{"g4v_pos_add": &a.gp.posAdd, "g4v_clamp": &a.gp.clamp,
 		"g4v_clamp_copy": &a.gp.clampCopy, "g4v_rope": &a.gp.rope})
 	if err != nil {
 		return nil, err
 	}
 	a.eps = float32(c.RMSNormEps)
 	d := a.d
-	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
+	up := func(v []float32) Buffer { return gpu.NewBufferOfOn(d, mem.LineCompanion, v) }
 	proj := func(p vision.Gemma4Proj) g4vProj {
 		return g4vProj{w: up(p.W), out: p.Out, in: p.In, inMin: p.InMin, inMax: p.InMax, outMin: p.OutMin, outMax: p.OutMax}
 	}

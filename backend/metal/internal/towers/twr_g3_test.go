@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func TestTWRG3_qwen3VLHostHeap(t *testing.T) {
 		}
 	}
 	w = vision.Qwen3Weights{}
-	a, err := newQwen3VAccel(enc)
+	a, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}

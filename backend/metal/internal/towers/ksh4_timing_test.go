@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -30,7 +30,7 @@ func TestKSH4_repeatCallTiming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := newQwen3VAccel(enc)
+	a, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +43,8 @@ func TestKSH4_repeatCallTiming(t *testing.T) {
 		px[i] = float32(math.Sin(float64(i) * 0.001))
 	}
 	call := func(off bool) float64 {
-		gridReleaseOffForTest = off
-		defer func() { gridReleaseOffForTest = false }()
+		a.releaseOff = off
+		defer func() { a.releaseOff = false }()
 		t0 := time.Now()
 		if _, err := a.Hidden(px, [][3]int{g}); err != nil {
 			t.Fatal(err)

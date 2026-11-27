@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sync"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -48,7 +50,7 @@ type g4aAccel struct {
 	x, xn, cp, u, f, q, k, v, ctx, o, g, gl, cv Buffer
 }
 
-func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
+func NewG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 	c := enc.Cfg
 	H, nH := c.HiddenSize, c.NumAttentionHeads
 	hd := H / nH
@@ -57,7 +59,7 @@ func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 	}
 	a := &g4aAccel{cfg: c}
 	var err error
-	a.eg2Ops, err = newEG2Ops(g4vMSL+g4aMSL, map[string]*Pipeline{"g4v_pos_add": &a.gp.posAdd, "g4v_clamp": &a.gp.clamp,
+	a.eg2Ops, err = newEG2Ops(kernels.G4vMSL+kernels.G4aMSL, map[string]*Pipeline{"g4v_pos_add": &a.gp.posAdd, "g4v_clamp": &a.gp.clamp,
 		"g4v_clamp_copy": &a.gp.clampCopy, "g4v_rope": &a.gp.rope, "g4a_silu": &a.ap.silu, "g4a_axpy": &a.ap.axpy,
 		"g4a_glu": &a.ap.glu, "g4a_dwconv": &a.ap.dwconv, "g4a_scale_qk": &a.ap.scaleQK, "g4a_attn": &a.ap.attn})
 	if err != nil {
@@ -65,7 +67,7 @@ func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 	}
 	a.eps = float32(c.RMSNormEps)
 	d := a.d
-	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
+	up := func(v []float32) Buffer { return gpu.NewBufferOfOn(d, mem.LineCompanion, v) }
 	proj := func(p audio.Gemma4Proj) g4vProj {
 		return g4vProj{w: up(p.W), out: p.Out, in: p.In, inMin: p.InMin, inMax: p.InMax, outMin: p.OutMin, outMax: p.OutMax}
 	}

@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package towers
 
 import (
 	"crypto/sha256"
@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -22,7 +23,7 @@ import (
 // mem2Towers over its committed tiny fixture and growing inputs, the SHA-256 of each output's bits. Run from a test binary at
 // the change and one at its base; every line must match.
 func TestKSD4_towerHashes(t *testing.T) {
-	if _, err := CreateSystemDefaultDevice(); err != nil {
+	if _, err := gpu.CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	for _, tw := range mem2Towers(t) {
@@ -57,7 +58,7 @@ func TestKSD4_g4vSpeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := newG4VAccel(enc)
+	a, err := NewG4VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestKSD4_g4vSpeed(t *testing.T) {
 	}
 	var imgs []img
 	for _, name := range s3Images {
-		b, err := os.ReadFile(filepath.Join("../../testdata", name))
+		b, err := os.ReadFile(filepath.Join("../../../../testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}

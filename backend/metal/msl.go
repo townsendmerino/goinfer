@@ -10,12 +10,7 @@ const (
 	batchKernelsHeader = kernels.BatchKernelsHeader
 	batchKernels       = kernels.BatchKernels
 	deltaNetKernels    = kernels.DeltaNetKernels
-	eg2MSL             = kernels.Eg2MSL
-	g4aMSL             = kernels.G4aMSL
 	gemma4MoeKernels   = kernels.Gemma4MoeKernels
-	g4vMSL             = kernels.G4vMSL
-	gvMSL              = kernels.GvMSL
-	towerGemmMSL       = kernels.TowerGemmMSL
 	gumbelMSLKernels   = kernels.GumbelMSLKernels
 	moeKernels         = kernels.MoeKernels
 	moeBatchKernels    = kernels.MoeBatchKernels

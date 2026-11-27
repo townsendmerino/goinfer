@@ -19,7 +19,7 @@ import (
 var forTestGlobalsRatchet = map[string]int{
 	"backend/cuda":                    53,
 	"backend/cuda/internal/gpudev":    2,
-	"backend/metal":                   67,
+	"backend/metal":                   65,
 	"backend/metal/internal/gpudev":   4,
 	"backend/webgpu":                  9,
 	"backend/webgpu/internal/kernels": 29,

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -33,7 +34,7 @@ func TestMEM2_tier1Qwen3VL(t *testing.T) {
 		t.Fatal(err)
 	}
 	logf("tower loaded")
-	probe, err := CreateSystemDefaultDevice()
+	probe, err := gpu.CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestMEM2_tier1Qwen3VL(t *testing.T) {
 	// (net of the reading after the build) and what remains after Close (net of the reading before the build).
 	run := func(arm string, order ...string) (scratch, after int64) {
 		base := size()
-		a, err := newQwen3VAccel(enc)
+		a, err := NewQwen3VAccel(enc)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1036,6 +1036,30 @@
       "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
     },
     {
+      "name": "metal-towers-leaf",
+      "from": [
+        "backend/metal/internal/towers"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "backend/metal/internal/towers": [
+          "backend/metal/internal/gpudev",
+          "backend/metal/kernels",
+          "embeddinggemma2",
+          "internal/audio",
+          "internal/runtime/f16",
+          "internal/runtime/mem",
+          "internal/testgate",
+          "internal/vision",
+          "multimodal"
+        ]
+      },
+      "why": "backend/metal/internal/towers holds the standalone Metal vision, audio and embeddinggemma2 tower accelerators below backend/metal (GTW1). It never imports backend/metal or decoder."
+    },
+    {
       "name": "loraload-leaf",
       "from": [
         "internal/runtime/loraload"
@@ -1115,6 +1139,7 @@
     ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
+      "backend/metal/internal/towers",
       "backend/metal/kernels",
       "decoder",
       "embeddinggemma2",
@@ -1138,6 +1163,15 @@
     "backend/metal/cmd/serve": [
       "backend/metal",
       "internal/app/serveapp"
+    ],
+    "backend/metal/internal/towers": [
+      "backend/metal/internal/gpudev",
+      "backend/metal/kernels",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/runtime/f16",
+      "internal/runtime/mem",
+      "internal/vision"
     ],
     "backend/metal/kernels": [
       "internal/runtime/f16"
@@ -1777,7 +1811,6 @@
       "decoder/fit",
       "embeddinggemma2",
       "internal/app/loadflags",
-      "internal/audio",
       "internal/confidence",
       "internal/cost",
       "internal/diag/sb2census",
@@ -1796,6 +1829,16 @@
       "internal/wrappedupload",
       "multimodal",
       "tokenizer"
+    ],
+    "backend/metal/internal/towers": [
+      "backend/metal/internal/gpudev",
+      "backend/metal/kernels",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/runtime/mem",
+      "internal/testgate",
+      "internal/vision",
+      "multimodal"
     ],
     "backend/metal/kernels": [
       "backend/metal/internal/gpudev",

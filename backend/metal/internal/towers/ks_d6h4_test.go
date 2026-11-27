@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -33,7 +34,7 @@ func TestKSD6H4_gridTowerScratch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe, err := CreateSystemDefaultDevice()
+	probe, err := gpu.CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestKSD6H4_gridTowerScratch(t *testing.T) {
 	}
 	const MiB = 1 << 20
 	size := func() int64 { return int64(probe.CurrentAllocatedSize()) }
-	a, err := newQwen3VAccel(enc)
+	a, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}

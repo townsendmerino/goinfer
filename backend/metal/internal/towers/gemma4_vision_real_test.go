@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"encoding/binary"
@@ -72,7 +72,7 @@ func TestG4VMetal_realParity(t *testing.T) {
 			t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", p)
 		}
 	}
-	raw, err := os.ReadFile("../../testdata/embeddinggemma2-vision/golden.json")
+	raw, err := os.ReadFile("../../../../testdata/embeddinggemma2-vision/golden.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestG4VMetal_realParity(t *testing.T) {
 		if wHF < 0.9999 {
 			t.Errorf("%s: VM2 worst soft-token cosine %.9f, under 0.9999", name, wHF)
 		}
-		img, err := os.ReadFile("../../" + it.Image)
+		img, err := os.ReadFile("../../../../" + it.Image)
 		if err != nil {
 			t.Fatal(err)
 		}

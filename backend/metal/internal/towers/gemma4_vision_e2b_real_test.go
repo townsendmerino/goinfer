@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"os"
@@ -34,13 +34,13 @@ func TestG4VMetal_gemma4E2B(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := newG4VAccel(enc)
+	a, err := NewG4VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("E2B tower: hidden %d, %d layers, clipped %v, standardize %v, text width %d", enc.Cfg.HiddenSize, enc.Cfg.NumHiddenLayers, enc.Cfg.UseClippedLinears, enc.Cfg.Standardize, enc.TextHiddenSize)
 	for _, img := range []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"} {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}

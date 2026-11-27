@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"slices"
 	"testing"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -20,6 +21,7 @@ type mem2Inst struct {
 	d     *Device
 	fwd   func(i int) ([]float32, error)
 	close func() error
+	grid  *gridVAccel
 }
 
 // mem2Tower builds a fresh accelerator over one tiny fixture; inputs 0..n-1 grow in size.
@@ -41,14 +43,14 @@ func mem2Towers(t *testing.T) []mem2Tower {
 		g4vIn, g4vPos = append(g4vIn, p), append(g4vPos, pos)
 	}
 	towers = append(towers, mem2Tower{"gemma4-vision", 3, func(t *testing.T) mem2Inst {
-		a, err := newG4VAccel(g4v)
+		a, err := NewG4VAccel(g4v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return mem2Inst{a.d, func(i int) ([]float32, error) { return a.Hidden(g4vIn[i], g4vPos[i]) }, a.Close}
+		return mem2Inst{d: a.d, fwd: func(i int) ([]float32, error) { return a.Hidden(g4vIn[i], g4vPos[i]) }, close: a.Close}
 	}})
 
-	g4a, err := audio.LoadGemma4AudioEncoder("../../testdata/gemma4-audio-tiny")
+	g4a, err := audio.LoadGemma4AudioEncoder("../../../../testdata/gemma4-audio-tiny")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,13 +63,13 @@ func mem2Towers(t *testing.T) []mem2Tower {
 		g4aIn = append(g4aIn, h)
 	}
 	towers = append(towers, mem2Tower{"gemma4-audio", 3, func(t *testing.T) mem2Inst {
-		a, err := newG4AAccel(g4a)
+		a, err := NewG4AAccel(g4a)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return mem2Inst{a.d, func(i int) ([]float32, error) {
+		return mem2Inst{d: a.d, fwd: func(i int) ([]float32, error) {
 			return a.Blocks(g4aIn[i], len(g4aIn[i])/g4a.Cfg.HiddenSize)
-		}, a.Close}
+		}, close: a.Close}
 	}})
 
 	eg2, err := embeddinggemma2.Load(eg2TinyDir)
@@ -83,14 +85,14 @@ func mem2Towers(t *testing.T) []mem2Tower {
 		eg2In = append(eg2In, ids)
 	}
 	towers = append(towers, mem2Tower{"embeddinggemma2", 3, func(t *testing.T) mem2Inst {
-		a, err := newEG2Accel(eg2)
+		a, err := NewEG2Accel(eg2)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return mem2Inst{a.d, func(i int) ([]float32, error) {
+		return mem2Inst{d: a.d, fwd: func(i int) ([]float32, error) {
 			last, _, err := a.Forward(eg2In[i], false)
 			return last, err
-		}, a.Close}
+		}, close: a.Close}
 	}})
 
 	grids := gvGrids[:3] // 16, 48 and 60 patches
@@ -105,16 +107,16 @@ func mem2Towers(t *testing.T) []mem2Tower {
 		}
 		towers = append(towers, mem2Tower{gc.name, 3, func(t *testing.T) mem2Inst {
 			a := gc.mk(t).acc
-			return mem2Inst{a.d, func(i int) ([]float32, error) { return a.Hidden(px[i], grids[i]) }, a.Close}
+			return mem2Inst{d: a.d, fwd: func(i int) ([]float32, error) { return a.Hidden(px[i], grids[i]) }, close: a.Close, grid: a}
 		}})
 	}
 
-	sig, err := vision.LoadEncoder("../../testdata/siglip-tiny", false)
+	sig, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	towers = append(towers, mem2Tower{"siglip", 3, func(t *testing.T) mem2Inst {
-		r, err := newSiglipVResident(sig)
+		r, err := NewSiglipVResident(sig)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,11 +129,11 @@ func mem2Towers(t *testing.T) []mem2Tower {
 				in[i][j] = float32(math.Sin(float64(i*7 + j)))
 			}
 		}
-		return mem2Inst{r.a.d, func(i int) ([]float32, error) { return r.ForwardPatches(in[i]) },
-			func() error { r.Close(); return nil }}
+		return mem2Inst{d: r.a.d, fwd: func(i int) ([]float32, error) { return r.ForwardPatches(in[i]) },
+			close: func() error { r.Close(); return nil }, grid: r.a}
 	}})
 
-	q25, err := vision.LoadQwenVisionEncoder("../../testdata/qwen25vl-tiny", false)
+	q25, err := vision.LoadQwenVisionEncoder("../../../../testdata/qwen25vl-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,12 +145,12 @@ func mem2Towers(t *testing.T) []mem2Tower {
 		q25In = append(q25In, gvPixels(rng, g, q25PD))
 	}
 	towers = append(towers, mem2Tower{"qwen2.5-vl", 3, func(t *testing.T) mem2Inst {
-		r, err := newQwen25VResident(q25)
+		r, err := NewQwen25VResident(q25)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return mem2Inst{r.a.d, func(i int) ([]float32, error) { return r.ForwardViT(q25In[i], q25Grids[i]) },
-			func() error { r.Close(); return nil }}
+		return mem2Inst{d: r.a.d, fwd: func(i int) ([]float32, error) { return r.ForwardViT(q25In[i], q25Grids[i]) },
+			close: func() error { r.Close(); return nil }, grid: r.a}
 	}})
 	return towers
 }
@@ -159,7 +161,7 @@ func mem2Towers(t *testing.T) []mem2Tower {
 // ledger is empty and Metal's allocated size is back within 64 KiB of its reading before the build; a second Close
 // returns nil and a forward after Close is an error.
 func TestMEM2_towerScratchFreed(t *testing.T) {
-	probe, err := CreateSystemDefaultDevice()
+	probe, err := gpu.CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}

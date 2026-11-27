@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/metal/kernels"
+	"github.com/townsendmerino/goinfer/internal/runtime/f16"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -73,6 +74,8 @@ type gridVAccel struct {
 	gemmDbg        uint32   // test seam: tower_gemm_w16's planted defect (0 in production)
 	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
 	attnDbg        uint32   // test seam: tower_attn's planted defect (0 in production)
+	scratchAll     bool     // test seam: allocate every scratch buffer as the unfused form did
+	releaseOff     bool     // test seam: keep scratch until Close instead of arming idle release
 	kind           gvKind
 	hidden, inter  int
 	heads, hd      int
@@ -143,7 +146,7 @@ func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	case 64, 72, 80: // the fused attention; any other head dim keeps eg2Ops.attention
 		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
 	}
-	a.eg2Ops, err = newEG2Ops(gvMSL, more)
+	a.eg2Ops, err = newEG2Ops(kernels.GvMSL, more)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +158,7 @@ func (a *gridVAccel) up(v []float32) Buffer {
 	if len(v) == 0 {
 		return Buffer{}
 	}
-	return NewBufferFloatsOn(mem.LineCompanion, a.d, v)
+	return gpu.NewBufferOfOn(a.d, mem.LineCompanion, v)
 }
 
 func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
@@ -167,14 +170,14 @@ func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
 func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 	if a.int8W {
 		q, sc := kernels.QuantG32(w, p.out, p.in)
-		p.w8, p.ws = NewBufferInt8On(mem.LineCompanion, a.d, q), NewBufferFloatsOn(mem.LineCompanion, a.d, sc)
+		p.w8, p.ws = gpu.NewBufferOfOn(a.d, mem.LineCompanion, q), gpu.NewBufferOfOn(a.d, mem.LineCompanion, sc)
 		return p
 	}
 	h := make([]uint16, len(w))
 	for i, v := range w {
-		h[i] = f32ToF16(v)
+		h[i] = f16.Bits(v)
 	}
-	p.wh = NewBufferU16sOn(mem.LineCompanion, a.d, h)
+	p.wh = gpu.NewBufferOfOn(a.d, mem.LineCompanion, h)
 	if gvKeepF32ForAB {
 		p.w = a.up(w)
 	}
@@ -197,7 +200,7 @@ func (a *gridVAccel) splitQKV(p vision.VisionProj) (q, k, v gvProj, err error) {
 	return part(0), part(1), part(2), nil
 }
 
-func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
+func NewQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
 	w, err := enc.Weights()
 	if err != nil {
 		return nil, fmt.Errorf("metal: %w", err)
@@ -229,7 +232,7 @@ func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
 	return a, nil
 }
 
-func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
+func NewGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 	w, err := enc.Weights()
 	if err != nil {
 		return nil, fmt.Errorf("metal: %w", err)
@@ -280,11 +283,11 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 		a.x, a.xn, a.pos = n(H), n(H), n(H)
 		a.q, a.k, a.v, a.ctx, a.o = n(H), n(H), n(H), n(H), n(H)
 		a.f1 = n(I)
-		if a.kind.gated() || gridScratchAllForTest {
+		if a.kind.gated() || a.scratchAll {
 			a.f2 = n(I)
 		}
 		// The patch rows are read once, by the patch embed, before any block writes f1, so they live in f1 when it is wide enough.
-		a.ptInF1 = I >= a.patchDim && !gridScratchAllForTest
+		a.ptInF1 = I >= a.patchDim && !a.scratchAll
 		if a.ptInF1 {
 			a.pt = a.f1
 		} else {
@@ -294,7 +297,7 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 		a.cap = np
 	}
 	// The unfused attention's scratch, only when that attention can run: no fused kernel for this head dim, or the oldAttn seam.
-	unfused := a.fusedAttn == (Pipeline{}) || a.oldAttn || gridScratchAllForTest
+	unfused := a.fusedAttn == (Pipeline{}) || a.oldAttn || a.scratchAll
 	if unfused && (maxSeg > a.segCap || a.qh == (Buffer{})) {
 		a.release(&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
 		H, B := a.hidden, min(eg2Block, maxSeg)
@@ -304,10 +307,6 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 	}
 	return nil
 }
-
-// gridScratchAllForTest allocates every grid-tower scratch buffer as the unfused form did (the unfused attention's, f2 on every kind, pt
-// on its own): the old arm of its A/B.
-var gridScratchAllForTest bool
 
 // linear runs out = x·Wᵀ (+ bias) over rows.
 func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
@@ -570,12 +569,11 @@ func (a *gridVAccel) attendSegments(cur func() *Encoder, sg []int, flush func() 
 }
 
 // gridIdleRelease is how long a grid tower stays idle after a forward before it releases scratch over gridReleaseCeiling; a
-// forward in the meantime cancels the release and reuses the buffers. gridReleaseOffForTest keeps the scratch until Close.
+// forward in the meantime cancels the release and reuses the buffers. a.releaseOff keeps the scratch until Close.
 // Variables so a test can shorten them.
 var (
-	gridIdleRelease       = 5 * time.Second
-	gridReleaseCeiling    = int64(256 << 20)
-	gridReleaseOffForTest bool
+	gridIdleRelease    = 5 * time.Second
+	gridReleaseCeiling = int64(256 << 20)
 )
 
 // scratchBytes is the bytes the tower's scratch buffers hold (pt counted once when it is a view of f1).
@@ -592,7 +590,7 @@ func (a *gridVAccel) scratchBytes() int64 {
 
 // armRelease schedules the scratch's release after gridIdleRelease when it is over gridReleaseCeiling. The caller holds a.mu.
 func (a *gridVAccel) armRelease() {
-	if gridReleaseOffForTest || a.scratchBytes() <= gridReleaseCeiling {
+	if a.releaseOff || a.scratchBytes() <= gridReleaseCeiling {
 		return
 	}
 	g := a.gen

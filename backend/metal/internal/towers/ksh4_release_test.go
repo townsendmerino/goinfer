@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -45,10 +45,9 @@ func TestKSH4_releaseKeepsOutputs(t *testing.T) {
 			px = append(px, gvPixels(rng, g, pd))
 		}
 		run := func(off bool) [][]float32 {
-			gridReleaseOffForTest = off
-			defer func() { gridReleaseOffForTest = false }()
 			a := gc.mk(t).acc
 			defer a.Close()
+			a.releaseOff = off
 			var outs [][]float32
 			for _, i := range order {
 				out, err := a.Hidden(px[i], gvGrids[i])
@@ -82,10 +81,11 @@ func TestKSH4_releaseKeepsOutputs(t *testing.T) {
 			continue
 		}
 		run := func(off bool) [][]float32 {
-			gridReleaseOffForTest = off
-			defer func() { gridReleaseOffForTest = false }()
 			in := tw.build(t)
 			defer in.close()
+			if in.grid != nil {
+				in.grid.releaseOff = off
+			}
 			var outs [][]float32
 			for _, i := range []int{0, 2, 1, 0} {
 				out, err := in.fwd(i)

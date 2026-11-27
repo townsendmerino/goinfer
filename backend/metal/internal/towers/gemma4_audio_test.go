@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"compress/gzip"
@@ -17,7 +17,7 @@ import (
 // transformers' golden too, on the committed tiny random tower (testdata/gemma4-audio-tiny: finite asymmetric clip
 // bounds binding in 15 of 20 projections, random norms and per_dim_scale, 33 soft tokens so the 12-key window binds).
 func TestG4AMetal_matchesCPU(t *testing.T) {
-	f, err := os.Open("../../testdata/gemma4-audio-tiny/golden.json.gz")
+	f, err := os.Open("../../../../testdata/gemma4-audio-tiny/golden.json.gz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,11 +34,11 @@ func TestG4AMetal_matchesCPU(t *testing.T) {
 	if err := json.NewDecoder(zr).Decode(&g); err != nil {
 		t.Fatal(err)
 	}
-	enc, err := audio.LoadGemma4AudioEncoder("../../testdata/gemma4-audio-tiny")
+	enc, err := audio.LoadGemma4AudioEncoder("../../../../testdata/gemma4-audio-tiny")
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := newG4AAccel(enc)
+	a, err := NewG4AAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}

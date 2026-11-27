@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
@@ -60,7 +61,7 @@ type eg2AttnBufs struct{ q, k, v, qh, kh, vh, sc, vt, ob, ctx Buffer }
 // newEG2Ops opens the device and compiles this file's kernels with extra (more kernels in the same precise library),
 // whose pipelines it builds into more, by kernel name.
 func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
-	d, err := CreateSystemDefaultDevice()
+	d, err := gpu.CreateSystemDefaultDevice()
 	if err != nil {
 		return eg2Ops{}, fmt.Errorf("metal: %w", err)
 	}
@@ -68,7 +69,7 @@ func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
 	if err != nil {
 		return eg2Ops{}, err
 	}
-	lib, err := d.CompileLibraryPrecise(eg2MSL+towerGemmMSL+extra, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(kernels.Eg2MSL+kernels.TowerGemmMSL+extra, gpu.MSL3_1)
 	if err != nil {
 		return eg2Ops{}, fmt.Errorf("metal: compile the EmbeddingGemma 2 kernels: %w", err)
 	}
@@ -150,7 +151,7 @@ type eg2RopeKey struct {
 
 const eg2ArenaSlots = 1 << 14
 
-func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
+func NewEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 	ops, err := newEG2Ops("", nil)
 	if err != nil {
 		return nil, err
@@ -171,7 +172,7 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 			return nil, fmt.Errorf("metal: EmbeddingGemma 2 head dim %d, over the attention kernel's 512", ly.HeadDim)
 		}
 	}
-	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
+	up := func(v []float32) Buffer { return gpu.NewBufferOfOn(d, mem.LineCompanion, v) }
 	ps := float32(1 / math.Sqrt(float64(a.cfg.Hidden)))
 	scaled := make([]float32, len(w.PLEProj))
 	for i, x := range w.PLEProj {
@@ -412,7 +413,7 @@ func (a *eg2Accel) ropeTables(T, hd int, theta float64) (Buffer, Buffer) {
 		}
 	}
 	cs, sn := embeddinggemma2.RopeTables(T, hd, theta)
-	b := [2]Buffer{NewBufferFloatsOn(mem.LineCompanion, a.d, cs), NewBufferFloatsOn(mem.LineCompanion, a.d, sn)}
+	b := [2]Buffer{gpu.NewBufferOfOn(a.d, mem.LineCompanion, cs), gpu.NewBufferOfOn(a.d, mem.LineCompanion, sn)}
 	a.ropes[k] = b
 	return b[0], b[1]
 }

@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func s18RoundWeights(t *testing.T, enc *vision.Encoder) {
 }
 
 func TestS18Int8Tower_tiny(t *testing.T) {
-	enc, err := vision.LoadEncoder("../../testdata/siglip-tiny", false)
+	enc, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", false)
 	if err != nil {
 		t.Skipf("siglip-tiny: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestS18Int8Tower_tiny(t *testing.T) {
 		s3Scale(6, b.Q.W, b.K.W)
 	}
 	siglipForceInt8 = true
-	r, err := newSiglipVResident(enc)
+	r, err := NewSiglipVResident(enc)
 	siglipForceInt8 = false
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestS18Int8Tower_real(t *testing.T) {
 	pix := make([][]float32, len(s3Images))
 	exact := make([][]float32, len(s3Images))
 	for i, img := range s3Images {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +195,7 @@ func TestS18Int8Tower_real(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -timeout 30m -run '^TestS18TowerHostMemory$' -v ./metal/
 func TestS18TowerHostMemory(t *testing.T) {
 	dir := s3Real(t, "gemma-3-4b-it")
-	data, err := os.ReadFile("../../testdata/glm_ocr/table.png")
+	data, err := os.ReadFile("../../../../testdata/glm_ocr/table.png")
 	if err != nil {
 		t.Fatal(err)
 	}

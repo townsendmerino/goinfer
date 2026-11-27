@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"encoding/json"
@@ -30,7 +30,7 @@ func TestGemma3TowerDump(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := newSiglipVResident(enc)
+	r, err := NewSiglipVResident(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestGemma3TowerDump(t *testing.T) {
 	if img == "" {
 		img = "glm_ocr/table.png"
 	}
-	data, err := os.ReadFile(filepath.Join("../../testdata", img))
+	data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestGemma3TowerDump(t *testing.T) {
 	}
 	// The int8 Metal tower (tower_gemm_w8) from the same encoder, for G-S18g's follow-up.
 	siglipForceInt8 = true
-	r8, err := newSiglipVResident(enc)
+	r8, err := NewSiglipVResident(enc)
 	siglipForceInt8 = false
 	if err != nil {
 		t.Fatal(err)

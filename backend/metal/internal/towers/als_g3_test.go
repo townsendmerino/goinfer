@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package towers
 
 import (
 	"crypto/sha256"
@@ -9,6 +9,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 )
 
 // TestALS_G3_towerHashes is MEM4(a)'s ALS-G3: every tower of
@@ -17,7 +19,7 @@ import (
 // printed [ALS-G3] lines; what this test asserts itself is that each output is non-empty and finite and that a second forward of
 // the same input hashes identically in this process.
 func TestALS_G3_towerHashes(t *testing.T) {
-	if _, err := CreateSystemDefaultDevice(); err != nil {
+	if _, err := gpu.CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	towers := mem2Towers(t)

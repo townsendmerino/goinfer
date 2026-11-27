@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -32,12 +32,12 @@ func TestG4AMetal_E2BTower(t *testing.T) {
 	if err != nil {
 		t.Skipf("no E2B tower: %v", err)
 	}
-	acc, err := newG4AAccel(enc)
+	acc, err := NewG4AAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, clip := range []string{"embeddinggemma2-audio/short.wav", "embeddinggemma2-audio/mid.wav", "embeddinggemma2-audio/long.wav", "speech/librispeech-1272-128104-0000.wav"} {
-		raw, err := os.ReadFile(filepath.Join("../../testdata", clip))
+		raw, err := os.ReadFile(filepath.Join("../../../../testdata", clip))
 		if err != nil {
 			t.Fatal(err)
 		}

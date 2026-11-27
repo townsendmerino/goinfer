@@ -132,6 +132,7 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 | `backend/webgpu/` | the WebGPU backend (opt-in cgo build, tag `gpu`), plus `backend/webgpu/cmd/{chat,serve}` |
 | `backend/cuda/` | the CUDA backend (cgo-free, tag `cuda`), `.cu` kernels and `backend/cuda/cmd/{chat,serve}` |
 | `backend/metal/` | the Metal backend (tag `metal`), `backend/metal/cmd/{chat,serve}` |
+| `backend/metal/internal/towers/` | standalone Metal vision, audio and `embeddinggemma2` tower accelerators below `backend/metal` (rule `metal-towers-leaf` in `internal/layout/imports.json`) |
 
 ## Binaries
 

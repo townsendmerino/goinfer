@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-const eg2TinyDir = "../../testdata/embeddinggemma2-tiny"
+const eg2TinyDir = "../../../../testdata/embeddinggemma2-tiny"
 
 func eg2Cos(a, b []float32) float64 {
 	var dot, na, nb float64
@@ -45,7 +45,7 @@ func TestEG2Metal_matchesCPU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load the tiny fixture: %v", err)
 	}
-	acc, err := m.NewAccelerator("metal")
+	acc, err := NewEG2Accel(m)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -17,11 +17,11 @@ import (
 // lazily allocated scratch is exercised.
 func TestKSD6_towerOutputsUnchanged(t *testing.T) {
 	run := func(tw mem2Tower, all bool) [][]float32 {
-		prev := gridScratchAllForTest
-		gridScratchAllForTest = all
-		defer func() { gridScratchAllForTest = prev }()
 		in := tw.build(t)
 		defer in.close()
+		if in.grid != nil {
+			in.grid.scratchAll = all
+		}
 		var outs [][]float32
 		for i := range tw.n {
 			out, err := in.fwd(i)
