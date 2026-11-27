@@ -78,7 +78,6 @@ func TestPanicGuard_startDrainPanicKeepsTheModelMarkedDraining(t *testing.T) {
 
 // goroutineGuardExempt names the functions in this package whose `go func` literals take no panic guard. None runs request work.
 var goroutineGuardExempt = map[string]string{
-	"startAdminSocket":    "serves the admin socket's own http.Server, whose handlers net/http recovers",
 	"startHaltSignalLoop": "the SIGUSR1/SIGUSR2 loop: process control, not request work",
 	"watchShutdown":       "the shutdown signal handlers: they end the process on purpose",
 }

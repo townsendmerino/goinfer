@@ -86,25 +86,6 @@ func (p *pullState) release() {
 	p.mu.Unlock()
 }
 
-// sameOriginGuard returns the wrapper for the web UI's own routes: it refuses, with 403, a request a browser sent cross-origin
-// (crossOriginBrowser, with proxied the -allowed-hosts names), the check browserGuard makes for /v1/. The routes it wraps act
-// (pull triggers a caller-named multi-gigabyte download), and on the key-free loopback default (requireAuth is a no-op when
-// -api-key is unset) nothing else protects them: any page open in the same browser can send a cross-origin POST (browsers
-// block reading the response, not sending the request). The web UI's own fetch() carries a same-origin Origin; a request with
-// no Origin (curl, a client outside a browser) passes, since a browser always sends one on these methods.
-func sameOriginGuard(proxied []string) func(http.HandlerFunc) http.HandlerFunc {
-	names := hostSet(proxied)
-	return func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if crossOriginBrowser(r, names) {
-				writeErr(w, http.StatusForbidden, "cross-origin request refused")
-				return
-			}
-			h(w, r)
-		}
-	}
-}
-
 // webUICSP is the page's content policy: everything it loads comes from this server, so that markup which somehow reached
 // the DOM could not run a script or reach another host. The page writes model output as text nodes and has no HTML sink
 // (TestWebUI_noHTMLStringSinks); this is the second line behind that. What each directive is for:
