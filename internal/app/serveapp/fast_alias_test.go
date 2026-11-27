@@ -311,16 +311,16 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 			r := responseReq{Reasoning: &struct {
 				Effort string `json:"effort"`
 			}{Effort: "high"}}
-			r.applyFast()
-			return r.thinkRequest()
+			r.ApplyFast()
+			return r.ThinkRequest()
 		}, nil},
 		"messages": {func() thinkRequest {
 			r := anthropicReq{Thinking: &struct {
 				Type         string `json:"type"`
 				BudgetTokens int    `json:"budget_tokens"`
 			}{Type: "enabled", BudgetTokens: 512}}
-			r.applyFast()
-			return r.thinkRequest()
+			r.ApplyFast()
+			return r.ThinkRequest()
 		}, nil},
 	} {
 		ts, err := s.resolveThink(tc.tr())

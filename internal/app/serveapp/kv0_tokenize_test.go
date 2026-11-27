@@ -165,7 +165,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 			return nil, idsOutcome{}, err
 		}
 		messages = append(messages, in...)
-		ts, err := s.resolveThink(req.thinkRequest())
+		ts, err := s.resolveThink(req.ThinkRequest())
 		if err != nil {
 			return nil, idsOutcome{}, err
 		}
@@ -199,7 +199,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 		if !useIDs {
 			ck = nil
 		}
-		ts, err := s.resolveThink(req.thinkRequest())
+		ts, err := s.resolveThink(req.ThinkRequest())
 		if err != nil {
 			return nil, idsOutcome{}, err
 		}

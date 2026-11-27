@@ -3,6 +3,8 @@ package serveapp
 import (
 	"net/http"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/responsesapi"
 )
 
 // carriedMint mints the blobs one reply carries (carried_ids.go). A nil *carriedMint, or a reply with no ids, mints nothing
@@ -50,35 +52,16 @@ func (m *carriedMint) blob(text string) string {
 	return m.key.Mint(m.model, m.ns, text, ids, whole)
 }
 
-// wantsCarrier reports whether a Responses request asked for encrypted reasoning back (include: reasoning.encrypted_content),
-// which says the client round-trips reasoning items: only then does a reply with no reasoning get a carrier-only item.
-func wantsCarrier(include []string) bool {
-	return slices.Contains(include, "reasoning.encrypted_content")
-}
+var wantsCarrier = responsesapi.WantsCarrier
 
 // withCarrier puts a carrier-only reasoning item first in a reply that has no reasoning item, when the request asked for
-// one and the reply has ids to carry. Streamed (rs non-nil), the item is announced and closed here, so it must be called
-// before any other item opens; when one already has, the reply carries no ids.
+// one and the reply has ids to carry.
 func withCarrier(rs *respStream, mint *carriedMint, include []string, id string, items []any) []any {
-	if !wantsCarrier(include) || mint == nil {
-		return items
+	var fn func(string) string
+	if mint != nil {
+		fn = mint.blob
 	}
-	if len(items) > 0 {
-		if it, ok := items[0].(map[string]any); ok && it["type"] == "reasoning" {
-			return items
-		}
-	}
-	enc := mint.blob("")
-	if enc == "" {
-		return items
-	}
-	if rs != nil {
-		if !rs.CarrierOnly(enc) {
-			return items
-		}
-		return append([]any{rs.ReasoningDoneItem()}, items...)
-	}
-	return append([]any{reasoningItem(id+"-rs", "", enc)}, items...)
+	return responsesapi.WithCarrier(rs, fn, include, id, items)
 }
 
 // noteIDs records a request's carried-id outcome: the server's totals, and the request's -log-requests line.

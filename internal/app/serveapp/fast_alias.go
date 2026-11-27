@@ -62,16 +62,3 @@ func (s *server) fastRoute(r *http.Request, model *string) (fast bool) {
 	}
 	return true
 }
-
-func (r *responseReq) applyFast() {
-	r.Reasoning = &struct {
-		Effort string `json:"effort"`
-	}{Effort: "none"}
-}
-
-func (r *anthropicReq) applyFast() {
-	r.Thinking = &struct {
-		Type         string `json:"type"`
-		BudgetTokens int    `json:"budget_tokens"`
-	}{Type: "disabled"}
-}

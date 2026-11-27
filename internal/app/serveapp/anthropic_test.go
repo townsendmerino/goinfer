@@ -116,7 +116,7 @@ func TestAnthropicToSampling(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	i := func(v int) *int { return &v }
 	req := &anthropicReq{Temperature: f(0.5), TopP: f(0.9), TopK: i(40), MaxTokens: i(50), StopSequences: []string{"END", "STOP"}}
-	sm, aerr := req.toSampling()
+	sm, aerr := req.ToSampling()
 	if aerr != nil {
 		t.Fatalf("toSampling: %v", aerr)
 	}
@@ -157,9 +157,9 @@ func TestAnthropicOutputFormat(t *testing.T) {
 			if err := json.Unmarshal([]byte(c.body), &req); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			sm, aerr := req.toSampling()
+			sm, aerr := req.ToSampling()
 			if c.errName != "" {
-				if aerr == nil || aerr.code != http.StatusBadRequest || aerr.kind != "invalid_request_error" || !strings.Contains(aerr.msg, c.errName) {
+				if aerr == nil || aerr.Code != http.StatusBadRequest || aerr.Kind != "invalid_request_error" || !strings.Contains(aerr.Msg, c.errName) {
 					t.Fatalf("got %+v, want a 400 invalid_request_error naming %q", aerr, c.errName)
 				}
 				return
@@ -192,7 +192,7 @@ func TestAnthropicOutputFormat_prepareConstrains(t *testing.T) {
 		if err := json.Unmarshal([]byte(c.body), &req); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		sm, aerr := req.toSampling()
+		sm, aerr := req.ToSampling()
 		if aerr != nil {
 			t.Fatalf("toSampling: %v", aerr)
 		}

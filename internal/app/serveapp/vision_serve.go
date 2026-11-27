@@ -282,17 +282,17 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	system, turns, aerr := anthropicTurns(req)
 	if aerr != nil {
-		aerr.write(w)
+		aerr.Write(w)
 		return
 	}
-	ts, terr := s.resolveThink(req.thinkRequest())
+	ts, terr := s.resolveThink(req.ThinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
 	}
-	sm, serr := req.toSampling()
+	sm, serr := req.ToSampling()
 	if serr != nil {
-		serr.write(w)
+		serr.Write(w)
 		return
 	}
 	tm := lm.templateFor(ts)
@@ -342,7 +342,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			},
 		})
 		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
-		wantThinking := req.wantsThinking()
+		wantThinking := req.WantsThinking()
 		th := streamframe.NewAnthropicThink(ss, wantThinking, nil)
 		s.routeThink(lm, &gr, tm, turns, ts, th.Push)
 		if wantThinking {
@@ -387,7 +387,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	reason, seq := anthropicStopReason(res.finish, res.stopHit)
 	vcontent := []map[string]any{textBlock(sb.String())}
-	if req.wantsThinking() && rb.Len() > 0 {
+	if req.WantsThinking() && rb.Len() > 0 {
 		vcontent = append([]map[string]any{thinkingBlock(rb.String(), "")}, vcontent...)
 		if sb.Len() == 0 {
 			vcontent = vcontent[:1]

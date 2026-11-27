@@ -1,253 +1,48 @@
 package serveapp
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/anthropicapi"
 )
 
-// Anthropic Messages API (POST /v1/messages, POST /v1/messages/count_tokens), the surface Anthropic-speaking tools,
-// Claude Code included, reach via ANTHROPIC_BASE_URL. We translate at the edge into the same internal path the OpenAI
-// handlers use (system + chat.Turn + sampling + chat.Tool) and translate the result back out; drive/prepare are
-// unchanged. Compatibility bar (same as llama.cpp's): "works for the apps that matter", not full-spec.
+type (
+	anthropicReq     = anthropicapi.Req
+	anthropicMessage = anthropicapi.Message
+	anthropicTool    = anthropicapi.Tool
+)
 
-// --- request shapes (the subset we honor) ---
+var (
+	writeAnthropicErr     = anthropicapi.WriteErr
+	decodeAnthropicJSON   = anthropicapi.DecodeJSON
+	anthropicText         = anthropicapi.Text
+	anthropicInputBytes   = anthropicapi.InputBytes
+	anthropicTurns        = anthropicapi.Turns
+	anthropicTurnsCarried = anthropicapi.TurnsCarried
+	anthropicImages       = anthropicapi.Images
+	mergeAdjacent         = anthropicapi.MergeAdjacent
+	anthropicTools        = anthropicapi.Tools
+	anthropicToolMode     = anthropicapi.ToolMode
+	anthropicForcedTool   = anthropicapi.ForcedTool
+	thinkingBlock         = anthropicapi.ThinkingBlock
+	textBlock             = anthropicapi.TextBlock
+	anthropicStopReason   = anthropicapi.StopReason
+	anthropicUsage        = anthropicapi.Usage
+)
 
-type anthropicReq struct {
-	Model         string              `json:"model"`
-	MaxTokens     *int                `json:"max_tokens"` // REQUIRED for /v1/messages (400 if missing/<=0)
-	System        json.RawMessage     `json:"system"`     // string | [{"type":"text","text":…}, …]
-	Messages      []anthropicMessage  `json:"messages"`
-	Tools         []anthropicTool     `json:"tools"`
-	ToolChoice    json.RawMessage     `json:"tool_choice"` // {"type":"auto"|"any"|"tool","name":…}
-	Temperature   *float64            `json:"temperature"` // Anthropic range 0..1 (no rescale)
-	TopP          *float64            `json:"top_p"`
-	TopK          *int                `json:"top_k"`
-	StopSequences []string            `json:"stop_sequences"`
-	Stream        bool                `json:"stream"`
-	LogitBias     map[string]float64  `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
-	Goinfer       *jobs.VendorOptions `json:"goinfer"`    // goinfer vendor options, as on the OpenAI routes (sampling.Goinfer)
-	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
-	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
-	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
-	Thinking *struct {
-		Type         string `json:"type"`
-		BudgetTokens int    `json:"budget_tokens"`
-	} `json:"thinking"`
-	// OutputConfig's format is Anthropic's structured output; outputFormat maps it onto the response_format grammar.
-	// Its other fields (effort, task_budget) are accepted and ignored.
-	OutputConfig *struct {
-		Format *struct {
-			Type   string          `json:"type"`
-			Schema json.RawMessage `json:"schema"`
-		} `json:"format"`
-	} `json:"output_config"`
-}
-
-// outputFormat maps output_config.format onto the response_format that prepare constrains with, nil when the request
-// sets none. What does not map is a 400 naming the field, never an unconstrained reply: a type other than json_schema,
-// a missing schema, a schema the grammar compiler refuses, and tools beside it (the constrained path holds one grammar,
-// and a tool call and a schema-shaped answer are two).
-func (r *anthropicReq) outputFormat() (*respFormat, *apiErr) {
-	if r.OutputConfig == nil || r.OutputConfig.Format == nil {
-		return nil, nil
-	}
-	f := r.OutputConfig.Format
-	if f.Type != "json_schema" {
-		return nil, badReq("output_config.format.type must be %q (got %q)", "json_schema", f.Type)
-	}
-	if s := strings.TrimSpace(string(f.Schema)); s == "" || s == "null" {
-		return nil, badReq("output_config.format.schema is required when output_config.format.type is %q", "json_schema")
-	}
-	if mode, _ := anthropicToolMode(r.ToolChoice); len(r.Tools) > 0 && mode != "none" {
-		return nil, badReq("output_config.format is not supported together with tools on this server; send one or the other, or tool_choice {\"type\": \"none\"}")
-	}
-	rf := &respFormat{Type: "json_schema", JSONSchema: &struct {
-		Name   string          `json:"name"`
-		Schema json.RawMessage `json:"schema"`
-	}{Schema: f.Schema}}
-	if _, err := grammarFor(rf); err != nil {
-		return nil, badReq("output_config.format.schema cannot be constrained: %v", err)
-	}
-	return rf, nil
-}
-
-// thinkRequest is the request's thinking controls as think.go's input.
-func (r *anthropicReq) thinkRequest() thinkRequest {
-	tr := thinkRequest{}
-	if r.Thinking != nil {
-		tr.AnthropicType = r.Thinking.Type
-		if r.Thinking.Type == "enabled" {
-			tr.Budget = r.Thinking.BudgetTokens // serve force-closes the block at it (budget.go), clamped to leave room to answer
-		}
-	}
-	return tr
-}
-
-// wantsThinking reports whether the request asked for thinking blocks back (enabled or adaptive). A request that did not
-// still gets a model that may reason under the server default, but its reasoning is dropped: an Anthropic client that
-// never asked for thinking must see only text.
-func (r *anthropicReq) wantsThinking() bool {
-	return r.Thinking != nil && (r.Thinking.Type == "enabled" || r.Thinking.Type == "adaptive")
-}
-
-// anthropicToolsConstrainedFromStart is toolsConstrainedFromStart for this route's tool_choice vocabulary.
 func anthropicToolsConstrainedFromStart(mode, name string, tools []chat.Tool) bool {
-	union := ""
-	switch mode {
-	case "auto":
-		union = "auto"
-	case "any":
-		union = "required"
-	}
-	return toolsConstrainedFromStart(anthropicForcedTool(mode, name, tools), mode == "tool", union, tools)
+	return anthropicapi.ToolsConstrainedFromStart(mode, name, tools, toolUnionEnabled)
 }
 
-// thinkingBlock is an Anthropic `thinking` content block. Its signature is the reply's carried-id blob (carried_ids.go)
-// when the server signs ids, else empty; a client that replays the block sends it back, and anthropicTurnsCarried reads it.
-func thinkingBlock(text, signature string) map[string]any {
-	return map[string]any{"type": "thinking", "thinking": text, "signature": signature}
-}
-
-// redactedCarrierBlock is the carrier for a reply that asked for thinking and has none: a `redacted_thinking` block whose data
-// is the reply's carried-id blob (the Responses carrier-only item's counterpart), nil when there are no ids to carry.
 func redactedCarrierBlock(mint *carriedMint) map[string]any {
-	if enc := mint.blob(""); enc != "" {
-		return map[string]any{"type": "redacted_thinking", "data": enc}
+	var fn func(string) string
+	if mint != nil {
+		fn = mint.blob
 	}
-	return nil
-}
-
-// anthropicCarrier reads a carried-id blob from a thinking block's signature or a redacted_thinking block's data. visible is
-// the block's own thinking text; the result is the text that stands for it, which is the blob's when one parses. A value that
-// is not a blob this server minted carries nothing.
-func anthropicCarrier(enc, visible string) (string, *idsCarrier) {
-	if !strings.HasPrefix(enc, reasoningBlobV2Prefix) {
-		return visible, nil
-	}
-	b, err := parseIDsBlob(enc)
-	if err != nil {
-		return visible, &idsCarrier{Reason: idsParse}
-	}
-	return b.Text, &idsCarrier{Blob: b}
-}
-
-type anthropicMessage struct {
-	Role    string          `json:"role"`    // "user" | "assistant"
-	Content json.RawMessage `json:"content"` // string | []anthropicBlock
-}
-
-// anthropicTool is a tool declaration. Note: input_schema (a JSON Schema), not
-// the OpenAI function.parameters nesting.
-type anthropicTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
-}
-
-// anthropicBlock is the union of the content-block types we read across the
-// system field and message content. Unknown block types and cache_control
-// fields are accepted and ignored (Claude Code sends cache_control on every
-// request; rejecting it breaks the headline use case).
-type anthropicBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"` // type:text
-	// type:thinking (assistant replay): the model's reasoning, which a client such as Claude Code sends back with every turn of
-	// a tool loop. A model with a history rule gets it back the way its own template would put it (chat/history.go). A
-	// signature this server minted carries the reply's token ids (carried_ids.go); any other signature is ignored.
-	Thinking  string `json:"thinking"`
-	Signature string `json:"signature"`
-	// type:redacted_thinking (assistant replay): opaque data a client replays untouched. This server writes one only as a
-	// carrier, for a reply with no thinking (redactedCarrierBlock); any other is ignored.
-	Data string `json:"data"`
-	// type:tool_use (assistant replay):
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
-	// type:tool_result (user replay):
-	ToolUseID string          `json:"tool_use_id"`
-	Content   json.RawMessage `json:"content"` // string | []text block
-	// type:image (multimodal): source.{type:"base64", media_type, data}
-	Source *struct {
-		Type      string `json:"type"`
-		MediaType string `json:"media_type"`
-		Data      string `json:"data"`
-	} `json:"source"`
-}
-
-// toSampling maps the Anthropic sampling fields onto the shared sampling struct
-// so lm.prepare translates them identically to the OpenAI path. stop_sequences
-// becomes the JSON "stop" array that parseStop already reads, and
-// output_config.format becomes response_format (outputFormat). A caller picks
-// lm.constrainedTemplate when the result's constrainsOutput is true.
-func (r *anthropicReq) toSampling() (sampling, *apiErr) {
-	rf, aerr := r.outputFormat()
-	if aerr != nil {
-		return sampling{}, aerr
-	}
-	sm := sampling{
-		Temperature:    r.Temperature,
-		TopP:           r.TopP,
-		TopK:           r.TopK,
-		MaxTokens:      r.MaxTokens,
-		LogitBias:      r.LogitBias,
-		Goinfer:        r.Goinfer,
-		ResponseFormat: rf,
-	}
-	if len(r.StopSequences) > 0 {
-		b, _ := json.Marshal(r.StopSequences)
-		sm.Stop = b
-	}
-	return sm, nil
-}
-
-// --- errors ---
-
-// apiErr carries an Anthropic-shaped error (status + kind + message) so a
-// translation step can return it and the handler render it at the edge.
-type apiErr struct {
-	code int
-	kind string
-	msg  string
-}
-
-func (e *apiErr) Error() string { return e.msg }
-
-func (e *apiErr) write(w http.ResponseWriter) { writeAnthropicErr(w, e.code, e.kind, e.msg) }
-
-func badReq(format string, a ...any) *apiErr {
-	return &apiErr{http.StatusBadRequest, "invalid_request_error", fmt.Sprintf(format, a...)}
-}
-
-// writeAnthropicErr emits the Anthropic error body shape for any non-2xx. Kinds:
-// invalid_request_error (400), not_found_error (404, unknown model),
-// overloaded_error (529, model busy), api_error (500).
-func writeAnthropicErr(w http.ResponseWriter, code int, kind, msg string) {
-	writeJSON(w, code, map[string]any{
-		"type":  "error",
-		"error": map[string]any{"type": kind, "message": msg},
-	})
-}
-
-// decodeAnthropicJSON is decodeJSON for the Anthropic dialect: 413 when the (size-bounded, see maxBytes) body exceeded
-// the limit, else 400.
-func decodeAnthropicJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		// Shared with decodeJSON: appending err.Error() verbatim would leak the Go struct, field and type names the
-		// OpenAI surface hides.
-		msg, tooLarge := jsonDecodeMessage(err)
-		if tooLarge {
-			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", msg)
-			return false
-		}
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", msg)
-		return false
-	}
-	return true
+	return anthropicapi.RedactedCarrierBlock(fn)
 }
 
 func (s *server) anthropicModelNotFound(w http.ResponseWriter, name string) {
@@ -255,397 +50,9 @@ func (s *server) anthropicModelNotFound(w http.ResponseWriter, name string) {
 		fmt.Sprintf("model %q not found (served: %s)", name, strings.Join(s.servedNames(), ", ")))
 }
 
-// --- translation: Anthropic request → internal (system, turns) ---
-
-// anthropicText reads a string-or-array-of-text-blocks field (the system prompt,
-// a tool_result's content) and returns the concatenated text. Non-text blocks
-// are ignored.
-func anthropicText(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return s
-	}
-	var blocks []anthropicBlock
-	if json.Unmarshal(raw, &blocks) != nil {
-		return ""
-	}
-	var b strings.Builder
-	for _, bl := range blocks {
-		if bl.Type == "text" {
-			b.WriteString(bl.Text)
-		}
-	}
-	return b.String()
-}
-
-// anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request: the system prompt plus every message's text
-// blocks, its replayed tool_use calls, and any declared tool schemas. It is the /v1/messages analogue of chatInputBytes.
-// The text half uses anthropicText, so image blocks (and cache_control metadata) are excluded: a base64 image is never
-// charged against a context window it does not consume (a vision request is a few hundred tokens of image whatever its
-// megabytes on the wire).
-//
-// Tool_use blocks and tool schemas are priced unconditionally: anthropicTurns renders replayed tool_use calls whether or
-// not tools are active this turn, and RenderToolsSegments renders every declared schema whenever they are, so both
-// callers guard both branches with one call and this prices both to match.
-func anthropicInputBytes(req *anthropicReq) int {
-	n := len(anthropicText(req.System))
-	for i := range req.Messages {
-		n += len(anthropicText(req.Messages[i].Content))
-		n += anthropicToolCallBytes(req.Messages[i].Content)
-	}
-	n += anthropicToolSchemaBytes(req.Tools)
-	return n
-}
-
-// anthropicToolCallBytes sums a message content field's tool_use blocks: an assistant's own prior tool calls, replayed
-// into the prompt by anthropicTurns's tool_use case. Ignores anything that doesn't parse as a block array (a plain
-// string has none).
-func anthropicToolCallBytes(raw json.RawMessage) int {
-	var blocks []anthropicBlock
-	if json.Unmarshal(raw, &blocks) != nil {
-		return 0
-	}
-	n := 0
-	for _, bl := range blocks {
-		if bl.Type == "tool_use" {
-			n += len(bl.Name) + len(bl.Input)
-		}
-	}
-	return n
-}
-
-// anthropicToolSchemaBytes sums a tool declaration list's rendered bytes: the schemas RenderToolsSegments renders into
-// the prompt whenever tools are active.
-func anthropicToolSchemaBytes(tools []anthropicTool) int {
-	n := 0
-	for _, t := range tools {
-		n += len(t.Name) + len(t.Description) + len(t.InputSchema)
-	}
-	return n
-}
-
-// anthropicTurns maps the system prompt + messages into the internal chat shape.
-// Content may be a plain string or an array of blocks; tool_use blocks (assistant
-// replay) become ToolCalls, tool_result blocks (user replay) become "tool"
-// turns, image blocks are a 400, and unknown blocks / cache_control are ignored.
-// A "system" message after the first is kept in place as user-side text.
-// Adjacent same-role user/assistant turns are merged (the spec says roles
-// alternate, but we don't enforce it).
-func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
-	system, turns, _, aerr := anthropicTurnsCarried(req)
-	return system, turns, aerr
-}
-
-// anthropicTurnsCarried is anthropicTurns with the carried-id blob of each assistant turn whose thinking block carries one,
-// by turn index (carried_ids.go). The blob's text stands for that block's visible thinking, as a Responses reasoning item's
-// does. Two assistant messages merged into one turn hold two generations, so the merged turn's carrier falls back as decode.
-func anthropicTurnsCarried(req *anthropicReq) (string, []chat.Turn, map[int]*idsCarrier, *apiErr) {
-	system := anthropicText(req.System)
-	toolNames := map[string]string{} // tool_use id → name, to label tool-result turns
-	var turns []chat.Turn
-	var carried []*idsCarrier // per turn, parallel to turns until the merge
-	for mi, m := range req.Messages {
-		// A system message inside the conversation (the Messages API's mid-conversation system messages, which Claude
-		// Code sends on every turn). No chat template has a system turn after the first, and hoisting the text into the
-		// system prompt would change the prompt's prefix each time one is added, so it stays where it was sent, as text
-		// of the user side. It is never a new query (chat.Turn.ToolLoop). The first message cannot be one: that is the
-		// top-level field's place, and a client putting it there has the wrong API.
-		if m.Role == "system" && mi > 0 {
-			if s := anthropicText(m.Content); s != "" {
-				turns, carried = append(turns, chat.Turn{Role: "user", Content: s, ToolLoop: true}), append(carried, nil)
-			}
-			continue
-		}
-		// Otherwise the Messages API accepts exactly two roles here. Reject anything else instead of folding it into the
-		// conversation: anthropicRole maps every non-assistant role to a user turn, so a typo'd or wrong-API role
-		// ("developer", "Assistant") would silently restructure what the model saw. A client that sends legal roles
-		// loses nothing to the 400, and it is what upstream does.
-		if m.Role != "user" && m.Role != "assistant" {
-			return "", nil, nil, badReq("message %d: role must be %q or %q, got %q "+
-				"(the system prompt is the top-level \"system\" field on this API; a \"system\" message is accepted only after the first message)",
-				mi, "user", "assistant", m.Role)
-		}
-		// Plain-string content: the common case.
-		var s string
-		if json.Unmarshal(m.Content, &s) == nil {
-			turns, carried = append(turns, chat.Turn{Role: anthropicRole(m.Role), Content: s}), append(carried, nil)
-			continue
-		}
-		var blocks []anthropicBlock
-		if err := json.Unmarshal(m.Content, &blocks); err != nil {
-			return "", nil, nil, badReq("message %d: content must be a string or an array of blocks", mi)
-		}
-		var text, reasoning strings.Builder
-		var calls []chat.ToolCall
-		var carrier *idsCarrier
-		sawToolResult := false
-		for _, bl := range blocks {
-			switch bl.Type {
-			case "text":
-				text.WriteString(bl.Text)
-			case "thinking", "redacted_thinking":
-				enc := bl.Signature
-				if bl.Type == "redacted_thinking" {
-					enc = bl.Data
-				}
-				t, c := anthropicCarrier(enc, bl.Thinking)
-				if c != nil {
-					carrier = c
-				}
-				reasoning.WriteString(t)
-			case "tool_use":
-				calls = append(calls, chat.ToolCall{ID: bl.ID, Name: bl.Name, Arguments: defaultObj(bl.Input)})
-				if bl.ID != "" {
-					toolNames[bl.ID] = bl.Name
-				}
-			case "tool_result":
-				sawToolResult = true
-				turns = append(turns, chat.Turn{
-					Role:       "tool",
-					Content:    anthropicText(bl.Content),
-					ToolName:   toolNames[bl.ToolUseID],
-					ToolCallID: bl.ToolUseID,
-				})
-				carried = append(carried, nil)
-			case "image":
-				// Collected separately by anthropicImages and routed to the vision
-				// path; skip here. The handler 400s an image when no vision tower is
-				// loaded, so a text-only model never silently drops it.
-			default:
-				// unknown block type (and cache_control-bearing blocks) — ignore.
-			}
-		}
-		if m.Role == "assistant" {
-			if text.Len() > 0 || len(calls) > 0 {
-				turns = append(turns, chat.Turn{Role: "assistant", Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()})
-				carried = append(carried, carrier)
-			}
-		} else if text.Len() > 0 {
-			// Text in the same user message as tool results (Claude Code adds reminders there) continues the tool loop; it is
-			// not a new query, and the history rule must not treat it as one (chat.Turn.ToolLoop).
-			turns = append(turns, chat.Turn{Role: "user", Content: text.String(), ToolLoop: sawToolResult})
-			carried = append(carried, nil)
-		}
-	}
-	merged, from := mergeAdjacentFrom(turns)
-	var carriers map[int]*idsCarrier
-	for i, ks := range from {
-		var c *idsCarrier
-		for _, k := range ks {
-			if carried[k] != nil {
-				c = carried[k]
-				break
-			}
-		}
-		if c == nil {
-			continue
-		}
-		if len(ks) > 1 && c.Reason == "" {
-			c = &idsCarrier{Reason: idsDecode}
-		}
-		if carriers == nil {
-			carriers = map[int]*idsCarrier{}
-		}
-		carriers[i] = c
-	}
-	return system, merged, carriers, nil
-}
-
-// anthropicImages collects inline images from the message content blocks
-// (type:image with a base64 source). A non-base64 source is an error (no URL
-// fetch — SSRF guard). No images → nil.
-func anthropicImages(req *anthropicReq) ([]imageRef, error) {
-	var out []imageRef
-	for _, m := range req.Messages {
-		var blocks []anthropicBlock
-		if json.Unmarshal(m.Content, &blocks) != nil {
-			continue // plain-string content carries no images
-		}
-		at := 0 // the message's text blocks so far (anthropicTurns joins them), where the next image sits
-		for _, bl := range blocks {
-			if bl.Type == "text" {
-				at += len(bl.Text)
-				continue
-			}
-			if bl.Type != "image" {
-				continue
-			}
-			if bl.Source == nil || bl.Source.Type != "base64" {
-				return nil, fmt.Errorf("image source must be type \"base64\" (url sources are not fetched)")
-			}
-			ref, err := decodeBase64Image(bl.Source.MediaType, bl.Source.Data)
-			if err != nil {
-				return nil, err
-			}
-			ref.At = at
-			out = append(out, ref)
-		}
-	}
-	return out, nil
-}
-
-// anthropicRole maps the wire role to an internal turn role (assistant passes through; everything else is a user turn).
-// The caller validates roles first, so "everything else" can only be "user" here; the fallback is not a license to
-// accept new roles silently. Widening what reaches this function means widening that validation in anthropicTurns,
-// deliberately.
-func anthropicRole(role string) string {
-	if role == "assistant" {
-		return "assistant"
-	}
-	return "user"
-}
-
-// defaultObj normalizes an empty tool input to "{}" so it renders/parses as an
-// object.
-func defaultObj(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return json.RawMessage("{}")
-	}
-	return raw
-}
-
-// mergeAdjacent concatenates consecutive same-role user/assistant turns (tool
-// turns never merge), joining text with a newline and appending tool calls.
-func mergeAdjacent(turns []chat.Turn) []chat.Turn {
-	out, _ := mergeAdjacentFrom(turns)
-	return out
-}
-
-// mergeAdjacentFrom is mergeAdjacent, also returning for each merged turn the indices of the input turns it holds.
-func mergeAdjacentFrom(turns []chat.Turn) ([]chat.Turn, [][]int) {
-	var out []chat.Turn
-	var from [][]int
-	for i, t := range turns {
-		if n := len(out); n > 0 && out[n-1].Role == t.Role && (t.Role == "user" || t.Role == "assistant") {
-			from[n-1] = append(from[n-1], i)
-			prev := &out[n-1]
-			switch {
-			case prev.Content != "" && t.Content != "":
-				prev.Content += "\n" + t.Content
-			case t.Content != "":
-				prev.Content = t.Content
-			}
-			prev.ToolCalls = append(prev.ToolCalls, t.ToolCalls...)
-			switch {
-			case prev.Reasoning != "" && t.Reasoning != "":
-				prev.Reasoning += "\n" + t.Reasoning
-			case t.Reasoning != "":
-				prev.Reasoning = t.Reasoning
-			}
-			prev.ToolLoop = prev.ToolLoop && t.ToolLoop // a merged user turn is a continuation only if every part was
-			continue
-		}
-		out = append(out, t)
-		from = append(from, []int{i})
-	}
-	return out, from
-}
-
-// anthropicTools maps tool declarations to the internal chat.Tool shape
-// (input_schema → Parameters).
-func anthropicTools(in []anthropicTool) []chat.Tool {
-	out := make([]chat.Tool, len(in))
-	for i, t := range in {
-		out[i] = chat.Tool{Name: t.Name, Description: t.Description, Parameters: t.InputSchema}
-	}
-	return out
-}
-
-// anthropicToolMode parses tool_choice into its type ("auto" default, "any",
-// "tool", "none") and the named tool (for type:"tool").
-func anthropicToolMode(raw json.RawMessage) (mode, name string) {
-	if len(raw) == 0 {
-		return "auto", ""
-	}
-	var tc struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(raw, &tc) == nil && tc.Type != "" {
-		return tc.Type, tc.Name
-	}
-	return "auto", ""
-}
-
-// anthropicForcedTool returns the tool a call MUST be, so constrained decoding
-// can make a malformed call impossible: a named tool (type:"tool"), or the lone
-// tool under type:"any" (must-call). Unlike the OpenAI path, "auto" never forces
-// — Anthropic "auto" means the model may answer with text instead, and forcing a
-// lone tool there would trap an agent (Claude Code) in an endless tool loop
-// after every tool_result. nil = don't constrain.
-func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {
-	switch mode {
-	case "tool":
-		for i := range tools {
-			if tools[i].Name == name {
-				return &tools[i]
-			}
-		}
-	case "any":
-		if len(tools) == 1 { // must-call, lone tool ⇒ that one
-			return &tools[0]
-		}
-	}
-	return nil // auto / none / "any" with multiple tools: the model decides freely
-}
-
-// applyToolConstraint wires constrained decoding for an unambiguous tool call (lone or forced tool with a family JSON
-// call form), exactly as handleChatTools. A tool_choice of type "tool" (a NAMED function) that cannot be constrained
-// returns an error the caller renders as a 400: Anthropic guarantees a named tool_choice produces that call, so silent
-// unconstrained decoding is a violation.
 func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, tools []chat.Tool) error {
-	forced := anthropicForcedTool(mode, name, tools)
-	union := ""
-	switch mode {
-	case "auto":
-		union = "auto"
-	case "any":
-		union = "required"
-	}
-	return constrainForcedTool(lm, gr, forced, mode == "tool", union, tools)
+	return constrainForcedTool(lm, gr, anthropicForcedTool(mode, name, tools), mode == "tool", anthropicapi.UnionMode(mode), tools)
 }
-
-// --- response blocks + stop reason ---
-
-func textBlock(text string) map[string]any { return map[string]any{"type": "text", "text": text} }
-
-// toolUseBlock renders a parsed call as an Anthropic tool_use block (input is the
-// decoded arguments object; an empty/missing id gets a toolu_ id).
-func toolUseBlock(c chat.ToolCall) map[string]any {
-	id := c.ID
-	if id == "" {
-		id = "toolu_" + reqID()
-	}
-	var input any = map[string]any{}
-	if len(c.Arguments) > 0 {
-		var v any
-		if json.Unmarshal(c.Arguments, &v) == nil {
-			input = v
-		}
-	}
-	return map[string]any{"type": "tool_use", "id": id, "name": c.Name, "input": input}
-}
-
-// anthropicStopReason maps drive's finish reason to the Anthropic stop_reason +
-// stop_sequence pair: token budget → max_tokens; a stop string hit →
-// stop_sequence (with the sequence); otherwise (EOS / turn-stop) → end_turn.
-func anthropicStopReason(finish, stopSeq string) (string, any) {
-	switch {
-	case finish == "cancelled": // not a real Anthropic stop_reason: a deliberate goinfer extension
-		return "cancelled", nil
-	case finish == "length":
-		return "max_tokens", nil
-	case stopSeq != "":
-		return "stop_sequence", stopSeq
-	default:
-		return "end_turn", nil
-	}
-}
-
-// --- handlers ---
 
 func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
@@ -656,30 +63,21 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "max_tokens is required and must be > 0")
 		return
 	}
-	// An empty `messages` is a 400, as on the OpenAI route: otherwise the prompt renders with no turns and generates
-	// from the template's scaffold alone.
 	if len(req.Messages) == 0 {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "messages must not be empty")
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast()
+		req.ApplyFast()
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })
 }
 
-// serveMessagesWith runs an Anthropic /v1/messages generation. Reached ONLY through withModelAnthropic
-// (liveness RLock held).
 func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req anthropicReq, lm *loadedModel) {
-	// Reject an input that cannot fit the context window BEFORE the O(n) tokenize, as the OpenAI routes do, so a body
-	// under the body cap does not pay full tokenization only to be rejected afterwards. Placed before the vision branch
-	// so both paths are guarded; image bytes are excluded from the count (anthropicInputBytes), so this cannot reject a
-	// valid image request on a small-context model.
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	// Multimodal: image blocks route to the vision path. Images in earlier messages are replaced by a note first (image_history.go).
 	noteOmittedImages(w.Header(), omitAnthropicHistoryImages(req.Messages))
 	imgs, ierr := anthropicImages(&req)
 	if ierr != nil {
@@ -687,8 +85,6 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	if len(imgs) > 0 {
-		// The vision path renders and parses no tools, so a tools+image request would silently drop the tools and answer
-		// in prose: refuse it, mirroring the OpenAI surface's guard.
 		if vmode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && vmode != "none" {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "tools are not supported together with image inputs; send images or tools, not both")
 			return
@@ -698,7 +94,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 	system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 	if aerr != nil {
-		aerr.write(w)
+		aerr.Write(w)
 		return
 	}
 
@@ -712,12 +108,12 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 	var tools []chat.Tool
 	var gr genRequest
-	sm, serr := req.toSampling()
+	sm, serr := req.ToSampling()
 	if serr != nil {
-		serr.write(w)
+		serr.Write(w)
 		return
 	}
-	ts, terr := s.resolveThink(req.thinkRequest())
+	ts, terr := s.resolveThink(req.ThinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
@@ -753,15 +149,14 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		}
 	}
 
-	// A full queue is honest backpressure: 529 overloaded_error (the kind
-	// Anthropic clients back off on), not the OpenAI 429.
+	// A full queue returns 529 overloaded_error on the Anthropic surface.
 	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState); !ok {
 		if haltReason != "" {
 			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
 			return
 		}
 		if r.Context().Err() != nil {
-			return // client disconnected while queued; nothing to write to
+			return
 		}
 		w.Header().Set("Retry-After", "1")
 		writeAnthropicErr(w, 529, "overloaded_error", fmt.Sprintf("model %q is busy; retry", lm.name))
@@ -771,7 +166,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	mint := s.mintFor(lm, r, gr)
 	if req.Stream {
-		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, turns, ts, req.wantsThinking(), mint)
+		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, turns, ts, req.WantsThinking(), mint)
 		return
 	}
 
@@ -788,7 +183,6 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		fromReasoning bool
 	)
 	if toolsActive {
-		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
 		text, calls, lead, res = t.raw, t.calls, t.lead, t.turnResult
@@ -807,34 +201,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 
-	var content []map[string]any
-	reason := ""
-	var seq any
-	thinking := req.wantsThinking() && rb.Len() > 0
-	if thinking {
-		content = append(content, thinkingBlock(rb.String(), mint.blob(rb.String())))
-	} else if req.wantsThinking() {
-		if cb := redactedCarrierBlock(mint); cb != nil {
-			content = append(content, cb)
-		}
+	var mintBlob func(string) string
+	if mint != nil {
+		mintBlob = mint.blob
 	}
-	if len(calls) > 0 {
-		if strings.TrimSpace(lead) != "" {
-			content = append(content, textBlock(lead))
-		}
-		for _, c := range calls {
-			content = append(content, toolUseBlock(c))
-		}
-		reason = "tool_use"
-	}
-	if reason == "" { // plain text turn (no tools, or the model declined to call)
-		// A turn cut off while still thinking has no answer: only the thinking block, stop_reason max_tokens —
-		// Anthropic's own shape for running out of tokens inside a thinking block.
-		if !(thinking && text == "") {
-			content = append(content, textBlock(text))
-		}
-		reason, seq = anthropicStopReason(res.finish, res.stopHit)
-	}
+	content, reason, seq := anthropicapi.BuildMessageContent(req.WantsThinking(), rb.String(), text, lead, calls, res.finish, res.stopHit, mintBlob)
 
 	msg := map[string]any{
 		"id":            id,
@@ -855,55 +226,37 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(msg))
 }
 
-// anthropicUsage is a finished Messages reply's usage, in the Messages API's split: cache_read_input_tokens is the leading
-// prompt tokens a prior turn's KV made unnecessary (drive's prefillReused, what /v1/responses reports as cached_tokens), and
-// input_tokens the rest, the tokens this request prefilled, so the prompt is their sum. Anthropic's clients add the two to size
-// the context. cache_creation_input_tokens is left out: every prefilled prefix is kept, so there is no separate cache write.
-func anthropicUsage(promptLen, reused, nComp int) map[string]any {
-	reused = min(max(reused, 0), promptLen)
-	return map[string]any{"input_tokens": promptLen - reused, "cache_read_input_tokens": reused, "output_tokens": nComp}
-}
-
-// handleCountTokens renders the prompt exactly as /v1/messages would (system +
-// messages + tools through the chat template), encodes it, and returns the token
-// count — no generation, no decode mutex (encoding is independent of the decoder).
 func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
 	if !decodeAnthropicJSON(w, r, &req) {
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast()
+		req.ApplyFast()
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveCountTokensWith(w, req, lm) })
 }
 
-// serveCountTokensWith counts prompt tokens for /v1/messages/count_tokens. Reached ONLY through
-// withModelAnthropic (liveness RLock held). No generation, no decode mutex.
 func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loadedModel) {
-	// count_tokens never enters the per-model queue, so up to -max-inflight of these tokenizations run CONCURRENTLY,
-	// each over a body the guard would reject in constant time: the guard matters most here.
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 	system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 	if aerr != nil {
-		aerr.write(w)
+		aerr.Write(w)
 		return
 	}
 	var tools []chat.Tool
-	// Rendered exactly as /v1/messages would render it, thinking mode, the constrained-tool rule and carried ids included —
-	// a count that differs from the generation's prompt is worse than no count.
-	ts, terr := s.resolveThink(req.thinkRequest())
+	ts, terr := s.resolveThink(req.ThinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
-	rf, ferr := req.outputFormat()
+	rf, ferr := req.OutputFormat()
 	if ferr != nil {
-		ferr.write(w)
+		ferr.Write(w)
 		return
 	}
 	if rf != nil {

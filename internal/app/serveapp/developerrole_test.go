@@ -201,11 +201,11 @@ func TestAnthropicRejectsIllegalRoles(t *testing.T) {
 			t.Errorf("role %q was accepted; it must be a clean 400, not folded into the conversation", role)
 			continue
 		}
-		if aerr.code != http.StatusBadRequest || aerr.kind != "invalid_request_error" {
-			t.Errorf("role %q: got (%d, %q), want (400, invalid_request_error)", role, aerr.code, aerr.kind)
+		if aerr.Code != http.StatusBadRequest || aerr.Kind != "invalid_request_error" {
+			t.Errorf("role %q: got (%d, %q), want (400, invalid_request_error)", role, aerr.Code, aerr.Kind)
 		}
-		if !strings.Contains(aerr.msg, role) && role != "" {
-			t.Errorf("role %q: error does not name the offending role: %s", role, aerr.msg)
+		if !strings.Contains(aerr.Msg, role) && role != "" {
+			t.Errorf("role %q: error does not name the offending role: %s", role, aerr.Msg)
 		}
 	}
 }
@@ -318,7 +318,7 @@ func TestAnthropicMidConversationSystem(t *testing.T) {
 	}
 	for _, role := range []string{"developer", "tool"} {
 		bad := &anthropicReq{Messages: []anthropicMessage{{Role: "user", Content: rawStr("q")}, {Role: role, Content: rawStr("x")}}}
-		if _, _, aerr := anthropicTurns(bad); aerr == nil || aerr.code != http.StatusBadRequest {
+		if _, _, aerr := anthropicTurns(bad); aerr == nil || aerr.Code != http.StatusBadRequest {
 			t.Errorf("role %q after the first message: %+v; want a 400", role, aerr)
 		}
 	}

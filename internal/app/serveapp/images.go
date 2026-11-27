@@ -14,6 +14,5 @@ var (
 	contentPartsText   = media.ContentPartsText
 	contentPartsImages = media.ContentPartsImages
 	decodeDataURI      = media.DecodeDataURI
-	decodeBase64Image  = media.DecodeBase64Image
 	chatImages         = wirecore.ChatImages
 )
