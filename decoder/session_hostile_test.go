@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwkv"
 	"hash/crc32"
 	"os"
 	"slices"
@@ -40,9 +41,9 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 	clean := sess.Snapshot("model-A")
 
 	// The header layout, from Snapshot's writer: magic, ver(4), id (u32 length + bytes), adapter (u32 length + bytes, v3),
-	// numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1) quant(1) pos(4). Offsets are derived from kvSnapMagic, not
+	// numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1) quant(1) pos(4). Offsets are derived from giwkv.Magic, not
 	// hardcoded.
-	idLenOff := len(kvSnapMagic) + 4
+	idLenOff := len(giwkv.Magic) + 4
 	idLen := int(binary.LittleEndian.Uint32(clean[idLenOff:]))
 	adLenOff := idLenOff + 4 + idLen
 	adLen := int(binary.LittleEndian.Uint32(clean[adLenOff:]))
@@ -133,25 +134,6 @@ func TestLoadSession_bodyLengthsMustAgreeWithPos(t *testing.T) {
 	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("3 tokens at pos 0 accepted (session=%v, err=%v) — len(tokens) > pos makes "+
 			"rewindForReuse claim an exact match it never performed (M-04)", got != nil, err)
-	}
-}
-
-// checkGlobalLen is the predicate both storage arms share. Unit-tested directly because
-// reaching it through a snapshot needs a populated KV and byte surgery on the payload; what
-// matters is that 0 stays legal (KV-shared layers) and any other mismatch is refused.
-func TestCheckGlobalLen(t *testing.T) {
-	if e := checkGlobalLen(0, "keys", 0, 128); e != nil {
-		t.Errorf("0 rejected: %v — a KV-shared layer stores nothing of its own", e)
-	}
-	if e := checkGlobalLen(0, "keys", 128, 128); e != nil {
-		t.Errorf("an exact length rejected: %v", e)
-	}
-	for _, got := range []int{1, 127, 129, 1 << 20} {
-		if e := checkGlobalLen(3, "vals", got, 128); e == nil {
-			t.Errorf("len %d accepted against an expected 128 — the forward derives its key "+
-				"count from `keys` and indexes `vals` at the same positions, so a short one is "+
-				"an out-of-range read in the generation goroutine (M-04)", got)
-		}
 	}
 }
 

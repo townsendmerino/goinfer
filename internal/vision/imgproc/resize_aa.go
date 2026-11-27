@@ -1,4 +1,8 @@
-package vision
+// Package imgproc is the pure image math under internal/vision: bilinear resize with normalization, torchvision's
+// antialiased bicubic and bilinear resizes, aspect-ratio-preserving target sizes, and patch unfolding. It works on
+// decoded images and flat pixel slices only (no file or format handling, no decode-size guard: those stay with the
+// vision entry points) and imports no goinfer package.
+package imgproc
 
 import (
 	"math"
@@ -10,8 +14,7 @@ import (
 // it. Separable, horizontal pass first, each pass skipped when its size is unchanged; Keys weights with a = -0.5 over a
 // support widened by the scale on downscale, normalised per output pixel, quantised to int16 at the precision the
 // pass's largest weight allows, accumulated in integers with a rounding offset, clamped to uint8 after each pass.
-// Bit-identical to torchvision 0.29.1 on goinfer's pinned cases and real images (goinfer's
-//  the Phase V resize; moved here from goinfer's embeddinggemma2 on 2026-10-06).
+// Bit-identical to torchvision 0.29.1 on goinfer's pinned cases and real images (TestResizeBicubicAA_matchesTorchvision).
 
 // ResizeBicubicAA resizes packed 8-bit RGB (HWC) from h x w to th x tw with torchvision's antialiased bicubic on uint8.
 func ResizeBicubicAA(src []uint8, h, w, th, tw int) []uint8 {
@@ -225,6 +228,31 @@ func resizePassFloat(src []float32, h, w, c, n int, horizontal bool) []float32 {
 			out := dst[(oy*ow+ox)*c : (oy*ow+ox+1)*c]
 			for k := range out {
 				out[k] = float32(acc[k])
+			}
+		}
+	}
+	return dst
+}
+
+// ResizeBilinearPlainFloat is torch's bilinear without antialias (align_corners false) on a channels-last float32 grid
+// (h x w x c): two taps per axis at (i+0.5)·scale - 0.5, clamped at the edges.
+func ResizeBilinearPlainFloat(src []float32, h, w, c, th, tw int) []float32 {
+	idx := func(i, in, out int) (int, int, float64) {
+		x := (float64(i)+0.5)*float64(in)/float64(out) - 0.5
+		x = max(x, 0)
+		x0 := min(int(x), in-1)
+		x1 := min(x0+1, in-1)
+		return x0, x1, x - float64(x0)
+	}
+	dst := make([]float32, th*tw*c)
+	for y := range th {
+		y0, y1, fy := idx(y, h, th)
+		for x := range tw {
+			x0, x1, fx := idx(x, w, tw)
+			for k := range c {
+				v := (1-fy)*((1-fx)*float64(src[(y0*w+x0)*c+k])+fx*float64(src[(y0*w+x1)*c+k])) +
+					fy*((1-fx)*float64(src[(y1*w+x0)*c+k])+fx*float64(src[(y1*w+x1)*c+k]))
+				dst[(y*tw+x)*c+k] = float32(v)
 			}
 		}
 	}

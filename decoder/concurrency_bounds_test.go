@@ -21,6 +21,8 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/families"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwkv"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -189,18 +191,6 @@ func TestKVSnapStore_removeLockedIdempotent(t *testing.T) {
 	}
 }
 
-func TestCheckGlobalPair_rejectsAsymmetricKV(t *testing.T) {
-	if err := checkGlobalPair(0, "keys", "vals", 0, 0, 16); err != nil {
-		t.Fatalf("both zero should pass: %v", err)
-	}
-	if err := checkGlobalPair(0, "keys", "vals", 16, 16, 16); err != nil {
-		t.Fatalf("both matching should pass: %v", err)
-	}
-	if err := checkGlobalPair(0, "keys", "vals", 16, 0, 16); err == nil {
-		t.Fatal("expected mismatch error when keys present and vals empty")
-	}
-}
-
 func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 	m := &Model{
 		w: &darch.Weights{
@@ -221,9 +211,9 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 	nKV := kvDim / ref.c.HeadDim
 
 	buildBlob := func(kLen, vLen, ksLen, vsLen int) []byte {
-		wr := &giwWriter{}
-		wr.Raw([]byte(kvSnapMagic))
-		wr.U32(kvSnapVersion)
+		wr := &giwcodec.Writer{}
+		wr.Raw([]byte(giwkv.Magic))
+		wr.U32(giwkv.Version)
 		wr.Str("m")
 		wr.Str("")
 		wr.U32(uint32(ref.c.NumLayers))
@@ -232,7 +222,7 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 		wr.U32(uint32(ref.c.HeadDim))
 		wr.Raw([]byte{0, byte(kvI8)})
 		wr.U32(pos)
-		wr.ints([]int{1, 2})
+		giwkv.WriteInts(wr, []int{1, 2})
 		wr.I8(make([]int8, kLen))
 		wr.I8(make([]int8, vLen))
 		wr.F32Body(make([]float32, ksLen))

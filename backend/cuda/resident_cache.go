@@ -14,86 +14,13 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
 )
 
-// expertCache is C′ step 2's per-layer LRU slot residency: which cached expert occupies which of the nSlots device
-// slots, so a routed expert already resident skips its H2D DMA. nSlots = topK is the step-1 staging degenerate
-// case (every token evicts, no reuse); nSlots > topK gives cross-token reuse. LRU because the router signal is a
-// stationary skew where recency is a sufficient statistic for frequency.
-// expGU and expDown share the slot index (loaded together), so the cache is per-LAYER, not per-projection.
-type expertCache struct {
-	nSlots       int
-	slotOf       []int32  // [nE]     expert → slot, -1 = not resident
-	inSlot       []int32  // [nSlots] slot → expert, -1 = empty
-	used         []uint64 // [nSlots] last-touch clock (LRU)
-	clock        uint64
-	hits, misses uint64 // reuse accounting (a miss is one expert's H2D DMA)
+// expertCache aliases moecache.SlotCache for per-layer LRU expert slot residency.
+type expertCache = moecache.SlotCache
 
-	// DEMAND accounting answers a different question from hits/misses: those say how much DMA reuse SAVED, these say
-	// how much the caller ASKED FOR per staging event. stages counts loadRoutedExperts calls on this layer; distinct
-	// sums the UNIQUE experts each stage requested. distinct/stages separates "speculation blows the slot budget"
-	// from "speculation is just slow here": a verify that presented its whole width to the pager at once would push it
-	// ABOVE topK and grow with the width, while one that stages position by position pins it AT topK.
-	stages   uint64
-	distinct uint64
-}
-
-func newExpertCache(nE, nSlots int) *expertCache {
-	c := &expertCache{nSlots: nSlots, slotOf: make([]int32, nE), inSlot: make([]int32, nSlots), used: make([]uint64, nSlots)}
-	for i := range c.slotOf {
-		c.slotOf[i] = -1
-	}
-	for i := range c.inSlot {
-		c.inSlot[i] = -1
-	}
-	return c
-}
-
-// admit returns the slot holding expert e, evicting the LRU slot on a miss. hit=false means the
-// caller must DMA e's weights into `slot` before the GEMV reads it. An expert admitted earlier in
-// the SAME token is the newest, so it is never the victim (nSlots ≥ topK guarantees room).
-func (c *expertCache) admit(e uint32) (slot int, hit bool) {
-	c.clock++
-	if s := c.slotOf[e]; s >= 0 {
-		c.used[s] = c.clock
-		c.hits++
-		return int(s), true
-	}
-	c.misses++
-	victim, oldest := 0, ^uint64(0)
-	for s := 0; s < c.nSlots; s++ {
-		if c.inSlot[s] < 0 { // an empty slot always wins
-			victim = s
-			break
-		}
-		if c.used[s] < oldest {
-			oldest = c.used[s]
-			victim = s
-		}
-	}
-	if old := c.inSlot[victim]; old >= 0 {
-		c.slotOf[old] = -1
-	}
-	c.inSlot[victim] = int32(e)
-	c.slotOf[e] = int32(victim)
-	c.used[victim] = c.clock
-	return victim, false
-}
-
-// unadmit marks slot empty and forgets expert e, so the next admit(e) misses and re-uploads. admit commits the
-// slot mapping BEFORE the DMA, which is what lets the caller batch a layer's copies into one UploadBatch; if that
-// upload fails the cache would claim e is resident in a slot holding the EVICTED expert's bytes, and the next
-// token routing e would hit, skip the DMA and run the wrong expert with no error anywhere. Rolled back to EMPTY
-// rather than to the evicted expert: a failed batch may have completed some copies, so the slot's contents are
-// unknown.
-func (c *expertCache) unadmit(slot int, e uint32) {
-	if c.inSlot[slot] == int32(e) {
-		c.inSlot[slot] = -1
-	}
-	if c.slotOf[e] == int32(slot) {
-		c.slotOf[e] = -1
-	}
-}
+type pendingAdmit = moecache.PendingAdmit
 
 // appendExpertSlot QUEUES one expert's weight+scales copy from the pinned host source into device slot `slot`. It
 // does not upload: loadRoutedExperts submits the layer's whole batch with a single gpu.UploadBatch, so one
@@ -117,17 +44,9 @@ func (r *cudaResident) appendExpertSlot(w *cudaWQ, e, slot int) {
 	}
 }
 
-// pendingAdmit is one provisional slot claim made by loadRoutedExperts before its DMA.
-type pendingAdmit struct {
-	slot   int
-	expert uint32
-}
-
 // rollbackAdmits undoes every admit made in the current loadRoutedExperts call.
 func (r *cudaResident) rollbackAdmits(c *expertCache) {
-	for _, p := range r.pendingAdmits {
-		c.unadmit(p.slot, p.expert)
-	}
+	c.Rollback(r.pendingAdmits)
 	r.pendingAdmits = r.pendingAdmits[:0]
 }
 
@@ -186,8 +105,8 @@ func (r *cudaResident) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
 	st := decoder.ExpertCacheStats{Slots: r.cacheSlots}
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
-			st.Hits += c.hits
-			st.Misses += c.misses
+			st.Hits += c.Hits()
+			st.Misses += c.Misses()
 		}
 	}
 	return st, true
@@ -550,7 +469,7 @@ func (r *cudaResident) allocSlots() error {
 	r.cacheSlots = d.slots
 	r.allocSlotStacks(moeLayers, true)
 	for _, i := range moeLayers {
-		r.layers[i].expCache = newExpertCache(r.nE, r.cacheSlots)
+		r.layers[i].expCache = moecache.NewSlotCache(r.nE, r.cacheSlots)
 	}
 	if f1, _, e1 := r.dev.Context().MemInfo(); e1 == nil {
 		r.dbgFreeAfter = f1 // recording only
@@ -620,35 +539,20 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		r.routeRecord(L.idx, r.hostIdx[:r.topK])
 	}
 	c := L.expCache
-	// Demand accounting (see expertCache), counted BEFORE admission on purpose: it must describe what this stage
-	// REQUESTED, not what the cache already held, or it would fall as the cache warmed. topK is ~8, so the quadratic
-	// scan is negligible next to the DMA it describes.
-	c.stages++
-	for j := 0; j < r.topK; j++ {
-		dup := false
-		for k := 0; k < j; k++ {
-			if r.hostIdx[k] == r.hostIdx[j] {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			c.distinct++
-		}
-	}
+	c.RecordStageDemand(r.hostIdx[:r.topK])
 	r.expBatch = r.expBatch[:0] // reused across layers; the slice keeps its capacity
 	// Every admit made in THIS call is provisional until the batch lands. On any error below they are rolled back, so
 	// a failed upload cannot leave the cache asserting residency for bytes that were never copied.
 	r.pendingAdmits = r.pendingAdmits[:0]
 	for j := 0; j < r.topK; j++ {
 		e := r.hostIdx[j]
-		slot, hit := c.admit(e)
+		slot, hit := c.Admit(e)
 		r.hostSlot[j] = uint32(slot)
 		if r.overlap {
 			r.missEv[j] = -1
 		}
 		if !hit {
-			r.pendingAdmits = append(r.pendingAdmits, pendingAdmit{slot: slot, expert: e})
+			r.pendingAdmits = append(r.pendingAdmits, pendingAdmit{Slot: slot, Expert: e})
 			var td time.Time
 			if r.cacheProf {
 				r.profHost += time.Since(t0)
@@ -780,8 +684,8 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 		r.allocSlotStacks(moeLayers, false)
 		for _, i := range moeLayers {
 			old := r.layers[i].expCache
-			c := newExpertCache(r.nE, fit)
-			c.hits, c.misses, c.stages, c.distinct = old.hits, old.misses, old.stages, old.distinct
+			c := moecache.NewSlotCache(r.nE, fit)
+			c.CopyStatsFrom(old)
 			r.layers[i].expCache = c
 		}
 		return nil

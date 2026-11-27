@@ -91,8 +91,8 @@ func (r *cudaResident) MoeSwigluForTest(gate, up []float32) ([]float32, error) {
 func (r *cudaResident) CacheStatsForTest() (hits, misses uint64) {
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
-			hits += c.hits
-			misses += c.misses
+			hits += c.Hits()
+			misses += c.Misses()
 		}
 	}
 	return hits, misses
@@ -106,7 +106,7 @@ func (r *cudaResident) PerLayerCacheStatsForTest() (hits, misses []uint64) {
 	misses = make([]uint64, len(r.layers))
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
-			hits[i], misses[i] = c.hits, c.misses
+			hits[i], misses[i] = c.Hits(), c.Misses()
 		}
 	}
 	return hits, misses
@@ -121,8 +121,8 @@ func (r *cudaResident) PerLayerCacheStatsForTest() (hits, misses []uint64) {
 func (r *cudaResident) PagerStageStatsForTest() (stages, distinct uint64) {
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
-			stages += c.stages
-			distinct += c.distinct
+			stages += c.Stages()
+			distinct += c.Distinct()
 		}
 	}
 	return stages, distinct
@@ -134,7 +134,7 @@ func (r *cudaResident) PagerStageStatsForTest() (stages, distinct uint64) {
 func (r *cudaResident) ResetPagerStatsForTest() {
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
-			c.hits, c.misses, c.stages, c.distinct = 0, 0, 0, 0
+			c.ResetStats()
 		}
 	}
 }

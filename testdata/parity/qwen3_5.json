@@ -12,12 +12,13 @@
     "internal/runtime/families/arch_qwen3_5.go",
     "decoder/generate_vl_qwen35.go",
     "internal/runtime/vlprep/guards.go",
+    "internal/runtime/vlprep/qwen35.go",
     "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35vl-tiny"
   ],
-  "deps_hash": "sha256:d451f1cd94348ede628bb727abdf853c22593dedddb3f40dbdbc893af2dfdc2e",
+  "deps_hash": "sha256:de43ee23804b7dafbb00c4fb41021b3529ffa53402a2c51da353cbc640e81d72",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

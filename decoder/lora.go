@@ -2,282 +2,22 @@ package decoder
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
-	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
-	"math"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-	"sync"
 	"sync/atomic"
 
-	"github.com/townsendmerino/aikit/embed"
-	"github.com/townsendmerino/aikit/linalg"
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/loraload"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 )
 
-// LoRA adapter loading (PEFT safetensors), merged into the base weights at load:
-// W' = W + (alpha/r)·B·A  (alpha/√r under rslora). The merge happens on the f32
-// weight before it is quantized, so a merged model costs nothing extra at decode.
-// Only the safetensors base path supports merge — PEFT adapters target HF module
-// names; a GGUF base + LoRA is rejected (see Load).
+// LoRA adapters (PEFT safetensors) are read, validated and merged by internal/runtime/loraload: merged into the base
+// weights at load (Options.LoRA), or applied at compute time (Model.LoadAdapter). Only the safetensors base path
+// supports merge — PEFT adapters target HF module names; a GGUF base + LoRA is rejected (see Load).
 
 type loraDelta = cpuengine.LoRADelta
 
-type loraAdapter struct {
-	st     *embed.SafetensorsFile
-	deltas map[string]loraDelta // base tensor name (model.layers.N.…weight) → delta
-
-	// merged records each delta merge() applied, for checkAllMerged. Layers load in parallel, hence
-	// the lock.
-	mu     sync.Mutex
-	merged map[string]bool
-}
-
-// loadLoRA reads a PEFT adapter directory (adapter_config.json +
-// adapter_model.safetensors) into per-base-tensor deltas.
-func loadLoRA(dir string) (*loraAdapter, error) {
-	cfgRaw, err := os.ReadFile(filepath.Join(dir, "adapter_config.json"))
-	if err != nil {
-		return nil, fmt.Errorf("decoder(lora): read adapter_config.json: %w", err)
-	}
-	var cfg struct {
-		R         int     `json:"r"`
-		Alpha     float64 `json:"lora_alpha"`
-		UseRSLoRA bool    `json:"use_rslora"`
-	}
-	if err := json.Unmarshal(cfgRaw, &cfg); err != nil {
-		return nil, fmt.Errorf("decoder(lora): parse adapter_config.json: %w", err)
-	}
-	if cfg.R <= 0 || cfg.Alpha == 0 {
-		return nil, fmt.Errorf("decoder(lora): adapter_config needs r>0 and lora_alpha")
-	}
-	scale := cfg.Alpha / float64(cfg.R)
-	if cfg.UseRSLoRA {
-		scale = cfg.Alpha / math.Sqrt(float64(cfg.R))
-	}
-
-	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "adapter_model.safetensors"))
-	if err != nil {
-		return nil, fmt.Errorf("decoder(lora): open adapter_model.safetensors: %w", err)
-	}
-	a := &loraAdapter{st: st, deltas: map[string]loraDelta{}}
-	for _, name := range st.Names() {
-		var base string
-		isA := strings.HasSuffix(name, ".lora_A.weight")
-		switch {
-		case isA:
-			base = loraBaseName(name, ".lora_A.weight")
-		case strings.HasSuffix(name, ".lora_B.weight"):
-			base = loraBaseName(name, ".lora_B.weight")
-		default:
-			continue // lora_embedding_*, magnitude vectors, etc. — unsupported, ignored
-		}
-		data, shape, err := loraTensor(st, name)
-		if err != nil {
-			st.Close()
-			return nil, err
-		}
-		d := a.deltas[base]
-		d.Scale = scale
-		if isA {
-			d.A, d.R, d.In = data, shape[0], shape[1]
-		} else {
-			d.B, d.Out = data, shape[0]
-		}
-		a.deltas[base] = d
-	}
-	if len(a.deltas) == 0 {
-		st.Close()
-		return nil, fmt.Errorf("decoder(lora): no lora_A/lora_B tensors found in %s", dir)
-	}
-	for base, d := range a.deltas {
-		if d.A == nil || d.B == nil {
-			st.Close()
-			return nil, fmt.Errorf("decoder(lora): %q has only one of lora_A/lora_B", base)
-		}
-		if len(d.B) != d.Out*d.R {
-			st.Close()
-			return nil, fmt.Errorf("decoder(lora): %q lora_B [%d,?] vs r=%d mismatch", base, d.Out, d.R)
-		}
-	}
-	return a, nil
-}
-
-// loraBaseName maps a PEFT tensor key to the base weight name the loader uses,
-// e.g. base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight →
-// model.layers.0.self_attn.q_proj.weight.
-func loraBaseName(key, suffix string) string {
-	return strings.TrimSuffix(strings.TrimPrefix(key, "base_model.model."), suffix) + ".weight"
-}
-
-// loraTensor reads a rank-2 adapter tensor as f32 (the dtype dispatch delegated to
-// the aikit embed.SafetensorsFile.TensorF32 typed read) and returns its shape — the
-// shape is why this keeps a thin wrapper rather than calling TensorF32 directly.
-func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error) {
-	t, err := st.Tensor(name)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(t.Shape) != 2 {
-		return nil, nil, fmt.Errorf("decoder(lora): %q rank %d, want 2", name, len(t.Shape))
-	}
-	data, err := st.TensorF32(name) // F32/BF16/F16 → f32 (rank checked above; no shape assert)
-	if err != nil {
-		return nil, nil, err
-	}
-	return data, t.Shape, nil
-}
-
-// validateTargets checks that every adapter delta maps to a per-layer projection the loader will merge into, so an
-// adapter targeting an unsupported module (e.g. embed_tokens) fails loudly rather than silently doing nothing.
-//
-// name MUST build the same tensor names the corresponding apply path looks the delta up by, or the check lies: the
-// merge-at-load path in weights.go looks up prefixed names (tn, which adds language_model.* and model.language_model.*
-// on VL checkpoints), while the compute-time path (buildLoraRuntime) uses the bare wbuild.TensorName. A wrong builder lets a
-// VL-prefixed base validate clean and then silently ignore the whole adapter. History: docs/code-notes/decoder.md#loraAdapter.validateTargets.
-func (a *loraAdapter) ValidateTargets(numLayers int, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
-	known := map[string]bool{}
-	for i := range numLayers {
-		for _, suf := range []string{s.QProj, s.KProj, s.VProj, s.OProj, s.GateProj, s.UpProj, s.DownProj} {
-			if suf != "" {
-				known[name(i, suf)] = true
-			}
-		}
-	}
-	for base := range a.deltas {
-		if !known[base] {
-			return fmt.Errorf("decoder(lora): adapter targets %q, which merge does not support "+
-				"(only the per-layer attention/MLP projections; a prefixed base needs a prefix-matching adapter)", base)
-		}
-	}
-	return nil
-}
-
-// validateComputeTimeDims checks every targeted delta's declared [Out,In] shape against the actual base projection it
-// will be added to, as merge does on the merge-at-load path. buildLoraRuntime maps deltas onto projections by name only,
-// and every resident backend's SetAdapter trusts the delta's In/Out (Metal checks only the rank), so an adapter trained
-// against a different-size base would make a kernel write past its slot. This is the one chokepoint every backend's
-// compute-time LoRA passes through: keep the check here, not per backend.
-// History: docs/code-notes/decoder.md#loraAdapter.validateComputeTimeDims.
-func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []darch.LayerWeights, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
-	check := func(i int, suf string, proj *linalg.WeightMat) error {
-		if suf == "" {
-			return nil
-		}
-		base := name(i, suf)
-		d, ok := a.deltas[base]
-		if !ok {
-			return nil
-		}
-		if d.Out != proj.Rows() || d.In != proj.Cols() {
-			return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]",
-				base, d.Out, d.In, proj.Rows(), proj.Cols())
-		}
-		return nil
-	}
-	for i := range numLayers {
-		l := &layers[i]
-		for _, c := range []struct {
-			suf  string
-			proj *linalg.WeightMat
-		}{
-			{s.QProj, &l.QProj}, {s.KProj, &l.KProj}, {s.VProj, &l.VProj}, {s.OProj, &l.OProj},
-			{s.GateProj, &l.GateProj}, {s.UpProj, &l.UpProj}, {s.DownProj, &l.DownProj},
-		} {
-			if err := check(i, c.suf, c.proj); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// merge adds this tensor's LoRA delta into the f32 weight in place:
-// data[o,:] += scale·Σ_k B[o,k]·A[k,:]. No-op when the tensor isn't a target.
-func (a *loraAdapter) Merge(name string, data []float32, out, in int) error {
-	if a == nil {
-		return nil
-	}
-	d, ok := a.deltas[name]
-	if !ok {
-		return nil
-	}
-	if d.Out != out || d.In != in {
-		return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]", name, d.Out, d.In, out, in)
-	}
-	a.mu.Lock()
-	if a.merged == nil {
-		a.merged = map[string]bool{}
-	}
-	a.merged[name] = true
-	a.mu.Unlock()
-	sc := float32(d.Scale)
-	for o := range out {
-		brow := d.B[o*d.R : o*d.R+d.R]
-		row := data[o*in : o*in+in]
-		for k := 0; k < d.R; k++ {
-			bk := sc * brow[k]
-			if bk == 0 {
-				continue
-			}
-			arow := d.A[k*in : k*in+in]
-			for j := range in {
-				row[j] += bk * arow[j]
-			}
-		}
-	}
-	return nil
-}
-
-// checkAllMerged refuses an adapter that has a delta the load never merged. validateTargets checks names against a list
-// before the load; this checks them against what the load actually did, so it also covers a family whose tensor names no
-// list holds, a loader that takes no adapter at all, and a name that is on the list but not loaded in that layer (a
-// self_attn projection on a linear-attention layer). nil-safe.
-func (a *loraAdapter) CheckAllMerged() error {
-	if a == nil {
-		return nil
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	var missed []string
-	for base := range a.deltas {
-		if !a.merged[base] {
-			missed = append(missed, base)
-		}
-	}
-	if len(missed) == 0 {
-		return nil
-	}
-	slices.Sort(missed)
-	n, more := len(missed), ""
-	if n > 3 {
-		more = fmt.Sprintf(" and %d more", n-3)
-		missed = missed[:3]
-	}
-	return fmt.Errorf("decoder(lora): the load did not merge %d of the adapter's %d deltas (%s%s); "+
-		"this family's loader does not merge those tensors, or the checkpoint does not load them",
-		n, len(a.deltas), strings.Join(missed, ", "), more)
-}
-
-// has reports whether the adapter has a delta for this base tensor.
-func (a *loraAdapter) Has(name string) bool {
-	if a == nil {
-		return false
-	}
-	_, ok := a.deltas[name]
-	return ok
-}
-
-func (a *loraAdapter) close() {
-	if a != nil && a.st != nil {
-		a.st.Close()
-	}
-}
+type loraAdapter = loraload.Adapter
 
 // --- Compute-time LoRA: apply the low-rank delta in the forward instead of merging it into the base weight. The base
 // stays immutable and zero-copy, so N adapters of one base share a single resident transformer (base plus N small
@@ -302,32 +42,14 @@ type loraRuntime struct {
 
 func (rt *loraRuntime) close() {
 	if rt != nil {
-		rt.a.close()
+		rt.a.Close()
 	}
 }
 
 // buildLoraRuntime indexes a loaded adapter by (layer, projection) for compute-time
 // application, mapping each schema suffix to the adapter's HF-named delta.
 func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *archparts.TensorSchema) *loraRuntime {
-	rt := &loraRuntime{name: name, layers: make([]loraLayerDelta, numLayers), a: a}
-	get := func(i int, suf string) *loraDelta {
-		if suf == "" {
-			return nil
-		}
-		d, ok := a.deltas[wbuild.TensorName(i, suf)]
-		if !ok {
-			return nil
-		}
-		dd := d // a fresh addressable copy per slot (loop-var capture is irrelevant — value semantics)
-		return &dd
-	}
-	for i := range numLayers {
-		rt.layers[i] = loraLayerDelta{
-			Q: get(i, s.QProj), K: get(i, s.KProj), V: get(i, s.VProj), O: get(i, s.OProj),
-			Gate: get(i, s.GateProj), Up: get(i, s.UpProj), Down: get(i, s.DownProj),
-		}
-	}
-	return rt
+	return &loraRuntime{name: name, layers: a.LayerDeltas(numLayers, s), a: a}
 }
 
 // LoadAdapter loads a PEFT LoRA adapter for compute-time application and registers it under name. Unlike the
@@ -361,20 +83,20 @@ func (m *Model) loadAdapter(name, dir string) error {
 	case arch.NonGatedMLP:
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for the non-gated MLP layout (%s)", arch.Name)
 	}
-	a, err := loadLoRA(dir)
+	a, err := loraload.Load(dir)
 	if err != nil {
 		return err
 	}
 	// Compute-time application (buildLoraRuntime) indexes deltas by the bare wbuild.TensorName, so validate
 	// against that — this path is prefix-agnostic (it applies by layer/projection, not physical name).
 	if err := a.ValidateTargets(arch.NumLayers, m.w.Schema, wbuild.TensorName); err != nil {
-		a.close()
+		a.Close()
 		return err
 	}
-	// validateTargets checks names only; every resident backend's SetAdapter trusts In/Out from the checkpoint, so a
+	// ValidateTargets checks names only; every resident backend's SetAdapter trusts In/Out from the checkpoint, so a
 	// mismatched adapter is caught here, once, before it reaches any of them.
-	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.Schema, wbuild.TensorName); err != nil {
-		a.close()
+	if err := a.ValidateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.Schema, wbuild.TensorName); err != nil {
+		a.Close()
 		return err
 	}
 	m.registerAdapter(name, buildLoraRuntime(name, a, arch.NumLayers, m.w.Schema))

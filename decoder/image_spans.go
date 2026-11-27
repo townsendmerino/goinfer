@@ -14,9 +14,7 @@ var (
 	imageSpansTotal       = vlprep.TotalTokens
 	checkImageSpans       = vlprep.CheckSpans
 	spliceImageSpans      = vlprep.Splice
-	spliceImageSpansRange = vlprep.SpliceRange
 	imageSpanBlocks       = vlprep.Blocks
 	residentImageBlocksOf = vlprep.ResidentBlocks
 	residentImageClaimsOf = vlprep.ResidentClaims
-	imageSpanRow          = vlprep.SpanRow
 )

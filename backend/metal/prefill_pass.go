@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -638,12 +639,6 @@ func (ps *prefillPass) moeBlock(l int, L *residLayer) bool {
 	}
 
 	// 5. Host Grouping: group (token m, rank j) by expert e
-	type moeSlot struct {
-		row  int
-		rank int
-		wgt  float32
-	}
-	byExpert := make([][]moeSlot, r.moe.nE)
 	idxSlice := ps.moeIdx.U32s()[:ps.M*r.moe.k]
 	wgtSlice := ps.moeWgt.Floats()[:ps.M*r.moe.k]
 	if dg01Mutation != "" {
@@ -652,15 +647,7 @@ func (ps *prefillPass) moeBlock(l int, L *residLayer) bool {
 	if r.moeCap.major != nil {
 		r.moeCap.major(l, idxSlice, wgtSlice)
 	}
-	for m := range ps.M {
-		for j := 0; j < r.moe.k; j++ {
-			eIdx := int(idxSlice[m*r.moe.k+j])
-			w := wgtSlice[m*r.moe.k+j]
-			if eIdx >= 0 && eIdx < r.moe.nE {
-				byExpert[eIdx] = append(byExpert[eIdx], moeSlot{row: m, rank: j, wgt: w})
-			}
-		}
-	}
+	byExpert := moecache.GroupWeightedByExpert(idxSlice, wgtSlice, ps.M, r.moe.k, r.moe.nE)
 
 	// 6. Begin new command encoder for expert dispatches
 	e = r.q.Begin()
@@ -686,8 +673,8 @@ func (ps *prefillPass) moeBlock(l int, L *residLayer) bool {
 		}
 
 		for i, s := range slots {
-			rowIdxHost[slotOffset+i] = uint32(s.row)
-			rowWgtHost[slotOffset+i] = s.wgt
+			rowIdxHost[slotOffset+i] = uint32(s.Row)
+			rowWgtHost[slotOffset+i] = s.Weight
 		}
 
 		CePad := (Ce + 7) / 8 * 8

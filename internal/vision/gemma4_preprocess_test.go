@@ -1,6 +1,10 @@
 package vision
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
+)
 
 // TestGemma4AspectRatioSize_matchesRealFormula cross-checks the Go port against
 // get_aspect_ratio_preserving_size (image_processing_gemma4.py) computed directly
@@ -85,6 +89,6 @@ func BenchmarkGemma4Unfold(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = gemma4Unfold(hwc, targetH, targetW, patchSize)
+		_, _ = imgproc.UnfoldHWC(hwc, targetH, targetW, patchSize)
 	}
 }

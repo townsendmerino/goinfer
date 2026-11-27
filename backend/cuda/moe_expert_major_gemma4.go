@@ -3,10 +3,9 @@
 package cuda
 
 import (
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"slices"
-
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
 )
 
 // Gemma-4 extension of moe_expert_major.go's expert-major restructuring (docs/measurements/p20-expert-major-2026-09-21.md).
@@ -120,20 +119,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 		return e
 	}
 
-	// --- Phase 2: bucket (row, rank) by expert id; admit/DMA each distinct expert once; run every
-	// row assigned to it into rankScratch[rank]. Identical shape to moe_expert_major.go Phase 2. ---
-	type slot struct{ row, rank int }
-	byExpert := map[uint32][]slot{}
-	for m := range M {
-		for j := 0; j < r.topK; j++ {
-			byExpert[hostIdx[m*r.topK+j]] = append(byExpert[hostIdx[m*r.topK+j]], slot{m, j})
-		}
-	}
-	experts := make([]uint32, 0, len(byExpert))
-	for e := range byExpert {
-		experts = append(experts, e)
-	}
-	slices.Sort(experts)
+	experts, byExpert := moecache.GroupByExpert(hostIdx, M, r.topK)
 
 	c := Ly.expCache
 	gu := 2 * r.moeInter
@@ -141,13 +127,13 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		slotNo, hit := c.admit(e)
+		slotNo, hit := c.Admit(e)
 		if !hit {
 			r.expBatch = r.expBatch[:0]
 			r.appendExpertSlot(&Ly.expGU, int(e), slotNo)
 			r.appendExpertSlot(&Ly.expDown, int(e), slotNo)
 			if ue := gpu.UploadBatch(r.expBatch); ue != nil {
-				c.unadmit(slotNo, e)
+				c.Unadmit(slotNo, e)
 				return ue
 			}
 		}
@@ -155,7 +141,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 			return ue
 		}
 		for _, s := range byExpert[e] {
-			qOff, sOff := mqAll.At(s.row*hidden/4*4), mScAll.At(s.row*4)
+			qOff, sOff := mqAll.At(s.Row*hidden/4*4), mScAll.At(s.Row*4)
 			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(Ly.expGU.W), Arg(qOff), Arg(Ly.expGU.ws16), Arg(sOff), Arg(emSlot), gpu.ArgValue(int32(0)),
 				gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
@@ -166,7 +152,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 				return e
 			}
 			// The down projection, stored unweighted (gemv_w4a8_moe: the wacc kernel's reduction with a plain store).
-			dstOff := rankScratch[s.rank].At(s.row * hidden * 4)
+			dstOff := rankScratch[s.Rank].At(s.Row * hidden * 4)
 			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(emSlot), gpu.ArgValue(int32(0)),
 				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),

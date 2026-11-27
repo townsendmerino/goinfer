@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
 )
 
 // Pixtral's vision tower (Mistral 3 / Ministral 3's image encoder; HF PixtralVisionModel, transformers 5.15
@@ -247,23 +248,7 @@ func PixtralPatchify(img []float32, channels, h, w, patch int) ([]float32, [2]in
 	if h%patch != 0 || w%patch != 0 || len(img) != channels*h*w {
 		return nil, [2]int{}, fmt.Errorf("pixtral: image %dx%dx%d (len %d) is not patchable by %d", channels, h, w, len(img), patch)
 	}
-	rows, cols := h/patch, w/patch
-	pd := channels * patch * patch
-	out := make([]float32, rows*cols*pd)
-	for r := range rows {
-		for c := range cols {
-			dst := out[(r*cols+c)*pd:]
-			n := 0
-			for ch := range channels {
-				for dy := range patch {
-					src := img[ch*h*w+(r*patch+dy)*w+c*patch:]
-					copy(dst[n:n+patch], src[:patch])
-					n += patch
-				}
-			}
-		}
-	}
-	return out, [2]int{rows, cols}, nil
+	return imgproc.PatchesChannelsFirst(img, channels, h, w, patch), [2]int{h / patch, w / patch}, nil
 }
 
 // pixtralNoBlockMask, when set, runs every image as one attention segment: the planted defect "the block mask dropped".
