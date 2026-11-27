@@ -115,10 +115,10 @@ func Control(x, m, down, gain, forget []float32, rank int, eps float64) {
 	}
 }
 
-// ConvWindow is one short convolution's history: the K-1 inputs before the current position, oldest first, zero before the
+// ConvWindow is one short convolution's history: the inputs before the current position, oldest first, zero before the
 // sequence starts.
 type ConvWindow struct {
-	rows [][]float32 // at most K-1, oldest first
+	rows [][]float32 // one less than the kernel width at most, oldest first
 }
 
 // Reset empties the window.

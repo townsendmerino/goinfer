@@ -71,7 +71,7 @@ func TestInkling2_matchesApplyChatTemplate(t *testing.T) {
 	}
 }
 
-// inklingReply is the shape of a real Inkling-2-Mini reply (llama.cpp greedy on the Q8_0, 2026-11-26), with an answer added
+// inklingReply is the shape of a real Inkling-2-Mini reply (llama.cpp greedy on the Q8_0), with an answer added
 // after its thinking message.
 const inklingReply = "<|message_model|><|content_thinking|>The user wants a function.<|end_message|>" +
 	"<|message_model|><|content_text|>def rev(s):\n    return s[::-1]<|end_message|>"
