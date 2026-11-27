@@ -664,6 +664,26 @@
         ]
       },
       "why": "internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath)."
+    },
+    {
+      "name": "gatequick-leaf",
+      "from": [
+        "internal/guard/gatequick"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatequick": [
+          "internal/guard/gatecore",
+          "internal/guard/gatehygiene",
+          "internal/guard/paritykey",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatequick holds gate quick's package dependency graph, changed-file-to-cell selector, parallel cell runner, duration/summary records, and pure quick graders below cmd/gate (GT3). It imports only internal/guard/gatecore, internal/guard/gatehygiene, and internal/guard/paritykey (its tests, internal/testgate and internal/testpath)."
     }
   ],
   "arrows": {
@@ -783,6 +803,7 @@
     "cmd/gate": [
       "internal/guard/gatecore",
       "internal/guard/gatehygiene",
+      "internal/guard/gatequick",
       "internal/guard/paritykey",
       "tokenizer"
     ],
@@ -1043,6 +1064,11 @@
     ],
     "internal/guard/gatehygiene": [
       "internal/guard/gatecore",
+      "internal/guard/paritykey"
+    ],
+    "internal/guard/gatequick": [
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
       "internal/guard/paritykey"
     ],
     "internal/guard/memgate": [
@@ -1320,6 +1346,7 @@
     ],
     "cmd/gate": [
       "internal/guard/gatecore",
+      "internal/guard/gatequick",
       "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
@@ -1505,6 +1532,10 @@
     ],
     "internal/guard/gatehygiene": [
       "internal/guard/gatecore",
+      "internal/testpath"
+    ],
+    "internal/guard/gatequick": [
+      "internal/testgate",
       "internal/testpath"
     ],
     "internal/guard/memgate": [

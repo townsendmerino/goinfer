@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"fmt"
@@ -131,7 +131,7 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 		if len(loaders) > 0 && len(r.tests)-len(split)-len(loaders) >= minSplitRest {
 			shared := loaders[:0:0]
 			for _, l := range loaders {
-				if !slicesContains(r.Mod.CheckpointAlone, l) {
+				if !slices.Contains(r.Mod.CheckpointAlone, l) {
 					shared = append(shared, l)
 					continue
 				}

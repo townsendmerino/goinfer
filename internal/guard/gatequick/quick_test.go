@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"bytes"
@@ -14,6 +14,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // EQUIVALENCE for `gate quick`. The campaign's
@@ -207,7 +210,7 @@ func TestQuick_vacuousGoldensAreRed(t *testing.T) {
 
 // The goldens quick runs must be the set a deps_hash refresh is gated on.
 func TestQuick_goldenRunMatchesRefreshScript(t *testing.T) {
-	b, err := os.ReadFile("../../scripts/refresh_parity_hashes.sh")
+	b, err := os.ReadFile(filepath.Join(testpath.Root(t), "scripts", "refresh_parity_hashes.sh"))
 	if err != nil {
 		t.Skipf("no refresh script: %v", err)
 	}
@@ -253,10 +256,7 @@ func TestQuick_splitCellsPartitionThePackage(t *testing.T) {
 // environment (workspace + target), which is what the modules are.
 func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 	needTools(t)
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := testpath.Root(t)
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		t.Fatal(err)
@@ -375,10 +375,8 @@ func overlayOf(t *testing.T, root, rel, from, to string) string {
 func realTree(t *testing.T) *quickConfig {
 	t.Helper()
 	needTools(t)
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("real-tree mutation: set GOINFER_HEAVY_TESTS=1 (compiles and runs real packages, ~1-3 min)")
-	}
-	root, _ := filepath.Abs("../..")
+	testgate.RequireHeavy(t)
+	root := testpath.Root(t)
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		t.Fatal(err)
@@ -612,10 +610,7 @@ func TestQuick_memJobsRunAlone(t *testing.T) {
 // on any other OS the module's own packages do not build: backend/metal's four steps failed on Linux with `undefined: DeviceCopy`
 // until they named darwin/arm64.
 func TestQuickModules_nativeOnlyModulesLintOnTheirTarget(t *testing.T) {
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := testpath.Root(t)
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		t.Fatal(err)

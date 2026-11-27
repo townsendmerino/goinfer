@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
-	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 )
 
 // The graders of the gates that read records: each decides from records and recorded lookups alone. TestGraders_arePure holds every file named grade_*.go to that: no exec,
@@ -113,64 +112,6 @@ func parityCoverage(recs []parityRecord, head string, paths []string, objOf func
 	return cover, why
 }
 
-// valid says whether the run is one a release can lean on: every cell run, green, on a clean tree.
-func (r quickRecord) valid() (bool, string) {
-	switch {
-	case !r.Full:
-		return false, "the run deferred cells (not -full)"
-	case r.Verdict != "PASS":
-		return false, "verdict " + r.Verdict
-	case r.Dirty:
-		return false, "the run was made on a dirty tree"
-	case r.Pass == 0:
-		return false, "no test passed"
-	}
-	return true, ""
-}
-
-// quickCoverageR is, for one operating system, whether the records cover head. The newest record made there at the
-// same code decides, whatever its verdict, so a later FAIL at unchanged code is not hidden by an earlier PASS.
-// changed lists the paths that differ between two revisions.
-func quickCoverageR(recs []quickRecord, goos, head string, changed func(from, to string) ([]string, error)) (cover, failed *quickRecord, why string) {
-	var newestWhy string
-	for i := len(recs) - 1; i >= 0; i-- {
-		r := &recs[i]
-		if r.OS != goos {
-			continue
-		}
-		paths, err := changed(r.Commit, head)
-		if err != nil {
-			return nil, nil, fmt.Sprintf("could not compare %s with HEAD: %v", r.Commit[:8], err)
-		}
-		first := ""
-		for _, p := range paths {
-			if quickRecordVoidedBy(p) {
-				first = p
-				break
-			}
-		}
-		if first == "" {
-			if ok, why := r.valid(); !ok {
-				return nil, r, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
-			}
-			return r, nil, ""
-		}
-		if newestWhy == "" {
-			newestWhy = fmt.Sprintf("newest record %s @ %s: %s changed since", r.Date, r.Commit[:8], first)
-		}
-	}
-	if newestWhy == "" {
-		return nil, nil, "no record"
-	}
-	return nil, nil, newestWhy
-}
-
-// quickCoverage is quickCoverageR without the record that failed to count.
-func quickCoverage(recs []quickRecord, goos, head string, changed func(from, to string) ([]string, error)) (*quickRecord, string) {
-	cover, _, why := quickCoverageR(recs, goos, head, changed)
-	return cover, why
-}
-
 // ciVerdict reads the runs for the full sha: the ci workflow must be completed (at the RUN level, not job by job) and successful.
 func ciVerdict(runs []ciRun, sha string) (state, detail string) {
 	found := false
@@ -230,18 +171,6 @@ func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (strin
 		}
 	}
 	return "", nil
-}
-
-// quickRecordVoidedBy reports whether a change to path, since a run, voids the run. Everything a test can compile or
-// read does; the documentation tree, the website, the CI definitions, the CHANGELOG's entries (changelog.d/) and the
-// top-level prose files do not, so a release commit that writes the CHANGELOG and commits the records keeps its run.
-func quickRecordVoidedBy(path string) bool {
-	for _, p := range []string{"docs/", "apps/site/", ".github/", gatehygiene.ChangelogFragmentDir + "/"} {
-		if strings.HasPrefix(path, p) {
-			return false
-		}
-	}
-	return strings.Contains(path, "/") || !strings.HasSuffix(path, ".md")
 }
 
 // changedSince names the first qualifying path whose object at head differs from its object at the sweep's commit (a directory

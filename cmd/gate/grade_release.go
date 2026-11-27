@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 )
 
 // The rows of `gate release`, graders of what they read: every read goes through relEnv.look, which the runner answers
@@ -707,7 +708,7 @@ func rowQuickFull(e *relEnv) relRow {
 	}
 	var bad, ok, acc []string
 	for _, goos := range quickRecordSystems {
-		r, failed, why := quickCoverageR(recs, goos, head, changed)
+		r, failed, why := gatequick.QuickCoverageR(recs, goos, head, changed)
 		switch {
 		case r != nil:
 			ok = append(ok, fmt.Sprintf("%s: %s @ %s (%d pass, %d skip)", goos, r.Date, r.Commit[:8], r.Pass, r.Skip))

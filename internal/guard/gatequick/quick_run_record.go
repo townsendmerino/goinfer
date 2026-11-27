@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // quickRunRecord is what a `gate quick` run leaves for its grader:
@@ -91,9 +93,9 @@ func writeQuickRunRecord(w io.Writer, rundir, prelude, postlude string, jobs []*
 	}
 }
 
-// replayQuick prints a recorded quick run's report as the run printed it: the prelude, then gradeQuick on the jobs
-// rebuilt from the record, each test job's outcome derived again from its stream by gradeQuickTest.
-func replayQuick(w io.Writer, path string) int {
+// ReplayQuick prints a recorded quick run's report as the run printed it: the prelude, then GradeQuick on the jobs
+// rebuilt from the record, each test job's outcome derived again from its stream by GradeQuickTest.
+func ReplayQuick(w io.Writer, path string) int {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate quick: %v\n", err)
@@ -125,7 +127,7 @@ func replayQuick(w io.Writer, path string) int {
 				return 2
 			}
 			jb.JSONPath = rj.Stream
-			jb.res = newResults()
+			jb.res = gatecore.NewResults()
 			jb.res.Cur = jb.Name
 			err = jb.res.Consume(f)
 			f.Close()
@@ -133,7 +135,7 @@ func replayQuick(w io.Writer, path string) int {
 				fmt.Fprintf(os.Stderr, "gate quick: %s: %v\n", rj.Stream, err)
 				return 2
 			}
-			gradeQuickTest(jb)
+			GradeQuickTest(jb)
 		}
 		jobs = append(jobs, jb)
 	}
@@ -145,7 +147,7 @@ func replayQuick(w io.Writer, path string) int {
 		deferred = append(deferred, &quickCell{Name: c.Name, Deferred: c.Deferred, Run: c.Run})
 	}
 	fmt.Fprint(w, rec.Prelude)
-	rc := gradeQuick(w, jobs, notRun, deferred, rec.Goldens, rec.Start, rec.End, rec.Verbose, nil)
+	rc := GradeQuick(w, jobs, notRun, deferred, rec.Goldens, rec.Start, rec.End, rec.Verbose, nil)
 	fmt.Fprint(w, rec.Postlude)
 	return rc
 }

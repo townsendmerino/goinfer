@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"os"
@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // A loader the module names in CheckpointAlone gets a [checkpoint <name>] cell of its own, a Checkpoint cell marked Mem, which
@@ -52,10 +54,7 @@ func TestQuick_checkpointAloneGetsItsOwnCell(t *testing.T) {
 
 // Every name the real config sets alone is a test the root module declares, so a rename cannot quietly put it back.
 func TestQuick_checkpointAloneNamesExist(t *testing.T) {
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := testpath.Root(t)
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		t.Fatal(err)

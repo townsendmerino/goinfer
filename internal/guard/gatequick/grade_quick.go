@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"cmp"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 )
 
 func (jb *quickJob) dur() time.Duration { return jb.end.Sub(jb.start) }
@@ -38,10 +39,10 @@ func statusWord(jb *quickJob) string {
 	return "PASS"
 }
 
-// gradeQuick is quick's verdict on finished jobs, live or replayed: the lint and test tables, each failing cell's
+// GradeQuick is quick's verdict on finished jobs, live or replayed: the lint and test tables, each failing cell's
 // lines or recorded log tail, and the verdict block, ending at end. goldens is the number of goldens the selection
 // triggered. It fills sum for the quick-full record.
-func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, goldens int, t0, end time.Time, verbose bool, sum *quickSummary) int {
+func GradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, goldens int, t0, end time.Time, verbose bool, sum *QuickSummary) int {
 	var lint, tests []*quickJob
 	for _, jb := range jobs {
 		if jb.Kind == "lint" {
@@ -87,7 +88,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	var goldenJobs []*quickJob
 	var vacuousAffected []string
 	skipBuckets := map[string]int{}
-	var skipRows []skipRow
+	var skipRows []gatecore.SkipRow
 	sorted := slices.Clone(tests)
 	slices.SortStableFunc(sorted, func(a, b *quickJob) int { return cmp.Compare(a.Name, b.Name) })
 	for _, jb := range sorted {
@@ -158,7 +159,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	fmt.Fprintf(w, "  cells    %d: %d ran, %d replayed from the test cache, %d not runnable on this host, %d deferred to the pre-tag tier\n",
 		len(tests)+len(notRun)+len(deferred), ran, cached, len(notRun), len(deferred))
 	if sum != nil {
-		*sum = quickSummary{Pass: pass, Skip: skip, Fail: fail, Cells: len(tests) + len(notRun) + len(deferred), Ran: ran, Cached: cached}
+		*sum = QuickSummary{Pass: pass, Skip: skip, Fail: fail, Cells: len(tests) + len(notRun) + len(deferred), Ran: ran, Cached: cached}
 		for _, c := range notRun {
 			sum.NotRun = append(sum.NotRun, c.Name)
 		}
@@ -227,9 +228,9 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	return 0
 }
 
-// gradeQuickTest derives a test job's outcome from its parsed stream and exit code: the top-level counts, whether go
+// GradeQuickTest derives a test job's outcome from its parsed stream and exit code: the top-level counts, whether go
 // test replayed it from the cache, a non-zero exit with no counted failure (hidden), and a clean exit with no test.
-func gradeQuickTest(jb *quickJob) {
+func GradeQuickTest(jb *quickJob) {
 	for k, act := range jb.res.Final {
 		if gatecore.IsSubtest(k) {
 			continue
@@ -255,4 +256,74 @@ func gradeQuickTest(jb *quickJob) {
 	// package that never ran green.
 	jb.Hidden = jb.RC != 0 && jb.Fail == 0
 	jb.NoTest = jb.RC == 0 && jb.Pass+jb.Skip+jb.Fail == 0
+}
+
+// Valid says whether the run is one a release can lean on: every cell run, green, on a clean tree.
+func (r QuickRecord) Valid() (bool, string) {
+	switch {
+	case !r.Full:
+		return false, "the run deferred cells (not -full)"
+	case r.Verdict != "PASS":
+		return false, "verdict " + r.Verdict
+	case r.Dirty:
+		return false, "the run was made on a dirty tree"
+	case r.Pass == 0:
+		return false, "no test passed"
+	}
+	return true, ""
+}
+
+// QuickCoverageR is, for one operating system, whether the records cover head. The newest record made there at the
+// same code decides, whatever its verdict, so a later FAIL at unchanged code is not hidden by an earlier PASS.
+// changed lists the paths that differ between two revisions.
+func QuickCoverageR(recs []QuickRecord, goos, head string, changed func(from, to string) ([]string, error)) (cover, failed *QuickRecord, why string) {
+	var newestWhy string
+	for i := len(recs) - 1; i >= 0; i-- {
+		r := &recs[i]
+		if r.OS != goos {
+			continue
+		}
+		paths, err := changed(r.Commit, head)
+		if err != nil {
+			return nil, nil, fmt.Sprintf("could not compare %s with HEAD: %v", r.Commit[:8], err)
+		}
+		first := ""
+		for _, p := range paths {
+			if QuickRecordVoidedBy(p) {
+				first = p
+				break
+			}
+		}
+		if first == "" {
+			if ok, why := r.Valid(); !ok {
+				return nil, r, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
+			}
+			return r, nil, ""
+		}
+		if newestWhy == "" {
+			newestWhy = fmt.Sprintf("newest record %s @ %s: %s changed since", r.Date, r.Commit[:8], first)
+		}
+	}
+	if newestWhy == "" {
+		return nil, nil, "no record"
+	}
+	return nil, nil, newestWhy
+}
+
+// QuickCoverage is QuickCoverageR without the record that failed to count.
+func QuickCoverage(recs []QuickRecord, goos, head string, changed func(from, to string) ([]string, error)) (*QuickRecord, string) {
+	cover, _, why := QuickCoverageR(recs, goos, head, changed)
+	return cover, why
+}
+
+// QuickRecordVoidedBy reports whether a change to path, since a run, voids the run. Everything a test can compile or
+// read does; the documentation tree, the website, the CI definitions, the CHANGELOG's entries (changelog.d/) and the
+// top-level prose files do not, so a release commit that writes the CHANGELOG and commits the records keeps its run.
+func QuickRecordVoidedBy(path string) bool {
+	for _, p := range []string{"docs/", "apps/site/", ".github/", gatehygiene.ChangelogFragmentDir + "/"} {
+		if strings.HasPrefix(path, p) {
+			return false
+		}
+	}
+	return strings.Contains(path, "/") || !strings.HasSuffix(path, ".md")
 }

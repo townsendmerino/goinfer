@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -273,7 +274,7 @@ func (qc *quickConfig) workFile(m *quickModule) (string, error) {
 	if err := os.MkdirAll(qc.StateDir, 0o755); err != nil {
 		return "", err
 	}
-	p := filepath.Join(qc.StateDir, sanitize(m.Name)+".go.work")
+	p := filepath.Join(qc.StateDir, gatecore.Sanitize(m.Name)+".go.work")
 	if old, err := os.ReadFile(p); err != nil || string(old) != b.String() {
 		if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
 			return "", err
@@ -491,7 +492,7 @@ func (g *quickGraph) affectedBy(qc *quickConfig, rel string) (owners []fileOwner
 	// A module file changes resolution for every module whose workspace includes it.
 	if (base == "go.mod" || base == "go.sum") && filepath.Dir(filepath.FromSlash(rel)) == filepath.FromSlash(mod.Dir) {
 		for _, r := range g.roots {
-			if r.Mod == mod || slicesContains(r.Mod.Work, mod.Dir) {
+			if r.Mod == mod || slices.Contains(r.Mod.Work, mod.Dir) {
 				hits = append(hits, affectedHit{r, "module file " + rel})
 			}
 		}
@@ -591,10 +592,6 @@ func appendUnique(xs []string, x string) []string {
 		return xs
 	}
 	return append(xs, x)
-}
-
-func slicesContains(xs []string, x string) bool {
-	return slices.Contains(xs, x)
 }
 
 // goldenFiles reads the parity manifest's shared sets — plus each family's own non-test forward

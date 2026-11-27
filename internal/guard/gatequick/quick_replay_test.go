@@ -1,14 +1,20 @@
-package main
+package gatequick
 
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
+
+var updateGoldens = flag.Bool("update-goldens", false, "capture SB12's grader goldens instead of checking them")
 
 // runFxRecorded is runFx keeping the log directory, so the run's record can be found.
 func runFxRecorded(t *testing.T, qc *quickConfig, lint bool) (int, string, string) {
@@ -34,7 +40,7 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 			t.Fatalf("%s: the live run exited %d, want %d:\n%s", name, rc, wantRC, live)
 		}
 		var replay bytes.Buffer
-		if got := replayQuick(&replay, rec); got != rc {
+		if got := ReplayQuick(&replay, rec); got != rc {
 			t.Errorf("%s: the replay exits %d, the run exited %d", name, got, rc)
 		}
 		if replay.String() != live {
@@ -90,7 +96,7 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 		t.Fatal("the red run's streams hold no failure to plant")
 	}
 	var out bytes.Buffer
-	if rc := replayQuick(&out, rec); rc != 0 {
+	if rc := ReplayQuick(&out, rec); rc != 0 {
 		t.Errorf("with every failure planted as a pass and every exit 0, the replay exits %d, want 0", rc)
 	}
 	// A test cell planted with a non-zero exit and no failing test is a hidden failure: red.
@@ -104,7 +110,7 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 	if err := os.WriteFile(rec, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := replayQuick(io.Discard, rec); rc != 1 {
+	if rc := ReplayQuick(io.Discard, rec); rc != 1 {
 		t.Errorf("with a cell exiting 2 and no failing test, the replay exits %d, want 1", rc)
 	}
 	// A job that failed before it ran has an error and no stream file: graded by the error (exit 1), never refused.
@@ -118,7 +124,7 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 	if err := os.WriteFile(rec, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := replayQuick(io.Discard, rec); rc != 1 {
+	if rc := ReplayQuick(io.Discard, rec); rc != 1 {
 		t.Errorf("with a job that failed before it ran, the replay exits %d, want 1", rc)
 	}
 	// A test job with neither a stream nor an error is not a result: refused, never graded as an empty pass.
@@ -132,7 +138,7 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 	if err := os.WriteFile(rec, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := replayQuick(io.Discard, rec); rc != 2 {
+	if rc := ReplayQuick(io.Discard, rec); rc != 2 {
 		t.Errorf("with a test job that has neither a stream nor an error, the replay exits %d, want 2", rc)
 	}
 }
@@ -148,7 +154,7 @@ func TestQuickReplay_printsThePostlude(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	replayQuick(&out, p)
+	ReplayQuick(&out, p)
 	if !strings.HasPrefix(out.String(), "pre\n") || !strings.HasSuffix(out.String(), "  record: x.json\n") {
 		t.Errorf("the replay does not frame the verdict with the prelude and postlude:\n%s", out.String())
 	}
@@ -158,7 +164,7 @@ func TestQuickReplay_printsThePostlude(t *testing.T) {
 // -update-goldens: the case TestGraderGoldens then regrades with quick-replay.
 func captureQuickGolden(t *testing.T, rec string) {
 	t.Helper()
-	dst := filepath.Join(goldenRoot, "quick-fixture-red")
+	dst := filepath.Join(testpath.Testdata(t, "gate", "goldens"), "quick-fixture-red")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -169,9 +175,16 @@ func captureQuickGolden(t *testing.T, rec string) {
 		}
 	}
 	var live bytes.Buffer
-	rc := replayQuick(&live, rec) // identical to the run's report: checked above
+	rc := ReplayQuick(&live, rec) // identical to the run's report: checked above
 	if err := os.WriteFile(filepath.Join(dst, "live.txt"), live.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	type goldenCase struct {
+		Grader string `json:"grader"`
+		Note   string `json:"note,omitempty"`
+		Record string `json:"record,omitempty"`
+		Live   string `json:"live,omitempty"`
+		Exit   int    `json:"exit,omitempty"`
 	}
 	c := goldenCase{Grader: "quick-replay", Note: "a gate quick run on cmd/gate's fixture repository (fxRepo) with a leaf mutation and the lint steps, recorded by TestQuickReplay_reproducesTheRun under -update-goldens; live.txt is its report",
 		Record: quickRunRecordFile, Live: "live.txt", Exit: rc}
@@ -179,6 +192,24 @@ func captureQuickGolden(t *testing.T, rec string) {
 	if err := os.WriteFile(filepath.Join(dst, "case.json"), append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func lineDiff(want, got string) string {
+	wl, gl := strings.Split(want, "\n"), strings.Split(got, "\n")
+	var b strings.Builder
+	for i := 0; i < len(wl) || i < len(gl); i++ {
+		var a, c string
+		if i < len(wl) {
+			a = wl[i]
+		}
+		if i < len(gl) {
+			c = gl[i]
+		}
+		if a != c {
+			fmt.Fprintf(&b, "  line %d\n    want %q\n    got  %q\n", i+1, a, c)
+		}
+	}
+	return b.String()
 }
 
 func mustRead(t *testing.T, path string) []byte {

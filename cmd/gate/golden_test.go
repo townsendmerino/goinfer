@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -482,7 +483,7 @@ func gradeGoldenQuickCoverage(t *testing.T, dir string, c *goldenCase, look look
 	var b strings.Builder
 	for _, head := range c.Heads {
 		for _, goos := range quickRecordSystems {
-			r, why := quickCoverage(recs, goos, head, changed)
+			r, why := gatequick.QuickCoverage(recs, goos, head, changed)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), goos, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}
 	}

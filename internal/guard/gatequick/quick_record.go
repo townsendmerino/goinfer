@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"cmp"
@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // The record of a `gate quick -full` run. By day quick defers the real-checkpoint cells and an untouched device
@@ -18,11 +20,11 @@ import (
 // per run, committed beside the other measurement records. `gate release` reads them (rowQuickFull): an operating
 // system is covered at a commit when the newest record made on it at the same code is a PASS on a clean tree.
 
-// quickRecordDirDefault is where a -full run's record goes, relative to the repository root.
-const quickRecordDirDefault = "docs/measurements/quick-full"
+// QuickRecordDirDefault is where a -full run's record goes, relative to the repository root.
+const QuickRecordDirDefault = "docs/measurements/quick-full"
 
-// quickRecord is one `gate quick -full` run, whatever its verdict.
-type quickRecord struct {
+// QuickRecord is one `gate quick -full` run, whatever its verdict.
+type QuickRecord struct {
 	Schema  int      `json:"schema"`
 	OS      string   `json:"os"`
 	Arch    string   `json:"arch"`
@@ -40,8 +42,8 @@ type quickRecord struct {
 	NotRun  []string `json:"not_run,omitempty"` // cells of modules that do not build on this system
 }
 
-// quickSummary is what reportQuick counted, for the record.
-type quickSummary struct {
+// QuickSummary is what reportQuick counted, for the record.
+type QuickSummary struct {
 	Pass, Skip, Fail   int
 	Cells, Ran, Cached int
 	NotRun             []string
@@ -49,11 +51,11 @@ type quickSummary struct {
 
 // writeQuickRecord writes a -full run's record into dir (relative to root unless absolute). A record that cannot be
 // written is said loudly and does not change the exit code: the release command reads the missing record as owed.
-func writeQuickRecord(w io.Writer, root, dir string, dirty bool, rc int, sum quickSummary) {
+func writeQuickRecord(w io.Writer, root, dir string, dirty bool, rc int, sum QuickSummary) {
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(root, dir)
 	}
-	full, err := gitOut(root, "rev-parse", "HEAD")
+	full, err := gatecore.GitOut(root, "rev-parse", "HEAD")
 	if err != nil {
 		fmt.Fprintf(w, "\n  RECORD NOT WRITTEN: %v\n", err)
 		return
@@ -63,7 +65,7 @@ func writeQuickRecord(w io.Writer, root, dir string, dirty bool, rc int, sum qui
 		verdict = "FAIL"
 	}
 	now := time.Now().UTC()
-	rec := quickRecord{Schema: 1, OS: runtime.GOOS, Arch: runtime.GOARCH, Commit: full, Date: now.Format(time.RFC3339),
+	rec := QuickRecord{Schema: 1, OS: runtime.GOOS, Arch: runtime.GOARCH, Commit: full, Date: now.Format(time.RFC3339),
 		Verdict: verdict, Dirty: dirty, Full: true, Pass: sum.Pass, Skip: sum.Skip, Fail: sum.Fail,
 		Cells: sum.Cells, Ran: sum.Ran, Cached: sum.Cached, NotRun: sum.NotRun}
 	b, err := json.MarshalIndent(rec, "", " ")
@@ -72,15 +74,15 @@ func writeQuickRecord(w io.Writer, root, dir string, dirty bool, rc int, sum qui
 		return
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s-%s-%s-%s.json", rec.OS, rec.Arch, now.Format("20060102T150405Z"), full[:8]))
-	if err := writeFileAtomic(path, append(b, '\n')); err != nil {
+	if err := gatecore.WriteFileAtomic(path, append(b, '\n')); err != nil {
 		fmt.Fprintf(w, "\n  RECORD NOT WRITTEN: %v\n", err)
 		return
 	}
 	fmt.Fprintf(w, "\n  record: %s (commit it with the release; `gate release` reads it)\n", path)
 }
 
-// loadQuickRecords reads every record in dir, oldest first. A file that is not a record is an error, not a skip.
-func loadQuickRecords(dir string) ([]quickRecord, error) {
+// LoadQuickRecords reads every record in dir, oldest first. A file that is not a record is an error, not a skip.
+func LoadQuickRecords(dir string) ([]QuickRecord, error) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -88,7 +90,7 @@ func loadQuickRecords(dir string) ([]quickRecord, error) {
 		}
 		return nil, err
 	}
-	var recs []quickRecord
+	var recs []QuickRecord
 	for _, e := range ents {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -97,12 +99,12 @@ func loadQuickRecords(dir string) ([]quickRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-		var r quickRecord
+		var r QuickRecord
 		if err := json.Unmarshal(b, &r); err != nil || r.Schema != 1 || r.OS == "" || r.Commit == "" {
 			return nil, fmt.Errorf("%s is not a quick -full record (schema 1 with an os and a commit): %v", e.Name(), err)
 		}
 		recs = append(recs, r)
 	}
-	slices.SortStableFunc(recs, func(a, b quickRecord) int { return cmp.Compare(a.Date, b.Date) })
+	slices.SortStableFunc(recs, func(a, b QuickRecord) int { return cmp.Compare(a.Date, b.Date) })
 	return recs, nil
 }

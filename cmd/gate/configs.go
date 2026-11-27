@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 )
 
 type (
@@ -14,19 +15,20 @@ type (
 	testKey        = gatecore.TestKey
 	provenance     = gatecore.Provenance
 	procPeak       = gatecore.ProcPeak
-	skipRow        = gatecore.SkipRow
 	recordCell     = gatecore.RecordCell
 	runRecord      = gatecore.RunRecord
 	runRecordExtra = gatecore.RunRecordExtra
+	quickRecord    = gatequick.QuickRecord
 )
 
 const (
-	bold            = gatecore.Bold
-	red             = gatecore.Red
-	green           = gatecore.Green
-	amber           = gatecore.Amber
-	off             = gatecore.Off
-	runRecordSchema = gatecore.RunRecordSchema
+	bold                  = gatecore.Bold
+	red                   = gatecore.Red
+	green                 = gatecore.Green
+	amber                 = gatecore.Amber
+	off                   = gatecore.Off
+	runRecordSchema       = gatecore.RunRecordSchema
+	quickRecordDirDefault = gatequick.QuickRecordDirDefault
 )
 
 var (
@@ -34,6 +36,7 @@ var (
 	runCell            = gatecore.RunCell
 	sanitize           = gatecore.Sanitize
 	censusConfig       = gatecore.CensusConfig
+	heavyConfig        = gatecore.HeavyConfig
 	env                = gatecore.Env
 	home               = gatecore.Home
 	gatherProvenance   = gatecore.GatherProvenance
@@ -59,8 +62,6 @@ var (
 	trunc              = gatecore.Trunc
 	isSubtest          = gatecore.IsSubtest
 	sortedSet          = gatecore.SortedSet
-	orDash             = gatecore.OrDash
-	wrapWords          = gatecore.WrapWords
 	short8             = gatecore.Short8
 	absentBeforeMove   = gatecore.AbsentBeforeMove
 	treeAt             = gatecore.TreeAt
@@ -73,8 +74,5 @@ var (
 	classifyGate       = gatehygiene.ClassifyGate
 	reconcileLedger    = gatehygiene.ReconcileLedger
 	runShadow          = gatehygiene.RunShadow
+	loadQuickRecords   = gatequick.LoadQuickRecords
 )
-
-func heavyConfig() *gateConfig {
-	return gatecore.HeavyConfig()
-}

@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"bufio"
@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // `gate quick`'s runner: lint steps and test cells share one bounded pool. Every test cell is ONE
@@ -49,7 +51,7 @@ type quickJob struct {
 	LogPath    string
 	JSONPath   string
 
-	res                    *results
+	res                    *gatecore.Results
 	Pass, Skip, Fail       int
 	Cached, Hidden, NoTest bool
 	LogTail                []string // a hidden failure's last log lines, read by the runner for the report
@@ -205,7 +207,7 @@ func finishLine(jb *quickJob, done, total int) string {
 func (jb *quickJob) run(rundir string) {
 	jb.start = time.Now()
 	defer func() { jb.end = time.Now() }()
-	base := filepath.Join(rundir, sanitize(jb.Kind+"_"+jb.Name))
+	base := filepath.Join(rundir, gatecore.Sanitize(jb.Kind+"_"+jb.Name))
 	jb.LogPath = base + ".log"
 	if jb.Err != nil { // could not even be constructed (no staticcheck, no workspace file): a red
 		jb.RC, jb.Out = -1, jb.Err.Error()+"\n"
@@ -267,7 +269,7 @@ func exitCode(err error) int {
 // (and go's stderr) to <base>.log AS IT ARRIVES, and every event into the cell's own results.
 func (jb *quickJob) runTest(base string) {
 	jb.JSONPath = base + ".json"
-	jb.res = newResults()
+	jb.res = gatecore.NewResults()
 	jb.res.Cur = jb.Name
 	jf, err := os.Create(jb.JSONPath)
 	if err != nil {
@@ -306,7 +308,7 @@ func (jb *quickJob) runTest(base string) {
 			lf.Write([]byte{'\n'})
 			continue
 		}
-		var ev testEvent
+		var ev gatecore.TestEvent
 		if json.Unmarshal(line, &ev) != nil {
 			continue
 		}
@@ -318,7 +320,7 @@ func (jb *quickJob) runTest(base string) {
 	// Drain whatever a scan error left, so the child never blocks on a full pipe.
 	_, _ = io.Copy(io.Discard, stdout)
 	jb.RC = exitCode(cmd.Wait())
-	gradeQuickTest(jb)
+	GradeQuickTest(jb)
 }
 
 // ---- duration history ----

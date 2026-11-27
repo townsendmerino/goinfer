@@ -1,4 +1,4 @@
-package main
+package gatequick
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // cellsRunning counts, for each of the root's tests, the cells that run it among those the day loop runs (deferred
@@ -151,7 +153,7 @@ func TestQuick_deferredSlowTestRunsUnderFullAndWhenTouched(t *testing.T) {
 // The real configuration's Slow patterns name tests that exist. A renamed test would silently stop being deferred
 // (it would run on every push again), and a pattern matching nothing defers nothing.
 func TestQuick_slowPatternsNameRealTests(t *testing.T) {
-	root, _ := filepath.Abs("../..")
+	root := testpath.Root(t)
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		t.Fatal(err)
@@ -221,16 +223,16 @@ func TestQuickRecord_whatVoidsARun(t *testing.T) {
 		"scripts/night.py": true, "CHANGELOG.md": false, "changelog.d/2026-10-27-x.md": false, "RELEASING.md": false, "docs/benchmarks.md": false,
 		"docs/measurements/quick-full/darwin-arm64-x.json": false, "apps/site/main.go": false, ".github/workflows/ci.yml": false,
 	} {
-		if got := quickRecordVoidedBy(path); got != want {
-			t.Errorf("quickRecordVoidedBy(%q) = %v, want %v", path, got, want)
+		if got := QuickRecordVoidedBy(path); got != want {
+			t.Errorf("QuickRecordVoidedBy(%q) = %v, want %v", path, got, want)
 		}
 	}
 }
 
 // The coverage rule: the newest record on a system at the same code decides, and only a clean -full PASS counts.
 func TestQuickRecord_coverage(t *testing.T) {
-	pass := func(os, commit, date string) quickRecord {
-		return quickRecord{Schema: 1, OS: os, Commit: commit, Date: date, Verdict: "PASS", Full: true, Pass: 10}
+	pass := func(os, commit, date string) QuickRecord {
+		return QuickRecord{Schema: 1, OS: os, Commit: commit, Date: date, Verdict: "PASS", Full: true, Pass: 10}
 	}
 	// "aaaaaaaa" and "bbbbbbbb" are the same code as HEAD; "cccccccc" predates a code change.
 	changed := func(from, to string) ([]string, error) {
@@ -239,8 +241,8 @@ func TestQuickRecord_coverage(t *testing.T) {
 		}
 		return []string{"CHANGELOG.md", "docs/measurements/quick-full/x.json"}, nil
 	}
-	cover := func(recs ...quickRecord) (bool, string) {
-		r, why := quickCoverage(recs, "darwin", "HEAD", changed)
+	cover := func(recs ...QuickRecord) (bool, string) {
+		r, why := QuickCoverage(recs, "darwin", "HEAD", changed)
 		return r != nil, why
 	}
 	if ok, why := cover(pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z")); !ok {
@@ -257,10 +259,10 @@ func TestQuickRecord_coverage(t *testing.T) {
 	if ok, why := cover(pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z"), fail); ok || !strings.Contains(why, "verdict FAIL") {
 		t.Errorf("an earlier PASS hid a later FAIL at the same code (%v, %q)", ok, why)
 	}
-	for name, mut := range map[string]func(*quickRecord){
-		"deferred cells": func(r *quickRecord) { r.Full = false },
-		"dirty tree":     func(r *quickRecord) { r.Dirty = true },
-		"no test passed": func(r *quickRecord) { r.Pass = 0 },
+	for name, mut := range map[string]func(*QuickRecord){
+		"deferred cells": func(r *QuickRecord) { r.Full = false },
+		"dirty tree":     func(r *QuickRecord) { r.Dirty = true },
+		"no test passed": func(r *QuickRecord) { r.Pass = 0 },
 	} {
 		r := pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z")
 		mut(&r)
@@ -274,12 +276,12 @@ func TestQuickRecord_coverage(t *testing.T) {
 // FAIL, and a day-tier run or one narrowed by -files writes none.
 func TestQuickRecord_writtenByFullRunsOnly(t *testing.T) {
 	qc := fxRepo(t)
-	run := func(o quickOpts) []quickRecord {
+	run := func(o quickOpts) []QuickRecord {
 		dir := t.TempDir()
 		o.Base, o.Jobs, o.Timeout, o.LogDir, o.Progress, o.RecordDir = "HEAD", 4, "5m", t.TempDir(), io.Discard, dir
 		var out bytes.Buffer
 		quickMain(qc, o, &out)
-		recs, err := loadQuickRecords(dir)
+		recs, err := LoadQuickRecords(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -287,7 +289,7 @@ func TestQuickRecord_writtenByFullRunsOnly(t *testing.T) {
 	}
 	if recs := run(quickOpts{Full: true}); len(recs) != 1 {
 		t.Fatalf("a -full run wrote %d records, want 1", len(recs))
-	} else if ok, why := recs[0].valid(); !ok || recs[0].OS == "" || recs[0].Cells == 0 {
+	} else if ok, why := recs[0].Valid(); !ok || recs[0].OS == "" || recs[0].Cells == 0 {
 		t.Errorf("the record of a green -full run on a clean tree does not count (%s): %+v", why, recs[0])
 	}
 	if recs := run(quickOpts{}); len(recs) != 0 {
@@ -301,7 +303,7 @@ func TestQuickRecord_writtenByFullRunsOnly(t *testing.T) {
 	if len(recs) != 1 || recs[0].Verdict != "FAIL" || !recs[0].Dirty {
 		t.Fatalf("a failing -full run on an edited tree: %+v, want one FAIL record marked dirty", recs)
 	}
-	if ok, _ := recs[0].valid(); ok {
+	if ok, _ := recs[0].Valid(); ok {
 		t.Error("a FAIL record counts")
 	}
 }
