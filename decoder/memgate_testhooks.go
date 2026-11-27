@@ -37,8 +37,11 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 		}
 	}
 	cv := reflect.ValueOf(&c.c).Elem()
-	for i := range cv.NumField() {
-		name := cv.Type().Field(i).Name
+	for _, f := range reflect.VisibleFields(cv.Type()) {
+		if f.Anonymous {
+			continue
+		}
+		name := f.Name
 		if cpuCacheIgnored[name] {
 			continue
 		}
@@ -57,7 +60,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 				return mem.LineScratch // a ring's counters, as the cache's own are
 			}
 			return ln
-		}, name, cv.Field(i))
+		}, name, cv.FieldByIndex(f.Index))
 	}
 	return h.finish()
 }
