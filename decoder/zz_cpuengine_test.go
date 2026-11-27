@@ -61,7 +61,7 @@ func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 }
 func cpuFastAttention() bool { return cpuengine.CPUFastAttention() }
 
-func (m *Model) cpuFastAttention() bool { return m.knobs.cpuFastAttention() }
+func (m *Model) cpuFastAttention() bool { e := m.cpuEngine(); return e.CPUFastAttention() }
 
 func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch, rows *batchRows) ([]float32, error) {
 	e := m.cpuEngine()

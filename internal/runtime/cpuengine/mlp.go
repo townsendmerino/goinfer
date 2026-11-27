@@ -490,7 +490,7 @@ func nonGatedMLPWith(h, out []float32, lw *darch.LayerWeights, act darch.ActKind
 //	mid  = act(gate) ⊙ up        // [IntermediateDim]
 //	out  = DownProj·mid          // [HiddenDim]
 func GatedMLPAct(h, out []float32, lw *darch.LayerWeights, act darch.ActKind, be Backend, scr *DecodeScratch, lora *LoRALayerDelta) error {
-	gate, up := scr.Gate, scr.Up // [inter] scratch; Matmul fully overwrites each
+	gate, up := scr.gate, scr.up // [inter] scratch; Matmul fully overwrites each
 	fusedAct := false            // set when the fused path already applied the activation
 	if activeHooks().CPUFusedGateUp && lora == nil {
 		var dt0 time.Time
