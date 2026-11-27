@@ -274,3 +274,13 @@ func run(argv []string, w io.Writer) int {
 func sliceHas(xs []string, want string) bool {
 	return slices.Contains(xs, want)
 }
+
+func splitList(s string) []string {
+	var out []string
+	for f := range strings.SplitSeq(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}

@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"cmp"
@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // `gate identity -giw bytes|logits <old-rev> <new-rev>`: identity through each revision's OWN transcode.
@@ -166,8 +168,8 @@ func dirBytes(dir string) int64 {
 	return n
 }
 
-// giwResult is one transcode by one build.
-type giwResult struct {
+// GiwResult is one transcode by one build.
+type GiwResult struct {
 	OK   bool
 	SHA  string // sha256 of the written file
 	Size int64
@@ -175,6 +177,8 @@ type giwResult struct {
 	Line string // prequant's own "wrote … in …: stream …, self-check …" line, when it prints one
 	Wall time.Duration
 }
+
+type giwResult = GiwResult
 
 // buildIdentityPrequant builds cmd/prequant at s's revision, in the root module of its worktree.
 func buildIdentityPrequant(o identityOpts, wd string, s *identitySide) error {
@@ -278,7 +282,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 		progress = os.Stderr
 	}
 	refuse := func(format string, a ...any) int {
-		fmt.Fprintf(w, "%s== identity (giw bytes) ==%s\n  %sREFUSED: %s%s\n", bold, off, amber, fmt.Sprintf(format, a...), off)
+		fmt.Fprintf(w, "%s== identity (giw bytes) ==%s\n  %sREFUSED: %s%s\n", gatecore.Bold, gatecore.Off, gatecore.Amber, fmt.Sprintf(format, a...), gatecore.Off)
 		return 2
 	}
 	old := &identitySide{Label: "old", Rev: o.OldRev}
@@ -317,9 +321,9 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 	for _, c := range cfgs {
 		cfgNames = append(cfgNames, c.String())
 	}
-	prov := gatherProvenanceIn(o.Repo, [][2]string{
-		{"old", fmt.Sprintf("%s %s", old.Short, trunc(old.Title, 70))},
-		{"new", fmt.Sprintf("%s %s", nw.Short, trunc(nw.Title, 70))},
+	prov := gatecore.GatherProvenanceIn(o.Repo, [][2]string{
+		{"old", fmt.Sprintf("%s %s", old.Short, gatecore.Trunc(old.Title, 70))},
+		{"new", fmt.Sprintf("%s %s", nw.Short, gatecore.Trunc(nw.Title, 70))},
 		{"mode", "giw bytes: each revision's own cmd/prequant transcodes the source; the files' sha256 are compared"},
 		{"assets", giwAssetsDesc(o)},
 		{"configs", strings.Join(cfgNames, ", ") + " (quant:target[:e4h]; cpu is this box's arch)"},
@@ -330,7 +334,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 	})
 	prov.Dirty = false
 	prov.Fields = append(prov.Fields, [2]string{"tree", "the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both"})
-	fmt.Fprintf(w, "%s== identity provenance ==%s\n", bold, off)
+	fmt.Fprintf(w, "%s== identity provenance ==%s\n", gatecore.Bold, gatecore.Off)
 	prov.Write(w)
 	if runnable == 0 {
 		return refuse("no source on this host — nothing would be compared (a skip is not a pass)")
@@ -340,8 +344,8 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 		runnable, len(cfgs), t0.Format("15:04:05"), old.Short, nw.Short)
 	tb := time.Now()
 	if failed := buildIdentitySides(o, wd, old, nw); failed != nil {
-		fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", red, failed.Label, failed.Short, off, failed.Err)
-		for _, ln := range tailLines(failed.Log, 20) {
+		fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", gatecore.Red, failed.Label, failed.Short, gatecore.Off, failed.Err)
+		for _, ln := range gatecore.TailLines(failed.Log, 20) {
 			fmt.Fprintf(w, "    %s\n", ln)
 		}
 		return refuse("cmd/prequant did not build at %s %s — see above", failed.Label, failed.Short)
@@ -365,7 +369,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 		identityBeatState.Store("state", fmt.Sprintf("transcoding %s (%d/%d sources)", s.Name, i+1, len(srcs)))
 		st := time.Now()
 		for _, c := range bySrc[s.Name] {
-			id := sanitize(s.Name + "__" + c.Cfg.String())
+			id := gatecore.Sanitize(s.Name + "__" + c.Cfg.String())
 			for _, r := range []struct {
 				name string
 				side *identitySide
@@ -378,7 +382,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 					_ = os.RemoveAll(dir) // hashed already: a real sidecar is gigabytes, and three of them need not coexist
 				}
 			}
-			c.Verdict, c.Why = judgeGiwBytes(c.N1, c.N2, c.Old)
+			c.Verdict, c.Why = JudgeGiwBytes(c.N1, c.N2, c.Old)
 		}
 		done++
 		counts := map[string]int{}
@@ -400,7 +404,7 @@ func giwAssetsDesc(o identityOpts) string {
 }
 
 func reportGiwBytes(w io.Writer, o identityOpts, old, nw *identitySide, srcs []giwSource, cells []*giwCell, t0 time.Time, buildWall, runWall time.Duration, logs string) int {
-	fmt.Fprintf(w, "\n%s== giw bytes: old %s vs new %s, per source ==%s\n", bold, old.Short, nw.Short, off)
+	fmt.Fprintf(w, "\n%s== giw bytes: old %s vs new %s, per source ==%s\n", gatecore.Bold, old.Short, nw.Short, gatecore.Off)
 	bySrc := map[string][]*giwCell{}
 	for _, c := range cells {
 		bySrc[c.Src.Name] = append(bySrc[c.Src.Name], c)
@@ -421,7 +425,7 @@ func reportGiwBytes(w io.Writer, o identityOpts, old, nw *identitySide, srcs []g
 		nI, nD, nNR = nI+len(ident), nD+len(diff), nNR+len(nr)
 		switch {
 		case len(diff) > 0:
-			fmt.Fprintf(w, "  %s%-10s%s %-34s %d of %d cell(s) differ\n", red, vDifferent, off, s.Name, len(diff), len(bySrc[s.Name]))
+			fmt.Fprintf(w, "  %s%-10s%s %-34s %d of %d cell(s) differ\n", gatecore.Red, vDifferent, gatecore.Off, s.Name, len(diff), len(bySrc[s.Name]))
 			for _, c := range bySrc[s.Name] {
 				if c.Verdict == vDifferent {
 					fmt.Fprintf(w, "      %-18s %s\n", c.Cfg, c.Why)
@@ -432,13 +436,13 @@ func reportGiwBytes(w io.Writer, o identityOpts, old, nw *identitySide, srcs []g
 			if len(nr) > 0 {
 				note = fmt.Sprintf(" (%d not run: %s)", len(nr), strings.Join(nr, " "))
 			}
-			fmt.Fprintf(w, "  %s%-10s%s %-34s %d cell(s): %s%s\n", green, vIdentical, off, s.Name, len(ident), strings.Join(ident, " "), note)
+			fmt.Fprintf(w, "  %s%-10s%s %-34s %d cell(s): %s%s\n", gatecore.Green, vIdentical, gatecore.Off, s.Name, len(ident), strings.Join(ident, " "), note)
 		default:
-			fmt.Fprintf(w, "  %s%-10s%s %-34s nothing ran — see NOT RUN\n", amber, vNotRun, off, s.Name)
+			fmt.Fprintf(w, "  %s%-10s%s %-34s nothing ran — see NOT RUN\n", gatecore.Amber, vNotRun, gatecore.Off, s.Name)
 		}
 	}
 	if nNR > 0 {
-		fmt.Fprintf(w, "\n%s== NOT RUN (%d cell(s)) — reported, never counted as a pass ==%s\n", bold, nNR, off)
+		fmt.Fprintf(w, "\n%s== NOT RUN (%d cell(s)) — reported, never counted as a pass ==%s\n", gatecore.Bold, nNR, gatecore.Off)
 		type key struct{ src, why string }
 		seen := map[key][]string{}
 		var order []key
@@ -453,11 +457,11 @@ func reportGiwBytes(w io.Writer, o identityOpts, old, nw *identitySide, srcs []g
 			seen[k] = append(seen[k], c.Cfg.String())
 		}
 		for _, k := range order {
-			fmt.Fprintf(w, "  %s%-8s%s %-34s [%s] %s\n", amber, vNotRun, off, k.src, strings.Join(seen[k], " "), trunc(k.why, 170))
+			fmt.Fprintf(w, "  %s%-8s%s %-34s [%s] %s\n", gatecore.Amber, vNotRun, gatecore.Off, k.src, strings.Join(seen[k], " "), gatecore.Trunc(k.why, 170))
 		}
 	}
 	end := time.Now()
-	fmt.Fprintf(w, "\n%s== verdict ==%s\n", bold, off)
+	fmt.Fprintf(w, "\n%s== verdict ==%s\n", gatecore.Bold, gatecore.Off)
 	fmt.Fprintf(w, "  cells    %d: %d IDENTICAL, %d DIFFERENT, %d NOT RUN (a skip is not a pass)\n", len(cells), nI, nD, nNR)
 	fmt.Fprintf(w, "  wall     %s (%s → %s): builds %s, transcodes %s (each cell: new, old, new again)\n", end.Sub(t0).Round(time.Second), t0.Format("15:04:05"),
 		end.Format("15:04:05"), buildWall.Round(time.Second), runWall.Round(time.Second))
@@ -468,20 +472,20 @@ func reportGiwBytes(w io.Writer, o identityOpts, old, nw *identitySide, srcs []g
 	fmt.Fprintf(w, "  logs     %s (bundles %s; worktrees removed)\n", logs, keep)
 	if o.Record != "" {
 		if err := writeGiwRecord(o.Record, old, nw, cells); err != nil {
-			fmt.Fprintf(w, "  %swrite %s: %v%s\n", red, o.Record, err, off)
+			fmt.Fprintf(w, "  %swrite %s: %v%s\n", gatecore.Red, o.Record, err, gatecore.Off)
 		} else {
 			fmt.Fprintf(w, "  record   %s (one JSON line per cell: verdict, sha256, bytes, prequant's phase line)\n", o.Record)
 		}
 	}
 	switch {
 	case nD > 0:
-		fmt.Fprintf(w, "  %sRED — %d cell(s) DIFFERENT%s\n", red, nD, off)
+		fmt.Fprintf(w, "  %sRED — %d cell(s) DIFFERENT%s\n", gatecore.Red, nD, gatecore.Off)
 		return 1
 	case nI == 0:
-		fmt.Fprintf(w, "  %sREFUSED — no cell ran%s\n", amber, off)
+		fmt.Fprintf(w, "  %sREFUSED — no cell ran%s\n", gatecore.Amber, gatecore.Off)
 		return 2
 	}
-	fmt.Fprintf(w, "  %sGREEN — every cell that ran is IDENTICAL%s\n", green, off)
+	fmt.Fprintf(w, "  %sGREEN — every cell that ran is IDENTICAL%s\n", gatecore.Green, gatecore.Off)
 	return 0
 }
 

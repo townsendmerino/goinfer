@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"context"
@@ -18,7 +18,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
+
+var env = gatecore.Env
 
 // `gate identity <old-rev> <new-rev>`: inherit validation by identity.
 //
@@ -72,7 +76,7 @@ type identityOpts struct {
 	DumperSource string
 }
 
-func runIdentity(argv []string, w io.Writer) int {
+func RunIdentity(argv []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate identity", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var o identityOpts
@@ -105,7 +109,7 @@ func runIdentity(argv []string, w io.Writer) int {
 		rest = fs.Args()[1:]
 	}
 	if *replay != "" {
-		return replayIdentity(w, *replay)
+		return ReplayIdentity(w, *replay)
 	}
 	if len(pos) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu|cuda] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep] [-giw bytes|logits [-configs q:target[:e4h],…]]")
@@ -143,13 +147,13 @@ func runIdentity(argv []string, w io.Writer) int {
 		fmt.Fprintf(os.Stderr, "gate identity: -assets %q: want tiny or real\n", o.Assets)
 		return 2
 	}
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate identity: %v\n", err)
 		return 2
 	}
 	o.Repo, o.FixtureRoot = root, root
-	o.ModelsDir = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
+	o.ModelsDir = env("GOINFER_GATE_MODELS", filepath.Join(gatecore.Home(), "models"))
 	return identityMain(o, w)
 }
 
@@ -199,7 +203,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 		progress = os.Stderr
 	}
 	refuse := func(format string, a ...any) int {
-		fmt.Fprintf(w, "%s== identity ==%s\n  %sREFUSED: %s%s\n", bold, off, amber, fmt.Sprintf(format, a...), off)
+		fmt.Fprintf(w, "%s== identity ==%s\n  %sREFUSED: %s%s\n", gatecore.Bold, gatecore.Off, gatecore.Amber, fmt.Sprintf(format, a...), gatecore.Off)
 		return 2
 	}
 	for _, bin := range []string{"go", "git"} {
@@ -256,9 +260,9 @@ func identityMain(o identityOpts, w io.Writer) int {
 	defer cleanup()
 
 	scrubbed := identityScrubbedVars()
-	prov := gatherProvenanceIn(o.Repo, [][2]string{
-		{"old", fmt.Sprintf("%s %s", old.Short, trunc(old.Title, 70))},
-		{"new", fmt.Sprintf("%s %s", nw.Short, trunc(nw.Title, 70))},
+	prov := gatecore.GatherProvenanceIn(o.Repo, [][2]string{
+		{"old", fmt.Sprintf("%s %s", old.Short, gatecore.Trunc(old.Title, 70))},
+		{"new", fmt.Sprintf("%s %s", nw.Short, gatecore.Trunc(nw.Title, 70))},
 		{"backend", o.Backend},
 		{"mode", identityModeDesc(o)},
 		{"assets", identityAssetsDesc(o)},
@@ -273,7 +277,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 	// (only the fixtures are read from it, the same bytes for both sides).
 	prov.Dirty = false
 	prov.Fields = append(prov.Fields, [2]string{"tree", "the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both"})
-	fmt.Fprintf(w, "%s== identity provenance ==%s\n", bold, off)
+	fmt.Fprintf(w, "%s== identity provenance ==%s\n", gatecore.Bold, gatecore.Off)
 	prov.Write(w)
 	if runnable == 0 {
 		fmt.Fprintf(w, "\n")
@@ -286,8 +290,8 @@ func identityMain(o identityOpts, w io.Writer) int {
 		runnable, len(selected), t0.Format("15:04:05"), old.Short, nw.Short)
 	tb := time.Now()
 	if failed := buildIdentitySides(o, wd, old, nw); failed != nil {
-		fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", red, failed.Label, failed.Short, off, failed.Err)
-		for _, ln := range tailLines(failed.Log, 20) {
+		fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", gatecore.Red, failed.Label, failed.Short, gatecore.Off, failed.Err)
+		for _, ln := range gatecore.TailLines(failed.Log, 20) {
 			fmt.Fprintf(w, "    %s\n", ln)
 		}
 		return refuse("the dumper did not build at %s %s — see above (an old rev may predate the public API it uses)", failed.Label, failed.Short)
@@ -333,7 +337,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 			}
 			st := fmt.Sprintf("%s %s", r.Name, time.Since(rt).Round(100*time.Millisecond))
 			if why != "" {
-				st += " (" + trunc(why, 60) + ")"
+				st += " (" + gatecore.Trunc(why, 60) + ")"
 			}
 			parts = append(parts, st)
 		}
@@ -348,7 +352,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 	missing := map[string]string{} // run/cell -> why that dump was not a result, for the run record
 	for _, c := range cells {
 		if c.NotRun != "" {
-			outs = append(outs, judgeCell(c, o.Backend, nil, nil, nil))
+			outs = append(outs, JudgeCell(c, o.Backend, nil, nil, nil))
 			continue
 		}
 		dir := func(run string) string { return filepath.Join(wd, "dumps", run, c.Family) }
@@ -360,11 +364,11 @@ func identityMain(o identityOpts, w io.Writer) int {
 				missing[run+"/"+c.ID] = d.Missing
 			}
 		}
-		outs = append(outs, judgeCell(c, o.Backend, n1, n2, od))
+		outs = append(outs, JudgeCell(c, o.Backend, n1, n2, od))
 	}
-	head, _ := gitOut(o.Repo, "rev-parse", "HEAD")
+	head, _ := gatecore.GitOut(o.Repo, "rev-parse", "HEAD")
 	in := identityGradeInputs{T0: t0, BuildWall: buildWall, RunWall: runWall, Logs: logs,
-		Host: strings.ReplaceAll(gatherProvenanceIn(o.Repo, nil).Host, " ", "/"), Head: strings.TrimSpace(head),
+		Host: strings.ReplaceAll(gatecore.GatherProvenanceIn(o.Repo, nil).Host, " ", "/"), Head: strings.TrimSpace(head),
 		Arch: identityRecordArch(), Date: time.Now().Format("2006-01-02")}
 	var rowsErr string
 	writeRows := func(rows []string) error {
@@ -376,7 +380,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 	}
 	in.End = time.Now()
 	w = out
-	rc := gradeIdentity(w, o, old, nw, fams, selected, outs, in, writeRows)
+	rc := GradeIdentity(w, o, old, nw, fams, selected, outs, in, writeRows)
 	writeIdentityRunRecord(os.Stderr, wd, prelude.String(), o, old, nw, fams, selected, cells, crash, missing, in, rowsErr, rc)
 	return rc
 }
@@ -384,13 +388,13 @@ func identityMain(o identityOpts, w io.Writer) int {
 // resolveIdentitySides fills each side's SHA, short SHA and title from its rev; a non-empty return is why it refused.
 func resolveIdentitySides(o identityOpts, sides ...*identitySide) string {
 	for _, s := range sides {
-		sha, err := gitOut(o.Repo, "rev-parse", "--verify", "--quiet", s.Rev+"^{commit}")
+		sha, err := gatecore.GitOut(o.Repo, "rev-parse", "--verify", "--quiet", s.Rev+"^{commit}")
 		if err != nil || sha == "" {
 			return fmt.Sprintf("%s rev %q does not resolve to a commit in %s", s.Label, s.Rev, o.Repo)
 		}
 		s.SHA = sha
-		s.Short, _ = gitOut(o.Repo, "rev-parse", "--short", sha)
-		s.Title, _ = gitOut(o.Repo, "log", "-1", "--format=%s", sha)
+		s.Short, _ = gatecore.GitOut(o.Repo, "rev-parse", "--short", sha)
+		s.Title, _ = gatecore.GitOut(o.Repo, "log", "-1", "--format=%s", sha)
 	}
 	return ""
 }
@@ -418,11 +422,11 @@ func identityRunDir(o identityOpts, t0 time.Time, old, nw *identitySide, extra s
 				if s.WT == "" {
 					continue
 				}
-				if _, err := gitOut(o.Repo, "worktree", "remove", "--force", s.WT); err != nil {
+				if _, err := gatecore.GitOut(o.Repo, "worktree", "remove", "--force", s.WT); err != nil {
 					_ = os.RemoveAll(s.WT)
 				}
 			}
-			_, _ = gitOut(o.Repo, "worktree", "prune")
+			_, _ = gatecore.GitOut(o.Repo, "worktree", "prune")
 			if !o.Keep {
 				for _, sub := range []string{"dumps", "bin", "spec", "giw", extra} {
 					if sub != "" {
@@ -543,7 +547,7 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 	defer func() { s.BuildT = time.Since(t0) }()
 	s.Log = filepath.Join(wd, "logs", "build-"+s.Label+".log")
 	s.WT = filepath.Join(wd, "wt-"+s.Label)
-	if _, err := gitOut(o.Repo, "worktree", "add", "--detach", "--quiet", s.WT, s.SHA); err != nil {
+	if _, err := gatecore.GitOut(o.Repo, "worktree", "add", "--detach", "--quiet", s.WT, s.SHA); err != nil {
 		s.WT = ""
 		return err
 	}
@@ -649,12 +653,12 @@ func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, 
 		return ""
 	}
 	b, _ := json.Marshal(spec)
-	sp := filepath.Join(wd, "spec", r.Name+"-"+sanitize(family)+".json")
+	sp := filepath.Join(wd, "spec", r.Name+"-"+gatecore.Sanitize(family)+".json")
 	_ = os.MkdirAll(filepath.Dir(sp), 0o755)
 	if err := os.WriteFile(sp, b, 0o644); err != nil {
 		return err.Error()
 	}
-	logPath := filepath.Join(wd, "logs", r.Name+"-"+sanitize(family)+".log")
+	logPath := filepath.Join(wd, "logs", r.Name+"-"+gatecore.Sanitize(family)+".log")
 	logf, err := os.Create(logPath)
 	if err != nil {
 		return err.Error()
@@ -671,7 +675,7 @@ func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, 
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return fmt.Sprintf("timed out after %s (log %s)", o.Timeout, logPath)
 	case err != nil:
-		tail := tailLines(logPath, 3)
+		tail := gatecore.TailLines(logPath, 3)
 		return fmt.Sprintf("dumper exited: %v; %s (log %s)", err, strings.Join(tail, " | "), logPath)
 	}
 	return ""

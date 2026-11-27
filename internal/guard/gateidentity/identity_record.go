@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 // `gate identity -record FILE`: a family's validation may
 // be inherited by identity. It writes PARITY_ROW lines for the decoder package's TestParityManifest_merge, the

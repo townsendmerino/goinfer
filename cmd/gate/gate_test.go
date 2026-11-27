@@ -4,36 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func needTools(t *testing.T) {
-	t.Helper()
-	for _, bin := range []string{"go", "git"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s not on PATH", bin)
-		}
-	}
-}
-
-func shortSHA(s string) string {
-	if len(s) > 10 {
-		return s[:10]
-	}
-	return s
-}
-
-func mustRead(t *testing.T, path string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
 
 func writeTree(t *testing.T, root string, files map[string]string) {
 	t.Helper()

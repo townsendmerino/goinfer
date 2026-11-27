@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"bytes"
@@ -56,7 +56,7 @@ func TestJudgeGiwBytes_verdicts(t *testing.T) {
 		{"new disagrees with itself", ok("a"), ok("b"), ok("a"), vDifferent, "NONDETERMINISTIC"},
 		{"different", ok("b"), ok("b"), ok("a"), vDifferent, "sha256 old"},
 	} {
-		got, why := judgeGiwBytes(c.n1, c.n2, c.old)
+		got, why := JudgeGiwBytes(c.n1, c.n2, c.old)
 		if got != c.want || !strings.Contains(why, c.has) {
 			t.Errorf("%s: %s (%q), want %s containing %q", c.name, got, why, c.want, c.has)
 		}

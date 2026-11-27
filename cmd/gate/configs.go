@@ -40,12 +40,10 @@ var (
 	env                = gatecore.Env
 	home               = gatecore.Home
 	gatherProvenance   = gatecore.GatherProvenance
-	gatherProvenanceIn = gatecore.GatherProvenanceIn
 	repoRoot           = gatecore.RepoRoot
 	gitOut             = gatecore.GitOut
 	gitTree            = gatecore.GitTree
 	gitObject          = gatecore.GitObject
-	tailLines          = gatecore.TailLines
 	writeFileAtomic    = gatecore.WriteFileAtomic
 	runRecordPath      = gatecore.RunRecordPath
 	writeRunRecord     = gatecore.WriteRunRecord

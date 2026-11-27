@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"bytes"
@@ -14,7 +14,27 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/testgate"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
+
+func needTools(t *testing.T) {
+	t.Helper()
+	for _, bin := range []string{"go", "git"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s not on PATH", bin)
+		}
+	}
+}
+
+func shortSHA(s string) string {
+	if len(s) > 10 {
+		return s[:10]
+	}
+	return s
+}
 
 // EQUIVALENCE for `gate identity`. Each claim
 // is pinned by a test here, and each was shown to go RED with the property deliberately broken
@@ -34,7 +54,7 @@ import (
 // ---- pure ----
 
 func TestIdentityAssets_coverTheManifest(t *testing.T) {
-	root, _ := filepath.Abs("../..")
+	root := testpath.Root(t)
 	fams, err := readManifestFamilies(root)
 	if err != nil {
 		t.Skipf("no parity manifest: %v", err)
@@ -196,7 +216,7 @@ func TestJudgeCell_verdicts(t *testing.T) {
 		{"new left the gpu, old ran on it", "cuda", good, good, withPath(good, "cuda-resident (int4)"), vDifferent, false},
 	}
 	for _, tc := range cases {
-		out := judgeCell(c, tc.backend, tc.n1, tc.n2, tc.old)
+		out := JudgeCell(c, tc.backend, tc.n1, tc.n2, tc.old)
 		if out.Verdict != tc.want {
 			t.Errorf("%s: verdict %s (%s), want %s", tc.name, out.Verdict, out.Detail, tc.want)
 		}
@@ -223,16 +243,14 @@ type identityFixture struct {
 func newIdentityFixture(t *testing.T) *identityFixture {
 	t.Helper()
 	needTools(t)
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("identity equivalence: set GOINFER_HEAVY_TESTS=1 (builds decoder at two revisions, ~20-60 s each)")
-	}
-	root, _ := filepath.Abs("../..")
-	head, err := gitOut(root, "rev-parse", "HEAD")
+	testgate.RequireHeavy(t)
+	root := testpath.Root(t)
+	head, err := gatecore.GitOut(root, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	clone := filepath.Join(t.TempDir(), "repo")
-	if _, err := gitOut(root, "clone", "--quiet", "--shared", "--no-checkout", root, clone); err != nil {
+	if _, err := gatecore.GitOut(root, "clone", "--quiet", "--shared", "--no-checkout", root, clone); err != nil {
 		t.Fatal(err)
 	}
 	return &identityFixture{root: root, clone: clone, head: head}
@@ -243,7 +261,7 @@ func newIdentityFixture(t *testing.T) *identityFixture {
 // no-op (a vacuous mutation proves nothing).
 func (fx *identityFixture) commit(t *testing.T, parent, rel, from, to, msg string) string {
 	t.Helper()
-	body, err := gitOut(fx.clone, "show", parent+":"+rel)
+	body, err := gatecore.GitOut(fx.clone, "show", parent+":"+rel)
 	if err != nil {
 		t.Fatal(err)
 	}

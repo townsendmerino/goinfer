@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// identityStderr runs runIdentity and returns its exit code and what it wrote to os.Stderr (the flag errors go there).
+// identityStderr runs RunIdentity and returns its exit code and what it wrote to os.Stderr (the flag errors go there).
 func identityStderr(t *testing.T, argv ...string) (int, string) {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -17,7 +17,7 @@ func identityStderr(t *testing.T, argv ...string) (int, string) {
 	}
 	old := os.Stderr
 	os.Stderr = w
-	code := runIdentity(argv, io.Discard)
+	code := RunIdentity(argv, io.Discard)
 	os.Stderr = old
 	w.Close()
 	b, _ := io.ReadAll(r)

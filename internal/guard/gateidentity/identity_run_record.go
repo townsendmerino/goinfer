@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"encoding/json"
@@ -66,10 +66,10 @@ func writeIdentityRunRecord(w io.Writer, wd, prelude string, o identityOpts, old
 	}
 }
 
-// replayIdentity prints a recorded identity run's report as the run printed it: the prelude, then each cell judged
-// again from its kept dumps and the report and verdict from gradeIdentity, with the -record write answered from the
+// ReplayIdentity prints a recorded identity run's report as the run printed it: the prelude, then each cell judged
+// again from its kept dumps and the report and verdict from GradeIdentity, with the -record write answered from the
 // record.
-func replayIdentity(w io.Writer, path string) int {
+func ReplayIdentity(w io.Writer, path string) int {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate identity: %v\n", err)
@@ -88,7 +88,7 @@ func replayIdentity(w io.Writer, path string) int {
 	var outs []cellOutcome
 	for _, c := range rec.Cells {
 		if c.NotRun != "" {
-			outs = append(outs, judgeCell(c, rec.Opts.Backend, nil, nil, nil))
+			outs = append(outs, JudgeCell(c, rec.Opts.Backend, nil, nil, nil))
 			continue
 		}
 		ds := map[string]*dump{}
@@ -101,7 +101,7 @@ func replayIdentity(w io.Writer, path string) int {
 			}
 			ds[run] = d
 		}
-		outs = append(outs, judgeCell(c, rec.Opts.Backend, ds["new1"], ds["new2"], ds["old"]))
+		outs = append(outs, JudgeCell(c, rec.Opts.Backend, ds["new1"], ds["new2"], ds["old"]))
 	}
 	o := identityOpts{Backend: rec.Opts.Backend, Giw: rec.Opts.Giw, Assets: rec.Opts.Assets, Record: rec.Opts.Record, Keep: rec.Opts.Keep}
 	old := &identitySide{Label: "old", SHA: rec.Old.SHA, Short: rec.Old.Short}
@@ -113,5 +113,5 @@ func replayIdentity(w io.Writer, path string) int {
 		return nil
 	}
 	fmt.Fprint(w, rec.Prelude)
-	return gradeIdentity(w, o, old, nw, rec.Manifest, rec.Selected, outs, rec.Inputs, writeRows)
+	return GradeIdentity(w, o, old, nw, rec.Manifest, rec.Selected, outs, rec.Inputs, writeRows)
 }
