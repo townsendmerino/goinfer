@@ -930,6 +930,10 @@ func STFileTensorOffset(sf *STFileForTest, name string) int64 { return sf.base +
 // DSparkVocab returns the DSpark drafter's vocab size.
 func DSparkVocab(d *DSpark) int { return d.vocab }
 
+func DFlashHeadDims(d *DFlash) (draftVocab, lmHeadRows, embedRows int, d2t []int32) {
+	return d.draftVocab, d.lmHead.Rows(), d.embed.Rows(), d.d2t
+}
+
 // NewTestBlockTrunk constructs a synthetic 2-layer BlockTrunk for BF16/F32 parity tests.
 func NewTestBlockTrunk(h, nH, nKV, hd, inter int, normEps float64, invFreq []float64,
 	fc linalg.WeightMat, hiddenNorm, finalNorm []float32,

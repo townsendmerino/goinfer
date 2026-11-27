@@ -61,7 +61,8 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 	}
 	if m.canBatchN(len(prompt)) {
 		cache := m.NewCache(len(prompt))
-		hN, err := m.runLayersFromEmbedN(ctx, m.embedN(prompt), cache, false) // never fast: exact HF parity is the point
+		e := m.cpuEngine()
+		hN, err := e.RunLayersFromEmbedN(ctx, e.EmbedN(prompt), unwrapCache(cache), false) // never fast: exact HF parity is the point
 		if err != nil {
 			return nil, err
 		}

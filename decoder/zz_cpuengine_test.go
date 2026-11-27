@@ -251,3 +251,58 @@ func gatedDeltaNetStep(be Backend, h []float32, w *archparts.DeltaNetWeights, p 
 	syncCPUHooks()
 	return cpuengine.GatedDeltaNetStep(be, h, w, p, hidden, eps, st)
 }
+
+func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.ForwardLayersN(reqCtx, ids, unwrapCache(cache), fastAttn)
+}
+
+func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersFromEmbedN(reqCtx, h, unwrapCache(cache), fastAttn)
+}
+
+func (m *Model) lmHeadN(h []float32, M int) []float32 {
+	e := m.cpuEngine()
+	return e.LMHeadN(h, M)
+}
+
+func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
+	e := m.cpuEngine()
+	return e.ForwardN(reqCtx, ids, unwrapCache(cache))
+}
+
+func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
+	e := m.cpuEngine()
+	return e.Qwen35BatchNAnyPos(K, unwrapCache(cache))
+}
+
+func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, pleIDs []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersGemma4FromEmbedN(reqCtx, h, pleIDs, spans, unwrapCache(cache))
+}
+
+func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersFromEmbed(h, unwrapCache(cache))
+}
+
+func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.RunLayersFromEmbedPLE(h, pleID, unwrapCache(cache))
+}
+
+func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
+	e := m.cpuEngine()
+	return e.ForwardFromEmbed(h, unwrapCache(cache))
+}
+
+func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
+	e := m.cpuEngine()
+	return e.LogitsFromHidden(h, unwrapCache(cache))
+}
+
+func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
+	e := m.cpuEngine()
+	return e.LogitsFromNormed(h, unwrapCache(cache))
+}

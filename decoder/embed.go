@@ -95,7 +95,8 @@ func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, e
 func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, error) {
 	a := m.w.Arch
 	cache := m.NewCache(len(ids))
-	hN, err := m.runLayersFromEmbedN(ctx, m.embedN(ids), cache, false) // never fast: exact HF parity is the point
+	e := m.cpuEngine()
+	hN, err := e.RunLayersFromEmbedN(ctx, e.EmbedN(ids), unwrapCache(cache), false) // never fast: exact HF parity is the point
 	if err != nil {
 		return nil, err
 	}

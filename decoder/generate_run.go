@@ -30,9 +30,9 @@ func (r *genRun) pick(clk *decodeClock) (SampleInfo, int, bool, error) {
 		if operr != nil {
 			return SampleInfo{}, 0, false, operr
 		}
-		r.optNextLogits = res.nextLogits
+		r.optNextLogits = res.NextLogits
 		r.optResolved = true
-		return res.info, res.info.ID, true, nil
+		return res.Info, res.Info.ID, true, nil
 	}
 	// Device top-K row from the previous forward: draw from it if the K candidates prove they
 	// hold the whole retained set; otherwise read the full row for this token (no randomness

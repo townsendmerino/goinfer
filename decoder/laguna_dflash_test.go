@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -58,23 +59,24 @@ func TestLagunaDFlash_load(t *testing.T) {
 	if !d.HasOwnHead() {
 		t.Fatal("HasOwnHead() = false — this drafter ships lm_head + d2t and must not borrow the target's")
 	}
-	if d.draftVocab != 32000 {
-		t.Errorf("draftVocab = %d, want 32000", d.draftVocab)
+	draftVocab, lmHeadRows, embedRows, d2t := blockdraft.DFlashHeadDims(&d.DFlash)
+	if draftVocab != 32000 {
+		t.Errorf("draftVocab = %d, want 32000", draftVocab)
 	}
-	if got := d.lmHead.Rows(); got != 32000 {
-		t.Errorf("lm_head rows = %d, want 32000", got)
+	if lmHeadRows != 32000 {
+		t.Errorf("lm_head rows = %d, want 32000", lmHeadRows)
 	}
-	if got := d.embed.Rows(); got != 100352 {
-		t.Errorf("embed_tokens rows = %d, want 100352 (the TARGET vocab)", got)
+	if embedRows != 100352 {
+		t.Errorf("embed_tokens rows = %d, want 100352 (the TARGET vocab)", embedRows)
 	}
-	if len(d.d2t) != 32000 {
-		t.Errorf("d2t len = %d, want 32000", len(d.d2t))
+	if len(d2t) != 32000 {
+		t.Errorf("d2t len = %d, want 32000", len(d2t))
 	}
 	// d2t must be a strictly-usable mapping into the target vocab; the loader already
 	// range-checks it, so this pins that it is not the identity (which would mean the
 	// tensor was misread as zeros and every draft id would be wrong-but-in-range).
 	nonZero := 0
-	for _, v := range d.d2t {
+	for _, v := range d2t {
 		if v != 0 {
 			nonZero++
 		}
@@ -83,7 +85,7 @@ func TestLagunaDFlash_load(t *testing.T) {
 		t.Error("d2t is all zeros — read as an identity mapping, which would silently draft wrong ids")
 	}
 	t.Logf("laguna DFlash: %d layers, taps %v, block %d, mask %d, draft vocab %d (%d non-identity d2t entries)",
-		g.Layers, d.TargetLayerIDs(), d.BlockSize(), d.MaskTokenID(), d.draftVocab, nonZero)
+		g.Layers, d.TargetLayerIDs(), d.BlockSize(), d.MaskTokenID(), draftVocab, nonZero)
 }
 
 // TestLagunaDFlash_acceptance measures what the pairing is worth: how many tokens per round the target ACCEPTS
@@ -147,7 +149,7 @@ func TestLagunaDFlash_acceptance(t *testing.T) {
 		if ferr != nil {
 			t.Fatalf("ForwardCapture: %v", ferr)
 		}
-		row := make([]float32, 0, len(hidden)*d.hidden)
+		row := make([]float32, 0, len(hidden)*m.w.Arch.HiddenDim)
 		for _, h := range hidden {
 			row = append(row, h...)
 		}

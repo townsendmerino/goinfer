@@ -332,20 +332,20 @@ func (f *cappedForward) Verify(ctx context.Context, ids []int) ([][]float32, err
 // fake holds; with argmax set, idsVerify answers argmax ids as a resident backend computing them on device does.
 func fakeNgramTarget(t *testing.T, fw *scriptedForward, isStop func(int) bool, argmaxIDs bool) ngramTarget {
 	tg := ngramTarget{
-		verify: func(seq []int, base int) ([][]float32, error) {
+		Verify: func(seq []int, base int) ([][]float32, error) {
 			if base != len(fw.hist) {
 				t.Fatalf("verify at %d, but the fake holds %d tokens", base, len(fw.hist))
 			}
 			return fw.Verify(context.Background(), seq)
 		},
-		truncate:       fw.TruncateTo,
-		commitResident: func([]int) {},
-		isStop:         isStop,
-		ctxCap:         func() int { return 0 },
+		Truncate:       fw.TruncateTo,
+		CommitResident: func([]int) {},
+		IsStop:         isStop,
+		CtxCap:         func() int { return 0 },
 	}
 	if argmaxIDs {
-		tg.idsVerify = func(seq []int, base int) ([]int, error) {
-			rows, err := tg.verify(seq, base)
+		tg.IDsVerify = func(seq []int, base int) ([]int, error) {
+			rows, err := tg.Verify(seq, base)
 			ids := make([]int, len(rows))
 			for i, r := range rows {
 				ids[i] = sampling.Argmax(r)

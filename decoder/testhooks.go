@@ -587,7 +587,8 @@ func Int4FloatActMissedForTest() int64 { return cpuengine.Int4FloatActMissed.Loa
 // LogitsFromHiddenForTest is logitsFromHidden on a copy of h (a residual before the final norm): the CPU's final norm, LM
 // head and softcap, for a gate that runs a resident's residual through the CPU head.
 func (m *Model) LogitsFromHiddenForTest(h []float32) []float32 {
-	return slices.Clone(m.logitsFromHidden(slices.Clone(h), m.NewCache(1)))
+	e := m.cpuEngine()
+	return slices.Clone(e.LogitsFromHidden(slices.Clone(h), unwrapCache(m.NewCache(1))))
 }
 
 // Gemma4BidirImageRowsForTest exposes the bidirectional image-row builder; a gate builds the rows, then hands them to the
