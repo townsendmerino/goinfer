@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
 )
 
 // Siglip2NaFlexEncoder is SigLIP2's NaFlex vision tower (transformers' Siglip2VisionModel, without its pooling head), the
@@ -148,35 +149,19 @@ func PatchifyNaFlex(img []float32, c, h, w, patch int) ([]float32, [2]int, error
 		return nil, [2]int{}, fmt.Errorf("vision: naflex patchify: a %dx%dx%d image (%d values) does not tile into %d-pixel patches", c, h, w, len(img), patch)
 	}
 	gh, gw := h/patch, w/patch
-	cpp := c * patch * patch
-	out := make([]float32, gh*gw*cpp)
-	for py := range gh {
-		for px := range gw {
-			row := out[(py*gw+px)*cpp:]
-			for y := range patch {
-				for x := range patch {
-					for ch := range c {
-						v := img[ch*h*w+(py*patch+y)*w+px*patch+x]
-						if naflexChannelMajor {
-							row[ch*patch*patch+y*patch+x] = v
-						} else {
-							row[(y*patch+x)*c+ch] = v
-						}
-					}
-				}
-			}
-		}
+	if naflexChannelMajor {
+		return imgproc.PatchesChannelsFirst(img, c, h, w, patch), [2]int{gh, gw}, nil
 	}
-	return out, [2]int{gh, gw}, nil
+	return imgproc.PatchesChannelsLast(img, c, h, w, patch), [2]int{gh, gw}, nil
 }
 
 // positions is the position table resized to grid (rows, cols): [rows*cols, hidden], row-major.
 func (e *Siglip2NaFlexEncoder) positions(grid [2]int) []float32 {
 	hidden := e.Cfg.HiddenSize
 	if naflexPlainBilinear {
-		return resizeBilinearPlainFloat(e.posTable, e.posSide, e.posSide, hidden, grid[0], grid[1])
+		return imgproc.ResizeBilinearPlainFloat(e.posTable, e.posSide, e.posSide, hidden, grid[0], grid[1])
 	}
-	return ResizeBilinearAAFloat(e.posTable, e.posSide, e.posSide, hidden, grid[0], grid[1])
+	return imgproc.ResizeBilinearAAFloat(e.posTable, e.posSide, e.posSide, hidden, grid[0], grid[1])
 }
 
 // Forward runs one tile: patches [rows*cols, C*P*P] (PatchifyNaFlex's layout) over grid (rows, cols), to the
@@ -224,31 +209,6 @@ func (e *Siglip2NaFlexEncoder) forward(patches []float32, grid [2]int, stage fun
 		stage(out)
 	}
 	return out, nil
-}
-
-// resizeBilinearPlainFloat is torch's bilinear without antialias (align_corners false): two taps per axis at
-// (i+0.5)·scale - 0.5, clamped at the edges. Only the planted defect uses it.
-func resizeBilinearPlainFloat(src []float32, h, w, c, th, tw int) []float32 {
-	idx := func(i, in, out int) (int, int, float64) {
-		x := (float64(i)+0.5)*float64(in)/float64(out) - 0.5
-		x = max(x, 0)
-		x0 := min(int(x), in-1)
-		x1 := min(x0+1, in-1)
-		return x0, x1, x - float64(x0)
-	}
-	dst := make([]float32, th*tw*c)
-	for y := range th {
-		y0, y1, fy := idx(y, h, th)
-		for x := range tw {
-			x0, x1, fx := idx(x, w, tw)
-			for k := range c {
-				v := (1-fy)*((1-fx)*float64(src[(y0*w+x0)*c+k])+fx*float64(src[(y0*w+x1)*c+k])) +
-					fy*((1-fx)*float64(src[(y1*w+x0)*c+k])+fx*float64(src[(y1*w+x1)*c+k]))
-				dst[(y*tw+x)*c+k] = float32(v)
-			}
-		}
-	}
-	return dst
 }
 
 // Close releases the checkpoint mappings the tower's block weights alias (aliasQMat); its forwards return an error afterward.

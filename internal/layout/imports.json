@@ -394,13 +394,16 @@
       "allow_goinfer": {
         "internal/audio": [
           "internal/vision"
+        ],
+        "internal/vision": [
+          "internal/vision/imgproc"
         ]
       },
       "allow_external": [
         "github.com/townsendmerino/aikit/linalg",
         "github.com/townsendmerino/aikit/embed"
       ],
-      "why": "The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29)."
+      "why": "The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). A second: internal/vision may import internal/vision/imgproc, its own standard-library-only image math leaf, which this rule also covers (maintainer decision, 2026-11-27: the resize, normalization and patch math split out of the tower package without opening it to any other goinfer import)."
     },
     {
       "name": "gpudev-standalone",
@@ -1002,6 +1005,17 @@
         ]
       },
       "why": "internal/runtime/batchplan holds multi-sequence ragged sequence ordering, consecutive-slot row validation, post-RoPE query temperature scaling, and step-width piece slicing shared across GPU backends (GPU2). It imports only decoder/resident and the standard library."
+    },
+    {
+      "name": "vision-imgproc-leaf",
+      "from": [
+        "internal/vision/imgproc"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/vision/imgproc holds the pure image math under internal/vision: bilinear resize with normalization, torchvision's antialiased bicubic and bilinear resizes, aspect-ratio-preserving target sizes, and patch unfolding. It imports no goinfer package and nothing outside the standard library."
     },
     {
       "name": "giwkv-leaf",
@@ -1681,6 +1695,9 @@
       "internal/audio",
       "tokenizer"
     ],
+    "internal/vision": [
+      "internal/vision/imgproc"
+    ],
     "internal/wrappedupload": [
       "decoder"
     ],
@@ -2099,6 +2116,9 @@
     "internal/runtime/whisper": [
       "internal/audio",
       "multimodal"
+    ],
+    "internal/vision": [
+      "internal/vision/imgproc"
     ],
     "multimodal": [
       "internal/audio",
