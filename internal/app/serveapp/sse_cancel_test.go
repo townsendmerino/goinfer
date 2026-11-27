@@ -98,7 +98,7 @@ func TestSSEStream_writeFailureCancelsGeneration(t *testing.T) {
 	const many = 4 * sseProbeLimit
 	thinking := map[string]any{"type": "enabled", "budget_tokens": many}
 	visionMsgs := []any{map[string]any{"role": "user", "content": "describe"}}
-	img := []imageRef{{data: []byte("img")}}
+	img := []imageRef{{Data: []byte("img")}}
 	for _, c := range []struct {
 		name string
 		ok   int // writes the client accepts before failing

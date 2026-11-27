@@ -11,76 +11,56 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
-// tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
-// both arms.
-func (cfg *config) towerBackend() string {
-	if cfg.visionDevice == "cpu" {
-		return "cpu"
-	}
-	return cfg.load.Backend
-}
-
-// visionRoute is where one vision tower is routed under the flags and the machine: the backend handed to the family loader, and
-// the one stderr line (or "") that says a WebGPU-capable tower was kept on the CPU.
-type visionRoute struct {
-	Backend string
-	Note    string
-}
-
-const (
-	discreteKeptNote = "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU"
-	mmprojKeptNote   = "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU"
+type (
+	visionRoute    = towerfit.VisionRoute
+	deviceFallback = towerfit.DeviceFallback
+	towerSwap      = towerfit.TowerSwap
 )
 
-// routeVisionTower is the one place the vision tower's backend and its note are decided (family is visionModelType's answer;
-// mmproj is a Qwen3.5+ GGUF mmproj tower, which has no config.json). Rules, in order:
-//   - not --backend webgpu, or -vision-device cpu: towerBackend, no note;
-//   - an int8 tower other than Gemma 3's is the CPU's by the quant (-vision-quant int8; the family's default never is): the backend is left alone so the family loader says
-//     so, and refuses under -require-backend; no note, since --vision-device gpu would not move it;
-//   - -vision-device gpu asks for the device: the backend, no note;
-//   - an mmproj tower stays on the CPU (towerReserve cannot price a tower with no config.json), with a note when this binary has
-//     a WebGPU Qwen3.5+ tower;
-//   - a unified-memory machine runs the device tower by default;
-//   - a discrete GPU keeps the CPU (WebGPU has no free-VRAM query, so the tower cannot be priced against the card) unless Gemma 3
-//     is given an explicit -vision-quant, whose int8 form is the one WebGPU int8 tower; the note is printed only for a family this
-//     binary has a WebGPU tower for.
-//
-// An audio encoder does not come through here (towerBackend).
+const (
+	discreteKeptNote = towerfit.DiscreteKeptNote
+	mmprojKeptNote   = towerfit.MMProjKeptNote
+)
+
+var (
+	towerInt8           = towerfit.TowerInt8
+	enableResidentTower = towerfit.EnableResidentTower
+	attachResidentTower = towerfit.AttachResidentTower
+	attachWhisperDevice = towerfit.AttachWhisperDevice
+	refuseCPUFallback   = towerfit.RefuseCPUFallback
+	visionModelType     = towerfit.VisionModelType
+	readTowerDims       = towerfit.ReadTowerDims
+	towerVRAMEstimate   = towerfit.TowerVRAMEstimate
+	metalTowerEstimate  = towerfit.MetalTowerEstimate
+)
+
+func (cfg *config) towerConfig() towerfit.Config {
+	return towerfit.Config{
+		Backend:         cfg.load.Backend,
+		VisionPath:      cfg.visionPath,
+		VisionDevice:    cfg.visionDevice,
+		VisionQuant:     cfg.visionQuant,
+		VisionMaxPixels: cfg.visionMaxPixels,
+	}
+}
+
+func (cfg *config) towerBackend() string { return cfg.towerConfig().TowerBackend() }
+
 func (cfg *config) routeVisionTower(family string, mmproj bool) visionRoute {
-	be := cfg.towerBackend()
-	if be != "webgpu" {
-		return visionRoute{Backend: be}
-	}
-	quantFamily := family
-	if mmproj {
-		quantFamily = "qwen3_5"
-	}
-	if cfg.visionQuant == "int8" && quantFamily != "gemma3" {
-		return visionRoute{Backend: be}
-	}
-	if cfg.visionDevice == "gpu" {
-		return visionRoute{Backend: be}
-	}
-	if mmproj {
-		r := visionRoute{Backend: "cpu"}
-		if webgpuTowerRegistered(quantFamily) {
-			r.Note = mmprojKeptNote
-		}
-		return r
-	}
-	if webgpuTowerUnified() || (family == "gemma3" && cfg.visionQuant != "") {
-		return visionRoute{Backend: be}
-	}
-	r := visionRoute{Backend: "cpu"}
-	if webgpuTowerRegistered(family) {
-		r.Note = discreteKeptNote
-	}
-	return r
+	return cfg.towerConfig().RouteVisionTower(family, mmproj)
+}
+
+func towerReserve(cfg config, modelPath string) int64 {
+	return towerfit.Reserve(cfg.towerConfig(), modelPath)
+}
+
+func webgpuTowerFits(cfg config, dir string) error {
+	return towerfit.WebGPUTowerFits(cfg.towerConfig(), dir)
 }
 
 // loadVisionTower attaches a vision tower to the (single) loaded model, making it vision-capable (serve then accepts
@@ -224,45 +204,6 @@ func (s *server) loadVisionTower(cfg config) error {
 // float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
 // (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
 // or it falls into the backend default and gets an int8 CPU tower nobody validated under cuda/webgpu.
-func towerInt8(modelType, visionQuant, backend string) bool {
-	switch visionQuant {
-	case "int8":
-		return true
-	case "f32":
-		return false
-	}
-	switch modelType {
-	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe", "gemma4", "glm_ocr", "mistral3", "lfm2_vl":
-		return false
-	}
-	return (backend == "webgpu" || backend == "cuda") && modelType != "gemma3" // gemma3: float32 by default everywhere
-}
-
-// enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports
-// whether it is attached. A failed attach (no VRAM left for the tower, a build without the backend, an int8 request for a
-// float32-only device tower) is a warning, not an error: EnableResident leaves the CPU path intact, so the tower runs
-// there (slower) and the banner does not claim "-resident".
-func enableResidentTower(enc interface{ EnableResident() error }, backend string, warn io.Writer) bool {
-	ok, _ := attachResidentTower("", enc, backend, false, warn)
-	return ok
-}
-
-// attachResidentTower is enableResidentTower with -require-backend: under it a failed attach on a device backend refuses
-// startup instead of falling back to the CPU tower, as planGridTower does for the Qwen3.5+ and GLM-OCR towers.
-func attachResidentTower(family string, enc interface{ EnableResident() error }, backend string, require bool, warn io.Writer) (bool, error) {
-	if backend != "webgpu" && backend != "cuda" && backend != "metal" {
-		return false, nil
-	}
-	if err := enc.EnableResident(); err != nil {
-		if require {
-			return false, fmt.Errorf("-require-backend: the %s tower could not start on %s: %w", family, backend, err)
-		}
-		fmt.Fprintf(warn, "warning: the resident GPU vision tower could not be enabled (%v); images will run through the CPU tower (slower)\n", err)
-		return false, nil
-	}
-	return true, nil
-}
-
 // blockReleaser is a vision encoder that can drop its encoder blocks from the host once a device tower holds them, and
 // load them again on its CPU path's first use (aikit's ReleaseBlocks).
 type blockReleaser interface{ ReleaseBlocks() error }
@@ -278,20 +219,6 @@ var releaseTowerBlocks = func(family string, enc any) {
 	if err := r.ReleaseBlocks(); err != nil {
 		fmt.Fprintf(os.Stderr, "vision: the %s tower keeps its host blocks: %v\n", family, err)
 	}
-}
-
-// visionModelType returns dir/config.json's model_type ("" if absent/unreadable) —
-// the family discriminator for the vision path (qwen2_5_vl vs Gemma 3 SigLIP).
-func visionModelType(dir string) string {
-	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
-	if err != nil {
-		return ""
-	}
-	var c struct {
-		ModelType string `json:"model_type"`
-	}
-	_ = json.Unmarshal(raw, &c)
-	return c.ModelType
 }
 
 // soleModelSource is the single --model as loadDecoder resolved it: for an `hf:<repo>:safetensors` reference, the
@@ -470,7 +397,7 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 	if !ok {
 		return nil
 	}
-	d, ok := readTowerDims(dir)
+	d, ok := towerfit.ReadTowerDims(dir)
 	if !ok {
 		return nil
 	}
@@ -480,7 +407,7 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 	} else {
 		fmt.Fprintf(os.Stderr, "vision: the expert cache grows from %d to %d slots/layer between images; the Gemma 4 tower loads for each encode\n", before.Slots, after)
 	}
-	return &towerSwap{enc: enc, backend: backend, model: m, reserve: towerVRAMEstimate("gemma4", d, 0)}
+	return towerfit.NewTowerSwap(enc, backend, m, towerfit.TowerVRAMEstimate("gemma4", d, 0))
 }
 
 // chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal, CUDA or WebGPU and this binary

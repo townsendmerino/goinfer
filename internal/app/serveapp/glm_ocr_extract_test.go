@@ -96,7 +96,7 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}
-	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}
+	img := imageRef{MediaType: "image/png", Data: glmOcrTestPNG(t)}
 	build := func(text string) string {
 		turns := []chat.Turn{{Role: "user", Content: text}}
 		if err := lm.glmOcrExtractionTurn(schemaFormat(extractSchema), turns); err != nil {

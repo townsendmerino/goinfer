@@ -264,7 +264,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, imgs []imageRef, sm sampling, id string, created int64, store bool) {
 	var hasAudio, hasImage bool
 	for _, im := range imgs {
-		if im.audio {
+		if im.Audio {
 			hasAudio = true
 		} else {
 			hasImage = true

@@ -1,4 +1,4 @@
-package serveapp
+package towerfit
 
 import (
 	"fmt"
@@ -11,13 +11,9 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// towerSwap runs a device Gemma 4 tower that holds device memory only while it encodes, for a model whose MoE expert cache
-// (decoder.ResidentExpertCache) uses that memory between images.
-// Before an encode the cache shrinks to leave reserve bytes free and the tower uploads from the encoder's host weights, so
-// those weights stay loaded; after it the tower is closed and the cache grows back. An image whose tower cannot come up
-// encodes on the CPU. It is called inside a generation, and a vision model runs one generation at a time (setConcurrency);
-// mu also keeps encodes one at a time.
-type towerSwap struct {
+// TowerSwap runs a Gemma 4 device tower that occupies device memory only during
+// encoding, shrinking and regrowing the model's MoE expert cache around each call.
+type TowerSwap struct {
 	mu      sync.Mutex
 	enc     *vision.Gemma4Encoder
 	backend string
@@ -25,8 +21,19 @@ type towerSwap struct {
 	reserve int64
 }
 
-// features encodes one image's patches at their positions into soft tokens.
-func (t *towerSwap) features(patches []float32, pos [][2]int) ([]float32, error) {
+// NewTowerSwap constructs a TowerSwap for enc on backend beside model.
+func NewTowerSwap(enc *vision.Gemma4Encoder, backend string, model *decoder.Model, reserve int64) *TowerSwap {
+	return &TowerSwap{
+		enc:     enc,
+		backend: backend,
+		model:   model,
+		reserve: reserve,
+	}
+}
+
+// Features encodes patches at pos into soft tokens, shrinking the expert cache
+// to leave reserve bytes before uploading the tower and restoring the cache afterward.
+func (t *TowerSwap) Features(patches []float32, pos [][2]int) ([]float32, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t0 := time.Now()

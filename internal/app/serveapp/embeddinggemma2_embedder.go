@@ -1,7 +1,6 @@
 package serveapp
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,24 +9,15 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/embedders"
 )
 
-// isEmbeddingGemma2 reports whether dir is an EmbeddingGemma 2 checkpoint (config.json's model_type).
-func isEmbeddingGemma2(dir string) bool {
-	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
-	if err != nil {
-		return false
-	}
-	var c struct {
-		ModelType string `json:"model_type"`
-	}
-	return json.Unmarshal(raw, &c) == nil && c.ModelType == "embedding_gemma2"
-}
+var (
+	isEmbeddingGemma2 = embedders.IsEmbeddingGemma2
+	chooseEG2Device   = embedders.ChooseEG2Device
+)
 
 // loadEmbeddingGemma2 loads an EmbeddingGemma 2 checkpoint as the /v1/embeddings model.
-// It runs in float32, on the CPU or, where chooseEG2Device picks it, on Metal,
-// so -embed-quant other than f32 is refused rather than dropped (a quant flag that silently does nothing).
-// `dimensions` takes exactly the model's Matryoshka widths.
 func (s *server) loadEmbeddingGemma2(cfg config) error {
 	switch strings.ToLower(cfg.embedQuant) {
 	case "", "f32":
@@ -80,32 +70,4 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s, image tower on %s and audio tower on %s, each loaded on first use) in %s\n",
 		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), tower, atower, time.Since(t0).Round(time.Millisecond))
 	return nil
-}
-
-// eg2Accelerable is the part of the EmbeddingGemma 2 encoder chooseEG2Device uses (a seam for its test).
-type eg2Accelerable interface {
-	UseAccelerator(name string) (embeddinggemma2.Accelerator, error)
-}
-
-// chooseEG2Device puts the encoder on the GPU when serve's resolved backend is Metal and says where it runs. Metal
-// failing to start falls back to the CPU with the reason, unless -require-backend asks for a refusal instead. Other
-// backends run it on the CPU: its only GPU path is Metal.
-func chooseEG2Device(e eg2Accelerable, backend string, require bool) (string, error) {
-	switch backend {
-	case "metal":
-		if _, err := e.UseAccelerator("metal"); err != nil {
-			if require {
-				return "", fmt.Errorf("-require-backend: EmbeddingGemma 2 could not start on Metal: %w", err)
-			}
-			return "CPU (Metal declined: " + err.Error() + ")", nil
-		}
-		return "Metal", nil
-	case "", "cpu":
-		return "CPU", nil
-	default:
-		if require {
-			return "", fmt.Errorf("-require-backend: EmbeddingGemma 2 has no %s path; it runs on Metal or the CPU", backend)
-		}
-		return "CPU (its GPU path is Metal only; -backend is " + backend + ")", nil
-	}
 }

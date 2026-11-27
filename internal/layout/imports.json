@@ -535,6 +535,60 @@
         ]
       },
       "why": "internal/app/serveapp/streamframe holds SSE transport, thinking-block splitting, reasoning-token budget resolution, /v1/responses reasoning items, and Responses/Anthropic stream state machines below serveapp (SA2). It never imports decoder or serveapp."
+    },
+    {
+      "name": "serveapp-media-leaf",
+      "from": [
+        "internal/app/serveapp/media"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/media": [
+          "embeddinggemma2"
+        ]
+      },
+      "why": "internal/app/serveapp/media decodes inline base64 images and audio clips, rewrites conversation media history, and parses /v1/embeddings media items below serveapp (SA3). It imports only embeddinggemma2 and never decoder or serveapp."
+    },
+    {
+      "name": "serveapp-towerfit-leaf",
+      "from": [
+        "internal/app/serveapp/towerfit"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/towerfit": [
+          "decoder",
+          "internal/audio",
+          "internal/runtime/mem",
+          "internal/vision",
+          "multimodal"
+        ]
+      },
+      "why": "internal/app/serveapp/towerfit prices vision towers, routes vision and audio towers across CPU and GPU backends, checks WebGPU unified-memory fit, recovers or falls back on device OOM, and swaps Gemma 4's tower against the expert cache below serveapp (SA3)."
+    },
+    {
+      "name": "serveapp-embedders-leaf",
+      "from": [
+        "internal/app/serveapp/embedders"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/embedders": [
+          "decoder",
+          "embeddinggemma2",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/app/serveapp/embedders adapts causal decoders into serialized last-token-pooling embedders and resolves EmbeddingGemma 2 device placement below serveapp (SA3). It never imports serveapp."
     }
   ],
   "arrows": {
@@ -809,10 +863,13 @@
       "internal/app/loadflags",
       "internal/app/pullcmd",
       "internal/app/serveapp/carriedids",
+      "internal/app/serveapp/embedders",
       "internal/app/serveapp/jobs",
+      "internal/app/serveapp/media",
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/towerfit",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -837,8 +894,16 @@
       "internal/codec",
       "tokenizer"
     ],
+    "internal/app/serveapp/embedders": [
+      "decoder",
+      "embeddinggemma2",
+      "tokenizer"
+    ],
     "internal/app/serveapp/jobs": [
       "internal/cost"
+    ],
+    "internal/app/serveapp/media": [
+      "embeddinggemma2"
     ],
     "internal/app/serveapp/sessions": [
       "decoder",
@@ -852,6 +917,13 @@
       "chat",
       "internal/app/serveapp/carriedids",
       "internal/codec"
+    ],
+    "internal/app/serveapp/towerfit": [
+      "decoder",
+      "internal/audio",
+      "internal/runtime/mem",
+      "internal/vision",
+      "multimodal"
     ],
     "internal/audio": [
       "internal/vision"
@@ -1265,6 +1337,7 @@
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/towerfit",
       "internal/audio",
       "internal/clef",
       "internal/codec",
@@ -1291,6 +1364,10 @@
       "internal/codec",
       "tokenizer"
     ],
+    "internal/app/serveapp/embedders": [
+      "decoder",
+      "embeddinggemma2"
+    ],
     "internal/app/serveapp/sessions": [
       "internal/runtime/scheduler"
     ],
@@ -1299,6 +1376,9 @@
     ],
     "internal/app/serveapp/streamframe": [
       "chat"
+    ],
+    "internal/app/serveapp/towerfit": [
+      "multimodal"
     ],
     "internal/audio": [
       "internal/vision"

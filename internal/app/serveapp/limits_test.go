@@ -170,25 +170,15 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 // C-07, C-21.
 func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	const window = 16
-	e := &decoderEmbedder{
-		maxTokens: window, // what loadDecoderEmbedder now sets from m.Config().MaxPositions
-		appendID:  -1,
-	}
-	if e.maxTokens == 0 {
-		t.Fatal("premise broke: maxTokens 0 is the unbounded state this test is about")
-	}
-	// truncateForContext is the exact function tokenize() calls (docs/review-2026-09-04.md, V-21): the test calls
-	// it rather than re-deriving the arithmetic, so a bug in the real code cannot pass unnoticed.
-	ids := truncateForContext(make([]int, window*4), e.maxTokens, e.appendID)
+	ids := truncateForContext(make([]int, window*4), window, -1)
 	if len(ids) != window {
 		t.Fatalf("truncated to %d, want %d", len(ids), window)
 	}
 
 	// With an appended pooling token, the slot must be RESERVED — the appended token has to stay
 	// last because it is the pooled position, so truncation must not be what drops it.
-	e2 := &decoderEmbedder{maxTokens: window, appendID: 7}
-	ids2 := truncateForContext(make([]int, window*4), e2.maxTokens, e2.appendID)
-	ids2 = append(ids2, e2.appendID)
+	ids2 := truncateForContext(make([]int, window*4), window, 7)
+	ids2 = append(ids2, 7)
 	if len(ids2) != window {
 		t.Errorf("with an appended token the total is %d, want %d", len(ids2), window)
 	}

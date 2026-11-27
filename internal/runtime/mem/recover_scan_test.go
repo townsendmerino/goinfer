@@ -21,7 +21,7 @@ var recoverExempt = map[string]string{
 	"internal/app/serveapp/stores/batches.go:recoverFinalizeLocked": "the batch finalizer goroutine's guard: a panic marks that batch failed, with the stack on stderr",
 	"internal/app/serveapp/streamframe/sse.go:recoverHeartbeat":     "the SSE heartbeat goroutine's guard: a write panic ends keep-alives without taking the process down",
 	"internal/app/serveapp/webui.go:handleWebLoad":                  "the web-UI load goroutine's guard: the panic fails that load, with the stack on stderr",
-	"internal/app/serveapp/vision_serve.go:recoverDeviceTower":      "a tower panic fails its one request with the panic's value; nothing falls back",
+	"internal/app/serveapp/towerfit/fallback.go:RecoverDeviceTower": "a tower panic fails its one request with the panic's value; nothing falls back",
 	"internal/app/inproc/transport.go:RoundTrip":                    "the in-process transport's handler boundary, as net/http's own: the panic fails that response",
 	"internal/runtime/ggufconfig/ggufconfig.go:ggufConfig":          "hostile GGUF metadata drives a family builder into a divide by zero or an index panic: that is the malformed-input error",
 	"internal/runtime/residency/batcher.go:runSolo":                 "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",

@@ -11,6 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -85,7 +86,7 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 		return vi, err
 	}
 	// One place for every family: the cache sits between the prompt builders and the generate call.
-	return lm.withFeatureCache(vi, img.data, lm.towerFamily(img.audio)), nil
+	return lm.withFeatureCache(vi, img.Data, lm.towerFamily(img.Audio)), nil
 }
 
 // withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode. A miss runs the tower through
@@ -123,7 +124,7 @@ func (lm *loadedModel) featureCacheSize() int {
 }
 
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
-	if img.audio && lm.audio != nil {
+	if img.Audio && lm.audio != nil {
 		return lm.audio.prompt(lm, tm, system, turns, img)
 	}
 	if lm.tmpl == nil {
@@ -139,7 +140,7 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 	if _, ok := lm.vision.(qwenGridTower); ok {
 		return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
 	}
-	if img.audio {
+	if img.Audio {
 		return visionInput{}, fmt.Errorf("this model has no audio tower")
 	}
 	return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
@@ -178,25 +179,7 @@ func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32,
 // image kills the whole server. The request fails with the reason; the server and the other requests live. Every tower passes
 // through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features
 // (Gemma 3's SigLIP, Gemma 4's image and audio towers included) at withFeatureCache.
-func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			hint := ""
-			if rErr, ok := r.(error); ok {
-				if mem.DeviceOutOfMemory(rErr) {
-					hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
-				}
-				out, err = nil, fmt.Errorf("the %s tower failed (%w)%s", family, rErr, hint)
-				return
-			}
-			if mem.DeviceOutOfMemory(fmt.Errorf("%v", r)) {
-				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
-			}
-			out, err = nil, fmt.Errorf("the %s tower failed (%v)%s", family, r, hint)
-		}
-	}()
-	return fn()
-}
+var recoverDeviceTower = towerfit.RecoverDeviceTower
 
 // towerFamily names this model's tower for an error message and the feature cache's key: the audio tower's family for
 // a clip, else the vision tower's.
@@ -221,11 +204,11 @@ func (lm *loadedModel) towerFamily(audio bool) string {
 // recognition rather than an image with nothing to do. The task is chosen by the user's own text ("Text Recognition:",
 // "Formula Recognition:", "Table Recognition:", multimodal.GlmOcrPrompt*).
 func (lm *loadedModel) glmOcrVisionPrompt(g *glmVision, tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
-	pv, grid, err := multimodal.QwenPreprocess(img.data, g.pp)
+	pv, grid, err := multimodal.QwenPreprocess(img.Data, g.pp)
 	if err != nil {
 		return visionInput{}, err
 	}
-	imgHash := multimodal.HashImageBytes(img.data)
+	imgHash := multimodal.HashImageBytes(img.Data)
 	n := multimodal.QwenMergedTokens(grid, g.merge)
 	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
 		return visionInput{}, err
@@ -268,7 +251,7 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 
 // serveVisionChatWith runs the multimodal generation. Reached ONLY through withModel (liveness RLock held).
 func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req chatReq, imgs []imageRef, lm *loadedModel) {
-	if imgs[0].audio {
+	if imgs[0].Audio {
 		if !lm.audioCapable() {
 			writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
 			return

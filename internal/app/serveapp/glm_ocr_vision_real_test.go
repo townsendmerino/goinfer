@@ -96,7 +96,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 
 			// (a) the prompt ids, built by serve's own code path.
 			towerBefore := lm.glmOcr().enc // nil on the first image; a later subtest starts with the tower already loaded
-			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Prompt}}, imageRef{mediaType: "image/png", data: png})
+			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Prompt}}, imageRef{MediaType: "image/png", Data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
 			}

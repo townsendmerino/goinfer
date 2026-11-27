@@ -77,7 +77,7 @@ func TestAnthropicImages(t *testing.T) {
 	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
 		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + png1x1 + `"}}]`)}}}
 	imgs, err := anthropicImages(req)
-	if err != nil || len(imgs) != 1 || len(imgs[0].data) == 0 {
+	if err != nil || len(imgs) != 1 || len(imgs[0].Data) == 0 {
 		t.Fatalf("decode base64 image: imgs=%d err=%v", len(imgs), err)
 	}
 	// URL source → rejected (SSRF guard).

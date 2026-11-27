@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 )
 
 // The S4 addendum: -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters
@@ -59,14 +61,16 @@ func TestTowerReserve_gemma3(t *testing.T) {
 // its backend, int8 included, and zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Gemma 3 under cuda is the case that matters: its
 // shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {
-	old, oldM, oldW := cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered // stand in for cuda, metal and gpu builds, whose imports fill the tower registries
-	cudaTowerRegistered = func(string) bool { return true }
-	metalTowerRegistered = func(string) bool { return true }
-	webgpuTowerRegistered = func(string) bool { return true }
-	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = old, oldM, oldW })
-	oldU := webgpuTowerUnified
-	webgpuTowerUnified = func() bool { return true } // WebGPU's default placement reads the machine
-	t.Cleanup(func() { webgpuTowerUnified = oldU })
+	old, oldM, oldW := towerfit.CUDATowerRegistered, towerfit.MetalTowerRegistered, towerfit.WebGPUTowerRegistered // stand in for cuda, metal and gpu builds, whose imports fill the tower registries
+	towerfit.CUDATowerRegistered = func(string) bool { return true }
+	towerfit.MetalTowerRegistered = func(string) bool { return true }
+	towerfit.WebGPUTowerRegistered = func(string) bool { return true }
+	t.Cleanup(func() {
+		towerfit.CUDATowerRegistered, towerfit.MetalTowerRegistered, towerfit.WebGPUTowerRegistered = old, oldM, oldW
+	})
+	oldU := towerfit.WebGPUTowerUnified
+	towerfit.WebGPUTowerUnified = func() bool { return true } // WebGPU's default placement reads the machine
+	t.Cleanup(func() { towerfit.WebGPUTowerUnified = oldU })
 	cfgs := map[string]string{
 		"gemma3":     `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`,
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,
