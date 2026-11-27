@@ -43,7 +43,10 @@ var markState = map[cacheState]func(c *KVCache){
 func TestKVCache_everyFieldHasAState(t *testing.T) {
 	ty := reflect.TypeFor[cpuengine.Cache]()
 	seen := map[string]bool{}
-	for field := range ty.Fields() {
+	for _, field := range reflect.VisibleFields(ty) {
+		if field.Anonymous {
+			continue
+		}
 		name := field.Name
 		seen[name] = true
 		_, isState := kvCacheFieldState[name]
