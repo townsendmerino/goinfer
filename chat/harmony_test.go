@@ -182,3 +182,46 @@ func nameOf(t *Template) string {
 	}
 	return t.Name()
 }
+
+const (
+	realReply    = "<|channel|>analysis<|message|>The user asks: \"What is 17 times 3? Then write one short sentence about the sea.\"\n\nWe need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like \"The sea is vast and full of mysteries.\" Provide short sentence. Ensure short.<|end|><|start|>assistant<|channel|>final<|message|>17\u202f×\u202f3\u202f=\u202f51.  \nThe sea stretches endlessly, its waves whispering ancient secrets."
+	realAnalysis = "The user asks: \"What is 17 times 3? Then write one short sentence about the sea.\"\n\nWe need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like \"The sea is vast and full of mysteries.\" Provide short sentence. Ensure short."
+	realFinal    = "17\u202f×\u202f3\u202f=\u202f51.  \nThe sea stretches endlessly, its waves whispering ancient secrets."
+)
+
+func TestReplySplitter_harmony(t *testing.T) {
+	rs := Harmony().NewReplySplitter(nil)
+	if rs == nil {
+		t.Fatal("harmony must get a reply splitter: its output is channel messages, not plain text")
+	}
+	var r, c strings.Builder
+	for i := 0; i < len(realReply); i += 7 {
+		a, b := rs.Push(realReply[i:min(i+7, len(realReply))])
+		r.WriteString(a)
+		c.WriteString(b)
+	}
+	a, b, truncated := rs.Finish()
+	r.WriteString(a)
+	c.WriteString(b)
+	if r.String() != realAnalysis || c.String() != realFinal || truncated {
+		t.Errorf("via ReplySplitter: reasoning=%q content=%q truncated=%v", r.String(), c.String(), truncated)
+	}
+
+	cut := Harmony().NewReplySplitter(nil)
+	cut.Push("<|channel|>analysis<|message|>the answer needs more thought and")
+	if _, ans, trunc := cut.Finish(); !trunc || ans != "" {
+		t.Errorf("a reply cut off in its analysis: truncated=%v answer=%q, want truncated with no answer", trunc, ans)
+	}
+
+	rs = Harmony().NewReplySplitter(nil)
+	snow := "\u2603"
+	p1, _ := rs.Push("<|channel|>analysis<|message|>a" + snow[:1])
+	p2, _ := rs.Push(snow[1:] + "b")
+	if p1 != "a" || p2 != snow+"b" {
+		t.Errorf("reasoning split a rune: %q then %q", p1, p2)
+	}
+
+	if ChatML().NewReplySplitter(nil) != nil {
+		t.Error("a template with no reasoning spec must still get no splitter")
+	}
+}

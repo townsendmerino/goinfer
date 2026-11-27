@@ -88,8 +88,15 @@ type SegmentEncoder interface {
 	EncodeSegments(segs []Segment, addBOS bool) ([]int, error)
 }
 
-// harmonyCallRecipient is what follows <|channel|> in a harmony call's header, up to the tool's name.
-const harmonyCallRecipient = "commentary to=functions."
+const (
+	hmStart   = "<|start|>"
+	hmChannel = "<|channel|>"
+	hmMessage = "<|message|>"
+	hmEnd     = "<|end|>"
+
+	// harmonyCallRecipient is what follows <|channel|> in a harmony call's header, up to the tool's name.
+	harmonyCallRecipient = "commentary to=functions."
+)
 
 // NewCallBudgetFor is NewReasoningBudgetFor for a reply that must be a tool call the template cannot constrain (a
 // post-checked must-call tool_choice). On harmony the forced close opens a commentary call,

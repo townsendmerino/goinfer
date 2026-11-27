@@ -1,4 +1,4 @@
-package chat
+package harmony
 
 import (
 	"math/rand/v2"
@@ -6,10 +6,6 @@ import (
 	"testing"
 )
 
-// A real gpt-oss-20b-MXFP4 reply, temperature 0, captured 2026-09-30 from goinfer-chat before this parser existed
-// (docs/measurements/harmony-parser-2026-09-30/raw-gptoss20b-before-parser.log): the decoded stream as a client would have
-// received it in `content`. It is NOT hand-written — the parser is held to what the model actually emits, including the
-// narrow no-break spaces it puts in "17 × 3 = 51" and the two trailing spaces before a newline.
 const realReply = "<|channel|>analysis<|message|>The user asks: \"What is 17 times 3? Then write one short sentence about the sea.\"\n\nWe need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like \"The sea is vast and full of mysteries.\" Provide short sentence. Ensure short.<|end|><|start|>assistant<|channel|>final<|message|>17\u202f×\u202f3\u202f=\u202f51.  \nThe sea stretches endlessly, its waves whispering ancient secrets."
 const realAnalysis = "The user asks: \"What is 17 times 3? Then write one short sentence about the sea.\"\n\nWe need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like \"The sea is vast and full of mysteries.\" Provide short sentence. Ensure short."
 const realFinal = "17\u202f×\u202f3\u202f=\u202f51.  \nThe sea stretches endlessly, its waves whispering ancient secrets."
@@ -17,12 +13,11 @@ const realFinal = "17\u202f×\u202f3\u202f=\u202f51.  \nThe sea stretches endles
 type harmonyOut struct {
 	reasoning, content string
 	inReasoning        bool
-	calls              []harmonyCall
+	calls              []Call
 }
 
-// splitHarmony feeds chunks to a fresh parser, then flushes.
 func splitHarmony(chunks ...string) harmonyOut {
-	s := newHarmonySplitter()
+	s := NewSplitter()
 	var r, c strings.Builder
 	for _, ch := range chunks {
 		a, b := s.Push(ch)
@@ -33,7 +28,7 @@ func splitHarmony(chunks ...string) harmonyOut {
 	a, b := s.Flush()
 	r.WriteString(a)
 	c.WriteString(b)
-	return harmonyOut{r.String(), c.String(), in, s.calls}
+	return harmonyOut{r.String(), c.String(), in, s.Calls()}
 }
 
 func TestHarmonySplitter_realGptOssReply(t *testing.T) {
@@ -52,12 +47,11 @@ func TestHarmonySplitter_realGptOssReply(t *testing.T) {
 	}
 }
 
-// The table is the routing contract. Every row's input is what a reply's decoded text looks like (the turn stop is never in it).
 func TestHarmonySplitter_routing(t *testing.T) {
 	type want struct {
 		reasoning, content string
 		inReasoning        bool
-		calls              []harmonyCall
+		calls              []Call
 	}
 	cases := []struct {
 		name, in string
@@ -72,9 +66,9 @@ func TestHarmonySplitter_routing(t *testing.T) {
 		{"a commentary preamble is content, separated from the answer", "<|channel|>analysis<|message|>t<|end|><|start|>assistant<|channel|>commentary<|message|>Let me check.<|end|><|start|>assistant<|channel|>final<|message|>It is 18C.",
 			want{reasoning: "t", content: "Let me check.\n\nIt is 18C."}},
 		{"a function call is kept, and shown in neither stream", "<|channel|>analysis<|message|>need weather<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"city\":\"Paris\"}<|call|>",
-			want{reasoning: "need weather", inReasoning: true, calls: []harmonyCall{{Channel: "commentary", Recipient: "functions.get_weather", Constrain: "json", Args: `{"city":"Paris"}`}}}},
+			want{reasoning: "need weather", inReasoning: true, calls: []Call{{Channel: "commentary", Recipient: "functions.get_weather", Constrain: "json", Args: `{"city":"Paris"}`}}}},
 		{"the recipient may sit in the role position", "<|start|>assistant to=functions.f<|channel|>commentary json<|message|>{}<|call|>",
-			want{calls: []harmonyCall{{Channel: "commentary", Recipient: "functions.f", Args: "{}"}}}},
+			want{calls: []Call{{Channel: "commentary", Recipient: "functions.f", Args: "{}"}}}},
 		{"an unknown channel is shown, not hidden", "<|channel|>thoughts<|message|>hmm", want{content: "hmm"}},
 		{"no markers at all is content, verbatim", "  plain text, no harmony\n", want{content: "  plain text, no harmony\n"}},
 		{"a body may mention the markers that do not end a message", "<|channel|>final<|message|>the <|channel|> and <|start|> tokens", want{content: "the <|channel|> and <|start|> tokens"}},
@@ -82,16 +76,12 @@ func TestHarmonySplitter_routing(t *testing.T) {
 		{"whitespace between messages is scaffolding", "<|channel|>analysis<|message|>a<|end|>\n<|start|>assistant<|channel|>final<|message|>b", want{reasoning: "a", content: "b"}},
 		{"stray text before a message is content (the space before the marker is scaffolding)", "Hello <|channel|>final<|message|>x", want{content: "Hello\n\nx"}},
 		{"trailing whitespace of a reply that just ends is kept", "plain \n", want{content: "plain \n"}},
-
-		// Truncation (max_tokens): no answer, and the parser says so.
 		{"cut off inside the analysis", "<|channel|>analysis<|message|>still thinking and then the", want{reasoning: "still thinking and then the", inReasoning: true}},
 		{"cut off between analysis and answer", "<|channel|>analysis<|message|>done<|end|><|start|>assistant", want{reasoning: "done", inReasoning: true}},
 		{"cut off inside the final header", "<|channel|>analysis<|message|>done<|end|><|start|>assistant<|channel|>fin", want{reasoning: "done", inReasoning: true}},
 		{"cut off inside the answer is an answer", "<|channel|>analysis<|message|>d<|end|><|start|>assistant<|channel|>final<|message|>The sea is", want{reasoning: "d", content: "The sea is"}},
 		{"cut off inside the very first header: nothing to show", "<|channel|>ana", want{}},
 		{"empty", "", want{}},
-
-		// What is held at the end of the reply is text, not lost.
 		{"a partial terminator at the end of a body is text", "<|channel|>final<|message|>abc<|en", want{content: "abc<|en"}},
 		{"a header with no <|message|> in reach is shown", "<|channel|>" + strings.Repeat("x", 600), want{content: "<|channel|>" + strings.Repeat("x", 600)}},
 	}
@@ -111,8 +101,6 @@ func TestHarmonySplitter_routing(t *testing.T) {
 	}
 }
 
-// Chunk-independence: the output must not depend on where the decoder happened to cut the reply. Every two-way split of every
-// fixture, every three-way split of the small ones, and random partitions down to single bytes.
 func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 	fixtures := []string{
 		realReply,
@@ -161,7 +149,6 @@ func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 				t.Fatalf("partition %q of %q:\n got  %+v\n want %+v", parts, f, got, whole)
 			}
 		}
-		// And byte by byte.
 		var bytewise []string
 		for i := 0; i < len(f); i++ {
 			bytewise = append(bytewise, f[i:i+1])
@@ -169,45 +156,5 @@ func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 		if got := splitHarmony(bytewise...); !same(got, whole) {
 			t.Fatalf("byte-by-byte of %q:\n got  %+v\n want %+v", f, got, whole)
 		}
-	}
-}
-
-// Through the public type every decode loop holds: Harmony templates get the Harmony parser, everything else is unchanged, and
-// Finish reports a reply cut off while thinking as truncated (serve turns that into finish_reason "length").
-func TestReplySplitter_harmony(t *testing.T) {
-	rs := Harmony().NewReplySplitter(nil)
-	if rs == nil {
-		t.Fatal("harmony must get a reply splitter: its output is channel messages, not plain text")
-	}
-	var r, c strings.Builder
-	for i := 0; i < len(realReply); i += 7 {
-		a, b := rs.Push(realReply[i:min(i+7, len(realReply))])
-		r.WriteString(a)
-		c.WriteString(b)
-	}
-	a, b, truncated := rs.Finish()
-	r.WriteString(a)
-	c.WriteString(b)
-	if r.String() != realAnalysis || c.String() != realFinal || truncated {
-		t.Errorf("via ReplySplitter: reasoning=%q content=%q truncated=%v", r.String(), c.String(), truncated)
-	}
-
-	cut := Harmony().NewReplySplitter(nil)
-	cut.Push("<|channel|>analysis<|message|>the answer needs more thought and")
-	if _, ans, trunc := cut.Finish(); !trunc || ans != "" {
-		t.Errorf("a reply cut off in its analysis: truncated=%v answer=%q, want truncated with no answer", trunc, ans)
-	}
-
-	// Reasoning reaches the caller on rune boundaries: a 3-byte rune split across two pushes arrives whole.
-	rs = Harmony().NewReplySplitter(nil)
-	snow := "\u2603"
-	p1, _ := rs.Push("<|channel|>analysis<|message|>a" + snow[:1])
-	p2, _ := rs.Push(snow[1:] + "b")
-	if p1 != "a" || p2 != snow+"b" {
-		t.Errorf("reasoning split a rune: %q then %q", p1, p2)
-	}
-
-	if ChatML().NewReplySplitter(nil) != nil {
-		t.Error("a template with no reasoning spec must still get no splitter")
 	}
 }
