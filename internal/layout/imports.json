@@ -589,6 +589,28 @@
         ]
       },
       "why": "internal/app/serveapp/embedders adapts causal decoders into serialized last-token-pooling embedders and resolves EmbeddingGemma 2 device placement below serveapp (SA3). It never imports serveapp."
+    },
+    {
+      "name": "serveapp-adminsock-leaf",
+      "from": [
+        "internal/app/serveapp/adminsock"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/app/serveapp/adminsock provides the 0600 Unix-domain /admin/* socket listener and CLI subcommands below serveapp (SA4). It imports no goinfer package."
+    },
+    {
+      "name": "serveapp-netguard-leaf",
+      "from": [
+        "internal/app/serveapp/netguard"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/app/serveapp/netguard provides loopback DNS-rebinding and browser cross-origin guards, constant-time API-key auth, request body caps, in-flight admission, and JSON error framing below serveapp (SA4). It imports no goinfer package."
     }
   ],
   "arrows": {
@@ -862,10 +884,12 @@
       "internal/app/connect",
       "internal/app/loadflags",
       "internal/app/pullcmd",
+      "internal/app/serveapp/adminsock",
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/embedders",
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/media",
+      "internal/app/serveapp/netguard",
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",

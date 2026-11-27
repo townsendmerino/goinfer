@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/netguard"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
@@ -205,25 +205,7 @@ func (a *adapterFlag) Set(v string) error {
 	return nil
 }
 
-// addrIsLoopback reports whether a -addr value binds ONLY the loopback
-// interface — never reachable from another machine, so unauthenticated and
-// unencrypted are the local-desktop default rather than a network exposure.
-// A bare port (":8080") and 0.0.0.0/[::] bind every interface and don't count,
-// nor does any other hostname (it might resolve off-box on some networks).
-func addrIsLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr // no port separator; treat the whole string as the host
-	}
-	if host == "" {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
+var addrIsLoopback = netguard.AddrIsLoopback
 
 // config is the resolved command line for newServer.
 type config struct {
