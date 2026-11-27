@@ -1,7 +1,8 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder/config"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -12,15 +13,16 @@ import (
 // stBuild is the state buildWeightsFromSafetensorsTo hands the per-layer loader: the load's inputs, the weight bundle it fills, the
 // tensor-name resolution (prefixes, have, tn) and the readers that merge a LoRA delta and quantize on the way in.
 type stBuild struct {
-	cfg              *Config
+	cfg              *config.Config
 	arch             *darch.Architecture
 	s                *archparts.TensorSchema
 	st               *embed.SafetensorsFile
-	quant            quantMode
+	quant            QuantMode
 	needCanonical    bool
 	skipRow4         bool
-	sink             *giwWriter
+	sink             *StreamWriter
 	abort            <-chan struct{}
+	h                Hooks
 	hd               int
 	headDim          int
 	qDim             int
@@ -63,7 +65,7 @@ func (b *stBuild) loadLayer(i int) error {
 		// qwen3.5's own double-width gated softmax attention, so only the
 		// linear (DeltaNet) layers come through here; the rest fall through
 		// to the generic tensorSchema-driven path below (olmo3's own shape).
-		if err = loadQwen35Attn(i, l, arch, hd, tn, loadMatMerged, loadF32Merged, quant, needCanonical, skipRow4); err != nil {
+		if err = loadQwen35Attn(i, l, arch, hd, tn, loadMatMerged, loadF32Merged, quant, needCanonical, skipRow4, &b.h); err != nil {
 			return err
 		}
 	} else if arch.KDA != nil && arch.IsLinearLayer(i) {
@@ -78,8 +80,8 @@ func (b *stBuild) loadLayer(i int) error {
 		if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 			return err
 		}
-		if mlaProjInt8(quant) {
-			l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
+		if b.h.MLAProjInt8(quant) {
+			l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, b.h.mlaProjF32())
 		}
 	} else if arch.Gemma4 != nil {
 		// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers
@@ -262,7 +264,7 @@ func (b *stBuild) loadLayer(i int) error {
 			}
 		}
 		if arch.MoE != nil {
-			if l.Gemma4MoE, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, needCanonical, skipRow4, sink); err != nil {
+			if l.Gemma4MoE, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, needCanonical, skipRow4, sink, &b.h); err != nil {
 				return err
 			}
 		}
@@ -273,7 +275,7 @@ func (b *stBuild) loadLayer(i int) error {
 	// prefix layers (i < FirstKDense) are dense and fall through to the gated MLP
 	// below — leaving l.Experts nil, which the forward path keys off.
 	if arch.MoE != nil && i >= arch.FirstKDense {
-		if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
+		if l.Router, err = LoadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
 			return err
 		}
 		// DeepSeek/GLM e_score_correction_bias: steers the top-k selection. Only
@@ -288,17 +290,17 @@ func (b *stBuild) loadLayer(i int) error {
 		expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
 		if fusedExperts {
 			// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
-			if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink); err != nil {
+			if l.Experts, err = LoadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink, &b.h); err != nil {
 				return err
 			}
 		} else if switchMLPExperts {
 			// MLX MoE: all experts in three stacked 3-D tensors under mlp.switch_mlp.{gate,up,down}_proj.
-			if l.Experts, err = loadSwitchMLPExperts(st, tn(i, "mlp.switch_mlp"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink); err != nil {
+			if l.Experts, err = loadSwitchMLPExperts(st, tn(i, "mlp.switch_mlp"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink, &b.h); err != nil {
 				return err
 			}
 		} else {
 			l.Experts = make([]archparts.ExpertWeights, arch.MoE.NumExperts)
-			if err = forExperts(arch.MoE.NumExperts, sink, func(e int) error {
+			if err = ForExperts(arch.MoE.NumExperts, sink, func(e int) error {
 				ex := &l.Experts[e]
 				var err error
 				if ex.Gate, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertGate, e)), expInter, hd); err != nil {
@@ -330,7 +332,7 @@ func (b *stBuild) loadLayer(i int) error {
 			// Sigmoid gate (Qwen2-MoE). GLM/DeepSeek add the shared expert ungated
 			// (SharedExpertGate empty); moeMLP reads moe.SharedUngated, not l.SharedGate.
 			if s.SharedExpertGate != "" {
-				if l.SharedGate, err = loadMat(st, tn(i, s.SharedExpertGate), 1, hd); err != nil {
+				if l.SharedGate, err = LoadMat(st, tn(i, s.SharedExpertGate), 1, hd); err != nil {
 					return err
 				}
 			}
@@ -391,7 +393,7 @@ func (b *stBuild) finish() (*darch.Weights, error) {
 				copy(dst, row)
 				return rerr
 			}
-			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.gatherTable(), needCanonical, !repackForDecode(sink), 1, streamEmbedWorkers(sink), func() rowReader { return readPLE }); err != nil {
+			if w.PerLayerTokenEmbed, err = b.h.StreamQuantizedEmbed(pleVocab, pleTotal, quant.GatherTable(), needCanonical, !RepackForDecode(sink), 1, StreamEmbedWorkers(sink), func() RowReader { return readPLE }); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {

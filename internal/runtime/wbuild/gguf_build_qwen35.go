@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
@@ -45,10 +45,10 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 		if e != nil {
 			return linalg.WeightMat{}, e
 		}
-		return quantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4), nil
+		return b.h.QuantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4), nil
 	}
 	wrapQ := func(f []float32, out, in int) linalg.WeightMat {
-		return quantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4)
+		return b.h.QuantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4)
 	}
 	loadQ35 := func(i int) error {
 		l := &w.Layers[i]
@@ -70,45 +70,45 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 				return err
 			}
 			vOff := 2 * keyDim * hidden
-			copy(qkv[vOff:], untileVHeads(qkv[vOff:], 1, numK, vpk, hvd, hidden))
+			copy(qkv[vOff:], UntileVHeads(qkv[vOff:], 1, numK, vpk, hvd, hidden))
 			d.InProjQKV = wrapQ(qkv, convDim, hidden)
 			// in_proj_z (attn_gate): all rows tiled.
 			z, err := f32mat(p+"attn_gate.weight", valueDim, hidden)
 			if err != nil {
 				return err
 			}
-			d.InProjZ = wrapQ(untileVHeads(z, 1, numK, vpk, hvd, hidden), valueDim, hidden)
+			d.InProjZ = wrapQ(UntileVHeads(z, 1, numK, vpk, hvd, hidden), valueDim, hidden)
 			// in_proj_a / in_proj_b (ssm_alpha/ssm_beta): one row per value head (hd=1).
 			a, err := f32mat(p+"ssm_alpha.weight", numV, hidden)
 			if err != nil {
 				return err
 			}
-			d.InProjA = untileVHeads(a, 1, numK, vpk, 1, hidden)
+			d.InProjA = UntileVHeads(a, 1, numK, vpk, 1, hidden)
 			b, err := f32mat(p+"ssm_beta.weight", numV, hidden)
 			if err != nil {
 				return err
 			}
-			d.InProjB = untileVHeads(b, 1, numK, vpk, 1, hidden)
+			d.InProjB = UntileVHeads(b, 1, numK, vpk, 1, hidden)
 			// conv1d (ssm_conv1d): only the V channel block tiled; trail = kernel width.
 			cw, err := f32mat(p+"ssm_conv1d.weight", convDim, q.ConvKernel)
 			if err != nil {
 				return err
 			}
 			vOffC := 2 * keyDim * q.ConvKernel
-			copy(cw[vOffC:], untileVHeads(cw[vOffC:], 1, numK, vpk, hvd, q.ConvKernel))
+			copy(cw[vOffC:], UntileVHeads(cw[vOffC:], 1, numK, vpk, hvd, q.ConvKernel))
 			d.ConvW = cw
 			// ssm_a is already −exp(A_log); reorder by value head (1-D).
 			av, err := vec(p+"ssm_a", numV)
 			if err != nil {
 				return err
 			}
-			d.NegExpA = untileVHeads(av, 1, numK, vpk, 1, 1)
+			d.NegExpA = UntileVHeads(av, 1, numK, vpk, 1, 1)
 			// dt_bias (ssm_dt.bias): reorder by value head (1-D).
 			dt, err := vec(p+"ssm_dt.bias", numV)
 			if err != nil {
 				return err
 			}
-			d.DtBias = untileVHeads(dt, 1, numK, vpk, 1, 1)
+			d.DtBias = UntileVHeads(dt, 1, numK, vpk, 1, 1)
 			// ssm_norm: per-head_v_dim gated-RMSNorm weight — NOT tiled and NOT
 			// (1+w)'d by the converter, so load raw (vec, not vnorm).
 			if d.NormW, err = vec(p+"ssm_norm.weight", hvd); err != nil {
@@ -119,7 +119,7 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 			if err != nil {
 				return err
 			}
-			d.OutProj = wrapQ(untileVHeads(op, hidden, numK, vpk, hvd, 1), hidden, valueDim)
+			d.OutProj = wrapQ(UntileVHeads(op, hidden, numK, vpk, hvd, 1), hidden, valueDim)
 			l.Delta = d
 		} else {
 			// Gated softmax layer: double-width q_proj (query ‖ gate per head, kept
@@ -163,7 +163,7 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 		}
 		// MoE FFN (every layer): router f32 (matching safetensors), 256 stacked
 		// experts quantized, shared expert quantized + f32 sigmoid gate.
-		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 			return e
 		}
 		expInter := arch.MoE.IntermediateDim
@@ -200,12 +200,12 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 	// release, a window of layers at a time, writes bit-identical per-layer output while bounding peak RSS to about one
 	// window. Non-streaming (sink == nil): all layers in parallel.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadQ35); err != nil {
+		if err := StreamLayers(w, arch, sink, loadQ35); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadQ35); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadQ35); err != nil {
 		return nil, err
 	}
 	return w, nil

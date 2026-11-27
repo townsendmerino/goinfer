@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
@@ -52,7 +52,7 @@ func (b *ggufBuild) loadLlama4(lp *archparts.Llama4Params) (*darch.Weights, erro
 			return nil
 		}
 		// Router stays f32; see the Laguna site above.
-		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 			return e
 		}
 		gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, nE)
@@ -80,12 +80,12 @@ func (b *ggufBuild) loadLlama4(lp *archparts.Llama4Params) (*darch.Weights, erro
 	// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 	// shape applies unchanged.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadL4); err != nil {
+		if err := StreamLayers(w, arch, sink, loadL4); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err = parallelLayers(arch.NumLayers, abort, loadL4); err != nil {
+	if err = ParallelLayers(arch.NumLayers, abort, loadL4); err != nil {
 		return nil, err
 	}
 	return w, nil

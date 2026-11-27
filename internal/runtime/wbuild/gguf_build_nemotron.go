@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
@@ -78,7 +78,7 @@ func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights
 			for h := range a {
 				mw.ALog[h] = float32(math.Log(-float64(a[h])))
 			}
-			if mambaProjInt8(quant) {
+			if b.h.MambaProjInt8(quant) {
 				mw.QuantizeProjections(projDim, hidden, dInner)
 			}
 			l.Mamba = mw
@@ -110,7 +110,7 @@ func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights
 			// GGUF MoE families use for this shape, applies. exp_probs_b.bias is llama.cpp's name for e_score_correction_bias.
 			moe := arch.MoE
 			// Router stays f32; see the Laguna site above.
-			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			if l.RouterBias, e = flat(p+"exp_probs_b.bias", moe.NumExperts); e != nil {
@@ -143,12 +143,12 @@ func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights
 	// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 	// shape applies unchanged.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadNemo); err != nil {
+		if err := StreamLayers(w, arch, sink, loadNemo); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadNemo); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadNemo); err != nil {
 		return nil, err
 	}
 	return w, nil

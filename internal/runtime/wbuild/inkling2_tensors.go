@@ -1,4 +1,4 @@
-package inkling2
+package wbuild
 
 import (
 	"fmt"
@@ -8,23 +8,23 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 )
 
-// MatTensor is a GGUF matrix of a layer, [Out, In], and the WeightMat it loads into.
-type MatTensor struct {
+// inklingMat is a GGUF matrix of a layer, [Out, In], and the WeightMat it loads into.
+type inklingMat struct {
 	Dst     *linalg.WeightMat
 	Name    string
 	Out, In int
 }
 
-// VecTensor is an F32 GGUF tensor of N elements, of any rank, and the slice it loads into.
-type VecTensor struct {
+// inklingVec is an F32 GGUF tensor of N elements, of any rank, and the slice it loads into.
+type inklingVec struct {
 	Dst  *[]float32
 	Name string
 	N    int
 }
 
-// LayerTensors lists physical layer i's tensors under llama.cpp's names (conversion/inkling2.py), prefix included, and where
+// inkling2Tensors lists physical layer i's tensors under llama.cpp's names (conversion/inkling2.py), prefix included, and where
 // each loads in lw, which it gives an Inkling2LayerWeights. The router and the experts are the caller's.
-func LayerTensors(a *darch.Architecture, lw *darch.LayerWeights, i int) ([]MatTensor, []VecTensor) {
+func inkling2Tensors(a *darch.Architecture, lw *darch.LayerWeights, i int) ([]inklingMat, []inklingVec) {
 	p := a.Inkling2
 	x := &archparts.Inkling2LayerWeights{}
 	lw.Inkling = x
@@ -36,7 +36,7 @@ func LayerTensors(a *darch.Architecture, lw *darch.LayerWeights, i int) ([]MatTe
 	if swa {
 		extent = a.SlidingWindow
 	}
-	mats := []MatTensor{
+	mats := []inklingMat{
 		{&lw.QProj, pf + "attn_q.weight", qDim, hidden},
 		{&lw.KProj, pf + "attn_k.weight", kvDim, hidden},
 		{&lw.VProj, pf + "attn_v.weight", kvDim, hidden},
@@ -45,7 +45,7 @@ func LayerTensors(a *darch.Architecture, lw *darch.LayerWeights, i int) ([]MatTe
 		{&x.SinkProj, pf + "attn_sink_proj.weight", nH, hidden},
 		{&x.Rel, pf + "attn_rel.weight", nH * p.DRel, hidden},
 	}
-	vecs := []VecTensor{
+	vecs := []inklingVec{
 		{&x.QClip, pf + "attn_q_clip.weight", qDim},
 		{&x.RelClip, pf + "attn_rel_clip.weight", nH * p.DRel},
 		{&x.RelBias, pf + "attn_rel_bias.weight", extent * p.DRel},
@@ -59,24 +59,24 @@ func LayerTensors(a *darch.Architecture, lw *darch.LayerWeights, i int) ([]MatTe
 	}
 	nq := 1
 	if swa {
-		vecs = append(vecs, VecTensor{&lw.PreAttnNorm, pf + "attn_norm.weight", hidden})
+		vecs = append(vecs, inklingVec{&lw.PreAttnNorm, pf + "attn_norm.weight", hidden})
 	} else {
 		nq = 3
-		mats = append(mats, MatTensor{&x.KConvProj, pf + "attn_k_conv_proj.weight", nKV * K, hidden},
-			MatTensor{&x.VConvProj, pf + "attn_v_conv_proj.weight", nKV * K, hidden})
-		vecs = append(vecs, VecTensor{&lw.PreAttnNorm, pf + "attn_q_inp_norm.weight", hidden},
-			VecTensor{&x.KInpNorm, pf + "attn_k_inp_norm.weight", hidden}, VecTensor{&x.VInpNorm, pf + "attn_v_inp_norm.weight", hidden})
+		mats = append(mats, inklingMat{&x.KConvProj, pf + "attn_k_conv_proj.weight", nKV * K, hidden},
+			inklingMat{&x.VConvProj, pf + "attn_v_conv_proj.weight", nKV * K, hidden})
+		vecs = append(vecs, inklingVec{&lw.PreAttnNorm, pf + "attn_q_inp_norm.weight", hidden},
+			inklingVec{&x.KInpNorm, pf + "attn_k_inp_norm.weight", hidden}, inklingVec{&x.VInpNorm, pf + "attn_v_inp_norm.weight", hidden})
 	}
 	if i > 0 {
-		vecs = append(vecs, VecTensor{&x.AttnResQuery, pf + "attn_res_query.weight", nq * hidden})
+		vecs = append(vecs, inklingVec{&x.AttnResQuery, pf + "attn_res_query.weight", nq * hidden})
 	}
 	if p.LoopPasses > 1 && i >= p.LoopStart && i < p.LoopEnd {
-		vecs = append(vecs, VecTensor{&x.MsgQuery, pf + "loop_msg_query.weight", 4 * hidden})
+		vecs = append(vecs, inklingVec{&x.MsgQuery, pf + "loop_msg_query.weight", 4 * hidden})
 		for c, kind := range []string{"q", "k", "v", "ffn"} {
 			ct := &x.Ctrl[c]
-			vecs = append(vecs, VecTensor{&ct.Down, pf + "loop_" + kind + "_ctrl_down.weight", p.GateRank * 2 * hidden},
-				VecTensor{&ct.Gain, pf + "loop_" + kind + "_ctrl_gain.weight", hidden * p.GateRank},
-				VecTensor{&ct.Forget, pf + "loop_" + kind + "_ctrl_forget.weight", hidden * p.GateRank})
+			vecs = append(vecs, inklingVec{&ct.Down, pf + "loop_" + kind + "_ctrl_down.weight", p.GateRank * 2 * hidden},
+				inklingVec{&ct.Gain, pf + "loop_" + kind + "_ctrl_gain.weight", hidden * p.GateRank},
+				inklingVec{&ct.Forget, pf + "loop_" + kind + "_ctrl_forget.weight", hidden * p.GateRank})
 		}
 	}
 	return mats, vecs

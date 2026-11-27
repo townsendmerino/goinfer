@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ func (b *ggufBuild) loadGemma4(g4 *archparts.Gemma4Params) (*darch.Weights, erro
 	var err error
 	if g4.HiddenSizePerLayerInput > 0 {
 		pleTotal := arch.NumLayers * g4.HiddenSizePerLayerInput
-		if err = embInto(&w.PerLayerTokenEmbed, "per_layer_token_embd.weight", cfg.VocabSize, pleTotal, quant.gatherTable()); err != nil {
+		if err = embInto(&w.PerLayerTokenEmbed, "per_layer_token_embd.weight", cfg.VocabSize, pleTotal, quant.GatherTable()); err != nil {
 			return nil, err
 		}
 		if w.PerLayerModelProj, err = mat("per_layer_model_proj.weight", pleTotal, hidden); err != nil {
@@ -124,7 +124,7 @@ func (b *ggufBuild) loadGemma4(g4 *archparts.Gemma4Params) (*darch.Weights, erro
 				return e
 			}
 			// Router stays f32 (see the Laguna site above); the safetensors Gemma4 loader does the same.
-			if gm.RouterProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+			if gm.RouterProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			if gm.RouterScale, e = vec(p+"ffn_gate_inp.scale", hidden); e != nil {
@@ -168,12 +168,12 @@ func (b *ggufBuild) loadGemma4(g4 *archparts.Gemma4Params) (*darch.Weights, erro
 		// this function's doc), so release them before the layers: holding them is a flat floor under the whole stream.
 		w.Embed, w.LMHead, w.PosEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
 		w.PerLayerTokenEmbed, w.PerLayerModelProj = linalg.WeightMat{}, linalg.WeightMat{}
-		if err := streamLayers(w, arch, sink, loadG4); err != nil {
+		if err := StreamLayers(w, arch, sink, loadG4); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
+	if err = ParallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 		return nil, err
 	}
 	// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/the Gemma 4 program walk).

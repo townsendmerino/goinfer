@@ -1,8 +1,9 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder/config"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -17,21 +18,22 @@ type ggufBuild struct {
 	arch                    *darch.Architecture
 	g                       *embed.GGUFFile
 	w                       *darch.Weights
-	quant                   quantMode
+	quant                   QuantMode
 	needCanonical, skipRow4 bool
-	sink                    *giwWriter
+	sink                    *StreamWriter
 	abort                   <-chan struct{}
 	hidden                  int
-	streamMat               func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error)
+	streamMat               func(name string, out, in int, mode QuantMode, rowSrc func(r int) int) (linalg.WeightMat, error)
 	mat                     func(name string, out, in int) (linalg.WeightMat, error)
 	vec, vnorm              func(name string, n int) ([]float32, error)
 	stackedExperts          func(name string, out, in, nExpert int) ([]linalg.WeightMat, error)
 	hd                      int
 	id                      string
 	permMat                 func(name string, out, in, nHead int) (linalg.WeightMat, error)
-	cfg                     *Config
-	embInto                 func(dst *linalg.WeightMat, name string, out, in int, q quantMode) error
+	cfg                     *config.Config
+	embInto                 func(dst *linalg.WeightMat, name string, out, in int, q QuantMode) error
 	fusedSplit              func(name string, outTotal, in, rowStart, rows int) (linalg.WeightMat, error)
+	h                       Hooks
 }
 
 // loadFamily runs the family's own layer loader, or the shared loadLayers for a family without one.
@@ -72,7 +74,7 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 	// llama.cpp permutes the q/k weights (and their per-row biases / head-dim
 	// norms) only for the NORM rope type (ggufQKPermuted); the NEOX rope type
 	// leaves q/k in HF order, so no un-permutation is needed there.
-	permuteQK := ggufQKPermuted(arch.Name)
+	permuteQK := GGUFQKPermuted(arch.Name)
 	loadQK := func(name string, out, nHead int) (linalg.WeightMat, error) {
 		if permuteQK {
 			return permMat(name, out, hidden, nHead)
@@ -95,8 +97,8 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 			if err = loadDeepseekAttnGGUF(g, p, l, arch); err != nil {
 				return err
 			}
-			if mlaProjInt8(quant) {
-				l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, mlaProjF32ForTest)
+			if b.h.MLAProjInt8(quant) {
+				l.MLA.QuantizeProjections(arch.MLA, arch.NumHeads, arch.HiddenDim, b.h.mlaProjF32())
 			}
 		} else if arch.Name == "phi3" {
 			// Phi-3/Phi-4: fused attn_qkv [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output
@@ -137,8 +139,8 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 					return fmt.Errorf("decoder(gguf): qkv bias layer %d: %w", i, errors.Join(qe, ke, ve))
 				}
 				if permuteQK {
-					qb = ggufInvPermute(qb, qDim, 1, arch.NumHeads)
-					kb = ggufInvPermute(kb, kvDim, 1, arch.NumKVHeads)
+					qb = GGUFInvPermute(qb, qDim, 1, arch.NumHeads)
+					kb = GGUFInvPermute(kb, kvDim, 1, arch.NumKVHeads)
 				}
 				l.QBias, l.KBias, l.VBias = qb, kb, vb
 			}
@@ -155,7 +157,7 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 					return kerr
 				}
 				if permuteQK {
-					qn, kn = ggufInvPermuteVec(qn), ggufInvPermuteVec(kn)
+					qn, kn = GGUFInvPermuteVec(qn), GGUFInvPermuteVec(kn)
 				}
 				l.QNorm, l.KNorm = qn, kn
 			}
@@ -194,7 +196,7 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 			// has no router and falls through to the dense FFN below.
 			expInter := arch.MoE.IntermediateDim
 			// Router stays f32; see the Laguna site above.
-			if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); err != nil {
+			if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, QuantNone, func(r int) int { return r * hidden }); err != nil {
 				return err
 			}
 			if arch.MoE.RouterSigmoid && arch.Name != "flint" { // DeepSeek/GLM e_score_correction_bias (a bias term; Flint has none)
@@ -263,12 +265,12 @@ func (b *ggufBuild) loadLayers() (*darch.Weights, error) {
 	}
 	if sink != nil {
 		// Build, write and free a window of layers at a time (streamLayers): peak RAM is one window, not the model.
-		if err := streamLayers(w, arch, sink, loadLayer); err != nil {
+		if err := StreamLayers(w, arch, sink, loadLayer); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadLayer); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadLayer); err != nil {
 		return nil, err
 	}
 	return w, nil

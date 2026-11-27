@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -271,9 +272,9 @@ func (m *Model) residentHostSideBytes(backend string) int64 {
 		return 0
 	}
 	w := m.w
-	n := wmBytes(&w.PosEmbed) + wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
+	n := wbuild.WMBytes(&w.PosEmbed) + wbuild.WMBytes(&w.PerLayerTokenEmbed) + wbuild.WMBytes(&w.PerLayerModelProj)
 	if w.LMHead.Rows() != 0 {
-		n += wmBytes(&w.Embed) // untied: the table stays on the host (tied, it IS the uploaded LM head)
+		n += wbuild.WMBytes(&w.Embed) // untied: the table stays on the host (tied, it IS the uploaded LM head)
 	}
 	return n
 }
@@ -310,7 +311,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 	}
 	w := m.w
 	count := func(mat *linalg.WeightMat) {
-		dense += wmBytes(mat)
+		dense += wbuild.WMBytes(mat)
 		mmapDense += mmapAliasedBytes(m, mat)
 	}
 	count(&w.Embed)
@@ -335,7 +336,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		var expertBytes, mmapEBytes int64
 		for j := range l.Experts {
 			e := &l.Experts[j]
-			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
+			expertBytes += wbuild.WMBytes(&e.Gate) + wbuild.WMBytes(&e.Up) + wbuild.WMBytes(&e.Down)
 			mmapEBytes += mmapAliasedBytes(m, &e.Gate) + mmapAliasedBytes(m, &e.Up) + mmapAliasedBytes(m, &e.Down)
 		}
 		fullExpertBytes = append(fullExpertBytes, expertBytes)
@@ -363,7 +364,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		// copies float arrays), so there is no mmap counterpart.
 		if mla := l.MLA; mla != nil {
 			dense += f32SliceBytes(mla.QAProj, mla.QBProj, mla.QProj, mla.KVAProj, mla.KVBProj, mla.OProj, mla.GProj) +
-				wmBytes(&mla.QAQ) + wmBytes(&mla.QBQ) + wmBytes(&mla.QQ) + wmBytes(&mla.KVAQ) + wmBytes(&mla.OQ)
+				wbuild.WMBytes(&mla.QAQ) + wbuild.WMBytes(&mla.QBQ) + wbuild.WMBytes(&mla.QQ) + wbuild.WMBytes(&mla.KVAQ) + wbuild.WMBytes(&mla.OQ)
 		}
 		// Kimi Delta Attention (Bailing Hybrid's linear layers): six quantized projections, the three depthwise conv kernels and
 		// the small f32 gates.
@@ -375,7 +376,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.Mamba; mb != nil {
-			dense += f32SliceBytes(mb.InProj, mb.ConvW, mb.OutProj) + wmBytes(&mb.InQ) + wmBytes(&mb.OutQ)
+			dense += f32SliceBytes(mb.InProj, mb.ConvW, mb.OutProj) + wbuild.WMBytes(&mb.InQ) + wbuild.WMBytes(&mb.OutQ)
 		}
 		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
 		if sc := l.ShortConv; sc != nil {
@@ -390,7 +391,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 			count(&mo.RouterProj)
 			var fusedBytes, mmapFusedBytes int64
 			for e := range mo.ExpertsGateUp {
-				fusedBytes += wmBytes(&mo.ExpertsGateUp[e]) + wmBytes(&mo.ExpertsDown[e])
+				fusedBytes += wbuild.WMBytes(&mo.ExpertsGateUp[e]) + wbuild.WMBytes(&mo.ExpertsDown[e])
 				mmapFusedBytes += mmapAliasedBytes(m, &mo.ExpertsGateUp[e]) + mmapAliasedBytes(m, &mo.ExpertsDown[e])
 			}
 			fullExpertBytes = append(fullExpertBytes, fusedBytes)

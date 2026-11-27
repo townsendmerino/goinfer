@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"

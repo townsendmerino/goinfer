@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 44480 -- raised for Inkling 2: its GGUF builder (gguf_build_inkling2.go), the loader dispatch, the walker case and the fingerprint's omitzero tag; its forward is internal/runtime/inkling2
+lines 38921 -- raised for Inkling 2: the walker case, its cache windows and host adapter, and the fingerprint's omitzero tag; its builder is internal/runtime/wbuild and its forward internal/runtime/inkling2
 model_methods 479 -- held at its count when the ceiling was set
 model_knot_lines 13500 -- raised for Inkling 2: the KVCache conv windows, the walker's opInkling2 case and its token state

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 )
 
 // GIWFormatVersion is the weights format version this build writes and reads.
@@ -33,27 +33,14 @@ var giwF32Kind1ForTest bool
 // giwIslandsF32ForTest writes bf16 island matrices as standalone f32 arrays for round-trip tests.
 var giwIslandsF32ForTest bool
 
-// giwWriter wraps giwcodec.Writer with decoder streaming state (tables, layerBudget, testHooks).
+// giwWriter wraps wbuild.StreamWriter so decoder/kvsnapshot.go can attach snapshot helpers.
 type giwWriter struct {
-	giwcodec.Writer
-	tables      map[*linalg.WeightMat]*streamedTable
-	layerBudget int64
-	testHooks   streamTestHooks
+	wbuild.StreamWriter
 }
 
-func newGIWWriter(sink io.Writer, target GIWTarget, layerBudget int64, hooks streamTestHooks) *giwWriter {
-	w := &giwWriter{
-		Writer:      giwcodec.Writer{Sink: sink, Target: target, F32Kind1: giwF32Kind1ForTest, IslandsF32: giwIslandsF32ForTest},
-		layerBudget: layerBudget,
-		testHooks:   hooks,
-	}
-	w.Writer.HeadTableFn = func(_ *giwcodec.Writer, dst *linalg.WeightMat) bool {
-		if t := w.tables[dst]; t != nil {
-			w.streamTable(t)
-			return true
-		}
-		return false
-	}
+func newGIWWriter(sink io.Writer, target GIWTarget, layerBudget int64, hooks wbuild.StreamTestHooks) *giwWriter {
+	w := &giwWriter{StreamWriter: *wbuild.NewStreamWriter(sink, target, layerBudget, hooks, wbuildHooks())}
+	w.InitHeadTable()
 	return w
 }
 

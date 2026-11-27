@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
@@ -74,9 +74,9 @@ func (b *ggufBuild) loadGptOss() (*darch.Weights, error) {
 			return e
 		}
 		// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases). Router stays f32 regardless of the ambient
-		// quant mode (matching gptoss_safetensors.go and qwen35's streamMat(..., quantNone, ...) below): top-k selection is
+		// quant mode (matching gptoss_safetensors.go and qwen35's streamMat(..., QuantNone, ...) below): top-k selection is
 		// discrete, so quantizing it flips which experts win rather than adding rounding noise. Plain mat() would quantize it.
-		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nExp, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nExp, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 			return e
 		}
 		if l.RouterBias, e = vec(p+"ffn_gate_inp.bias", nExp); e != nil {
@@ -108,12 +108,12 @@ func (b *ggufBuild) loadGptOss() (*darch.Weights, error) {
 	// RowDequantizer reads keyed by the same name), so the loadQ35 shape applies: streamLayers' build, write and release
 	// bounds peak RSS to about one window. Non-streaming (sink == nil): all layers in parallel.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadGptOss); err != nil {
+		if err := StreamLayers(w, arch, sink, loadGptOss); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadGptOss); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadGptOss); err != nil {
 		return nil, err
 	}
 	return w, nil

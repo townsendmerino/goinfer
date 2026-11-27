@@ -26,7 +26,7 @@ func streamLayersProbe(t *testing.T, n int, arch *darch.Architecture, budget fun
 	mk(&one)
 	probe.Layer(&one)
 	w := &darch.Weights{Arch: arch, Layers: make([]darch.LayerWeights, n)}
-	sink := &giwWriter{Writer: giwcodec.Writer{Sink: io.Discard, Arch: arch}, layerBudget: budget(probe.N)}
+	sink := &giwWriter{Writer: giwcodec.Writer{Sink: io.Discard, Arch: arch}, LayerBudget: budget(probe.N)}
 	var mu sync.Mutex
 	var inFlight, peak atomic.Int64
 	err = streamLayers(w, arch, sink, func(i int) error {
@@ -112,7 +112,7 @@ func TestStreamLayers_everyWindowWritesTheSameBytes(t *testing.T) {
 	} {
 		var ref []byte
 		for _, k := range []int{1, 2, 3, 64} {
-			ctx := withStreamTestHooks(context.Background(), streamTestHooks{layerWindow: k})
+			ctx := withStreamTestHooks(context.Background(), streamTestHooks{LayerWindow: k})
 			var b bytes.Buffer
 			if err := c.stream(ctx, &b); err != nil {
 				t.Fatalf("%s, window %d: %v", c.src, k, err)

@@ -37,7 +37,7 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 	// Merge path: fold the delta into a copy of W, then matmul.
 	wm := slices.Clone(w)
 	ad := &loraAdapter{deltas: map[string]loraDelta{"w": *d}}
-	if err := ad.merge("w", wm, out, in); err != nil {
+	if err := ad.Merge("w", wm, out, in); err != nil {
 		t.Fatal(err)
 	}
 	yMerged := make([]float32, out)

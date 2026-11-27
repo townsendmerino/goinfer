@@ -1,11 +1,11 @@
-package decoder
+package wbuild
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// wmBytes is one weight matrix's in-memory footprint, read from the backing slices, not computed from Rows()*Cols(): a
+// WMBytes is one weight matrix's in-memory footprint, read from the backing slices, not computed from Rows()*Cols(): a
 // quantized matrix carries per-group scales beside its packed payload and int4 packs two values per byte, so a
 // dimension-derived figure is wrong both ways. Asking the matrix what it holds cannot drift when a new kind is added.
-func wmBytes(w *linalg.WeightMat) int64 {
+func WMBytes(w *linalg.WeightMat) int64 {
 	var n int64
 	if q8, sc, _, ok := w.Int8(); ok {
 		n += int64(len(q8)) + 4*int64(len(sc))

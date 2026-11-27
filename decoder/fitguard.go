@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -354,8 +355,9 @@ func measureBytesPerElem(q quantMode) float64 {
 		// q4k: Q4_K tensors are 4.5 bpw like int4, the rest int8 — int4 is its lower bound too.
 		probe = quantInt4
 	}
-	wm := quantizeWM(linalg.WrapF32(f32, n, n), probe)
-	if b := wmBytes(&wm); b > 0 {
+	h := wbuildHooks()
+	wm := h.QuantizeWM(linalg.WrapF32(f32, n, n), probe)
+	if b := wbuild.WMBytes(&wm); b > 0 {
 		return float64(b) / float64(n*n)
 	}
 	// quantizeWM is a no-op for quantNone and anything it does not handle; f32 is the answer then.
@@ -439,10 +441,10 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 	defer st.Close()
 	r := fitRates(q)
 	r.Matrix = quantBytesPerElem(q)
-	// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q.
-	r.Embedding = quantBytesPerElem(q.embedding())
+	// The token embedding and LM head are held at q.Embedding() (int8 under int4), not at q.
+	r.Embedding = quantBytesPerElem(q.Embedding())
 	if cfg, cerr := loadConfig(os.DirFS(dir), "config.json"); cerr == nil {
-		if qc, qerr := parseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
+		if qc, qerr := wbuild.ParseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
 			r.MLXBits = qc.Bits
 		}
 	}

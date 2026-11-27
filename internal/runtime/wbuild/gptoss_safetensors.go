@@ -1,7 +1,8 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder/config"
 	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -27,7 +28,7 @@ import (
 // MEMORY. The experts never materialize as f32: gpt-oss-20b is ~76GB dequantized across
 // all layers. Each output row is dequantized on demand straight into streamQuantized,
 // which emits the quantized WeightMat row by row.
-func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*darch.Weights, error) {
+func buildGptOssWeights(cfg *config.Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant QuantMode, embedInt4, needCanonical, skipRow4 bool, h *Hooks) (*darch.Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -40,21 +41,21 @@ func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
 	// quantizeWM. streamQ is streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row; see this
 	// file's MEMORY note on why they never materialize as f32).
-	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
-		return quantizeLayerWM(m, mode, needCanonical, skipRow4)
+	qw := func(m linalg.WeightMat, mode QuantMode) linalg.WeightMat {
+		return h.QuantizeLayerWM(m, mode, needCanonical, skipRow4)
 	}
-	streamQ := func(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-		return streamQuantizedLayer(rows, cols, mode, needCanonical, skipRow4, rowInto)
+	streamQ := func(rows, cols int, mode QuantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+		return h.StreamQuantizedLayer(rows, cols, mode, needCanonical, skipRow4, rowInto)
 	}
-	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+	if w.Embed, err = LoadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
+	w.Embed = h.QuantizeEmbedWM(w.Embed, quant.EmbeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := LoadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = h.QuantizeEmbedWM(head, quant.EmbeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	} else {
 		arch.TiedLMHead = true // gpt-oss ships lm_head; tie only if a variant omits it
@@ -125,11 +126,11 @@ func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 			{&l.VProj, &l.VBias, "v_proj", kvDim, hidden},
 			{&l.OProj, &l.OBias, "o_proj", hidden, qDim},
 		} {
-			mat, merr := loadMat(st, p+"self_attn."+m.name+".weight", m.out, m.in)
+			mat, merr := LoadMat(st, p+"self_attn."+m.name+".weight", m.out, m.in)
 			if merr != nil {
 				return nil, merr
 			}
-			*m.dst = qw(mat, matmulQuant(quant, m.name))
+			*m.dst = qw(mat, MatmulQuant(quant, m.name))
 			if *m.bias, err = bf16Rows(p+"self_attn."+m.name+".bias", m.out); err != nil {
 				return nil, err
 			}
@@ -140,7 +141,7 @@ func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 		}
 		// Router: weight + a plain logit bias (gpt-oss adds it BEFORE top-k, unlike
 		// DeepSeek/GLM's selection-only correction bias that shares the field).
-		rmat, rerr := loadMat(st, p+"mlp.router.weight", nE, hidden)
+		rmat, rerr := LoadMat(st, p+"mlp.router.weight", nE, hidden)
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -169,19 +170,19 @@ func buildGptOssWeights(cfg *Config, arch *darch.Architecture, st *embed.Safeten
 		l.Experts = make([]archparts.ExpertWeights, nE)
 		for e := range nE {
 			// INTERLEAVED: gate row k is tensor row 2k, up row k is 2k+1.
-			gm, gerr := streamQ(expInter, hidden, matmulQuant(quant, "expert_gate"), func(r int, dst []float32) error {
+			gm, gerr := streamQ(expInter, hidden, MatmulQuant(quant, "expert_gate"), func(r int, dst []float32) error {
 				return gateUp(e, 2*r, dst)
 			})
 			if gerr != nil {
 				return nil, fmt.Errorf("decoder(gptoss-st): layer %d expert %d gate: %w", i, e, gerr)
 			}
-			um, uerr := streamQ(expInter, hidden, matmulQuant(quant, "expert_up"), func(r int, dst []float32) error {
+			um, uerr := streamQ(expInter, hidden, MatmulQuant(quant, "expert_up"), func(r int, dst []float32) error {
 				return gateUp(e, 2*r+1, dst)
 			})
 			if uerr != nil {
 				return nil, fmt.Errorf("decoder(gptoss-st): layer %d expert %d up: %w", i, e, uerr)
 			}
-			dm, derr := streamQ(hidden, expInter, matmulQuant(quant, "expert_down"), func(r int, dst []float32) error {
+			dm, derr := streamQ(hidden, expInter, MatmulQuant(quant, "expert_down"), func(r int, dst []float32) error {
 				return down(e, r, dst)
 			})
 			if derr != nil {

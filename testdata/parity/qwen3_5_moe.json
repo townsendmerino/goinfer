@@ -8,15 +8,15 @@
   ],
   "own": [
     "decoder/forward_qwen35.go",
-    "decoder/gguf_qwen35.go",
+    "internal/runtime/wbuild/gguf_qwen35.go",
     "internal/runtime/families/arch_qwen3_5_moe.go",
     "decoder/generate_vl_qwen35.go",
-    "decoder/gguf_build_qwen35.go"
+    "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35-tiny"
   ],
-  "deps_hash": "sha256:99a4b3f9b3eecae032aa8b6749a9edb9b0bee10321c7af8bcf8adb54c2fe503d",
+  "deps_hash": "sha256:7813283ad4bc0d547e4adbb6e115f7acac4130d4cfc02efd085171e062363ee7",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

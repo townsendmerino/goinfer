@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
@@ -86,7 +86,7 @@ func (b *ggufBuild) loadLaguna() (*darch.Weights, error) {
 		moe := arch.MoE
 		// Router stays f32 regardless of the ambient quant mode (matching qwen35/gptoss above): top-k selection is discrete, so
 		// quantizing it flips which experts win rather than adding rounding noise.
-		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 			return e
 		}
 		// exp_probs_b is llama.cpp's name for e_score_correction_bias.
@@ -121,12 +121,12 @@ func (b *ggufBuild) loadLaguna() (*darch.Weights, error) {
 	// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 	// shape applies unchanged.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadLaguna); err != nil {
+		if err := StreamLayers(w, arch, sink, loadLaguna); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadLaguna); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadLaguna); err != nil {
 		return nil, err
 	}
 	return w, nil

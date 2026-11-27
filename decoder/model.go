@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"path/filepath"
 	"slices"
@@ -524,7 +525,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, weightLoadOpts{quant: quant, embedInt4: opts.EmbedInt4, needCanonical: wantsCanonicalInt4(opts.Backend, be), skipRow4: !wantsRow4Fallback(opts.layoutBackend()), lora: lora, abort: opts.LoadAbort})
+	w, err := loadWeights(dir, weightLoadOpts{quant: quant, embedInt4: opts.EmbedInt4, needCanonical: wantsCanonicalInt4(opts.Backend, be), skipRow4: !wbuild.WantsRow4Fallback(opts.layoutBackend()), lora: lora, abort: opts.LoadAbort})
 	if err != nil {
 		closeBackend(be)
 		return nil, err
@@ -613,7 +614,7 @@ func parseQuant(q string) (quantMode, error) {
 // checkHalf16Load refuses a 16-bit weight mode where it cannot run: it is a safetensors, CPU-path mode (no backend uploads a 16-bit
 // matrix, and a GGUF load or a bundle has no form for one).
 func checkHalf16Load(q quantMode, dir, backend string) error {
-	if !q.half16() {
+	if !q.Half16() {
 		return nil
 	}
 	if strings.HasSuffix(dir, ".gguf") {

@@ -9,9 +9,10 @@
     "internal/runtime/families/arch_inkling2.go",
     "internal/runtime/inkling2/kernels.go",
     "internal/runtime/inkling2/visit.go",
-    "internal/runtime/inkling2/tensors.go",
+    "internal/runtime/wbuild/inkling2_tensors.go",
     "internal/runtime/archparts/inkling2.go",
-    "decoder/gguf_build_inkling2.go",
+    "internal/runtime/wbuild/gguf_build_inkling2.go",
+    "decoder/inkling2_host.go",
     "decoder/inkling2_test.go",
     "scripts/inkling2/pin_tiny.py",
     "scripts/inkling2/convert_tiny.py"
