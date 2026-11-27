@@ -13,7 +13,7 @@
     "internal/runtime/families/arch_gpt_oss.go",
     "internal/runtime/wbuild/gguf_build_gptoss.go"
   ],
-  "deps_hash": "sha256:4716438fe04ecca7320ec7be75b7922e8f60c0ff493748bcc8d39bf59f00eb33",
+  "deps_hash": "sha256:9b1fad4a5d65ac8b3fb80759b28c62a9e42f3a26ee11ac70b8191571507c52c0",
   "status": "validated",
   "validated_at": "960ef65a7",
   "date": "2026-10-26",
