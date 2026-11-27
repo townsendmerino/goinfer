@@ -1249,7 +1249,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/runtime/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
 | `internal/vision` | `internal/vision/imgproc` |  |
 | `internal/wrappedupload` | `decoder` |  |
-| `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
+| `multimodal` | `internal/audio`, `internal/vision`, `internal/vision/imgproc`, `tokenizer` |  |
 | `pull` | `internal/runtime/diskfree` | `decoder`, `tokenizer` |
 | `server` | `internal/app/inproc`, `internal/app/serveapp` |  |
 

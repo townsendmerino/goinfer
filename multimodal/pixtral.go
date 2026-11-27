@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/vision"
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
 )
 
 // Ministral 3's image path:
@@ -134,7 +134,7 @@ func PixtralPreprocess(data []byte, c PixtralPreprocessConfig) ([]float32, int, 
 	}
 	src := extractRGB[uint8](img, h, w)
 	th, tw := PixtralResizeTarget(h, w, c)
-	res := vision.ResizeBicubicAA(src, h, w, th, tw) // torchvision's antialiased bicubic on uint8, as HF's fast processor
+	res := imgproc.ResizeBicubicAA(src, h, w, th, tw) // torchvision's antialiased bicubic on uint8, as HF's fast processor
 	out := make([]float32, 3*th*tw)
 	for y := range th {
 		for x := range tw {

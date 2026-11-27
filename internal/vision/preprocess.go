@@ -115,20 +115,3 @@ func Preprocess(data []byte, cfg Config) (*PixelValues, error) {
 	imgproc.ResizeNormalize(img, out, size, imgproc.Norm{Mean: cfg.Mean, Std: cfg.Std})
 	return &PixelValues{Data: out, Size: size}, nil
 }
-
-// ResizeBicubicAA resizes packed 8-bit RGB (HWC) from h x w to th x tw with torchvision's antialiased bicubic on uint8
-// (imgproc.ResizeBicubicAA).
-func ResizeBicubicAA(src []uint8, h, w, th, tw int) []uint8 {
-	return imgproc.ResizeBicubicAA(src, h, w, th, tw)
-}
-
-// ResizeBilinearAA is ResizeBicubicAA with torchvision's antialiased bilinear (imgproc.ResizeBilinearAA).
-func ResizeBilinearAA(src []uint8, h, w, th, tw int) []uint8 {
-	return imgproc.ResizeBilinearAA(src, h, w, th, tw)
-}
-
-// ResizeBilinearAAFloat resizes a channels-last float32 grid (h x w x c) to th x tw as torch's antialiased
-// F.interpolate(mode="bilinear") does (imgproc.ResizeBilinearAAFloat).
-func ResizeBilinearAAFloat(src []float32, h, w, c, th, tw int) []float32 {
-	return imgproc.ResizeBilinearAAFloat(src, h, w, c, th, tw)
-}
