@@ -12,13 +12,15 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 )
 
 // programFingerprint is a SHA-256 over p's operations and parameters.
 // Two programs with the same fingerprint run the same operations with the
 // same parameters. The encoding is a reflection walk that writes each struct field's name (its `fp` tag where it has one)
 // and value (floats by their bits, slices with their length) and no type names, so renaming a type, or a field that keeps its
-// tag, leaves it unchanged, and adding a field changes it.
+// tag, leaves it unchanged, and adding a field changes it, except a field tagged `fp:"name,omitzero"`, which is left out while
+// it holds its zero value: a family's own parameter group then moves only that family's programs.
 func programFingerprint(p *layerProgram) string {
 	h := sha256.New()
 	writeValue(h, reflect.ValueOf(*p))
@@ -38,7 +40,11 @@ func writeValue(h hash.Hash, v reflect.Value) {
 		for i := range v.NumField() {
 			name := t.Field(i).Name
 			if tag := t.Field(i).Tag.Get("fp"); tag != "" {
-				name = tag
+				var opt string
+				name, opt, _ = strings.Cut(tag, ",")
+				if opt == "omitzero" && v.Field(i).IsZero() {
+					continue
+				}
 			}
 			h.Write([]byte(name))
 			h.Write([]byte{'='})

@@ -24,27 +24,28 @@ import "github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 type cacheState string
 
 const (
-	statePositional  cacheState = "positional KV"        // keys/vals per position on global (append-forever) layers
-	stateRing        cacheState = "sliding-window ring"  // local layers' physical rings (rings, localAny)
-	stateInt8KV      cacheState = "int8 KV + scales"     // keysQ/valsQ/keyScale/valScale under KVQuant i8
-	stateMLALatent   cacheState = "MLA latent"           // DeepSeek/Kimi compressed-KV latent per position
-	stateDeltaNet    cacheState = "DeltaNet state"       // Gated DeltaNet conv window + matrix state (recurrent)
-	stateShortConv   cacheState = "short-conv window"    // LFM2's rolling conv window (recurrent)
-	stateMamba2      cacheState = "Mamba-2 state"        // conv window + SSM state (recurrent)
-	stateKDA         cacheState = "KDA state"            // Bailing Hybrid's three conv windows + matrix state (recurrent)
-	stateImageBlocks cacheState = "image blocks"         // VL position ranges that attend bidirectionally
-	stateMRoPE       cacheState = "m-RoPE positions"     // Qwen2.5-VL per-position (t,h,w) rotary positions + delta
-	stateDeepstack   cacheState = "deepstack rows"       // Qwen3-VL visual rows added after early layers during the image prefill
-	stateCapture     cacheState = "capture rows"         // per-forward hidden-state capture (EAGLE, sub-layer test hooks)
-	stateTree        cacheState = "tree-verify mask"     // tree attention mask and row positions (tested plumbing; unset in production)
-	stateAdapter     cacheState = "LoRA adapter binding" // the compute-time adapter this stream projects through
+	statePositional  cacheState = "positional KV"          // keys/vals per position on global (append-forever) layers
+	stateRing        cacheState = "sliding-window ring"    // local layers' physical rings (rings, localAny)
+	stateInt8KV      cacheState = "int8 KV + scales"       // keysQ/valsQ/keyScale/valScale under KVQuant i8
+	stateMLALatent   cacheState = "MLA latent"             // DeepSeek/Kimi compressed-KV latent per position
+	stateDeltaNet    cacheState = "DeltaNet state"         // Gated DeltaNet conv window + matrix state (recurrent)
+	stateShortConv   cacheState = "short-conv window"      // LFM2's rolling conv window (recurrent)
+	stateMamba2      cacheState = "Mamba-2 state"          // conv window + SSM state (recurrent)
+	stateKDA         cacheState = "KDA state"              // Bailing Hybrid's three conv windows + matrix state (recurrent)
+	stateInkling2    cacheState = "Inkling 2 conv windows" // each visit's four short-convolution windows (recurrent)
+	stateImageBlocks cacheState = "image blocks"           // VL position ranges that attend bidirectionally
+	stateMRoPE       cacheState = "m-RoPE positions"       // Qwen2.5-VL per-position (t,h,w) rotary positions + delta
+	stateDeepstack   cacheState = "deepstack rows"         // Qwen3-VL visual rows added after early layers during the image prefill
+	stateCapture     cacheState = "capture rows"           // per-forward hidden-state capture (EAGLE, sub-layer test hooks)
+	stateTree        cacheState = "tree-verify mask"       // tree attention mask and row positions (tested plumbing; unset in production)
+	stateAdapter     cacheState = "LoRA adapter binding"   // the compute-time adapter this stream projects through
 )
 
 // cacheStates is every kind, in the grid's display order. TestCacheStateGrid_everyCellDeclared
 // fails a kind that is declared in the grid but missing here, or the reverse.
 var cacheStates = []cacheState{
 	statePositional, stateRing, stateInt8KV, stateMLALatent,
-	stateDeltaNet, stateShortConv, stateMamba2, stateKDA,
+	stateDeltaNet, stateShortConv, stateMamba2, stateKDA, stateInkling2,
 	stateImageBlocks, stateMRoPE, stateDeepstack,
 	stateCapture, stateTree, stateAdapter,
 }
@@ -148,6 +149,7 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 	stateShortConv: recurrentCells,
 	stateMamba2:    recurrentCells,
 	stateKDA:       recurrentCells,
+	stateInkling2:  recurrentCells,
 	stateImageBlocks: {
 		lcRewind:       {hInexact, "the blocks are position ranges with no per-position rewind; a rewind below one would let new text attend bidirectionally"},
 		lcReset:        {hCleared, "resetMultimodal (audit M-25)"},
@@ -250,6 +252,7 @@ var kvCacheFieldState = map[string]cacheState{
 	"Conv":      stateShortConv,
 	"Mamba":     stateMamba2,
 	"KDA":       stateKDA,
+	"Ink":       stateInkling2,
 	"ImgBlocks": stateImageBlocks,
 	"MRopePos":  stateMRoPE, "MRopeDelta": stateMRoPE,
 	"Deepstack":     stateDeepstack,
@@ -300,6 +303,8 @@ func holdsCacheState(cc *cpuengine.Cache, lora *loraRuntime, s cacheState) bool 
 		return cc.Mamba != nil
 	case stateKDA:
 		return cc.KDA != nil
+	case stateInkling2:
+		return cc.Ink != nil
 	case stateImageBlocks:
 		return len(cc.ImgBlocks) > 0
 	case stateMRoPE:

@@ -105,6 +105,11 @@ func Buffers(op Op, s LayerShape) []Buf {
 			return rows(nil, "q", q, "ctx", q) // a KV-shared layer reads its source layer's rows
 		}
 		return rows(kv(op.G4.Window), "q", q, "k", kvw, "v", kvw, "ctx", q)
+	case OpInkling2:
+		// Every visit stores all its K and V rows (its cache has no rings, so no Window) and four conv windows of ConvK-1
+		// inputs each: K, V, the attention output and the FFN output.
+		win := (op.Ink.ConvK - 1) * (2*kvw + 2*s.Hidden)
+		return rows(append(kv(0), state("window", win, false)), "q", q, "k", kvw, "v", kvw, "ctx", q)
 	case OpMLA:
 		m := s.MLA
 		return rows([]Buf{{Name: "latent", Unit: PerPosition, Prec: PrecF32, Elems: s.MLALatent}},

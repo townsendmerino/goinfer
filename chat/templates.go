@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -185,6 +186,12 @@ func NormalizeReasoningEffort(s string) (string, bool) {
 // whose own template takes the knob. For every other template, or an effort that is not low/medium/high, it returns t unchanged,
 // which is what keeps a client that sends a bare reasoning_effort to every endpoint (dsh does) from changing any other model's prompt.
 func (t *Template) WithReasoningEffort(effort string) *Template {
+	if t != nil && t.name == "inkling2" {
+		if lv, ok := inklingEfforts[strings.ToLower(strings.TrimSpace(effort))]; ok {
+			return t.inklingWith(strconv.FormatFloat(lv, 'g', -1, 64), t.think)
+		}
+		return t
+	}
 	e, ok := NormalizeReasoningEffort(effort)
 	if t == nil || t.name != "harmony" || !ok {
 		return t

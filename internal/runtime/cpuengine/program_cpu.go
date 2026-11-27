@@ -6,6 +6,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -23,7 +24,8 @@ func (m *Engine) WalkToken(prog *layerProgram, h []float32, pleID int, cache *Ca
 	}
 	pos := cache.Pos() // this position, stable across layers in one forward
 	var t attnTimer
-	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
+	ink := inkling2.NewToken(arch) // Inkling 2's per-token attention-residual blocks; nil on every other family
+	var g4 *gemma4Token            // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
 	if arch.Gemma4 != nil {
 		g4 = m.newGemma4Token(prog, h, pleID, pos, &scr.G4)
 		if activeHooks().G4TraceHidden != nil {
@@ -187,6 +189,11 @@ func (m *Engine) WalkToken(prog *layerProgram, h []float32, pleID int, cache *Ca
 				kp.LowerBound = o.KDA.LowerBound
 				copy(m.reg(o.Out, h, scr), kdaMixerStep(m.Be, m.reg(o.In, h, scr), lw.KDA, kp, arch.HiddenDim, o.KDA.Eps, cache.KDA[l]))
 				lastFFN = false
+			case opInkling2:
+				if ink == nil {
+					return nil, fmt.Errorf("decoder: layer %d: an Inkling 2 visit on a model without Inkling 2 geometry", l)
+				}
+				inkling2.Visit(inkling2Host{m.Be, cache}, arch, lw, o, cache.Ink[l], ink, l, pos, h)
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.Kind)
 			}
@@ -201,6 +208,7 @@ func (m *Engine) WalkToken(prog *layerProgram, h []float32, pleID int, cache *Ca
 			m.captureLayer(cache, l, h)
 		}
 	}
+	inkling2.Final(arch, ink, h)
 	if cache.ManualPos {
 		cache.Advance() // a layer that stores no K/V row (a latent, a recurrent state) does not step the position
 	}

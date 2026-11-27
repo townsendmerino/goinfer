@@ -237,7 +237,7 @@ const CPUScratchBudgetForTest = cpuengine.PrefillAttnScratchBudget
 // cpuCacheLines is the plan line of each KVCache field that holds bytes or bookkeeping.
 var cpuCacheLines = map[string]mem.LineID{"KeysBuf": mem.LineKV, "ValsBuf": mem.LineKV, "KeysQ": mem.LineKV, "ValsQ": mem.LineKV, "KeyScale": mem.LineKV, "ValScale": mem.LineKV,
 	"KeysH": mem.LineKV, "ValsH": mem.LineKV, "Rings": mem.LineKV, "MLALatent": mem.LineKV,
-	"Delta": mem.LineState, "Conv": mem.LineState, "Mamba": mem.LineState, "KDA": mem.LineState,
+	"Delta": mem.LineState, "Conv": mem.LineState, "Mamba": mem.LineState, "KDA": mem.LineState, "Ink": mem.LineState,
 	"Scr": mem.LineScratch, "ImgBlocks": mem.LineScratch, "MRopePos": mem.LineScratch, "Deepstack": mem.LineScratch, "Stride": mem.LineScratch, "CaptureLayers": mem.LineScratch,
 	"Captured": mem.LineScratch, "LayerInputs": mem.LineScratch, "SubAttn": mem.LineScratch, "SubMLP": mem.LineScratch, "SubMLPPre": mem.LineScratch, "SubCtx": mem.LineScratch, "SubPLE": mem.LineScratch, "TreeRowPos": mem.LineScratch,
 	"TreeMask": mem.LineScratch, "NumLayers": mem.LineScratch, "PlanRows": mem.LineScratch, "RowCeiling": mem.LineScratch, "RegrownBytes": mem.LineScratch, "KVDim": mem.LineScratch,

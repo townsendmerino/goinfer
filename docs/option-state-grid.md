@@ -144,6 +144,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 | short-conv window | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared | exact | exact |
 | Mamba-2 state | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared | exact | exact |
 | KDA state | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared | exact | exact |
+| Inkling 2 conv windows | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared | exact | exact |
 | image blocks | inexact → cold | cleared | refused | inexact → cold | transient | exact | cold on mismatch | cleared | transient | refused |
 | m-RoPE positions | inexact → cold | cleared | refused | inexact → cold | transient | caller-bound | caller-bound | cleared | transient | refused |
 | deepstack rows | transient | transient | transient | transient | transient | transient | transient | transient | transient | transient |
@@ -215,6 +216,16 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - KDA state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (RecurrentCheckpointBytes); one that cannot copy every recurrent kind the model has keeps none
 - KDA state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
+- Inkling 2 conv windows × partial rewind: mutated in place per token; no per-position history to rewind to
+- Inkling 2 conv windows × full reset: resetRecurrent (audit C-01, C-03)
+- Inkling 2 conv windows × snapshot: the snapshot format does not carry recurrent state
+- Inkling 2 conv windows × session prefix reuse: follows the rewind; rewindForReuse goes cold
+- Inkling 2 conv windows × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (RecurrentSpecAvailable, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
+- Inkling 2 conv windows × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
+- Inkling 2 conv windows × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (KVSnapshotterAvailable.KVSnapshotRecurrent: CUDA, Gated-DeltaNet and Mamba-2), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
+- Inkling 2 conv windows × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
+- Inkling 2 conv windows × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (RecurrentCheckpointBytes); one that cannot copy every recurrent kind the model has keeps none
+- Inkling 2 conv windows × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
 - image blocks × partial rewind: the blocks are position ranges with no per-position rewind; a rewind below one would let new text attend bidirectionally
 - image blocks × full reset: resetMultimodal (audit M-25)
 - image blocks × snapshot: the snapshot format does not carry image blocks

@@ -38,6 +38,7 @@ const (
 	opGemma4MoE      = program.OpGemma4MoE
 	opPLE            = program.OpPLE
 	opLayerScale     = program.OpLayerScale
+	opInkling2       = program.OpInkling2
 	regH             = program.RegH
 	regX             = program.RegX
 	regA             = program.RegA

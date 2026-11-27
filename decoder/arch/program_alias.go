@@ -70,6 +70,8 @@ const (
 	attnQuery        = program.AttnQuery
 	attnMLA          = program.AttnMLA
 	attnGemma4       = program.AttnGemma4
+	attnInkling2     = program.AttnInkling2
+	opInkling2       = program.OpInkling2
 	ffnGated         = program.FfnGated
 	ffnNonGated      = program.FfnNonGated
 	ffnMoE           = program.FfnMoE

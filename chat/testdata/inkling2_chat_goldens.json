@@ -1,0 +1,166 @@
+[
+ {
+  "name": "user_only",
+  "turns": [
+   {
+    "role": "user",
+    "content": "Hi there."
+   }
+  ],
+  "want": "<|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>Hi there.<|end_message|>"
+ },
+ {
+  "name": "system_user",
+  "system": "You are terse.",
+  "turns": [
+   {
+    "role": "user",
+    "content": "Explain DNS."
+   }
+  ],
+  "want": "<|message_system|><|content_text|>You are terse.<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>Explain DNS.<|end_message|>"
+ },
+ {
+  "name": "multi_turn",
+  "system": "Be kind.",
+  "turns": [
+   {
+    "role": "user",
+    "content": "One?"
+   },
+   {
+    "role": "assistant",
+    "content": "Two."
+   },
+   {
+    "role": "user",
+    "content": "Three?"
+   }
+  ],
+  "want": "<|message_system|><|content_text|>Be kind.<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>One?<|end_message|><|message_model|><|content_text|>Two.<|end_message|><|content_model_end_sampling|><|message_user|><|content_text|>Three?<|end_message|>"
+ },
+ {
+  "name": "reasoning_replay",
+  "turns": [
+   {
+    "role": "user",
+    "content": "2+2?"
+   },
+   {
+    "role": "assistant",
+    "content": "4",
+    "reasoning": "Add them."
+   },
+   {
+    "role": "user",
+    "content": "And 3+3?"
+   }
+  ],
+  "want": "<|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>2+2?<|end_message|><|message_model|><|content_thinking|>Add them.<|end_message|><|message_model|><|content_text|>4<|end_message|><|content_model_end_sampling|><|message_user|><|content_text|>And 3+3?<|end_message|>"
+ },
+ {
+  "name": "effort_none",
+  "effort": "none",
+  "turns": [
+   {
+    "role": "user",
+    "content": "Quick: capital of France?"
+   }
+  ],
+  "want": "<|message_system|><|content_text|>Thinking effort level: 0<|end_message|><|message_user|><|content_text|>Quick: capital of France?<|end_message|>"
+ },
+ {
+  "name": "effort_low",
+  "effort": "low",
+  "turns": [
+   {
+    "role": "user",
+    "content": "Name a color."
+   }
+  ],
+  "want": "<|message_system|><|content_text|>Thinking effort level: 0.2<|end_message|><|message_user|><|content_text|>Name a color.<|end_message|>"
+ },
+ {
+  "name": "tools_declared",
+  "tools": [
+   {
+    "name": "get_weather",
+    "description": "Get the weather <now> & later",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      },
+      "days": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  ],
+  "turns": [
+   {
+    "role": "user",
+    "content": "Weather in Paris?"
+   }
+  ],
+  "want": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Get the weather <now> & later\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"type\":\"string\"},\"days\":{\"type\":\"integer\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>Weather in Paris?<|end_message|>"
+ },
+ {
+  "name": "tool_loop",
+  "tools": [
+   {
+    "name": "get_weather",
+    "description": "Get the weather <now> & later",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      },
+      "days": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  ],
+  "turns": [
+   {
+    "role": "user",
+    "content": "Weather in Paris for 2 days?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Call the tool.",
+    "tool_calls": [
+     {
+      "name": "get_weather",
+      "arguments": {
+       "days": 2,
+       "city": "Paris"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_name": "get_weather",
+    "content": "{\"temp\": 12}"
+   },
+   {
+    "role": "user",
+    "content": "Thanks; and tomorrow?"
+   }
+  ],
+  "want": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Get the weather <now> & later\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"type\":\"string\"},\"days\":{\"type\":\"integer\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>Weather in Paris for 2 days?<|end_message|><|message_model|><|content_thinking|>Call the tool.<|end_message|><|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\",\"days\":2}}<|end_message|><|content_model_end_sampling|><|message_tool|>get_weather<|content_text|>{\"temp\": 12}<|end_message|><|message_user|><|content_text|>Thanks; and tomorrow?<|end_message|>"
+ }
+]
