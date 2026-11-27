@@ -73,12 +73,12 @@ func recurrentModelTypes(t *testing.T) []string {
 // decides what it is. `rings` is excluded because it is positional storage that TruncateTo DOES
 // rewind (ring.truncate), reporting inexact only for a wrapped ring.
 func recurrentKinds(c *KVCache) (names []string, fields []reflect.Value) {
-	v := reflect.ValueOf(c).Elem()
+	v := reflect.ValueOf(&c.c).Elem()
 	ty := v.Type()
 	for i := 0; i < ty.NumField(); i++ {
 		ft := ty.Field(i)
 		if ft.Type.Kind() != reflect.Slice || ft.Type.Elem().Kind() != reflect.Pointer ||
-			ft.Type.Elem().Elem().Kind() != reflect.Struct || ft.Name == "rings" {
+			ft.Type.Elem().Elem().Kind() != reflect.Struct || ft.Name == "Rings" {
 			continue
 		}
 		if f := v.Field(i); !f.IsNil() {
