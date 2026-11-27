@@ -16,9 +16,9 @@ const (
 
 var ngramAlphaAnchors = specdecode.NgramAlphaAnchors
 
-func thetaFor(backend string) float64          { return specdecode.ThetaFor(backend) }
-func ngramAlpha(matchLen int) float64          { return specdecode.NgramAlpha(matchLen) }
-func specRoundDraftWidth(k, pos, cap int) int  { return specdecode.RoundDraftWidth(k, pos, cap) }
+func thetaFor(backend string) float64           { return specdecode.ThetaFor(backend) }
+func ngramAlpha(matchLen int) float64           { return specdecode.NgramAlpha(matchLen) }
+func specRoundDraftWidth(k, pos, cap int) int   { return specdecode.RoundDraftWidth(k, pos, cap) }
 func blockSpecRoundWidth(w, m, e, p, c int) int { return specdecode.BlockSpecRoundWidth(w, m, e, p, c) }
 
 func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, ctxCap func() int, out chan<- int, g *Generation, stats *SpecStats, prompt []int, maxTokens, K int) {

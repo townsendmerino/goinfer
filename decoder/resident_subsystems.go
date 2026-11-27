@@ -25,7 +25,9 @@ func (m *Model) resPrefill() ResidentPrefillSubsystem {
 func (m *Model) resKV() ResidentKVSubsystem           { return m.subsystems().KV }
 func (m *Model) resRuntime() ResidentRuntimeSubsystem { return m.subsystems().Runtime }
 
-func drafterHostOf(r ResidentForward) (ResidentDrafterHost, bool) { return residency.DrafterHostOf(r) }
+func drafterHostOf(r ResidentForward) (ResidentDrafterHost, bool) {
+	return residency.ResolveDrafterHost(r)
+}
 
 var noopResidentSubsystems = residency.NoopSubsystems
 

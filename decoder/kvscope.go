@@ -13,4 +13,4 @@ func WithKVScope(ctx context.Context, s KVScope) context.Context {
 	return residency.ContextWithKVScope(ctx, s)
 }
 
-func kvScopeOf(ctx context.Context) KVScope { return residency.KVScopeOf(ctx) }
+func kvScopeOf(ctx context.Context) KVScope { return residency.ScopeFromContext(ctx) }

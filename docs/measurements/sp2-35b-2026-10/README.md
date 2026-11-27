@@ -100,7 +100,7 @@ re-runs as registered once the lock is free. Log: `~/goinfer-logs/sp2-35b-2026-1
 
 ### G4's width amended to w = 4, before G4's run (2026-10-26, 07:39 PDT)
 
-**Why:** `BlockSpec`'s acceptance guard (`decoder/blockspec.go:breakEvenTokensPerRound`, 2.5 committed tokens a round, judged
+**Why:** `BlockSpec`'s acceptance guard (`internal/runtime/specdecode/blockspec.go:BreakEvenTokensPerRound`, 2.5 committed tokens a round, judged
 after 6 rounds) does not scale with the width. At w = 3 a round commits at most 3, and SP0's mean at w = 3 was 2.76, so the guard
 switches many turns to plain decode: in G1, 5 of 20 turns at w = 3 tripped it within 6–7 rounds (1 of 20 at w = 16). A G4 at w = 3
 would largely time the guard, not the drafter. I missed this when I registered w = 3.

@@ -218,7 +218,7 @@ func ResolveSubsystems(r any) resident.Subsystems {
 
 // drafterHostOf is the resident r itself as a drafter host. A BlockSpec keeps the resident, not its Runtime subsystem, because step and
 // SubsystemsOf resolve a resident; ok is false where r does not implement it.
-func DrafterHostOf(r resident.Forward) (host resident.DrafterHost, ok bool) {
+func ResolveDrafterHost(r resident.Forward) (host resident.DrafterHost, ok bool) {
 	host, ok = r.(resident.DrafterHost)
 	return host, ok
 }

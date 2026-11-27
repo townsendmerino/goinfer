@@ -16,15 +16,15 @@ type (
 // MoEPagerDefault is the registered default pager mode for goos ("pool" on darwin, "mmap" elsewhere).
 func MoEPagerDefault(goos string) string { return paging.DefaultMoEPagerMode(goos) }
 
-func resolveMoEPagerPool(opt, preadCPU string) bool { return paging.ResolveMoEPagerPool(opt, preadCPU) }
+func resolveMoEPagerPool(opt, preadCPU string) bool { return paging.UseMoEPagerPool(opt, preadCPU) }
 
 func newExpertPager(w *darch.Weights, mapping []byte, budget int64, giwPath string, pool bool) *expertPager {
 	return paging.NewExpertPager(w, mapping, budget, giwPath, pool, processFaultCounts)
 }
 
 func newLayerPager(w *darch.Weights, mapping []byte, budget int64) *layerPager {
-	return paging.NewLayerPager(w, mapping, budget)
+	return paging.OpenLayerPager(w, mapping, budget)
 }
 
 func pagerSummary(p *expertPager) string     { return paging.ExpertPagerSummary(p) }
-func layerPagerSummary(p *layerPager) string { return paging.LayerPagerSummary(p) }
+func layerPagerSummary(p *layerPager) string { return paging.SummarizeLayerPager(p) }

@@ -973,10 +973,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 			}()
 		} else {
-			if m.resHost().RecurrentCheckpointer() != nil {
-				scope = residency.WithCheckpoint(scope)
-			} // recurrent checkpoint: this path restores, and saves after its prefill
-			acq = m.resHost().AcquireIn(r.prompt, nil, kvAdapterID(r.lora), nil, scope) // binds the resident KV slot this prompt will use
+			scope = residency.ScopeWithCheckpoint(scope, m.resHost().RecurrentCheckpointer() != nil) // recurrent checkpoint: this path restores, and saves after its prefill
+			acq = m.resHost().AcquireIn(r.prompt, nil, kvAdapterID(r.lora), nil, scope)              // binds the resident KV slot this prompt will use
 			m.resHost().ForgetIDs()
 			mk := m.resHost().KVPrefillMark(acq.Slot, r.prompt, acq.Reuse, kvAdapterID(r.lora), scope, &acq) // the boundary snapshot, taken between two passes
 			r.resCost = m.residentCostFor(cost.FromContext(r.ctx), false)

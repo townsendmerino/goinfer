@@ -33,7 +33,7 @@ func ContextWithKVScope(ctx context.Context, s KVScope) context.Context {
 }
 
 // kvScopeOf is the scope ctx carries, or the zero scope.
-func KVScopeOf(ctx context.Context) KVScope {
+func ScopeFromContext(ctx context.Context) KVScope {
 	if ctx == nil {
 		return KVScope{}
 	}
@@ -42,7 +42,7 @@ func KVScopeOf(ctx context.Context) KVScope {
 }
 
 // WithCheckpoint returns a copy of s with recurrent checkpoint restore enabled.
-func WithCheckpoint(s KVScope) KVScope { s.checkpoint = true; return s }
+func ScopeWithCheckpoint(s KVScope, on bool) KVScope { s.checkpoint = on; return s }
 
 // CheckpointEnabled reports whether s permits recurrent checkpoint restore.
 func CheckpointEnabled(s KVScope) bool { return s.checkpoint }

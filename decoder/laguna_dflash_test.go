@@ -19,8 +19,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
-	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 

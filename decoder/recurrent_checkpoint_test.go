@@ -49,7 +49,7 @@ func ckptTurn(m *Model, prompt, reply []int, lora *loraRuntime) kvAcquired {
 	acq := m.residentAcquireIn(prompt, nil, lora, nil, func() KVScope {
 		var sc KVScope
 		if m.recurrentCheckpointer() != nil {
-			sc = residency.WithCheckpoint(sc)
+			sc = residency.ScopeWithCheckpoint(sc, true)
 		}
 		return sc
 	}())
@@ -187,7 +187,7 @@ func TestCacheStateGrid_checkpointCells(t *testing.T) {
 				m := recurrent(r)
 				ckptTurn(m, prompt, reply, nil)
 				claims := []residentImageClaim{{Start: len(prompt) + 2, Len: 4, Hash: 5}}
-				acq := m.residentAcquireIn(rerender, claims, nil, nil, residency.WithCheckpoint(KVScope{}))
+				acq := m.residentAcquireIn(rerender, claims, nil, nil, residency.ScopeWithCheckpoint(KVScope{}, true))
 				if acq.Reuse != 0 || r.restores != 0 {
 					t.Errorf("a request with an image span: reuse %d with %d restores, want 0", acq.Reuse, r.restores)
 				}

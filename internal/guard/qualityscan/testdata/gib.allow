@@ -3,7 +3,7 @@
 cmd/gate/identity_giw.go 1 -- a checkpoint's size on disk
 decoder/coldload.go 1 -- a checkpoint's size on disk, read once before the load
 decoder/arch/loadprofile.go 2 -- bytes read from disk and the read rate
-decoder/sidecar.go 2 -- a sidecar's size against free disk
+internal/runtime/sidecar/sidecar.go 2 -- a sidecar's size against free disk
 backend/cuda/pack_stream.go 1 -- a packed-experts file against free disk
 internal/app/pullcmd/pull.go 2 -- download sizes
 pull/registry.go 1 -- download sizes

@@ -43,7 +43,7 @@ type LayerPager struct {
 // newLayerPager builds a streaming pager over a dense mmap-backed model, or returns
 // nil when paging doesn't apply (MoE, not mmap-backed, no mapped layer weights, or
 // the budget already holds every layer). budget ≤ 0 selects ~half of available RAM.
-func NewLayerPager(w *darch.Weights, mapping []byte, budget int64) *LayerPager {
+func OpenLayerPager(w *darch.Weights, mapping []byte, budget int64) *LayerPager {
 	if w.Arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
@@ -152,7 +152,7 @@ func (p *LayerPager) Stats() (prefetches, evictions int64) {
 }
 
 // layerPagerSummary describes a built pager for the load banner.
-func LayerPagerSummary(p *LayerPager) string {
+func SummarizeLayerPager(p *LayerPager) string {
 	if p == nil {
 		return ""
 	}
