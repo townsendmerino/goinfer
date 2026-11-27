@@ -9,57 +9,6 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-func TestParseBudgetFlag(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    budgetFlag
-		wantErr bool
-	}{
-		{"", budgetFlag{}, false}, {"auto", budgetFlag{}, false}, {"AUTO", budgetFlag{}, false},
-		{"unlimited", budgetFlag{unlimited: true}, false}, {"512", budgetFlag{n: 512}, false},
-		{"0", budgetFlag{}, true}, {"-3", budgetFlag{}, true}, {"lots", budgetFlag{}, true},
-	}
-	for _, tc := range cases {
-		got, err := parseBudgetFlag(tc.in)
-		if (err != nil) != tc.wantErr || (err == nil && got != tc.want) {
-			t.Errorf("parseBudgetFlag(%q) = %+v, %v; want %+v, err=%v", tc.in, got, err, tc.want, tc.wantErr)
-		}
-	}
-}
-
-// resolveBudget: the room rule (thinking leaves a quarter of the turn, min 2 tokens), and how a request's own budget and the
-// flag combine with it.
-func TestResolveBudget(t *testing.T) {
-	auto, unlimited, cap100 := budgetFlag{}, budgetFlag{unlimited: true}, budgetFlag{n: 100}
-	cases := []struct {
-		name      string
-		f         budgetFlag
-		explicit  int
-		maxTokens int
-		want      int
-		ok        bool
-	}{
-		{"auto: three quarters of a 160-token turn", auto, 0, 160, 120, true},
-		{"auto: a 4096-token turn", auto, 0, 4096, 3072, true},
-		{"auto: 8 tokens leaves 2 to answer", auto, 0, 8, 6, true},
-		{"a turn under 4 tokens is left alone", auto, 0, 3, 0, false},
-		{"request budget below the room holds", auto, 50, 160, 50, true},
-		{"request budget above the room is clamped to it", auto, 1024, 1200, 900, true},
-		{"Anthropic-style budget equal to max_tokens is clamped", auto, 1200, 1200, 900, true},
-		{"unlimited applies no ceiling of its own", unlimited, 0, 4096, 0, false},
-		{"unlimited still honours a request budget", unlimited, 200, 4096, 200, true},
-		{"-reasoning-budget N caps an unasked request", cap100, 0, 4096, 100, true},
-		{"N is itself clamped by the room", cap100, 0, 40, 30, true},
-		{"a request budget overrides N", cap100, 300, 4096, 300, true},
-	}
-	for _, tc := range cases {
-		got, ok := resolveBudget(tc.f, tc.explicit, tc.maxTokens)
-		if ok != tc.ok || (ok && got != tc.want) {
-			t.Errorf("%s: got (%d, %v), want (%d, %v)", tc.name, got, ok, tc.want, tc.ok)
-		}
-	}
-}
-
 // The budget in the REAL decode loop. A gated processor is only as right as its first step: the gate is asked before any
 // token exists, and again after each emitted one, and the fast paths resume when it says no. This runs the tiny model with
 // the processor both gated and ungated and checks the same thing each way: the stream is identical to an unprocessed run up to

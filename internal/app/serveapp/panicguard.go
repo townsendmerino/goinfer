@@ -46,13 +46,6 @@ func (s *server) recoverJob(id string, log *jobs.EventLog, created int64) {
 	}
 }
 
-// recoverHeartbeat ends an SSE heartbeat whose write panicked; the response it pinged carries on without keep-alives.
-func recoverHeartbeat() {
-	if r := recover(); r != nil {
-		fmt.Fprintf(os.Stderr, "serve: SSE heartbeat panicked: %v\n%s", r, debug.Stack())
-	}
-}
-
 // recoverDrain keeps a panic while an unloaded model is drained and freed from taking the process down. The model stays marked
 // draining, so /health shows a free that never finished.
 func recoverDrain(name string) {

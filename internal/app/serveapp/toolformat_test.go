@@ -35,10 +35,10 @@ func TestToolFormat_survivesRequestLayers(t *testing.T) {
 	native := &loadedModel{tmpl: base.WithThinking(chat.ThinkTemplate).WithToolFormat(chat.ToolFormatTemplate)}
 	for name, ts := range map[string]thinkSettings{
 		"no request settings": {},
-		"thinking off":        {explicit: true, mode: chat.ThinkOff},
-		"thinking on":         {explicit: true, mode: chat.ThinkOn},
-		"an effort":           {effort: "high"},
-		"both":                {explicit: true, mode: chat.ThinkOff, effort: "low"},
+		"thinking off":        {Explicit: true, Mode: chat.ThinkOff},
+		"thinking on":         {Explicit: true, Mode: chat.ThinkOn},
+		"an effort":           {Effort: "high"},
+		"both":                {Explicit: true, Mode: chat.ThinkOff, Effort: "low"},
 	} {
 		if isNative(hermes.templateFor(ts)) {
 			t.Errorf("hermes + %s: rendered the native form", name)
@@ -117,7 +117,7 @@ func TestToolFormatNote_gemma4(t *testing.T) {
 	}
 	// The request's own layers (thinking mode, reasoning effort) must keep the adopted default.
 	lm := &loadedModel{tmpl: load(chat.ToolFormatAuto)}
-	for name, ts := range map[string]thinkSettings{"none": {}, "thinking off": {explicit: true, mode: chat.ThinkOff}, "thinking on": {explicit: true, mode: chat.ThinkOn}, "effort": {effort: "high"}} {
+	for name, ts := range map[string]thinkSettings{"none": {}, "thinking off": {Explicit: true, Mode: chat.ThinkOff}, "thinking on": {Explicit: true, Mode: chat.ThinkOn}, "effort": {Effort: "high"}} {
 		if !strings.Contains(lm.templateFor(ts).RenderTools("", turns, qwenToolsForTest), "<tool_response|>Checking.<turn|>\n") {
 			t.Errorf("%s: a request layer dropped the adopted default", name)
 		}

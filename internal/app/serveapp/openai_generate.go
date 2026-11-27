@@ -585,8 +585,9 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *stores
 		wrapped := onText
 		onText = func(t string) { g.AddTokens(1); wrapped(t) }
 		if gr.think != nil { // a model that is still reasoning is making progress, not stuck
-			wr := gr.think.onReasoning
-			gr.think.onReasoning = func(t string) { g.AddTokens(1); wr(t) }
+			gr.think.WrapOnReasoning(func(wr func(string)) func(string) {
+				return func(t string) { g.AddTokens(1); wr(t) }
+			})
 		}
 	}
 	if js != nil && gr.id != "" {
@@ -760,8 +761,8 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	if o := gr.outcome; o != nil {
 		emit := onText
 		onText = func(s string) {
-			if !o.answered && strings.TrimSpace(s) != "" {
-				o.answered = true
+			if !o.Answered && strings.TrimSpace(s) != "" {
+				o.Answered = true
 			}
 			emit(s)
 		}
@@ -820,14 +821,14 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		}
 		ids = append(ids, id)
 		if gr.outcome != nil {
-			gr.outcome.ids = ids // read by a reasoning item that closes mid-stream (carriedMint)
+			gr.outcome.IDs = ids // read by a reasoning item that closes mid-stream (carriedMint)
 		}
 		// DecodePiece, not Decode or DecodeContinuation: these ids continue the prompt (no sequence-level
 		// dummy-prefix strip), and appending each token's own piece is exactly what the whole-sequence decode does
 		// internally.
 		piece, _ := lm.tk.DecodePiece(id)
 		if th != nil {
-			piece = th.feed(piece)
+			piece = th.Feed(piece)
 		}
 		sb.WriteString(piece)
 		step()
@@ -835,7 +836,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	if th != nil {
 		// The splitter may still hold text (a partial tag, or whitespace that turned out to be answer): it goes through the
 		// stop logic like any other answer text. After a stop hit only the reasoning side is flushed.
-		if tail := th.finish(); tail != "" && !stopping {
+		if tail := th.Finish(); tail != "" && !stopping {
 			sb.WriteString(tail)
 			step()
 		}
@@ -871,7 +872,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
 	}
 	if gr.outcome != nil {
-		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
+		gr.outcome.IDs, gr.outcome.Done, gr.outcome.StopHit = ids, true, stopHit != ""
 	}
 	if tr != nil {
 		tr.generated(lm, gr, reportNow(report), ids)

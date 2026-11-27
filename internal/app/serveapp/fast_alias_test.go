@@ -324,7 +324,7 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 		}, nil},
 	} {
 		ts, err := s.resolveThink(tc.tr())
-		if err != nil || !ts.explicit || ts.mode != chat.ThinkOff || ts.budget != 0 {
+		if err != nil || !ts.Explicit || ts.Mode != chat.ThinkOff || ts.Budget != 0 {
 			t.Errorf("%s: resolved %+v (%v); want explicit thinking off and no budget", name, ts, err)
 		}
 	}

@@ -422,7 +422,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
@@ -546,7 +546,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		streamCtx, cancelStream := ss.cancelOnFail(r.Context())
+		streamCtx, cancelStream := ss.CancelOnFail(r.Context())
 		defer cancelStream()
 		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
