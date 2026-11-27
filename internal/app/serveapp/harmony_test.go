@@ -220,7 +220,7 @@ func TestResolveThink_reasoningEffort(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"reasoning":{"effort":"low"}}`), &rr); err != nil {
 		t.Fatal(err)
 	}
-	if ts, _ := srv.resolveThink(rr.thinkRequest()); ts.Effort != "low" {
+	if ts, _ := srv.resolveThink(rr.ThinkRequest()); ts.Effort != "low" {
 		t.Errorf("the Responses API's reasoning.effort did not reach the resolution: %+v", ts)
 	}
 }

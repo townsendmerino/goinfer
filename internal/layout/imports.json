@@ -704,6 +704,27 @@
       "why": "internal/app/serveapp/anthropicapi holds Anthropic /v1/messages and /v1/messages/count_tokens request/turn/tool-choice/output-config translation, content-block builders, and SSE frame helpers below serveapp (SA8). It never imports serveapp or decoder."
     },
     {
+      "name": "serveapp-responsesapi-leaf",
+      "from": [
+        "internal/app/serveapp/responsesapi"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/responsesapi": [
+          "chat",
+          "internal/app/serveapp/carriedids",
+          "internal/app/serveapp/jobs",
+          "internal/app/serveapp/stores",
+          "internal/app/serveapp/streamframe",
+          "internal/app/serveapp/wirecore"
+        ]
+      },
+      "why": "internal/app/serveapp/responsesapi holds OpenAI /v1/responses request decoding, input-item and carried-reasoning translation, response-store byte accounting, tool-call item assembly, and response-object formatting below serveapp (SA9). It never imports serveapp or decoder."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -1184,6 +1205,7 @@
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/media",
       "internal/app/serveapp/netguard",
+      "internal/app/serveapp/responsesapi",
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
@@ -1238,6 +1260,14 @@
     ],
     "internal/app/serveapp/media": [
       "embeddinggemma2"
+    ],
+    "internal/app/serveapp/responsesapi": [
+      "chat",
+      "internal/app/serveapp/carriedids",
+      "internal/app/serveapp/jobs",
+      "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/wirecore"
     ],
     "internal/app/serveapp/sessions": [
       "decoder",
@@ -1775,6 +1805,9 @@
     "internal/app/serveapp/embedders": [
       "decoder",
       "embeddinggemma2"
+    ],
+    "internal/app/serveapp/responsesapi": [
+      "chat"
     ],
     "internal/app/serveapp/sessions": [
       "internal/runtime/scheduler"
