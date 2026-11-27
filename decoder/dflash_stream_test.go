@@ -51,7 +51,7 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer held.Close()
-		if ten, err := held.st.Tensor("fc.weight"); err != nil {
+		if ten, err := blockdraft.STHandle(&held.DFlash).Tensor("fc.weight"); err != nil {
 			t.Fatal(err)
 		} else if ten.DType != c.dtype {
 			t.Fatalf("the fixture's dtype is %s, want %s", ten.DType, c.dtype)
@@ -62,7 +62,7 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		off := sf.base + sf.at["fc.weight"][0]
+		off := blockdraft.STFileTensorOffset(sf, "fc.weight")
 		sf.Close()
 		esz := map[string]int64{"F32": 4, "F16": 2, "BF16": 2}[c.dtype]
 		if aligned := off%esz == 0; aligned == odd || (odd && off%2 != 1) {
@@ -75,7 +75,7 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if !s.Streamed() || held.Streamed() {
 			t.Fatalf("odd=%v: Streamed is %v opened and %v loaded", odd, s.Streamed(), held.Streamed())
 		}
-		if blockdraft.STHandleOpen(&s.BlockTrunk) {
+		if blockdraft.STHandleOpen(&s.DFlash) {
 			t.Errorf("%s odd=%v: the opened drafter still holds its mapping", c.dtype, odd)
 		}
 		same := func(what string, m *linalg.WeightMat, r DrafterRows) {

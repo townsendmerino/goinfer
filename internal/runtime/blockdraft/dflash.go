@@ -908,7 +908,7 @@ func OwnHeadCleared(d *DFlash) bool {
 }
 
 // STHandleOpen reports whether the drafter still holds an open safetensors file handle.
-func STHandleOpen(d *BlockTrunk) bool { return d.st != nil }
+func STHandleOpen(d *DFlash) bool { return d.st != nil }
 
 // STFileForTest opens a safetensors file for row-streaming unit tests.
 type STFileForTest = stFile
@@ -919,4 +919,31 @@ func OpenSTFileForTest(path string) (*STFileForTest, error) { return openSTFile(
 // STRowsForTest constructs a DrafterRows reader for tests.
 func STRowsForTest(st *embed.SafetensorsFile, sf *STFileForTest, name string, rows, cols int) (DrafterRows, error) {
 	return stRows(st, sf, name, rows, cols)
+}
+
+// STHandle returns the underlying safetensors file handle (for release/alignment tests).
+func STHandle(d *DFlash) *embed.SafetensorsFile { return d.st }
+
+// STFileTensorOffset returns the byte offset of tensor name's payload in sf (for alignment tests).
+func STFileTensorOffset(sf *STFileForTest, name string) int64 { return sf.base + sf.at[name][0] }
+
+// DSparkVocab returns the DSpark drafter's vocab size.
+func DSparkVocab(d *DSpark) int { return d.vocab }
+
+// NewTestBlockTrunk constructs a synthetic 2-layer BlockTrunk for BF16/F32 parity tests.
+func NewTestBlockTrunk(h, nH, nKV, hd, inter int, normEps float64, invFreq []float64,
+	fc linalg.WeightMat, hiddenNorm, finalNorm []float32,
+	mkLayer func() (q, k, v, o, gate, up, down linalg.WeightMat, qNorm, kNorm, inputNorm, postAttnNorm []float32), nLayers int) *BlockTrunk {
+	d := &BlockTrunk{
+		hidden: h, nHeads: nH, nKV: nKV, headDim: hd, inter: inter, normEps: normEps,
+		invFreq: invFreq, fc: fc, hiddenNorm: hiddenNorm, finalNorm: finalNorm,
+	}
+	for range nLayers {
+		q, k, v, o, gate, up, down, qn, kn, in, pn := mkLayer()
+		d.layers = append(d.layers, dflashLayer{
+			q: q, k: k, v: v, o: o, gate: gate, up: up, down: down,
+			qNorm: qn, kNorm: kn, inputNorm: in, postAttnNorm: pn,
+		})
+	}
+	return d
 }

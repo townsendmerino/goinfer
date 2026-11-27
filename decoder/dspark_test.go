@@ -136,7 +136,7 @@ func TestDSpark_referenceParity(t *testing.T) {
 			// Markov chain + own LM head: the drafted ids must match exactly.
 			ids, corrected := d.SampleBlock(be, trunk, tr.AnchorToken)
 			// stored 1-D (one row of the full vocab) to keep the committed fixture small
-			flatMk, err := ref.TensorF32(tr.Name+"/markov_logits_pos0", d.vocab)
+			flatMk, err := ref.TensorF32(tr.Name+"/markov_logits_pos0", blockdraft.DSparkVocab(d))
 			if err != nil {
 				t.Fatalf("reference markov row: %v", err)
 			}

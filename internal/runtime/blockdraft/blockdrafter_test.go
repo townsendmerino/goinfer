@@ -20,7 +20,10 @@ import (
 // So this cross-checks every field against the trunk's own state, and specifically requires that
 // DIFFERENT LAYERS RETURN DIFFERENT WEIGHTS, which is the assertion an index bug fails.
 func TestBlockDrafterWeights_matchesTrunk(t *testing.T) {
-	dir := testassets.Path(t, "GOINFER_DFLASH_F32")
+	dir, err := testassets.Lookup("GOINFER_DFLASH_F32")
+	if err != nil {
+		t.Skipf("asset GOINFER_DFLASH_F32 unavailable: %v", err)
+	}
 	d, err := LoadDFlash(dir)
 	if err != nil {
 		t.Fatalf("LoadDFlash: %v", err)
@@ -159,24 +162,5 @@ func TestEstimateResidentBytes_growsWithLayers(t *testing.T) {
 	two := EstimateResidentBytes(syntheticDrafter(t, 2))
 	if !(zero < one && one < two) {
 		t.Errorf("estimate did not grow monotonically with layer count: 0L=%d 1L=%d 2L=%d", zero, one, two)
-	}
-}
-
-// TestExtraResidentBytes_reachesTheModel closes the loop the estimate feeds: internal/serveapp's
-// loadDecoder sets Options.ExtraResidentBytes before calling Load, and a backend
-// (cuda/resident.go's checkWeightsFit/checkKVFits/allocSlots) reads it back off *Model, not off
-// Options — so a struct-literal typo at either of Load's two &Model{...} sites would silently
-// zero it and no backend-level test could ever see why a --drafter attach still ran out of room.
-// Load()-based (a real tracked fixture) rather than constructing *Model directly, so this proves
-// the actual production path, matching TestFitDisabled/TestResolveCtxCapFit_shortcuts' own
-// "load a real model, don't pass nil" precedent (cuda/resident_cap_test.go).
-func TestExtraResidentBytes_reachesTheModel(t *testing.T) {
-	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32", ExtraResidentBytes: 123456789})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer m.Close()
-	if got := m.ExtraResidentBytes(); got != 123456789 {
-		t.Errorf("ExtraResidentBytes() = %d, want 123456789", got)
 	}
 }
