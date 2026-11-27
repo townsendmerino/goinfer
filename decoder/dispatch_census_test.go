@@ -122,7 +122,7 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 			}
 			rel := "decoder/" + f
 			if strings.HasPrefix(f, "../") {
-				rel = strings.TrimPrefix(f, "../")
+				rel = strings.TrimPrefix(filepath.ToSlash(f), "../")
 			}
 			loc := fmt.Sprintf("%s|%s", rel, trimmed)
 			if identityCall.MatchString(line) {
