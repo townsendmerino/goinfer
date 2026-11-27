@@ -94,7 +94,7 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 		t.Errorf("resIDs = %v after a resident-touching GenerateVL, want prompt+generated %v — P9(a) commits "+
 			"the prefix so a future resend of the same image can reuse it", m.boundIDsForTest(), want)
 	}
-	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].start != g.ImageTokenStart || m.boundBlocksForTest()[0].end != g.ImageTokenStart+g.MMTokens {
+	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].Start != g.ImageTokenStart || m.boundBlocksForTest()[0].End != g.ImageTokenStart+g.MMTokens {
 		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.boundBlocksForTest(), g.ImageTokenStart, g.ImageTokenStart+g.MMTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
@@ -256,7 +256,7 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	if !equalIntSlices(m.boundIDsForTest(), want) {
 		t.Errorf("resIDs = %v after a resident-touching GenerateQwenVL, want prompt+generated %v (P9(a) commit)", m.boundIDsForTest(), want)
 	}
-	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].start != g.ImageStart || m.boundBlocksForTest()[0].end != g.ImageStart+g.NImageTokens {
+	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].Start != g.ImageStart || m.boundBlocksForTest()[0].End != g.ImageStart+g.NImageTokens {
 		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.boundBlocksForTest(), g.ImageStart, g.ImageStart+g.NImageTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {

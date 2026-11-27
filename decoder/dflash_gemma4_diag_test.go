@@ -81,7 +81,7 @@ func TestDFlashGemma4_diag(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForwardCapture: %v", err)
 		}
-		row := make([]float32, 0, len(hidden)*d.hidden)
+		row := make([]float32, 0, len(hidden)*d.DrafterGeometry().Hidden)
 		for _, h := range hidden {
 			row = append(row, h...)
 		}
@@ -91,7 +91,7 @@ func TestDFlashGemma4_diag(t *testing.T) {
 	// Per-tap RMS of the LAST position: the drafter's fc consumes exactly this vector.
 	last := ctxCat[len(ctxCat)-1]
 	for i, l := range layers {
-		t.Logf("  tap layer %2d  rms %.4f", l, rms(last[i*d.hidden:(i+1)*d.hidden]))
+		t.Logf("  tap layer %2d  rms %.4f", l, rms(last[i*d.DrafterGeometry().Hidden:(i+1)*d.DrafterGeometry().Hidden]))
 	}
 
 	anchor := sampling.Argmax(logits)

@@ -13,7 +13,7 @@ Written and committed before the run. The rules below do not move after the data
 
 ## What the code reading predicts, stated before the data
 
-- **The prediction:** the second question restores the state kept during Q1's prefill. `decoder/kvsnap.go:Model.kvPrefillMark`
+- **The prediction:** the second question restores the state kept during Q1's prefill. `internal/runtime/residency/kvsnap.go:Host.KVPrefillMark`
   takes no new mark on a request that restored a snapshot (`acq.snapRows > 0`). So Q2's own point may never be kept, and the
   third question would restore Q1's point again.
 - **What it would cost:** Q1's whole tool loop is re-prefilled at every later question.

@@ -81,7 +81,7 @@ func TestRow4_coldTouchLatency(t *testing.T) {
 				count++
 			}
 		}
-		hits, misses, evictions := m.pager.stats()
+		hits, misses, evictions := m.pager.Stats()
 		t.Logf("%s: %d touches, hits=%d misses=%d evictions=%d", label, count, hits, misses, evictions)
 		return totalTouch, totalMatmul, count
 	}

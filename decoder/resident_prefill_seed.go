@@ -77,7 +77,7 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 		from = 0
 	}
 	if from == 0 {
-		m.residentWritesFromZero()
+		m.resHost().WritesFromZero()
 	}
 	return from
 }
@@ -85,8 +85,8 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 // cutMarks is the marks of mk's chain that split the prefill, earliest first: mk's earlier marks, and mk itself when it is a cut.
 func cutMarks(mk *prefillMark) []*prefillMark {
 	var out []*prefillMark
-	for ; mk != nil; mk = mk.pre {
-		if mk.cut {
+	for ; mk != nil; mk = mk.Pre {
+		if mk.Cut {
 			out = append([]*prefillMark{mk}, out...)
 		}
 	}
@@ -101,13 +101,13 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	for _, c := range cutMarks(mk) {
 		// A cut: prefill up to the point as a prompt of its own length, call the mark, and go on from it. Its rows are written between passes,
 		// which is where a recurrent state exists.
-		if _, err := m.residentPrefillSeedMarked(ctx, prompt[:c.q], from, hasAdapter, nil); err != nil {
+		if _, err := m.residentPrefillSeedMarked(ctx, prompt[:c.Q], from, hasAdapter, nil); err != nil {
 			return nil, err
 		}
-		c.at(c.q)
-		from = c.q
+		c.At(c.Q)
+		from = c.Q
 	}
-	if mk != nil && mk.cut {
+	if mk != nil && mk.Cut {
 		mk = nil
 	}
 	suffix := prompt[from:]
@@ -148,7 +148,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 			if perr == nil {
 				var sr stepResult
 				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, At: stepProbeAt}) {
-					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.Q, At: mk.At})
 				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
 					// The resident reads the suffix a chunk at a time.
 					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
@@ -246,14 +246,14 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
 	// ride: each chunk is carried by a decode run, one ragged step with the decode rows pending then (rideChunk), instead of a
 	// pass of its own followed by yieldToDecode.
-	ride := chunk && mc3.ride != nil
+	ride := chunk && mc3.Ride != nil
 	var logits []float32
 	var err error
 	// Cut a chunk only while a chunk plus prefillTailMinRows tokens remain, so the pass that ends the prefill has at least
 	// that many tokens (residentPrefillSeed sends a suffix under 8 down the sequential path, whose numerics are
 	// not the batched prefill's) and at most C + prefillTailMinRows - 1 — never the up-to-2C tail the first candidate
 	// left, which was its longest pass (docs/measurements/chunked-prefill-2026-09-27.md).
-	for chunk && len(prompt)-from >= C+m.prefillTailMinRows() && mc3.decoding() > 0 {
+	for chunk && len(prompt)-from >= C+m.prefillTailMinRows() && mc3.Decoding() > 0 {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -263,16 +263,16 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 			embs[i] = m.embedResident(id)
 		}
 		if ride {
-			c := &chunkReq{seq: ResidentRaggedSeq{Slot: slot, Pos: from, Embs: embs, Prefill: &ResidentRaggedPrefill{PromptLen: len(prompt)}}}
-			if err = mc3.rideChunk(c); err == nil {
+			c := &chunkReq{Seq: ResidentRaggedSeq{Slot: slot, Pos: from, Embs: embs, Prefill: &ResidentRaggedPrefill{PromptLen: len(prompt)}}}
+			if err = mc3.RideChunk(c); err == nil {
 				from = end
 				continue
 			}
 			// The ragged step did not take the chunk (a family it declines, a full KV pool): this chunk and the rest alternate.
 			ride, err = false, nil
 		}
-		mc3.prefillExclusive(func() {
-			if err = m.residentBind(slot); err == nil {
+		mc3.PrefillExclusive(func() {
+			if err = m.resHost().Bind(slot); err == nil {
 				_, err = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Pos: from})
 			}
 		})
@@ -286,11 +286,11 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 			break
 		}
 		from = end
-		mc3.yieldToDecode()
+		mc3.YieldToDecode()
 	}
 	err = nil
-	mc3.prefillExclusive(func() {
-		if err = m.residentBind(slot); err == nil {
+	mc3.PrefillExclusive(func() {
+		if err = m.resHost().Bind(slot); err == nil {
 			logits, err = m.residentPrefillSeed(ctx, prompt, from, false)
 			// The seed may be the resident's shared host buffer (a Forward, or a prefill path that returns it), and the generation reads
 			// it after this exclusive section, when another generation's token may be rewriting it: copy it while the resident is still
@@ -321,7 +321,7 @@ func (m *Model) tryClaimResident() bool {
 		return false
 	}
 	if m.batcher != nil { // Batched decode: the exclusive claim waits out no one — it simply fails while a holder has a slot
-		return m.batcher.claimExclusive(&m.resBusy)
+		return m.batcher.ClaimExclusive(&m.resBusy)
 	}
 	return atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)
 }

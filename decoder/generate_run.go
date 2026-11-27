@@ -30,9 +30,9 @@ func (r *genRun) pick(clk *decodeClock) (SampleInfo, int, bool, error) {
 		if operr != nil {
 			return SampleInfo{}, 0, false, operr
 		}
-		r.optNextLogits = res.nextLogits
+		r.optNextLogits = res.NextLogits
 		r.optResolved = true
-		return res.info, res.info.ID, true, nil
+		return res.Info, res.Info.ID, true, nil
 	}
 	// Device top-K row from the previous forward: draw from it if the K candidates prove they
 	// hold the whole retained set; otherwise read the full row for this token (no randomness
@@ -191,7 +191,7 @@ func (r *genRun) advance(next int, needFull bool, clk *decodeClock) error {
 			// step continues on the full-logits path, which production's fast path equals by its own contract
 			// (ArgmaxEquivalent/GreedyEquivalent above).
 			solo := func() error {
-				if berr := m.residentBind(r.mc3Slot); berr != nil {
+				if berr := m.resHost().Bind(r.mc3Slot); berr != nil {
 					return berr
 				}
 				if ferr := residentCall(); ferr != nil {
@@ -208,21 +208,21 @@ func (r *genRun) advance(next int, needFull bool, clk *decodeClock) error {
 			held := false
 			if (r.useChain || r.sChainRF != nil) && !needFull {
 				r.chainTok = true
-				held, err = r.mc3.holdSolo(solo, r.stopChain)
+				held, err = r.mc3.HoldSolo(solo, r.stopChain)
 				r.chainTok = false
 			}
-			q := &batchReq{seq: ResidentBatchSeq{Slot: r.mc3Slot, Pos: pos, Emb: emb, Draw: draw}, solo: solo}
+			q := &batchReq{Seq: ResidentBatchSeq{Slot: r.mc3Slot, Pos: pos, Emb: emb, Draw: draw}, Solo: solo}
 			if !held {
-				err = r.mc3.forward(q)
+				err = r.mc3.Forward(q)
 			}
-			if !held && err == nil && q.out != nil {
+			if !held && err == nil && q.Out != nil {
 				if draw != nil {
-					r.fastNext = q.out.ID
+					r.fastNext = q.Out.ID
 					if !draw.Greedy {
 						r.g.DeviceSampled++
 					}
 				} else {
-					r.logits, r.fastNext = q.out.Logits, -1
+					r.logits, r.fastNext = q.Out.Logits, -1
 				}
 			}
 		} else {
@@ -231,14 +231,14 @@ func (r *genRun) advance(next int, needFull bool, clk *decodeClock) error {
 		r.gpuPos++
 	} else if r.cb != nil {
 		// A batched step's row is bit-identical to this token's own m.forward (decodeMultiStep's contract).
-		q := &batchReq{id: next, cache: r.cache, solo: func() error {
+		q := &batchReq{ID: next, Cache: r.cache, Solo: func() error {
 			var ferr error
 			r.logits, ferr = m.forward(next, r.cache)
 			return ferr
 		}}
-		err = r.cb.forward(q)
-		if err == nil && q.out != nil {
-			r.logits = q.out.Logits
+		err = r.cb.Forward(q)
+		if err == nil && q.Out != nil {
+			r.logits = q.Out.Logits
 		}
 	} else {
 		r.logits, err = m.forward(next, r.cache)
@@ -367,20 +367,20 @@ func (r *genRun) bindDecodeExits() {
 	r.exitDecode = func() {
 		if r.decoding {
 			r.decoding = false
-			r.mc3.exitDecode()
+			r.mc3.ExitDecode()
 		}
 	}
 	r.commitResident = func(generated []int) {
 		r.stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
 		if r.mc3 == nil {
-			m.residentCommitIDs(r.prompt, generated, nil, r.lora)
+			m.resHost().CommitIDs(r.prompt, generated, nil, kvAdapterID(r.lora))
 			return
 		}
-		r.mc3.releaseHold(r.stopChain) // before the exclusive section below, which waits for the resident a hold keeps
+		r.mc3.ReleaseHold(r.stopChain) // before the exclusive section below, which waits for the resident a hold keeps
 		r.exitDecode()
-		r.mc3.exclusive(func() {
-			if m.residentBind(r.mc3Slot) == nil {
-				m.residentCommitIDs(r.prompt, generated, nil, r.lora)
+		r.mc3.Exclusive(func() {
+			if m.resHost().Bind(r.mc3Slot) == nil {
+				m.resHost().CommitIDs(r.prompt, generated, nil, kvAdapterID(r.lora))
 				r.mc3Committed = true
 			}
 		})
@@ -395,7 +395,7 @@ func (r *genRun) buildTarget() {
 		// A kept hold (a chained decode alone under the batched decode) must not keep the resident while the consumer is not reading: a
 		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
 		r.tg.send = func(next int) bool {
-			if !r.mc3.isHolding() {
+			if !r.mc3.IsHolding() {
 				return false
 			}
 			select {
@@ -409,7 +409,7 @@ func (r *genRun) buildTarget() {
 				r.holdGrace.Stop()
 				return true
 			case <-r.holdGrace.C:
-				r.mc3.releaseHold(r.stopChain)
+				r.mc3.ReleaseHold(r.stopChain)
 			case <-r.ctx.Done():
 				r.holdGrace.Stop()
 			}

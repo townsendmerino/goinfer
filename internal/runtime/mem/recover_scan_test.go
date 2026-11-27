@@ -23,7 +23,7 @@ var recoverExempt = map[string]string{
 	"internal/app/serveapp/vision_serve.go:recoverDeviceTower":      "a tower panic fails its one request with the panic's value; nothing falls back",
 	"internal/app/inproc/transport.go:RoundTrip":                    "the in-process transport's handler boundary, as net/http's own: the panic fails that response",
 	"internal/runtime/ggufconfig/ggufconfig.go:ggufConfig":          "hostile GGUF metadata drives a family builder into a divide by zero or an index panic: that is the malformed-input error",
-	"decoder/mc3_batch.go:runSolo":                                  "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
+	"internal/runtime/residency/batcher.go:runSolo":                 "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
 	"decoder/cpu_batch.go:runStep":                                  "a panic fails that batched step's tokens with its value; nothing falls back",
 	"backend/cuda/resident.go:pipeName":                             "an error path's name lookup must not panic: a failure reads as \"?\"",
 	"backend/metal/workingset.go:deviceWorkingSet":                  "a probe: a missing Metal symbol reads as an unknown working set (0)",

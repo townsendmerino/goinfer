@@ -124,7 +124,7 @@ func runPremiseArm(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Token
 		if e != nil {
 			t.Fatalf("ForwardCapture: %v", e)
 		}
-		row := make([]float32, 0, len(hidden)*d.hidden)
+		row := make([]float32, 0, len(hidden)*m.w.Arch.HiddenDim)
 		for _, h := range hidden {
 			row = append(row, h...)
 		}

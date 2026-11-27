@@ -49,8 +49,8 @@ func (m *Model) EnableCPUBatch(n int) bool {
 		return false
 	}
 	b := &cpuBatcher{m: m}
-	b.lo, b.hi, b.wait, b.step = 2, n, batchStragglerWait, b.stepCPU
-	b.init()
+	b.Lo, b.Hi, b.Wait, b.Step = 2, n, batchStragglerWait, b.stepCPU
+	b.Init()
 	m.cpuBatch = b
 	return true
 }
@@ -66,9 +66,7 @@ func (m *Model) CPUBatchStats() ResidentBatchStats {
 	if m.cpuBatch == nil {
 		return ResidentBatchStats{}
 	}
-	m.cpuBatch.mu.Lock()
-	defer m.cpuBatch.mu.Unlock()
-	return m.cpuBatch.stats
+	return m.cpuBatch.Stats()
 }
 
 // stepCPU is the CPU batcher's step: one decodeMultiStep over the run's tokens, each on its own session cache. It runs
@@ -77,14 +75,14 @@ func (m *Model) CPUBatchStats() ResidentBatchStats {
 func (b *cpuBatcher) stepCPU(run []*batchReq) {
 	ids, caches := make([]int, len(run)), make([]*KVCache, len(run))
 	for i, r := range run {
-		ids[i], caches[i] = r.id, r.cache
+		ids[i], caches[i] = r.ID, r.Cache.(*KVCache)
 	}
 	logits, err := runStep(func() ([][]float32, error) { return b.m.decodeMultiStep(ids, caches) })
 	for i, r := range run {
 		if err != nil {
-			r.err = err
+			r.Err = err
 		} else {
-			r.out = &ResidentBatchOut{Logits: logits[i], ID: -1}
+			r.Out = &ResidentBatchOut{Logits: logits[i], ID: -1}
 		}
 	}
 }

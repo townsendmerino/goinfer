@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/blockdraft"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -184,7 +185,7 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 		return f
 	}
 	ones := func(n int) []float32 { return slices.Repeat([]float32{1}, n) }
-	build := func(bf16 bool) *blockTrunk {
+	build := func(bf16 bool) *blockdraft.BlockTrunk {
 		rng = rand.New(rand.NewPCG(11, 12)) // the same weights for both builds
 		mk := func(rows, cols int) linalg.WeightMat {
 			f := rnd(rows*cols, 0.08)
@@ -193,16 +194,14 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 			}
 			return linalg.WrapF32(f, rows, cols)
 		}
-		d := &blockTrunk{hidden: h, nHeads: nH, nKV: nKV, headDim: hd, inter: inter, normEps: 1e-6,
-			invFreq: rope.ComputeInvFreq(1e6, hd, nil), fc: mk(h, 2*h), hiddenNorm: ones(h), finalNorm: ones(h)}
-		for range 2 {
-			d.layers = append(d.layers, dflashLayer{q: mk(nH*hd, h), k: mk(nKV*hd, h), v: mk(nKV*hd, h), o: mk(h, nH*hd),
-				gate: mk(inter, h), up: mk(inter, h), down: mk(h, inter), qNorm: ones(hd), kNorm: ones(hd), inputNorm: ones(h), postAttnNorm: ones(h)})
-		}
-		return d
+		return blockdraft.NewTestBlockTrunk(h, nH, nKV, hd, inter, 1e-6, rope.ComputeInvFreq(1e6, hd, nil),
+			mk(h, 2*h), ones(h), ones(h),
+			func() (linalg.WeightMat, linalg.WeightMat, linalg.WeightMat, linalg.WeightMat, linalg.WeightMat, linalg.WeightMat, linalg.WeightMat, []float32, []float32, []float32, []float32) {
+				return mk(nH*hd, h), mk(nKV*hd, h), mk(nKV*hd, h), mk(h, nH*hd), mk(inter, h), mk(inter, h), mk(h, inter), ones(hd), ones(hd), ones(h), ones(h)
+			}, 2)
 	}
 	f32, bf := build(false), build(true)
-	if k := bf.layers[0].q.Kind(); k != "bf16" {
+	if k := bf.DrafterLayer(0).Q.Kind(); k != "bf16" {
 		t.Fatalf("islandMat kept bf16-exact weights as %s", k)
 	}
 	rows := func(n, w int) [][]float32 {
@@ -224,12 +223,12 @@ func TestMEM11_drafterBF16Islands(t *testing.T) {
 	}
 	taps := rnd(2*h, 1)
 	fa, fb := make([]float32, h), make([]float32, h)
-	matmul(be, &f32.fc, taps, fa, 1)
-	matmul(be, &bf.fc, taps, fb, 1)
+	matmul(be, f32.DrafterFC(), taps, fa, 1)
+	matmul(be, bf.DrafterFC(), taps, fb, 1)
 	d := mem11SameBits(a, b) + mem11SameBits([][]float32{fa}, [][]float32{fb})
 	var bytesF, bytesB int64
-	for i := range f32.layers {
-		for _, p := range [][2]*linalg.WeightMat{{&f32.layers[i].q, &bf.layers[i].q}, {&f32.layers[i].down, &bf.layers[i].down}} {
+	for i := range f32.DrafterGeometry().Layers {
+		for _, p := range [][2]*linalg.WeightMat{{f32.DrafterLayer(i).Q, bf.DrafterLayer(i).Q}, {f32.DrafterLayer(i).Down, bf.DrafterLayer(i).Down}} {
 			bytesF, bytesB = bytesF+wmBytes(p[0]), bytesB+wmBytes(p[1])
 		}
 	}

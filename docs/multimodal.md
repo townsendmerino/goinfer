@@ -831,7 +831,7 @@ number is published without provenance.
      **Consequence for G4's reuse arm:** with CPU decode the resident cache is never populated by an image
      turn, so an end-to-end "reused == cold" has nothing to reuse and would be VACUOUS — a green test that
      exercises no reuse. `residentReuseLen` today returns 0 for ANY image claim on a recurrent family
-     (`decoder/resident_reuse.go:Model.reuseLenOf`, "no recurrent-family VL arch exists today"). P8a instead extends that
+     (`internal/runtime/residency/reuse.go:Host.ReuseLenOf`, "no recurrent-family VL arch exists today"). P8a instead extends that
      rule as a unit: image claims on a recurrent family are honoured only under exact extension AND only
      if every committed image block has a claim with the same nonzero hash (the placeholder id alone
      cannot tell two images apart, and recurrent state cannot be rewound to an image boundary); G4 tests

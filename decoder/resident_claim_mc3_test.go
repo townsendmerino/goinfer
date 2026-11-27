@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"sync/atomic"
 	"testing"
 )
@@ -17,9 +18,8 @@ func TestBlockSpecGenerate_declinesWhileAnMC3HolderIsActive(t *testing.T) {
 	host := &blockspecStubHost{}
 	m := &Model{resident: host}
 	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
-	m.batcher = &residentBatcher{maxHolders: 2}
-	m.batcher.init()
-	if !m.batcher.claim(&m.resBusy) {
+	m.batcher = residency.NewTestBatcher(2, 2, batchStragglerWait)
+	if !m.batcher.Claim(&m.resBusy) {
 		t.Fatal("setup: the MC3 claim failed")
 	}
 	s := &BlockSpec{m: m, host: host, dw: blockspecStubWeights{blockSize: 8}}
@@ -33,7 +33,7 @@ func TestBlockSpecGenerate_declinesWhileAnMC3HolderIsActive(t *testing.T) {
 	if atomic.LoadInt32(&m.resBusy) != 0 {
 		t.Error("resBusy changed by a call that should have declined")
 	}
-	m.batcher.release()
+	m.batcher.Release()
 }
 
 // TestGenerateSpeculative_leavesTheResidentToAnMC3Holder: with one MC3 place held on the target, speculative decoding
@@ -48,7 +48,7 @@ func TestGenerateSpeculative_leavesTheResidentToAnMC3Holder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer draft.Close()
-	if !m.batcher.claim(&m.resBusy) {
+	if !m.batcher.Claim(&m.resBusy) {
 		t.Fatal("setup: the MC3 claim failed")
 	}
 	before := rf.soloFwds
@@ -69,5 +69,5 @@ func TestGenerateSpeculative_leavesTheResidentToAnMC3Holder(t *testing.T) {
 	if rf.soloFwds != before {
 		t.Errorf("the target's resident ran %d forwards while an MC3 generation held a place", rf.soloFwds-before)
 	}
-	m.batcher.release()
+	m.batcher.Release()
 }

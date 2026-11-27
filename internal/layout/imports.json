@@ -280,6 +280,108 @@
       "why": "internal/runtime/kvsnap manages GPU-to-host prefix KV snapshots, LRU byte budgets (resident.KVHostBudget), candidate matching, and boundary/recurrent cut planning below decoder. It imports only decoder/resident and internal/runtime/kvmgr and never decoder."
     },
     {
+      "name": "paging-leaf",
+      "from": [
+        "internal/runtime/paging"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/paging": [
+          "decoder/arch",
+          "internal/runtime/logs",
+          "internal/runtime/mem",
+          "internal/runtime/mem/probe"
+        ]
+      },
+      "why": "internal/runtime/paging holds MoE expert paging, the pread expert buffer pool, and dense layer paging below decoder (SZ16). It never imports decoder."
+    },
+    {
+      "name": "blockdraft-leaf",
+      "from": [
+        "internal/runtime/blockdraft"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/blockdraft": [
+          "decoder/resident",
+          "internal/runtime/cpuengine",
+          "internal/runtime/giwcodec",
+          "internal/runtime/normact",
+          "internal/runtime/rope",
+          "internal/runtime/sampling",
+          "internal/testassets"
+        ]
+      },
+      "why": "internal/runtime/blockdraft holds the DFlash and DSpark block drafters, weight streaming, and resident byte estimators below decoder (SZ16). It never imports decoder."
+    },
+    {
+      "name": "residency-leaf",
+      "from": [
+        "internal/runtime/residency"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/residency": [
+          "decoder/arch",
+          "decoder/resident",
+          "internal/cost",
+          "internal/runtime/adapter",
+          "internal/runtime/kvmgr",
+          "internal/runtime/kvsnap"
+        ]
+      },
+      "why": "internal/runtime/residency holds resident subsystem resolution, KV scope, the resident decode batcher, slot reuse/sharing, host snapshot orchestration, and recurrent checkpoints below decoder (SZ16). It never imports decoder."
+    },
+    {
+      "name": "sidecar-leaf",
+      "from": [
+        "internal/runtime/sidecar"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/sidecar": [
+          "internal/runtime/giw",
+          "internal/runtime/giwcodec",
+          "internal/runtime/logs",
+          "internal/runtime/wbuild",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/runtime/sidecar holds .giw sidecar transcoding, GGUF metadata extraction, projected and LoRA sidecars, and readback helpers below decoder (SZ16). It never imports decoder."
+    },
+    {
+      "name": "specdecode-leaf",
+      "from": [
+        "internal/runtime/specdecode"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/specdecode": [
+          "constrain",
+          "decoder/arch",
+          "decoder/resident",
+          "internal/runtime/program",
+          "internal/runtime/sampling"
+        ]
+      },
+      "why": "internal/runtime/specdecode holds speculative decoding drafters, trace collection, adaptive depth, optimistic-forward overlap, and verification loops below decoder (SZ16). It never imports decoder."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -559,6 +661,7 @@
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/archparts",
+      "internal/runtime/blockdraft",
       "internal/runtime/cpuengine",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
@@ -575,9 +678,13 @@
       "internal/runtime/mem/probe",
       "internal/runtime/memprice",
       "internal/runtime/normact",
+      "internal/runtime/paging",
       "internal/runtime/program",
+      "internal/runtime/residency",
       "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/runtime/sidecar",
+      "internal/runtime/specdecode",
       "internal/runtime/wbuild",
       "internal/testassets",
       "tokenizer"
@@ -770,6 +877,14 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2"
     ],
+    "internal/runtime/blockdraft": [
+      "decoder/resident",
+      "internal/runtime/cpuengine",
+      "internal/runtime/giwcodec",
+      "internal/runtime/normact",
+      "internal/runtime/rope",
+      "internal/runtime/sampling"
+    ],
     "internal/runtime/cpuengine": [
       "decoder/arch",
       "internal/cost",
@@ -833,8 +948,36 @@
       "pull",
       "tokenizer"
     ],
+    "internal/runtime/paging": [
+      "decoder/arch",
+      "internal/runtime/logs",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe"
+    ],
     "internal/runtime/prequant": [
       "decoder"
+    ],
+    "internal/runtime/residency": [
+      "decoder/arch",
+      "decoder/resident",
+      "internal/cost",
+      "internal/runtime/adapter",
+      "internal/runtime/kvmgr",
+      "internal/runtime/kvsnap"
+    ],
+    "internal/runtime/sidecar": [
+      "internal/runtime/giw",
+      "internal/runtime/giwcodec",
+      "internal/runtime/logs",
+      "internal/runtime/wbuild",
+      "tokenizer"
+    ],
+    "internal/runtime/specdecode": [
+      "constrain",
+      "decoder/arch",
+      "decoder/resident",
+      "internal/runtime/program",
+      "internal/runtime/sampling"
     ],
     "internal/runtime/wbuild": [
       "decoder/arch",
@@ -1013,6 +1156,7 @@
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/archparts",
+      "internal/runtime/blockdraft",
       "internal/runtime/cpuengine",
       "internal/runtime/families",
       "internal/runtime/ggufconfig",
@@ -1026,9 +1170,13 @@
       "internal/runtime/mem/probe",
       "internal/runtime/memprice",
       "internal/runtime/normact",
+      "internal/runtime/paging",
       "internal/runtime/program",
+      "internal/runtime/residency",
       "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/runtime/sidecar",
+      "internal/runtime/specdecode",
       "internal/runtime/wbuild",
       "internal/testassets",
       "internal/testgate",
@@ -1159,6 +1307,10 @@
     "internal/guard/swapguard": [
       "decoder",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/blockdraft": [
+      "decoder/resident",
+      "internal/testassets"
     ],
     "internal/runtime/cpuengine": [
       "decoder/arch",

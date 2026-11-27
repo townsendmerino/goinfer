@@ -79,7 +79,7 @@ func (m *Model) hiddenLast(ctx context.Context, ids []int) ([]float32, error) {
 // backend's HiddenLastAvailable in one call, starting at position 0 — HiddenLast never reuses a
 // previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
 func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, error) {
-	m.residentForgetScratch()
+	m.resHost().ForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)
@@ -95,7 +95,8 @@ func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, e
 func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, error) {
 	a := m.w.Arch
 	cache := m.NewCache(len(ids))
-	hN, err := m.runLayersFromEmbedN(ctx, m.embedN(ids), cache, false) // never fast: exact HF parity is the point
+	e := m.cpuEngine()
+	hN, err := e.RunLayersFromEmbedN(ctx, e.EmbedN(ids), unwrapCache(cache), false) // never fast: exact HF parity is the point
 	if err != nil {
 		return nil, err
 	}

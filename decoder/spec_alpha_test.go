@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/internal/runtime/specdecode"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -317,8 +318,8 @@ func TestRouterOnlineCorrection(t *testing.T) {
 	if d := r.Draft(nil, 4); d[0] != hi.proposal[0] {
 		t.Fatalf("cold start should pick the higher static-α̂ source (hi), got %v", d)
 	}
-	if r.chosen != 0 {
-		t.Fatalf("chosen=%d, want 0 (hi)", r.chosen)
+	if specdecode.RouterChosen(r) != 0 {
+		t.Fatalf("chosen=%d, want 0 (hi)", specdecode.RouterChosen(r))
 	}
 
 	// Feed realized outcomes for whichever source the router picks each round; hi keeps
@@ -327,11 +328,11 @@ func TestRouterOnlineCorrection(t *testing.T) {
 	for round := range 30 {
 		r.Draft(nil, 4)
 		src := hi
-		if r.chosen == 1 {
+		if specdecode.RouterChosen(r) == 1 {
 			src = lo
 		}
 		r.RecordOutcome(src.accept, len(src.proposal))
-		if r.chosen == 1 && flipped < 0 {
+		if specdecode.RouterChosen(r) == 1 && flipped < 0 {
 			flipped = round
 		}
 	}
@@ -342,9 +343,9 @@ func TestRouterOnlineCorrection(t *testing.T) {
 		t.Errorf("router took %d rounds to correct — too slow", flipped)
 	}
 	t.Logf("online correction flipped hi→lo after %d rounds (hi eff %.3f, lo eff %.3f)",
-		flipped, r.effective(0, hi.conf), r.effective(1, lo.conf))
-	if r.effective(0, hi.conf) >= r.effective(1, lo.conf) {
-		t.Errorf("after correction, hi eff %.3f should be < lo eff %.3f", r.effective(0, hi.conf), r.effective(1, lo.conf))
+		flipped, specdecode.RouterEffective(r, 0, hi.conf), specdecode.RouterEffective(r, 1, lo.conf))
+	if specdecode.RouterEffective(r, 0, hi.conf) >= specdecode.RouterEffective(r, 1, lo.conf) {
+		t.Errorf("after correction, hi eff %.3f should be < lo eff %.3f", specdecode.RouterEffective(r, 0, hi.conf), specdecode.RouterEffective(r, 1, lo.conf))
 	}
 }
 

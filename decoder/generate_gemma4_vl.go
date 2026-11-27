@@ -50,7 +50,8 @@ func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, image
 			// row is used as is, with no embed_scale: that scaling is the Gemma 4 program walk's job for a real token embedding, and a
 			// tower's projected output is already in the target embedding space.
 			row := slices.Clone(imageEmbeds[off : off+hidden])
-			h, err = m.runLayersFromEmbedPLE(row, padID, cache)
+			e := m.cpuEngine()
+			h, err = e.RunLayersFromEmbedPLE(row, padID, unwrapCache(cache))
 		} else {
 			h, err = m.runLayers(id, cache)
 		}
@@ -58,7 +59,8 @@ func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, image
 			return nil, err
 		}
 	}
-	return m.logitsFromHidden(h, cache), nil
+	e := m.cpuEngine()
+	return e.LogitsFromHidden(h, unwrapCache(cache)), nil
 }
 
 // prefillLogitsGemma4VLBidirectional is prefillLogitsGemma4VL's batched twin for checkpoints with
@@ -100,11 +102,12 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		if cap(buf) < (c1-c0)*hidden {
 			buf = make([]float32, (c1-c0)*hidden)
 		}
-		h := m.embedNInto(buf[:(c1-c0)*hidden], ids[c0:c1])
+		e := m.cpuEngine()
+		h := e.EmbedNInto(buf[:(c1-c0)*hidden], ids[c0:c1])
 		spliceImageSpansRange(h, spans, imageEmbeds, hidden, c0, c1)
 		atomic.AddInt64(&cpuengine.PrefillPasses, 1)
 		var err error
-		if hLast, err = m.runLayersGemma4FromEmbedN(ctx, h, ids[c0:c1], spans, cache); err != nil {
+		if hLast, err = e.RunLayersGemma4FromEmbedN(ctx, h, ids[c0:c1], spans, unwrapCache(cache)); err != nil {
 			return nil, err
 		}
 		if cpuengine.PrefillChunkDone != nil {
@@ -113,9 +116,10 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		c0 = c1
 	}
 	t0 := cpuengine.CostStart(&cache.c)
-	lg := m.logitsFromNormed(hLast, cache) // the walker applied the head's norm
+	e := m.cpuEngine()
+	lg := e.LogitsFromNormed(hLast, unwrapCache(cache)) // the walker applied the head's norm
 	if cache.c.Cost != nil {
-		m.countHead(cache, 1, t0)
+		e.CountHead(unwrapCache(cache), 1, t0)
 	}
 	return lg, nil
 }
@@ -189,7 +193,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			// engaging) forgets unconditionally, as in GenerateVL's upload bridge.
 			defer func() {
 				if !committed {
-					m.residentForgetIDsIn(kvScopeOf(ctx))
+					m.resHost().ForgetIDsIn(kvScopeOf(ctx))
 				}
 				atomic.StoreInt32(&m.resBusy, 0)
 			}()
@@ -221,7 +225,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			// Commit the image block the way GenerateVL and GenerateQwenVL do, so residentReuseLen's prefix scan has something to
 			// key a later turn's reuse check on, instead of a plain id comparison that Gemma 4's content-independent soft-token ids
 			// can satisfy by coincidence.
-			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
+			m.resHost().CommitIDs(ids, generated, residentImageBlocksOf(spans), 0)
 			committed = true
 		}
 	})
@@ -266,8 +270,8 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		atomic.StoreInt32(&m.resBusy, 0)
 		return false
 	}
-	m.residentForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
-	m.residentWritesFromZero()
+	m.resHost().ForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
+	m.resHost().WritesFromZero()
 	logits, err := prefill(rows)
 	if err != nil {
 		atomic.StoreInt32(&m.resBusy, 0)
@@ -291,9 +295,9 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		return l, err
 	})
 	if g.err == nil {
-		m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
+		m.resHost().CommitIDs(ids, generated, residentImageBlocksOf(spans), 0)
 	} else {
-		m.residentForgetIDsIn(kvScopeOf(ctx))
+		m.resHost().ForgetIDsIn(kvScopeOf(ctx))
 	}
 	atomic.StoreInt32(&m.resBusy, 0)
 	return true
@@ -307,7 +311,8 @@ func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
 	row := make([]float32, m.BackendView().EmbedLen())
 	copy(row[:hidden], feature)
 	if len(row) > hidden {
-		m.gemma4PLEInputs(row[:hidden], m.w.Arch.Gemma4.PadTokenID, row[hidden:])
+		e := m.cpuEngine()
+		e.Gemma4PLEInputs(row[:hidden], m.w.Arch.Gemma4.PadTokenID, row[hidden:])
 	}
 	return row
 }
@@ -337,7 +342,8 @@ func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []I
 		case 1: // planted: the placeholder's own id instead of the pad id
 			row := make([]float32, m.BackendView().EmbedLen())
 			copy(row[:hidden], f)
-			m.gemma4PLEInputs(row[:hidden], id, row[hidden:])
+			e := m.cpuEngine()
+			e.Gemma4PLEInputs(row[:hidden], id, row[hidden:])
 			rows[i] = row
 		case 2: // planted: the feature scaled like a token embedding
 			sc := float32(1)

@@ -126,7 +126,7 @@ func (r residentSequenceState) inner() kvmgr.SequenceState {
 	if r.m == nil {
 		return nil
 	}
-	slots := r.m.kvSlots()
+	slots := r.m.resHost().KVSlots()
 	return slots.StateWith(
 		r.slot,
 		r.m.hasRecurrentState(),
@@ -135,7 +135,7 @@ func (r residentSequenceState) inner() kvmgr.SequenceState {
 				return 0
 			}
 			if r.slot == slots.Bound() {
-				return r.m.residentReuseFloor(prefix)
+				return r.m.resHost().ReuseFloorFor(prefix)
 			}
 			kv := r.m.resKV()
 			if kv.ReusableKVSlotAvailable() {
@@ -146,7 +146,7 @@ func (r residentSequenceState) inner() kvmgr.SequenceState {
 		func(target int) bool {
 			if target == 0 {
 				if r.slot == slots.Bound() {
-					r.m.residentForgetIDs()
+					r.m.resHost().ForgetIDs()
 				} else {
 					slots.Forget(r.slot)
 				}

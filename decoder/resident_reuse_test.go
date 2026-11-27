@@ -90,7 +90,7 @@ func (m *Model) boundBlocksForTest() []residentImageBlock {
 	}
 	var out []residentImageBlock
 	for _, sp := range s.Images() {
-		out = append(out, residentImageBlock{start: sp.Start, end: sp.Start + sp.Len, hash: sp.Hash})
+		out = append(out, residentImageBlock{Start: sp.Start, End: sp.Start + sp.Len, Hash: sp.Hash})
 	}
 	return out
 }
@@ -196,7 +196,7 @@ func TestResidentCommitIDs_copies(t *testing.T) {
 func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 	// cached: [text 0,1] [image 2,3,4 hash=7] [text 5,6]
 	cached := []int{100, 101, 900, 900, 900, 200, 201}
-	block := residentImageBlock{start: 2, end: 5, hash: 7}
+	block := residentImageBlock{Start: 2, End: 5, Hash: 7}
 
 	for _, tc := range []struct {
 		name   string
@@ -253,11 +253,11 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 
 // TestResidentReuseLen_zeroHashNeverMatches (M-06, audit-2026-09-10.md): a caller with no reuse
 // story of its own passes imgHash 0 ("no claim"). Two such callers, at the same position with
-// different actual images, both produce hash 0 — before the fix, `claim.Hash == blk.hash`
+// different actual images, both produce hash 0 — before the fix, `claim.Hash == blk.Hash`
 // matched on 0 == 0 and the second image's KV was silently reused from the first's.
 func TestResidentReuseLen_zeroHashNeverMatches(t *testing.T) {
 	cached := []int{100, 101, 900, 900, 900, 200, 201}
-	block := residentImageBlock{start: 2, end: 5, hash: 0}
+	block := residentImageBlock{Start: 2, End: 5, Hash: 0}
 	m := &Model{}
 	m.setBoundSeqForTest(cached, nil, []residentImageBlock{block})
 	prompt := []int{100, 101, 900, 900, 900, 200, 201, 300}
@@ -279,7 +279,7 @@ func TestResidentReuseLen_zeroHashNeverMatches(t *testing.T) {
 func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 	const P = 900 // the shared placeholder id
 	committed := []int{10, 11, P, P, P, P, 12, 13}
-	blk := residentImageBlock{start: 2, end: 6, hash: 7}
+	blk := residentImageBlock{Start: 2, End: 6, Hash: 7}
 	ext := append(slices.Clone(committed), 20, 21)
 	for _, tc := range []struct {
 		name   string
@@ -292,7 +292,7 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 		{"different image bytes under the same placeholder ids", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 9}}, 0},
 		{"committed block with no claim at all", []residentImageBlock{blk}, ext, nil, 0},
 		{"claim of a different length", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 3, Hash: 7}}, 0},
-		{"committed hash 0 never verifies, even against a claim of 0", []residentImageBlock{{start: 2, end: 6, hash: 0}}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 0}}, 0},
+		{"committed hash 0 never verifies, even against a claim of 0", []residentImageBlock{{Start: 2, End: 6, Hash: 0}}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 0}}, 0},
 		{"a new image past the reused span is ordinary new work", []residentImageBlock{blk}, append(slices.Clone(ext), P, P, 30),
 			[]residentImageClaim{{Start: 2, Len: 4, Hash: 7}, {Start: 10, Len: 2, Hash: 55}}, 8},
 		{"a claim straddling the committed boundary (ids still match the whole span)", []residentImageBlock{blk}, append(slices.Clone(committed), P, P, 20),
@@ -300,9 +300,9 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 		{"claim over positions the state saw as plain tokens", nil, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
 		{"edited prefix", []residentImageBlock{blk}, append([]int{99}, ext[1:]...), []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
 		{"identical resend has no new token to extend with", []residentImageBlock{blk}, committed, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
-		{"two committed images, the second swapped", []residentImageBlock{{start: 1, end: 3, hash: 5}, {start: 4, end: 6, hash: 6}},
+		{"two committed images, the second swapped", []residentImageBlock{{Start: 1, End: 3, Hash: 5}, {Start: 4, End: 6, Hash: 6}},
 			[]int{1, P, P, 2, P, P, 3, 4}, []residentImageClaim{{Start: 1, Len: 2, Hash: 5}, {Start: 4, Len: 2, Hash: 8}}, 0},
-		{"two committed images, both verified", []residentImageBlock{{start: 1, end: 3, hash: 5}, {start: 4, end: 6, hash: 6}},
+		{"two committed images, both verified", []residentImageBlock{{Start: 1, End: 3, Hash: 5}, {Start: 4, End: 6, Hash: 6}},
 			[]int{1, P, P, 2, P, P, 3, 4}, []residentImageClaim{{Start: 1, Len: 2, Hash: 5}, {Start: 4, Len: 2, Hash: 6}}, 6},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -324,15 +324,15 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 // sanity check on residentCommitIDs' bookkeeping, not a reuse-correctness test by itself.
 func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 	m := &Model{}
-	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 2, end: 5, hash: 7}})
-	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 8, end: 11, hash: 42}}, nil)
+	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{Start: 2, End: 5, Hash: 7}})
+	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, []residentImageBlock{{Start: 8, End: 11, Hash: 42}}, nil)
 	if len(m.boundBlocksForTest()) != 2 {
 		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.boundBlocksForTest())
 	}
-	if m.boundBlocksForTest()[0] != (residentImageBlock{start: 2, end: 5, hash: 7}) {
+	if m.boundBlocksForTest()[0] != (residentImageBlock{Start: 2, End: 5, Hash: 7}) {
 		t.Errorf("old block not preserved: %v", m.boundBlocksForTest()[0])
 	}
-	if m.boundBlocksForTest()[1] != (residentImageBlock{start: 8, end: 11, hash: 42}) {
+	if m.boundBlocksForTest()[1] != (residentImageBlock{Start: 8, End: 11, Hash: 42}) {
 		t.Errorf("new block not recorded: %v", m.boundBlocksForTest()[1])
 	}
 }
@@ -342,7 +342,7 @@ func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 // as a stale resIDs, for the same reason.
 func TestResidentForgetIDs_clearsImageBlocksToo(t *testing.T) {
 	m := &Model{}
-	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 2, end: 5, hash: 7}})
+	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{Start: 2, End: 5, Hash: 7}})
 	m.residentCommitIDs([]int{1, 2, 3, 4, 5}, []int{6}, nil, nil)
 	if got := m.boundBlocksForTest(); len(got) != 1 {
 		t.Fatalf("after the commit the slot holds blocks %v, want the earlier one: nothing for the forget to clear", got)

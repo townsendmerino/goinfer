@@ -1,6 +1,9 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/runtime/mem"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/paging"
+)
 
 // moeSlowTokPerSecThreshold is the refusal floor for paged and mapped CPU MoE loads; tests may override it via
 // testgate.SetForTest when verifying wiring on tiny fixtures whose real byte counts always predict a fast rate.
@@ -11,7 +14,7 @@ func moeWorkingSetPrediction(m *Model) (tokPerSec float64, ok bool) {
 	if m == nil || m.pager == nil {
 		return 0, false
 	}
-	return predictMoEWorkingSet(m, m.pager.total, m.pager.nExperts, m.pager.budget())
+	return predictMoEWorkingSet(m, m.pager.TotalMappedBytes(), m.pager.ExpertCount(), m.pager.Budget())
 }
 
 // mappedMoEWorkingSetPrediction is moeWorkingSetPrediction for a MoE load that decodes from its mapping with no pager: the
@@ -21,11 +24,11 @@ func mappedMoEWorkingSetPrediction(m *Model, requested int64) (tokPerSec float64
 	if m == nil || m.w == nil {
 		return 0, false
 	}
-	total, maxExpert, n := mappedExpertBytes(m.w, m.mmap)
+	total, maxExpert, n := paging.MappedExpertBytes(m.w, m.mmap)
 	if total <= 0 {
 		return 0, false
 	}
-	return predictMoEWorkingSet(m, total, n, pagerBudget(requested, total, maxExpert))
+	return predictMoEWorkingSet(m, total, n, paging.PagerBudget(requested, total, maxExpert))
 }
 
 func predictMoEWorkingSet(m *Model, total int64, nExperts int, budget int64) (tokPerSec float64, ok bool) {

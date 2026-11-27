@@ -81,7 +81,7 @@ func TestRow4GiwKind_gemma4_pagedEviction(t *testing.T) {
 	if !slicesEqualInt(a, b) {
 		t.Fatalf("paging the kind-4 bundle changed the decode:\n full:  %v\n paged: %v", a, b)
 	}
-	hits, misses, evictions := paged.pager.stats()
+	hits, misses, evictions := paged.pager.Stats()
 	if evictions == 0 {
 		t.Fatalf("pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
@@ -124,7 +124,7 @@ func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
 	if !slicesEqualInt(a, b) {
 		t.Fatalf("paging the kind-4 bundle changed the decode:\n full:  %v\n paged: %v", a, b)
 	}
-	hits, misses, evictions := paged.pager.stats()
+	hits, misses, evictions := paged.pager.Stats()
 	if evictions == 0 {
 		t.Fatalf("pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
@@ -145,8 +145,8 @@ func assertAdvisedBytesSane(t *testing.T, p *expertPager, misses int64) {
 	if misses == 0 {
 		t.Fatal("no misses recorded -- cannot check bytes-per-miss")
 	}
-	advised := p.advisedBytes()
-	avgExpert := p.total / int64(p.nExperts)
+	advised := p.AdvisedBytes()
+	avgExpert := p.TotalMappedBytes() / int64(p.ExpertCount())
 	perMiss := advised / misses
 	// Generous ceiling (1.5x the average expert size): eviction thrash and uneven
 	// expert sizes both add real variance above the mean, but a genuine double-
