@@ -331,7 +331,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 	prov.Dirty = false
 	prov.Fields = append(prov.Fields, [2]string{"tree", "the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both"})
 	fmt.Fprintf(w, "%s== identity provenance ==%s\n", bold, off)
-	prov.write(w)
+	prov.Write(w)
 	if runnable == 0 {
 		return refuse("no source on this host — nothing would be compared (a skip is not a pass)")
 	}

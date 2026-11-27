@@ -611,6 +611,24 @@
         "*"
       ],
       "why": "internal/app/serveapp/netguard provides loopback DNS-rebinding and browser cross-origin guards, constant-time API-key auth, request body caps, in-flight admission, and JSON error framing below serveapp (SA4). It imports no goinfer package."
+    },
+    {
+      "name": "gatecore-leaf",
+      "from": [
+        "internal/guard/gatecore"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatecore": [
+          "internal/runtime/mem/probe",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatecore holds the go test -json event accumulator, matrix cell runner, run-record codec, /proc memory sampler, git/pre-move path helpers, and pure tally/skip/timeout graders below cmd/gate (GT1). Its production files import only internal/runtime/mem/probe."
     }
   ],
   "arrows": {
@@ -728,8 +746,8 @@
       "tokenizer"
     ],
     "cmd/gate": [
+      "internal/guard/gatecore",
       "internal/guard/paritykey",
-      "internal/runtime/mem/probe",
       "tokenizer"
     ],
     "cmd/hostmem": [
@@ -978,6 +996,9 @@
       "internal/diag/kernelprint",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/guard/gatecore": [
+      "internal/runtime/mem/probe"
     ],
     "internal/guard/memgate": [
       "decoder",
@@ -1253,8 +1274,8 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey",
-      "internal/testgate"
+      "internal/guard/gatecore",
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -1429,6 +1450,10 @@
     ],
     "internal/diag/towerid": [
       "internal/vision"
+    ],
+    "internal/guard/gatecore": [
+      "internal/testgate",
+      "internal/testpath"
     ],
     "internal/guard/memgate": [
       "decoder",

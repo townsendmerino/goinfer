@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // replayEditedRelease replays the release-replay golden's record with edit applied to its reads, and returns the report
@@ -17,7 +19,12 @@ func replayEditedRelease(t *testing.T, edit func(in *releaseInputs)) (string, in
 	if err != nil {
 		t.Fatal(err)
 	}
-	edit(rec.Release)
+	relIn, err := gatecore.UnmarshalPayload[releaseInputs](rec.Release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit(relIn)
+	rec.Release, _ = json.Marshal(relIn)
 	b, err := json.Marshal(rec)
 	if err != nil {
 		t.Fatal(err)

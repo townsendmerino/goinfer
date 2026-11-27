@@ -126,8 +126,8 @@ func replayQuick(w io.Writer, path string) int {
 			}
 			jb.JSONPath = rj.Stream
 			jb.res = newResults()
-			jb.res.cur = jb.Name
-			err = jb.res.consume(f)
+			jb.res.Cur = jb.Name
+			err = jb.res.Consume(f)
 			f.Close()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "gate quick: %s: %v\n", rj.Stream, err)

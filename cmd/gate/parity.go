@@ -345,7 +345,7 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 		{"emit", fmt.Sprintf("%v", emitManifest)},
 	})
 	fmt.Fprintf(w, "\n%s== parity sweep provenance ==%s\n", bold, off)
-	prov.write(w)
+	prov.Write(w)
 
 	// THE COMPOSITION, NOT JUST THE VERDICT. This gate's axes are family × quant × loader, and a pass COUNT
 	// alone cannot distinguish "the axes are covered" from "an axis collapsed to one value".
@@ -419,7 +419,7 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 // failed or skipped gate.
 func mergeManifest(w io.Writer, res *results, logDir string) int {
 	fmt.Fprintf(w, "\n-- EMIT_MANIFEST: merging measured PARITY_ROW lines into the parity records (testdata/parity) --\n")
-	rows := res.parityRows
+	rows := res.ParityRows
 	if len(rows) == 0 {
 		fmt.Fprintf(w, "   no PARITY_ROW lines emitted (no numeric-oracle gate ran with its asset)\n")
 		emitterCoverage(w, res, nil)
@@ -461,7 +461,7 @@ func mergeManifest(w io.Writer, res *results, logDir string) int {
 func emitterCoverage(w io.Writer, res *results, fams map[string]bool) {
 	fmt.Fprintf(w, "-- emitter coverage (numeric-oracle gates) --\n")
 	for _, g := range emitGates {
-		act, seen := res.lookupTop(g.Test)
+		act, seen := res.LookupTop(g.Test)
 		// A gate that records several families names them joined by "+" ("gemma+gemma2"); the merged-row set holds
 		// each family on its own, so look the parts up one by one. Looking the joined string up never matched, and
 		// the v0.21.0 sweep warned "emitted NO row for gemma+gemma2" while both rows had been merged.

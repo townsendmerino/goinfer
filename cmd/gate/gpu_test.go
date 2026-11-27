@@ -104,14 +104,14 @@ func TestGPU_verdictHasThreeStates(t *testing.T) {
 // TOP-LEVEL results only.
 func TestGPU_zeroMatchedTestsIsDetectable(t *testing.T) {
 	empty := newResults()
-	if empty.ranCount() != 0 {
-		t.Fatalf("an empty stream reports %d tests", empty.ranCount())
+	if empty.RanCount() != 0 {
+		t.Fatalf("an empty stream reports %d tests", empty.RanCount())
 	}
 	r := newResults()
-	r.cur = "c"
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestA"})
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestA/sub"})
-	if got := r.ranCount(); got != 1 {
+	r.Cur = "c"
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestA"})
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestA/sub"})
+	if got := r.RanCount(); got != 1 {
 		t.Fatalf("ranCount = %d, want 1 — subtests must not inflate it", got)
 	}
 }
@@ -327,8 +327,8 @@ func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	g := &gpuGate{w: &buf, logDir: t.TempDir()}
 
 	populated := newResults()
-	populated.add(testEvent{Action: "run", Package: "p", Test: "TestSomething"})
-	populated.add(testEvent{Action: "pass", Package: "p", Test: "TestSomething"})
+	populated.Add(testEvent{Action: "run", Package: "p", Test: "TestSomething"})
+	populated.Add(testEvent{Action: "pass", Package: "p", Test: "TestSomething"})
 	g.noteIfEmpty(cell{Name: "real", Run: "TestSomething"}, populated)
 
 	g.noteIfEmpty(cell{Name: "unfiltered", Run: ""}, newResults())
@@ -493,12 +493,12 @@ func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 		r := newResults()
 		for _, n := range tests {
 			k := testKey{Cell: cell, Pkg: "cuda", Test: n}
-			r.order = append(r.order, k)
-			r.final[k] = "pass"
+			r.Order = append(r.Order, k)
+			r.Final[k] = "pass"
 		}
 		sub := testKey{Cell: cell, Pkg: "cuda", Test: "TestAlpha/sub"}
-		r.order = append(r.order, sub)
-		r.final[sub] = "pass"
+		r.Order = append(r.Order, sub)
+		r.Final[sub] = "pass"
 		return r
 	}
 	listed := []string{"TestAlpha", "TestBeta", "TestMiddle", "TestZeta"}

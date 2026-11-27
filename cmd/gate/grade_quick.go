@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 func (jb *quickJob) dur() time.Duration { return jb.end.Sub(jb.start) }
@@ -50,14 +52,14 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	}
 	failures := 0
 	if len(lint) > 0 {
-		fmt.Fprintf(w, "\n%s== lint ==%s\n", bold, off)
+		fmt.Fprintf(w, "\n%s== lint ==%s\n", gatecore.Bold, gatecore.Off)
 		for _, jb := range lint {
-			st, col := "PASS", green
+			st, col := "PASS", gatecore.Green
 			if !jb.ok() {
-				st, col = "FAIL", red
+				st, col = "FAIL", gatecore.Red
 				failures++
 			}
-			fmt.Fprintf(w, "  %s%-4s%s  %-52s %-9s %6s   %s\n", col, st, off, jb.Name, jb.Detail, jb.dur().Round(100*time.Millisecond), jb.Mirrors)
+			fmt.Fprintf(w, "  %s%-4s%s  %-52s %-9s %6s   %s\n", col, st, gatecore.Off, jb.Name, jb.Detail, jb.dur().Round(100*time.Millisecond), jb.Mirrors)
 			if !jb.ok() {
 				msg := jb.Out
 				if jb.Err != nil {
@@ -80,7 +82,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		}
 	}
 
-	fmt.Fprintf(w, "\n%s== tests ==%s\n", bold, off)
+	fmt.Fprintf(w, "\n%s== tests ==%s\n", gatecore.Bold, gatecore.Off)
 	var pass, skip, fail, ran, cached, allSkip int
 	var goldenJobs []*quickJob
 	var vacuousAffected []string
@@ -99,13 +101,13 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 			ran++
 		}
 		st := statusWord(jb)
-		col := green
+		col := gatecore.Green
 		switch st {
 		case "FAIL":
-			col = red
+			col = gatecore.Red
 			failures++
 		case "ALLSKIP", "NOTESTS":
-			col = amber
+			col = gatecore.Amber
 			allSkip++
 			if jb.Cell.Tier == "affected" {
 				vacuousAffected = append(vacuousAffected, jb.Name)
@@ -114,20 +116,20 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		if jb.Cell.Golden {
 			goldenJobs = append(goldenJobs, jb)
 		}
-		fmt.Fprintf(w, "  %s%-7s%s %-34s %-13s %7s  %4d pass %4d skip %3d fail\n", col, st, off, jb.Name, jb.Cell.Tier,
+		fmt.Fprintf(w, "  %s%-7s%s %-34s %-13s %7s  %4d pass %4d skip %3d fail\n", col, st, gatecore.Off, jb.Name, jb.Cell.Tier,
 			jb.dur().Round(100*time.Millisecond), jb.Pass, jb.Skip, jb.Fail)
 		if jb.res != nil {
-			for _, r := range collectSkips(jb.res, true) {
+			for _, r := range gatecore.CollectSkips(jb.res, true) {
 				skipBuckets[r.Bucket]++
 				skipRows = append(skipRows, r)
 			}
 		}
 	}
 	for _, c := range notRun {
-		fmt.Fprintf(w, "  %s%-7s%s %-34s %s\n", amber, "NOT RUN", off, c.Name, c.NotRun)
+		fmt.Fprintf(w, "  %s%-7s%s %-34s %s\n", gatecore.Amber, "NOT RUN", gatecore.Off, c.Name, c.NotRun)
 	}
 	for _, c := range deferred {
-		fmt.Fprintf(w, "  %s%-8s%s %-33s %s\n", amber, "DEFERRED", off, c.Name, c.Deferred)
+		fmt.Fprintf(w, "  %s%-8s%s %-33s %s\n", gatecore.Amber, "DEFERRED", gatecore.Off, c.Name, c.Deferred)
 	}
 
 	// Each failing cell: its source-located lines, or — for a failure with no per-test FAIL (a
@@ -136,12 +138,12 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		if jb.ok() {
 			continue
 		}
-		fmt.Fprintf(w, "\n  %s%s%s — log: %s\n", red, jb.Name, off, jb.LogPath)
+		fmt.Fprintf(w, "\n  %s%s%s — log: %s\n", gatecore.Red, jb.Name, gatecore.Off, jb.LogPath)
 		if jb.Err != nil {
 			fmt.Fprintf(w, "    did not run: %v\n", jb.Err)
 		}
 		if jb.res != nil && jb.Fail > 0 {
-			writeFailures(w, jb.res, true)
+			gatecore.WriteFailures(w, jb.res, true)
 		}
 		if jb.Hidden {
 			fmt.Fprintf(w, "    go test exited %d with 0 counted failures (build error / panic / timeout); log tail:\n", jb.RC)
@@ -151,7 +153,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		}
 	}
 
-	fmt.Fprintf(w, "\n%s== verdict ==%s\n", bold, off)
+	fmt.Fprintf(w, "\n%s== verdict ==%s\n", gatecore.Bold, gatecore.Off)
 	fmt.Fprintf(w, "  tests    PASSED %d   SKIPPED %d   FAILED %d   (top-level tests; a skip is not a pass)\n", pass, skip, fail)
 	fmt.Fprintf(w, "  cells    %d: %d ran, %d replayed from the test cache, %d not runnable on this host, %d deferred to the pre-tag tier\n",
 		len(tests)+len(notRun)+len(deferred), ran, cached, len(notRun), len(deferred))
@@ -163,7 +165,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	}
 	if len(skipBuckets) > 0 {
 		var parts []string
-		for _, b := range bucketOrder {
+		for _, b := range gatecore.BucketOrder {
 			if n := skipBuckets[b]; n > 0 {
 				parts = append(parts, fmt.Sprintf("%s %d", b, n))
 			}
@@ -171,7 +173,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		fmt.Fprintf(w, "  skips    %s\n", strings.Join(parts, ", "))
 		if verbose {
 			for _, r := range skipRows {
-				fmt.Fprintf(w, "    %s  %s — %s\n", r.Pkg, r.Test, trunc(r.Reason, 100))
+				fmt.Fprintf(w, "    %s  %s — %s\n", r.Pkg, r.Test, gatecore.Trunc(r.Reason, 100))
 			}
 		}
 	}
@@ -195,7 +197,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 		// ZERO GOLDENS RAN is not a green: a shared-set change with no numeric proof is exactly
 		// what scripts/refresh_parity_hashes.sh refuses on, for the same reason.
 		if gp == 0 && gf == 0 && len(goldenJobs) > 0 {
-			fmt.Fprintf(w, "  %sgoldens VACUOUS — a shared set changed and no forward golden ran (fixtures absent?)%s\n", red, off)
+			fmt.Fprintf(w, "  %sgoldens VACUOUS — a shared set changed and no forward golden ran (fixtures absent?)%s\n", gatecore.Red, gatecore.Off)
 			failures++
 		}
 	} else {
@@ -204,7 +206,7 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	fmt.Fprintf(w, "  wall     %s (%s → %s)\n", end.Sub(t0).Round(time.Second), t0.Format("15:04:05"), end.Format("15:04:05"))
 	if len(notRun) > 0 {
 		fmt.Fprintf(w, "  %sNOT COVERED on this host%s: %d cell(s) of module(s) that do not build here — run quick on a box that builds them.\n",
-			amber, off, len(notRun))
+			gatecore.Amber, gatecore.Off, len(notRun))
 	}
 	if len(deferred) > 0 {
 		n := 0
@@ -212,24 +214,24 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 			n += strings.Count(c.Run, "|") + 1
 		}
 		fmt.Fprintf(w, "  %sDEFERRED to the pre-tag tier%s: %d cell(s), %d test(s) not run here — `go run ./cmd/gate quick -full` runs them.\n",
-			amber, off, len(deferred), n)
+			gatecore.Amber, gatecore.Off, len(deferred), n)
 	}
 	if len(vacuousAffected) > 0 {
-		fmt.Fprintf(w, "  %sUNVERIFIED%s: affected cell(s) in which every test skipped: %s\n", amber, off, strings.Join(vacuousAffected, ", "))
+		fmt.Fprintf(w, "  %sUNVERIFIED%s: affected cell(s) in which every test skipped: %s\n", gatecore.Amber, gatecore.Off, strings.Join(vacuousAffected, ", "))
 	}
 	if failures > 0 {
-		fmt.Fprintf(w, "  %sRED — %d failing step(s)/cell(s)%s\n", red, failures, off)
+		fmt.Fprintf(w, "  %sRED — %d failing step(s)/cell(s)%s\n", gatecore.Red, failures, gatecore.Off)
 		return 1
 	}
-	fmt.Fprintf(w, "  %sGREEN — %d tests passed (%d skipped)%s\n", green, pass, skip, off)
+	fmt.Fprintf(w, "  %sGREEN — %d tests passed (%d skipped)%s\n", gatecore.Green, pass, skip, gatecore.Off)
 	return 0
 }
 
 // gradeQuickTest derives a test job's outcome from its parsed stream and exit code: the top-level counts, whether go
 // test replayed it from the cache, a non-zero exit with no counted failure (hidden), and a clean exit with no test.
 func gradeQuickTest(jb *quickJob) {
-	for k, act := range jb.res.final {
-		if isSubtest(k) {
+	for k, act := range jb.res.Final {
+		if gatecore.IsSubtest(k) {
 			continue
 		}
 		switch act {
@@ -241,7 +243,7 @@ func gradeQuickTest(jb *quickJob) {
 			jb.Fail++
 		}
 	}
-	for _, lines := range jb.res.pkgOut {
+	for _, lines := range jb.res.PkgOut {
 		for _, ln := range lines {
 			if strings.HasPrefix(ln, "ok ") && strings.Contains(ln, "(cached)") {
 				jb.Cached = true

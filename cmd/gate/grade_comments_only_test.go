@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // recordedCommentsOnly is the comments-only-replay golden's recorded input.
@@ -14,7 +16,11 @@ func recordedCommentsOnly(t *testing.T) commentsOnlyInput {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return *rec.CommentsOnly
+	co, err := gatecore.UnmarshalPayload[commentsOnlyInput](rec.CommentsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return *co
 }
 
 // TestGradeCommentsOnly_plants is SB12-C4 for step 13: from the recorded run, a path outside docs/ that is not Go, an added

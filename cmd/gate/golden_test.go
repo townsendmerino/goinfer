@@ -123,8 +123,8 @@ func checkOwedCase(t *testing.T, name, why, dir string) {
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
-	if len(res.final) == 0 {
+	res.Consume(f)
+	if len(res.Final) == 0 {
 		t.Errorf("%s: owed (%s) but its stream holds no test result", name, why)
 	}
 }
@@ -256,7 +256,7 @@ func gradeGoldenCensus(t *testing.T, dir string, c *goldenCase, _ lookupFn) stri
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
+	res.Consume(f)
 	var b strings.Builder
 	rc := reportCensus(&b, censusConfig(c.Passthrough), res, false)
 	return fmt.Sprintf("exit %d\n%s", rc, b.String())

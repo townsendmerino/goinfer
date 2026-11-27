@@ -268,7 +268,7 @@ func exitCode(err error) int {
 func (jb *quickJob) runTest(base string) {
 	jb.JSONPath = base + ".json"
 	jb.res = newResults()
-	jb.res.cur = jb.Name
+	jb.res.Cur = jb.Name
 	jf, err := os.Create(jb.JSONPath)
 	if err != nil {
 		jb.Err, jb.RC = err, -1
@@ -313,7 +313,7 @@ func (jb *quickJob) runTest(base string) {
 		if ev.Output != "" {
 			lf.WriteString(ev.Output)
 		}
-		jb.res.add(ev)
+		jb.res.Add(ev)
 	}
 	// Drain whatever a scan error left, so the child never blocks on a full pipe.
 	_, _ = io.Copy(io.Discard, stdout)

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // gate comments-only <base> [--worktree] proves that a commit (or the working tree) changed Go comments and docs and nothing else:
@@ -88,7 +90,7 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 	var prelude strings.Builder
 	pw := io.MultiWriter(w, &prelude)
 	fmt.Fprintln(pw, "gate comments-only")
-	gatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).write(pw)
+	gatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).Write(pw)
 
 	in := commentsOnlyInput{Changes: changes, Files: map[string]commentsOnlyFile{}, NoChecks: *noChecks, Verbose: *verbose}
 	for _, c := range changes {
@@ -150,12 +152,17 @@ func replayCommentsOnly(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate comments-only -replay: %v\n", err)
 		return 2
 	}
-	if rec.CommentsOnly == nil {
+	in, err := gatecore.UnmarshalPayload[commentsOnlyInput](rec.CommentsOnly)
+	if err != nil {
+		fmt.Fprintf(w, "gate comments-only -replay: %v\n", err)
+		return 2
+	}
+	if in == nil {
 		fmt.Fprintf(w, "gate comments-only -replay: %s is not a comments-only run record\n", path)
 		return 2
 	}
 	fmt.Fprint(w, rec.Prelude)
-	return gradeCommentsOnly(w, *rec.CommentsOnly)
+	return gradeCommentsOnly(w, *in)
 }
 
 // changedPaths is every path that differs between base and HEAD (or the working tree), untracked files included in worktree mode.

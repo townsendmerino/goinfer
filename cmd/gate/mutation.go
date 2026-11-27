@@ -186,14 +186,6 @@ func runQuiet(argv []string) int {
 	return 0
 }
 
-func repoRoot() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return "", fmt.Errorf("not inside a git repository: %w", err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 // sedArgs is the portable invocation: an expression and a filename, output on stdout. Factored out
 // so the "no -i" property can be pinned by a test rather than by a comment — BSD and GNU sed
 // disagree about that flag's argument, and the disagreement is silent until someone runs it on the

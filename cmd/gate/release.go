@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -195,7 +196,11 @@ func replayRelease(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate release -replay: %v\n", err)
 		return 2
 	}
-	in := rec.Release
+	in, err := gatecore.UnmarshalPayload[releaseInputs](rec.Release)
+	if err != nil {
+		fmt.Fprintf(w, "gate release -replay: %v\n", err)
+		return 2
+	}
 	if in == nil {
 		fmt.Fprintf(w, "gate release -replay: %s is not a release run record\n", path)
 		return 2

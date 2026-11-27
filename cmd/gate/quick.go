@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"flag"
 	"fmt"
@@ -248,7 +247,7 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		{"started", t0.Format("15:04:05 MST")},
 	})
 	fmt.Fprintf(w, "%s== quick provenance ==%s\n", bold, off)
-	prov.write(w)
+	prov.Write(w)
 	printSelection(w, qc, g, sel, cells, o.Verbose)
 	if o.SelectOnly {
 		return 0
@@ -317,25 +316,6 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	}
 	writeQuickRunRecord(os.Stderr, rundir, prelude.String(), postlude.String(), jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose)
 	return rc
-}
-
-// gatherProvenanceIn is gatherProvenance for a tree that may not be the process's cwd.
-func gatherProvenanceIn(root string, fields [][2]string) provenance {
-	p := provenance{Commit: "?", Date: time.Now().UTC().Format(time.RFC3339), Fields: fields}
-	git := func(args ...string) string {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		out, _ := cmd.Output()
-		return strings.TrimSpace(string(out))
-	}
-	if c := git("rev-parse", "--short", "HEAD"); c != "" {
-		p.Commit = c
-	}
-	p.Dirty = git("status", "--porcelain") != ""
-	if out, err := exec.Command("uname", "-sm").Output(); err == nil {
-		p.Host = strings.TrimSpace(string(out))
-	}
-	return p
 }
 
 func testJob(qc *quickConfig, c *quickCell, o quickOpts) (*quickJob, error) {
@@ -634,16 +614,4 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 		}
 		fmt.Fprintf(w, "  %sgo list%s: %s\n", amber, off, trunc(wmsg, 160))
 	}
-}
-
-func tailLines(path string, n int) []string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return []string{fmt.Sprintf("(no log: %v)", err)}
-	}
-	lines := strings.Split(strings.TrimRight(string(bytes.TrimSpace(b)), "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return lines
 }
