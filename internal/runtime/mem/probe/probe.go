@@ -11,6 +11,8 @@ type Reader interface {
 	SelfSwap() (usedBytes int64, ok bool)
 	FaultCounts() (minflt, majflt int64, ok bool)
 	ResidentFraction(mapping []byte) float64
+	BuildWorkers() int
+	ReclaimsReleasedPages() bool
 }
 
 // Host is the Reader over this machine: each method is the package function of the same name. SelfSwap is SelfSwapReader's
@@ -24,6 +26,8 @@ func (host) Available() int64                        { return Available() }
 func (host) SwapUsed() (int64, bool)                 { return SwapUsed() }
 func (host) FaultCounts() (int64, int64, bool)       { return FaultCounts() }
 func (host) ResidentFraction(mapping []byte) float64 { return ResidentFraction(mapping) }
+func (host) BuildWorkers() int                       { return BuildWorkers() }
+func (host) ReclaimsReleasedPages() bool             { return ReclaimsReleasedPages() }
 
 func (host) SelfSwap() (int64, bool) {
 	r, _ := SelfSwapReader()
@@ -34,7 +38,7 @@ func (host) SelfSwap() (int64, bool) {
 }
 
 // Fake is a Reader whose readings a test sets. Its zero value reads unknown everywhere except ResidentFraction, which
-// reads 0 (cold); Set changes a reading while other goroutines read it. A swap or fault reading is known when its OK
+// reads 0 (cold), and ReclaimsReleasedPages, which reads false; Set changes a reading while other goroutines read it. A swap or fault reading is known when its OK
 // field is true.
 type Fake struct {
 	mu                   sync.Mutex
@@ -48,6 +52,8 @@ type Fake struct {
 	MajorFaults          int64
 	FaultsOK             bool
 	ResidentFractionRead float64
+	Workers              int  // BuildWorkers; 0 is unknown
+	ReclaimsReleased     bool // ReclaimsReleasedPages
 }
 
 // Set runs f with the fake locked, so a test can change readings while a watcher or a decision reads them.
@@ -91,4 +97,16 @@ func (f *Fake) ResidentFraction([]byte) float64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ResidentFractionRead
+}
+
+func (f *Fake) BuildWorkers() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Workers
+}
+
+func (f *Fake) ReclaimsReleasedPages() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ReclaimsReleased
 }

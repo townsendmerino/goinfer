@@ -21,6 +21,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *darch.LayerWeights, ar
 	pa := arch.MLA
 	qkHeadDim := pa.QKHeadDim()
 	f32 := func(name string, out, in int) ([]float32, error) {
+		defer releaseTensor(g, name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -31,6 +32,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *darch.LayerWeights, ar
 		return data, nil
 	}
 	flat := func(name string, n int) ([]float32, error) {
+		defer releaseTensor(g, name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -161,6 +163,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// a destination row index to its source element offset in the tensor (identity
 	// for a plain load; a permutation for the RoPE-permuted q/k projections).
 	streamMat := func(name string, out, in int, mode QuantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
+		defer releaseTensor(g, name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -188,6 +191,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
 	// allows it. See quantizeBatchedProjWM for the safety argument.
 	streamMatBatched := func(name string, out, in int, mode QuantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
+		defer releaseTensor(g, name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -222,6 +226,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// embMatAt streams an embedding-shaped table at q through streamQuantizedEmbed, which may build repacked-only when
 	// needCanonical is false and int4 mode applies; see that function.
 	embMatAt := func(name string, out, in int, q QuantMode) (linalg.WeightMat, error) {
+		defer releaseTensor(g, name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -241,6 +246,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 			*dst = m
 			return err
 		}
+		defer releaseTensor(g, name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return err
@@ -263,6 +269,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {
+		defer releaseTensor(g, name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -318,6 +325,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// (fastest-first) blob where each expert occupies a contiguous [out, in]
 	// row-major slice — and returns one quantized linalg.WeightMat per expert.
 	stackedExperts := func(name string, out, in, nExpert int) ([]linalg.WeightMat, error) {
+		defer releaseTensor(g, name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return nil, err
@@ -351,6 +359,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// [outTotal, in] tensor into its own quantized linalg.WeightMat — Phi-3's fused
 	// attn_qkv (q‖k‖v) and ffn_up (gate‖up), split without a whole-tensor f32 buffer.
 	fusedSplit := func(name string, outTotal, in, rowStart, rows int) (linalg.WeightMat, error) {
+		defer releaseTensor(g, name)
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -422,6 +431,15 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 		hidden: hidden, streamMat: streamMat, mat: mat, vec: vec, vnorm: vnorm, stackedExperts: stackedExperts, hd: hd, permMat: permMat, cfg: cfg, embInto: embInto, id: id, fusedSplit: fusedSplit}
 
 	return b.loadFamily()
+}
+
+// releaseTensor drops a converted tensor's pages, and its `.scale` companion's, from the mapping (GGUFFile.ReleaseTensors),
+// so a build does not hold the whole source resident beside the weights built from it. Every builder that reads a tensor
+// releases it (TestWbuild_everyTensorReadReleases); the fit guard prices the source on that basis (ggufInFlightSourceBytes).
+// Advisory: a later read re-faults the same bytes.
+func releaseTensor(g *embed.GGUFFile, name string) {
+	_ = g.ReleaseTensors(name)            //nolint:errcheck // advisory; the name was just read
+	_ = g.ReleaseTensors(name + ".scale") //nolint:errcheck // absent on most tensors
 }
 
 // GGUFScaledRowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale` tensor is present (llama.cpp
