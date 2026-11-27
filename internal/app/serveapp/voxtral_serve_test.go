@@ -79,7 +79,7 @@ func tinyVoxtralLM(t *testing.T) (*loadedModel, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm := &loadedModel{modelIdentity: modelIdentity{model: m, tk: tk, name: "voxtral-tiny"}, modelModalities: modelModalities{audio: &voxtralAudio{dir: dir}}}
+	lm := &loadedModel{modelIdentity: modelIdentity{model: m, tk: tk, name: "voxtral-tiny"}, modelModalities: modelModalities{audio: &voxtralAudio{Dir: dir}}}
 	t.Cleanup(lm.closeEntryNatives) // the lazily loaded tower keeps its checkpoint mapped until Close
 	return lm, dir
 }
@@ -94,7 +94,7 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		windows int
 	}{{"6 s", 96000, 1}, {"35 s", 560000, 2}} {
 		wav := sineWAV(c.samples, 16000)
-		vi, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{MediaType: "audio/wav", Data: wav, Audio: true})
+		vi, err := lm.audio.(*voxtralAudio).ClipPrompt(lm.audioModel(), imageRef{MediaType: "audio/wav", Data: wav, Audio: true})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -103,13 +103,13 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(vi.ids, want) || vi.imgPos != pos || vi.imgLen != n || !vi.asr {
-			t.Fatalf("%s: prompt %d ids, audio at %d (%d rows, asr %v); want %d ids, at %d (%d rows)", c.name, len(vi.ids), vi.imgPos, vi.imgLen, vi.asr, len(want), pos, n)
+		if !slices.Equal(vi.IDs, want) || vi.ImgPos != pos || vi.ImgLen != n || !vi.ASR {
+			t.Fatalf("%s: prompt %d ids, audio at %d (%d rows, asr %v); want %d ids, at %d (%d rows)", c.name, len(vi.IDs), vi.ImgPos, vi.ImgLen, vi.ASR, len(want), pos, n)
 		}
-		if got := vi.ids[len(vi.ids)-2:]; got[0] != 4 || got[1] != 34 { // [/INST] [TRANSCRIBE]: no language text between
+		if got := vi.IDs[len(vi.IDs)-2:]; got[0] != 4 || got[1] != 34 { // [/INST] [TRANSCRIBE]: no language text between
 			t.Fatalf("%s: the prompt ends %v, want [/INST] [TRANSCRIBE] = [4 34]", c.name, got)
 		}
-		emb, err := vi.features()
+		emb, err := vi.Features()
 		if err != nil {
 			t.Fatalf("%s: features: %v", c.name, err)
 		}
@@ -130,7 +130,7 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		if len(emb) != n*lm.model.Config().HiddenDim || !slices.Equal(emb, ref) {
 			t.Fatalf("%s: features differ from the encoder's own output (%d values, %d expected)", c.name, len(emb), len(ref))
 		}
-		ch, g := lm.model.GenerateAudio(context.Background(), vi.ids, vi.imgPos, vi.imgLen, vi.features, 6, decoder.SamplingParams{})
+		ch, g := lm.model.GenerateAudio(context.Background(), vi.IDs, vi.ImgPos, vi.ImgLen, vi.Features, 6, decoder.SamplingParams{})
 		var got []int
 		for id := range ch {
 			got = append(got, id)
@@ -144,10 +144,10 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 // TestVoxtralPrompt_refusals: a clip over the cost bound, a non-WAV, and a model the tokenizer of which has no [AUDIO] (loadVoxtral) are refused by name.
 func TestVoxtralPrompt_refusals(t *testing.T) {
 	lm, _ := tinyVoxtralLM(t)
-	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{Data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), Audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
+	if _, err := lm.audio.(*voxtralAudio).ClipPrompt(lm.audioModel(), imageRef{Data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), Audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
 		t.Errorf("a %d s clip: want the cost-bound refusal, got %v", voxtralMaxSeconds+10, err)
 	}
-	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{Data: []byte("not a wav"), Audio: true}); err == nil {
+	if _, err := lm.audio.(*voxtralAudio).ClipPrompt(lm.audioModel(), imageRef{Data: []byte("not a wav"), Audio: true}); err == nil {
 		t.Error("a non-WAV was accepted")
 	}
 	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m", tk: lm.tk}}}}}

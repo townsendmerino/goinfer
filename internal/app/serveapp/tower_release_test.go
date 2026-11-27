@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towers"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -30,12 +31,12 @@ type attachedQwenResident struct{}
 func (attachedQwenResident) ForwardViT([]float32, [][3]int) ([]float32, error) { return nil, nil }
 func (attachedQwenResident) Close()                                            {}
 
-// countReleases wraps releaseTowerBlocks and counts the calls per family.
+// countReleases wraps towers.ReleaseTowerBlocks and counts the calls per family.
 func countReleases(t *testing.T) map[string]int {
 	got := map[string]int{}
-	prev := releaseTowerBlocks
-	releaseTowerBlocks = func(family string, enc any) { got[family]++; prev(family, enc) }
-	t.Cleanup(func() { releaseTowerBlocks = prev })
+	prev := towers.ReleaseTowerBlocks
+	towers.ReleaseTowerBlocks = func(family string, enc any) { got[family]++; prev(family, enc) }
+	t.Cleanup(func() { towers.ReleaseTowerBlocks = prev })
 	return got
 }
 
@@ -73,8 +74,8 @@ func TestTowerRelease_gridTowersFallBackOnReloadedBlocks(t *testing.T) {
 	q3dev := &oomGridTower{}
 	multimodal.RegisterQwen3Tower("fake-oom", func(*vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) { return q3dev, nil })
 	t.Cleanup(func() { multimodal.UnregisterQwen3Tower("fake-oom") })
-	q := &qwen3Tower{dir: "../../../testdata/qwen35vl-tiny", plan: gridTowerPlan{device: "fake-oom", where: "fake"}}
-	enc, err := q.encoder()
+	q := &qwen3Tower{Dir: "../../../testdata/qwen35vl-tiny", Plan: gridTowerPlan{Device: "fake-oom", Where: "fake"}}
+	enc, err := q.Encoder()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,11 +84,11 @@ func TestTowerRelease_gridTowersFallBackOnReloadedBlocks(t *testing.T) {
 	}
 	c := enc.Cfg
 	px := pixelsFor(16 * c.InChannels * c.TemporalPatchSize * c.PatchSize * c.PatchSize)
-	feats, err := q.features(px, grid)
+	feats, err := q.Features(px, grid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := vision.LoadQwen3VisionEncoder(q.dir, false)
+	ref, err := vision.LoadQwen3VisionEncoder(q.Dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +104,8 @@ func TestTowerRelease_gridTowersFallBackOnReloadedBlocks(t *testing.T) {
 	gdev := &oomGridTower{}
 	multimodal.RegisterGlmOcrTower("fake-oom", func(*vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) { return gdev, nil })
 	t.Cleanup(func() { multimodal.UnregisterGlmOcrTower("fake-oom") })
-	g := &glmOcrTower{dir: "../../../testdata/glm-ocr-vision-tiny", plan: gridTowerPlan{device: "fake-oom", where: "fake"}}
-	genc, err := g.encoder()
+	g := &glmOcrTower{Dir: "../../../testdata/glm-ocr-vision-tiny", Plan: gridTowerPlan{Device: "fake-oom", Where: "fake"}}
+	genc, err := g.Encoder()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,11 +114,11 @@ func TestTowerRelease_gridTowersFallBackOnReloadedBlocks(t *testing.T) {
 	}
 	gc := genc.Cfg
 	gpx := pixelsFor(16 * gc.InChannels * gc.TemporalPatchSize * gc.PatchSize * gc.PatchSize)
-	gfeats, err := g.features(gpx, grid)
+	gfeats, err := g.Features(gpx, grid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gref, err := vision.LoadGlmOcrVisionEncoder(g.dir, false)
+	gref, err := vision.LoadGlmOcrVisionEncoder(g.Dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}

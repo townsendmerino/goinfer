@@ -173,7 +173,7 @@ SCANS = [
     Scan("internal/app/serveapp", "TestSupportTable_everyFamilyHasALoader", F("internal/app/serveapp/towers_load.go", "docs/multimodal.md")),
     Scan("internal/app/serveapp", "TestServe_noRouteEncodesARenderedPrompt", NT("internal/app/serveapp")),
     Scan("internal/app/serveapp", "TestVision_imageBlockNewlinesMatchTheRealProcessors",
-         F("internal/app/serveapp/vision_multi.go", "internal/app/serveapp/vision_serve.go")),
+         F("internal/app/serveapp/towers/vision_tower.go", "internal/app/serveapp/vision_multi.go", "internal/app/serveapp/vision_serve.go")),
     Scan("internal/app/serveapp", "TestWebUI_rootRouteIsUnauthenticated", F("internal/app/serveapp/main.go")),
     Scan("internal/app/serveapp", "TestWebUI_pageRoutesExistOnlyUnderWebFlag", F("internal/app/serveapp/main.go")),
     Scan("internal/app/serveapp", "TestWebUI_listAndPullAreWrappedInSameOrigin", F("internal/app/serveapp/main.go")),

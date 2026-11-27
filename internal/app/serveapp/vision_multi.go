@@ -7,115 +7,32 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/codec"
-	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towers"
 )
 
-// Several images in one message. Each image is
-// prepared on its own (its block, its placeholder count, its lazy tower), the blocks go where the image parts sat
-// among the text parts, and every block becomes its own imageSpan: never two images in one block, even
-// adjacent and the same size (docs/multimodal.md, "Do not pair images"). One image takes the same path, so the
-// single-image prompt is this code with N = 1.
-
-// imagePrep is one image of an image prompt: its block text, its placeholder count, the lazy tower that fills it, and
-// what decoding needs (the Qwen grid, the DeepStack set count).
-type imagePrep struct {
-	n        int   // the image's feature rows
-	runLens  []int // the placeholder runs it fills, one span each (Pixtral's merged rows, LFM2-VL's tiles and thumbnail; the markers between them are text); nil = one run of n
-	block    string
-	features func() ([]float32, error)
-	hash     uint64
-	grid     [3]int
-	deepSets int
-}
-
-// placeImageBlocks puts blocks[k] where image k sat in its message. ordered says the images' offsets (imageRef.at,
-// byte offsets into msgText, the message's joined text parts) apply to content: true when content ends with msgText,
-// the message's own turn (or a turn it was merged onto). Otherwise every block leads the content, in order.
-func placeImageBlocks(content, msgText string, ordered bool, imgs []imageRef, blocks []string) string {
-	if !ordered || msgText == "" || !strings.HasSuffix(content, msgText) {
-		return strings.Join(blocks, "") + content
-	}
-	base, prev := len(content)-len(msgText), 0
-	for _, im := range imgs {
-		if im.At < prev || im.At > len(msgText) {
-			return strings.Join(blocks, "") + content
-		}
-		prev = im.At
-	}
-	var b strings.Builder
-	cut := 0
-	for k, im := range imgs {
-		b.WriteString(content[cut : base+im.At])
-		b.WriteString(blocks[k])
-		cut = base + im.At
-	}
-	b.WriteString(content[cut:])
-	return b.String()
-}
-
-// imagesPrompt assembles an image prompt for this model's tower from one prep per image: the blocks placed in the last user
-// turn (placeImageBlocks), each spliced back as its own Special segment, one placeholder run per image found, and the
-// features concatenated in span order. With cache, each image's tower output comes from this model's feature cache.
 func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, imgs []imageRef, ordered bool, msgText string, cache bool) (visionInput, error) {
-	kind := lm.vision.kind()
-	preps := make([]imagePrep, len(imgs))
-	blocks := make([]string, len(imgs))
-	for k, img := range imgs {
-		p, err := lm.vision.prep(lm, img)
-		if err != nil {
-			if len(imgs) > 1 {
-				return visionInput{}, fmt.Errorf("image %d of %d: %w", k+1, len(imgs), err)
-			}
-			return visionInput{}, err
+	var wrapCache func(func() ([]float32, error), []byte) func() ([]float32, error)
+	if cache {
+		family := lm.towerFamily(false)
+		wrapCache = func(tower func() ([]float32, error), raw []byte) func() ([]float32, error) {
+			return lm.cachedFeatures(tower, raw, family)
 		}
-		if cache {
-			p.features = lm.cachedFeatures(p.features, img.Data, lm.towerFamily(false))
-		}
-		preps[k], blocks[k] = p, p.block
 	}
-	if kind == "pixtral" && len(imgs) == 1 {
-		ordered = false // the checkpoint's template moves a [text, image] message's one image first
-	}
-	turns[idx].Content = placeImageBlocks(turns[idx].Content, msgText, ordered, imgs, blocks)
-	segs, err := codec.ImagesSegments(tm, system, turns, blocks)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	ids, err := codec.Encode(lm.tk, segs)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	runs := multimodal.FindImageRuns(ids, lm.vision.imageTok())
-	spans, grids, err := imageSpans(runs, preps, kind)
-	if err != nil {
-		return visionInput{}, err
-	}
-	causal := kind == "pixtral" || kind == "lfm2vl" // image tokens attend causally, plain 1-D positions
-	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", causal: causal, deepSets: preps[0].deepSets, spans: spans, grids: grids, images: len(preps)}
-	vi.imgPos, vi.imgLen, vi.imgHash, vi.grid = vi.spans[0].Pos, vi.spans[0].Len, vi.spans[0].Hash, preps[0].grid
-	if causal {
-		vi.grids = nil // no m-RoPE
-	}
-	var hiddenDim int
-	if lm.model != nil {
-		hiddenDim = lm.model.Config().HiddenDim
-	}
-	vi.features = concatImageFeatures(preps, hiddenDim)
-	return vi, nil
+	return towers.AssembleImagesPrompt(towers.ImagesPromptArgs{
+		Vision:    lm.vision,
+		TK:        lm.tk,
+		HiddenDim: lm.hiddenDim(),
+		TM:        tm,
+		System:    system,
+		Turns:     turns,
+		Idx:       idx,
+		Imgs:      imgs,
+		Ordered:   ordered,
+		MsgText:   msgText,
+		WrapCache: wrapCache,
+	})
 }
 
-// imageSpans pairs the prompt's placeholder runs (FindImageRuns, in order) with the prepared images: one span per image,
-// or, for an image that fills several runs (Pixtral's merged rows, the breaks between them text), one span per run, each
-// with the image's hash. The Qwen grids come back one per image.
-// imageSpan is one image block in a prompt, as decoder.ImageSpan holds it: its first placeholder position, its length
-// and the image's hash (the prefix-reuse key).
-type imageSpan struct {
-	Pos, Len int
-	Hash     uint64
-}
-
-// decoderSpans is spans as the decoder's vision generators take them; nil for none.
 func decoderSpans(spans []imageSpan) []decoder.ImageSpan {
 	if spans == nil {
 		return nil
@@ -127,76 +44,10 @@ func decoderSpans(spans []imageSpan) []decoder.ImageSpan {
 	return out
 }
 
-func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]imageSpan, [][3]int, error) {
-	want := 0
-	for _, p := range preps {
-		want += max(len(p.runLens), 1)
-	}
-	if len(runs) != want {
-		return nil, nil, fmt.Errorf("found %d image placeholder runs, want %d (tokenizer/template mismatch)", len(runs), want)
-	}
-	var spans []imageSpan
-	var grids [][3]int
-	r := 0
-	for _, p := range preps {
-		if len(p.runLens) > 0 {
-			for _, ln := range p.runLens {
-				if runs[r][1] != ln {
-					return nil, nil, fmt.Errorf("image placeholder run = %d tokens, want %d (tokenizer/template mismatch)", runs[r][1], ln)
-				}
-				spans = append(spans, imageSpan{Pos: runs[r][0], Len: ln, Hash: p.hash})
-				r++
-			}
-			continue
-		}
-		if runs[r][1] != p.n {
-			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens", "pixtral": "tokens", "lfm2vl": "tokens"}[kind]
-			return nil, nil, fmt.Errorf("image placeholder run = %d %s, want %d (tokenizer/template mismatch)", runs[r][1], unit, p.n)
-		}
-		spans = append(spans, imageSpan{Pos: runs[r][0], Len: p.n, Hash: p.hash})
-		grids = append(grids, p.grid)
-		r++
-	}
-	return spans, grids, nil
-}
-
-// concatImageFeatures runs every image's tower and lays the rows out as the decoder's span entries take them: every
-// image's merged rows in order, then (Qwen3-VL) each DeepStack set across every image in the same order.
-func concatImageFeatures(preps []imagePrep, hidden int) func() ([]float32, error) {
-	if len(preps) == 1 {
-		return preps[0].features
-	}
-	return func() ([]float32, error) {
-		flats := make([][]float32, len(preps))
-		total := 0
-		for k, p := range preps {
-			f, err := p.features()
-			if err != nil {
-				return nil, fmt.Errorf("image %d of %d: %w", k+1, len(preps), err)
-			}
-			flats[k] = f
-			total += p.n
-		}
-		sets := preps[0].deepSets
-		out := make([]float32, 0, total*hidden*(1+sets))
-		for s := range 1 + sets {
-			for k, p := range preps {
-				rows := p.n * hidden
-				out = append(out, flats[k][s*rows:(s+1)*rows]...)
-			}
-		}
-		return out, nil
-	}
-}
-
-// cachedFeatures answers tower from this model's per-image cache when it holds raw's encode (withFeatureCache, per image).
 func (lm *loadedModel) cachedFeatures(tower func() ([]float32, error), raw []byte, family string) func() ([]float32, error) {
 	return lm.visionFeatureCache().Wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 }
 
-// visionPromptN is visionPrompt for every image of a message. One medium that is not an image of a multi-image family
-// (an audio clip, a GLM-OCR page, Qwen3-ASR) takes visionPrompt; two or more must all be images, on a family that
-// takes several.
 func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []chat.Turn, imgs []imageRef, ordered bool, msgText string) (visionInput, error) {
 	for _, img := range imgs {
 		if img.Audio && len(imgs) > 1 {
@@ -219,14 +70,10 @@ func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []c
 	return lm.imagesPrompt(tm, system, turns, idx, imgs, ordered, msgText, true)
 }
 
-// tooManyImages is the 400 for more images than maxImagesPerTurn.
 func tooManyImages(n int) string {
 	return fmt.Sprintf("at most %d images per request (each runs the vision tower), got %d", maxImagesPerTurn, n)
 }
 
-// chatMediaText returns the joined text of the message that carries the media (after the history rule, the one message
-// that still does) and whether it is the last user message: only then do the images' offsets apply to the last user
-// turn (placeImageBlocks).
 func chatMediaText(msgs []chatMessage) (string, bool) {
 	media, lastUser := -1, -1
 	for i, m := range msgs {
@@ -245,7 +92,6 @@ func chatMediaText(msgs []chatMessage) (string, bool) {
 	return msgs[media].text(), media == lastUser
 }
 
-// contentHasMedia reports whether an OpenAI content array carries an image_url or input_audio part.
 func contentHasMedia(raw json.RawMessage) bool {
 	var parts []contentPart
 	if len(raw) == 0 || json.Unmarshal(raw, &parts) != nil {
@@ -259,8 +105,6 @@ func contentHasMedia(raw json.RawMessage) bool {
 	return false
 }
 
-// anthropicMediaText is chatMediaText for an Anthropic request: the joined text blocks of the message carrying the
-// image blocks, and whether it is the last user message.
 func anthropicMediaText(req *anthropicReq) (string, bool) {
 	media, lastUser := -1, -1
 	var text string

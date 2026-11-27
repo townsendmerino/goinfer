@@ -29,14 +29,14 @@ func TestRecoverDeviceTower(t *testing.T) {
 // an error, not the server.
 func TestWithFeatureCache_recoversAnyTower(t *testing.T) {
 	lm := &loadedModel{}
-	vi := visionInput{features: func() ([]float32, error) { panic("metal: device allocation failed (out of memory)") }}
+	vi := visionInput{Features: func() ([]float32, error) { panic("metal: device allocation failed (out of memory)") }}
 	out, err := func() (out []float32, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = errors.New("panic escaped")
 			}
 		}()
-		return lm.withFeatureCache(vi, []byte("an image"), "Gemma 4 audio").features()
+		return lm.withFeatureCache(vi, []byte("an image"), "Gemma 4 audio").Features()
 	}()
 	if out != nil || err == nil || !strings.Contains(err.Error(), "Gemma 4 audio tower failed") || !strings.Contains(err.Error(), "-vision-device cpu") {
 		t.Errorf("a panicking tower: got %v, %v; want an error naming the family and the way out", out, err)

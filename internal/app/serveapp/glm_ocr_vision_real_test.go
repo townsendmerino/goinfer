@@ -53,7 +53,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 	if lm.tmpl == nil || lm.tmpl.Name() != "glm_ocr" {
 		t.Fatalf("chat template %v, want glm_ocr", lm.tmpl)
 	}
-	if lm.glmOcr().enc != nil {
+	if lm.glmOcr().Enc != nil {
 		t.Error("the tower loaded at startup; it must load on the first image")
 	}
 	mux := http.NewServeMux()
@@ -95,28 +95,28 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 			}
 
 			// (a) the prompt ids, built by serve's own code path.
-			towerBefore := lm.glmOcr().enc // nil on the first image; a later subtest starts with the tower already loaded
+			towerBefore := lm.glmOcr().Enc // nil on the first image; a later subtest starts with the tower already loaded
 			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Prompt}}, imageRef{MediaType: "image/png", Data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
 			}
-			if !slices.Equal(vi.ids, g.InputIDs) {
-				n := min(len(vi.ids), len(g.InputIDs))
+			if !slices.Equal(vi.IDs, g.InputIDs) {
+				n := min(len(vi.IDs), len(g.InputIDs))
 				at := n
 				for i := range n {
-					if vi.ids[i] != g.InputIDs[i] {
+					if vi.IDs[i] != g.InputIDs[i] {
 						at = i
 						break
 					}
 				}
-				t.Fatalf("serve's prompt ids differ from HF's at index %d (lens %d vs %d): serve %v ... HF %v", at, len(vi.ids), len(g.InputIDs),
-					vi.ids[max(0, at-2):min(len(vi.ids), at+3)], g.InputIDs[max(0, at-2):min(len(g.InputIDs), at+3)])
+				t.Fatalf("serve's prompt ids differ from HF's at index %d (lens %d vs %d): serve %v ... HF %v", at, len(vi.IDs), len(g.InputIDs),
+					vi.IDs[max(0, at-2):min(len(vi.IDs), at+3)], g.InputIDs[max(0, at-2):min(len(g.InputIDs), at+3)])
 			}
-			if vi.grid != g.Grid[0] {
-				t.Fatalf("serve's grid %v, HF's processor %v", vi.grid, g.Grid[0])
+			if vi.Grid != g.Grid[0] {
+				t.Fatalf("serve's grid %v, HF's processor %v", vi.Grid, g.Grid[0])
 			}
-			t.Logf("prompt ids identical to HF's: %d ids (%d image tokens), grid %v, prompt %q", len(vi.ids), vi.imgLen, vi.grid, g.Prompt)
-			if lm.glmOcr().enc != towerBefore {
+			t.Logf("prompt ids identical to HF's: %d ids (%d image tokens), grid %v, prompt %q", len(vi.IDs), vi.ImgLen, vi.Grid, g.Prompt)
+			if lm.glmOcr().Enc != towerBefore {
 				t.Error("visionPrompt ran the tower: features must stay lazy")
 			}
 
@@ -149,7 +149,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 			if out.Usage.PromptTokens != len(g.InputIDs) || out.Usage.CompletionTokens != len(g.HFTokens) {
 				t.Errorf("usage prompt/completion = %d/%d, want %d/%d", out.Usage.PromptTokens, out.Usage.CompletionTokens, len(g.InputIDs), len(g.HFTokens))
 			}
-			if lm.glmOcr().enc == nil {
+			if lm.glmOcr().Enc == nil {
 				t.Error("the tower never loaded: the image path did not run through it")
 			}
 		})

@@ -59,7 +59,7 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 	if q3 == nil || !lm.visionCapable() {
 		t.Fatal("auto-discovery did not attach the Qwen3.5 tower to the served model")
 	}
-	if q3.enc != nil {
+	if q3.Enc != nil {
 		t.Error("the tower loaded at startup; it must load on the first image")
 	}
 	mux := http.NewServeMux()
@@ -104,24 +104,24 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 			if err != nil {
 				t.Fatalf("visionPrompt (asis): %v", err)
 			}
-			if !slices.Equal(viAsIs.ids, asis.InputIDs) {
-				t.Fatalf("-thinking asis no longer renders the pre-thinking bytes: %d ids vs serve_ golden's %d", len(viAsIs.ids), len(asis.InputIDs))
+			if !slices.Equal(viAsIs.IDs, asis.InputIDs) {
+				t.Fatalf("-thinking asis no longer renders the pre-thinking bytes: %d ids vs serve_ golden's %d", len(viAsIs.IDs), len(asis.InputIDs))
 			}
 			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{MediaType: "image/png", Data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
 			}
-			if !slices.Equal(vi.ids, g.InputIDs) {
-				n := min(len(vi.ids), len(g.InputIDs))
+			if !slices.Equal(vi.IDs, g.InputIDs) {
+				n := min(len(vi.IDs), len(g.InputIDs))
 				at := n
 				for i := range n {
-					if vi.ids[i] != g.InputIDs[i] {
+					if vi.IDs[i] != g.InputIDs[i] {
 						at = i
 						break
 					}
 				}
-				t.Fatalf("serve's prompt ids differ from HF's at index %d (lens %d vs %d): serve %v ... HF %v", at, len(vi.ids), len(g.InputIDs),
-					vi.ids[max(0, at-2):min(len(vi.ids), at+3)], g.InputIDs[max(0, at-2):min(len(g.InputIDs), at+3)])
+				t.Fatalf("serve's prompt ids differ from HF's at index %d (lens %d vs %d): serve %v ... HF %v", at, len(vi.IDs), len(g.InputIDs),
+					vi.IDs[max(0, at-2):min(len(vi.IDs), at+3)], g.InputIDs[max(0, at-2):min(len(g.InputIDs), at+3)])
 			}
 
 			// (a2, b, c) through HTTP.
@@ -162,7 +162,7 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 			}
 		})
 	}
-	if q3.enc == nil {
+	if q3.Enc == nil {
 		t.Error("the tower never loaded: the image path did not run through it")
 	}
 }

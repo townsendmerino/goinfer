@@ -298,7 +298,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	gr, err := lm.prepare(sm, vi.ids, false)
+	gr, err := lm.prepare(sm, vi.IDs, false)
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return

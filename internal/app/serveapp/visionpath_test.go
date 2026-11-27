@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towers"
 )
 
 // writeMMProj writes a minimal GGUF mmproj header: clip metadata for a tower with the given projector type and output
@@ -79,7 +82,7 @@ func TestVisionMMProj_refusals(t *testing.T) {
 	if err := os.WriteFile(junk, []byte("GGUF"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if e := visionPathError(good); e != nil {
+	if e := towers.VisionPathError(good); e != nil {
 		t.Fatalf("the path check refused an mmproj (loadVisionTower routes it): %v", e)
 	}
 	for _, c := range []struct {
@@ -101,10 +104,10 @@ func TestVisionMMProj_refusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tower.mmproj || tower.dir != good {
+	if !tower.MMProj || tower.Dir != good {
 		t.Errorf("tower %+v, want an mmproj tower at %s", tower, good)
 	}
-	if limit := qwen3MaxImageTokens * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels != limit || pp.PatchSize != 16 || pp.MergeSize != 2 {
+	if limit := towerfit.Qwen3MaxImageTokens * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels != limit || pp.PatchSize != 16 || pp.MergeSize != 2 {
 		t.Errorf("preprocessing %+v: want the family's (patch 16, merge 2) under the serve cap %d", pp, limit)
 	}
 
@@ -113,13 +116,13 @@ func TestVisionMMProj_refusals(t *testing.T) {
 	if err := os.WriteFile(other, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if e := visionPathError(other); e == nil || !strings.Contains(e.Error(), "directory with a vision tower") {
+	if e := towers.VisionPathError(other); e == nil || !strings.Contains(e.Error(), "directory with a vision tower") {
 		t.Errorf("plain file: %v", e)
 	}
-	if e := visionPathError(dir); e != nil {
+	if e := towers.VisionPathError(dir); e != nil {
 		t.Errorf("a directory was refused by the path check: %v", e)
 	}
-	if e := visionPathError(filepath.Join(dir, "missing")); e != nil {
+	if e := towers.VisionPathError(filepath.Join(dir, "missing")); e != nil {
 		t.Errorf("a missing path is the loaders' to judge: %v", e)
 	}
 }
