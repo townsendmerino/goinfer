@@ -25,8 +25,8 @@ func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 	fset := token.NewFileSet()
 	// The family closures live in gguf.go and in the gguf_build*.go family builders.
 	var files []*ast.File
-	names := []string{"gguf.go"}
-	builders, err := filepath.Glob("gguf_build*.go")
+	names := []string{"../internal/runtime/wbuild/gguf.go"}
+	builders, err := filepath.Glob("../internal/runtime/wbuild/gguf_build*.go")
 	if err != nil {
 		t.Fatal(err)
 	}

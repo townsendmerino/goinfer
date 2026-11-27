@@ -1,7 +1,8 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder/config"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -31,7 +32,7 @@ import (
 //     keeps meeting. The de-interleave below is the only new code, and gathering group by
 //     group yields head order directly (head = g*groups + j), so no permutation is needed
 //     beyond the gather.
-func buildInternLM2Weights(cfg *Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*darch.Weights, error) {
+func buildInternLM2Weights(cfg *config.Config, arch *darch.Architecture, st *embed.SafetensorsFile, quant QuantMode, embedInt4, needCanonical, skipRow4 bool, h *Hooks) (*darch.Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	nH, nKV := arch.NumHeads, arch.NumKVHeads
@@ -46,21 +47,21 @@ func buildInternLM2Weights(cfg *Config, arch *darch.Architecture, st *embed.Safe
 	var err error
 	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
 	// quantizeWM. Named qw, not q, because q is already the query-tensor local below.
-	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
-		return quantizeLayerWM(m, mode, needCanonical, skipRow4)
+	qw := func(m linalg.WeightMat, mode QuantMode) linalg.WeightMat {
+		return h.QuantizeLayerWM(m, mode, needCanonical, skipRow4)
 	}
-	if w.Embed, err = loadMat(st, "model.tok_embeddings.weight", vocab, hidden); err != nil {
+	if w.Embed, err = LoadMat(st, "model.tok_embeddings.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
+	w.Embed = h.QuantizeEmbedWM(w.Embed, quant.EmbeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
-	head, herr := loadMat(st, "output.weight", vocab, hidden)
+	head, herr := LoadMat(st, "output.weight", vocab, hidden)
 	if herr != nil {
 		return nil, fmt.Errorf("decoder(internlm2): output.weight: %w", herr)
 	}
-	w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	w.LMHead = h.QuantizeEmbedWM(head, quant.EmbeddingWith(embedInt4), needCanonical)
 	arch.TiedLMHead = false
 
 	for i := range arch.NumLayers {
@@ -87,15 +88,15 @@ func buildInternLM2Weights(cfg *Config, arch *darch.Architecture, st *embed.Safe
 			copy(k[g*hd*hidden:], qkv[base+groups*hd*hidden:base+(groups+1)*hd*hidden])
 			copy(v[g*hd*hidden:], qkv[base+(groups+1)*hd*hidden:base+gs*hd*hidden])
 		}
-		l.QProj = qw(linalg.WrapF32(q, qDim, hidden), matmulQuant(quant, "q"))
-		l.KProj = qw(linalg.WrapF32(k, kvDim, hidden), matmulQuant(quant, "k"))
-		l.VProj = qw(linalg.WrapF32(v, kvDim, hidden), matmulQuant(quant, "v"))
+		l.QProj = qw(linalg.WrapF32(q, qDim, hidden), MatmulQuant(quant, "q"))
+		l.KProj = qw(linalg.WrapF32(k, kvDim, hidden), MatmulQuant(quant, "k"))
+		l.VProj = qw(linalg.WrapF32(v, kvDim, hidden), MatmulQuant(quant, "v"))
 
-		om, oerr := loadMat(st, p+"attention.wo.weight", hidden, qDim)
+		om, oerr := LoadMat(st, p+"attention.wo.weight", hidden, qDim)
 		if oerr != nil {
 			return nil, oerr
 		}
-		l.OProj = qw(om, matmulQuant(quant, "o"))
+		l.OProj = qw(om, MatmulQuant(quant, "o"))
 
 		// w1 = gate, w3 = up, w2 = down (llama's original names).
 		for _, m := range []struct {
@@ -107,11 +108,11 @@ func buildInternLM2Weights(cfg *Config, arch *darch.Architecture, st *embed.Safe
 			{&l.UpProj, "feed_forward.w3.weight", inter, hidden},
 			{&l.DownProj, "feed_forward.w2.weight", hidden, inter},
 		} {
-			mm, merr := loadMat(st, p+m.name, m.out, m.in)
+			mm, merr := LoadMat(st, p+m.name, m.out, m.in)
 			if merr != nil {
 				return nil, merr
 			}
-			*m.dst = qw(mm, matmulQuant(quant, m.name))
+			*m.dst = qw(mm, MatmulQuant(quant, m.name))
 		}
 	}
 	return w, nil

@@ -9,13 +9,13 @@
     "internal/runtime/families/arch_gemma4.go",
     "decoder/forward_gemma4_moe.go",
     "decoder/program_cpu_n_gemma4.go",
-    "decoder/gguf_build_gemma4.go"
+    "internal/runtime/wbuild/gguf_build_gemma4.go"
   ],
   "programs": [
     "testdata/gemma4-moe-kv-tiny",
     "testdata/gemma4-moe-kv-tiny32"
   ],
-  "deps_hash": "sha256:1a6723d9612f65e213e693970dc7b197fba0facba94185855a5c2d259e416114",
+  "deps_hash": "sha256:2cb5f6131eba14632d1646f978f51d862dbf69813c95be526b756cb3cfc0950d",
   "status": "validated",
   "validated_at": "310a2e44",
   "date": "2026-09-28",

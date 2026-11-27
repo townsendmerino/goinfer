@@ -131,6 +131,29 @@
       "why": "internal/runtime/giwcodec implements the .giw binary weight-bundle format (writer, reader, shape validator, island bf16/f32 helpers, row4 emitter, and target policy) below decoder (SZ13c). It never imports decoder."
     },
     {
+      "name": "wbuild-leaf",
+      "from": [
+        "internal/runtime/wbuild"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/wbuild": [
+          "decoder/arch",
+          "decoder/config",
+          "decoder/quant",
+          "internal/runtime/archparts",
+          "internal/runtime/families",
+          "internal/runtime/giwcodec",
+          "internal/runtime/hybridattn",
+          "internal/runtime/logs"
+        ]
+      },
+      "why": "internal/runtime/wbuild implements safetensors and GGUF weight building, quantization/row streaming, and .giw streaming sinks below decoder (SZ13b). It never imports decoder."
+    },
+    {
       "name": "families-leaf",
       "from": [
         "internal/runtime/families"
@@ -445,7 +468,6 @@
       "decoder/arch",
       "decoder/config",
       "decoder/fit",
-      "decoder/quant",
       "decoder/resident",
       "internal/cost",
       "internal/runtime/adapter",
@@ -466,6 +488,7 @@
       "internal/runtime/program",
       "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/runtime/wbuild",
       "internal/testassets",
       "tokenizer"
     ],
@@ -687,6 +710,15 @@
     "internal/runtime/prequant": [
       "decoder"
     ],
+    "internal/runtime/wbuild": [
+      "decoder/arch",
+      "decoder/config",
+      "decoder/quant",
+      "internal/runtime/archparts",
+      "internal/runtime/families",
+      "internal/runtime/giwcodec",
+      "internal/runtime/hybridattn"
+    ],
     "internal/runtime/whisper": [
       "internal/audio",
       "tokenizer"
@@ -867,6 +899,7 @@
       "internal/runtime/program",
       "internal/runtime/rope",
       "internal/runtime/sampling",
+      "internal/runtime/wbuild",
       "internal/testassets",
       "internal/testgate",
       "internal/vision",

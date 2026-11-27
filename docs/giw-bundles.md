@@ -107,7 +107,7 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
   - An older build refuses a sidecar that uses it and writes its own in place, under the same name.
   - The newer build reads that one, since it reads every older encoding.
   - Kinds 11 and 12 are the same case: a q4k load's Q5_K and Q6_K tensors, written only into a cpu-amd64 bundle and only
-    where linalg has their kernels (`decoder/gguf.go:q4kNative56`). That sidecar's name carries `.k56`
+    where linalg has their kernels (`internal/runtime/wbuild/gguf.go:q4kNative56`). That sidecar's name carries `.k56`
     (`decoder/sidecar.go:kquantTag`), so a q4k sidecar written before them, which widened those tensors to int8, is never
     taken for one that keeps them.
 - **What it does not cover:** a change to the layout itself, such as a new per-layer field or a new header field. A reader

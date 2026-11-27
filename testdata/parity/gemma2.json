@@ -11,7 +11,7 @@
     "testdata/gemma2-hd-tiny",
     "testdata/gemma2-tiny"
   ],
-  "deps_hash": "sha256:b629308a2e43159f556b562bcd65ab08755ce3c27928736f445b18816fbca851",
+  "deps_hash": "sha256:d53a5f06c130c24a06e22b2852dde0fb87a72edf7bb351ddc549bf75a69617cd",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

@@ -8,7 +8,7 @@
   ],
   "own": [
     "decoder/forward_qwen35.go",
-    "decoder/qwen3next.go",
+    "internal/runtime/wbuild/qwen3next.go",
     "decoder/qwen3next_real_test.go",
     "decoder/qwen3next_slice_test.go",
     "decoder/qwen3next_test.go",
@@ -16,12 +16,12 @@
     "scripts/pin_qwen3next_tiny.py",
     "scripts/pin_slice_oracle.py",
     "internal/runtime/families/arch_qwen3_next.go",
-    "decoder/gguf_build_qwen35.go"
+    "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen3next-tiny"
   ],
-  "deps_hash": "sha256:636f299f8ec0c7b408937b901ba6b8b47621c431b24d524b920bce874769eb8f",
+  "deps_hash": "sha256:759e3331f77be4a35887966fd33815b4825994fe841f158c34429a89682588bf",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

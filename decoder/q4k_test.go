@@ -44,7 +44,7 @@ func TestQ4K_modePlumbing(t *testing.T) {
 	if got := matmulQuant(quantQ4K, "blk.0.attn_q.weight"); got != quantQ4K {
 		t.Errorf("attn_q under q4k resolves to %v, want q4k", got)
 	}
-	if got := quantQ4K.embedding(); got != quantInt8I8 {
+	if got := quantQ4K.Embedding(); got != quantInt8I8 {
 		t.Errorf("q4k embedding policy = %v, want int8int8", got)
 	}
 	// A site with no raw Q4_K bytes gets int8 W8A8, not an empty or f32 matrix.

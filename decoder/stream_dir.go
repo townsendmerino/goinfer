@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder/config"
 	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 )
 
 // streamDirSwapForTest writes layers 0 and 1 of a streamed directory transcode in each other's place: the planted
@@ -35,7 +36,7 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	if q == quantInt4Mix || q == quantQ4K {
 		return 0, fmt.Errorf("decoder: %s is GGUF-only (got safetensors %s)", quant, dir)
 	}
-	if q.half16() {
+	if q.Half16() {
 		return 0, fmt.Errorf("decoder: quant %q has no bundle form (a CPU-path load mode)", quant)
 	}
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
@@ -61,8 +62,8 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	defer st.Close()
 	// needCanonical=true: the writer chooses what to emit from canonical bytes in RAM, per layer, exactly as
 	// StreamTranscodeGGUF builds them. With a sink the build keeps nothing else in RAM (repackForDecode).
-	wr := newGIWWriter(out, target, streamLayerBudget(), streamTestHooksOf(ctx))
-	if _, err := buildWeightsFromSafetensorsTo(cfg, arch, schema, st, q, embedInt4, true, false, nil, wr, id, nil); err != nil {
+	wr := newGIWWriter(out, target, streamLayerBudget(), wbuild.StreamTestHooksOf(ctx))
+	if _, err := wbuild.BuildWeightsFromSafetensorsTo(cfg, arch, schema, st, q, embedInt4, true, false, nil, &wr.StreamWriter, id, nil, wbuildHooks()); err != nil {
 		return wr.N, err
 	}
 	var crc [4]byte

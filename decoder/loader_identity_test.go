@@ -193,7 +193,7 @@ func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
 	var refused []string
 	for _, fx := range loaderFixtures(t) {
 		for _, mode := range loaderModes {
-			if q, _ := parseQuant(strings.Split(mode, "/")[0]); q.half16() {
+			if q, _ := parseQuant(strings.Split(mode, "/")[0]); q.Half16() {
 				continue
 			}
 			w, err := loadForIdentity(filepath.Join("..", fx), mode)

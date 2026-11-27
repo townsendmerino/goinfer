@@ -12,12 +12,12 @@
     "scripts/pin_olmo_hybrid_real.py",
     "scripts/pin_olmo_hybrid_tiny.py",
     "internal/runtime/families/arch_olmo_hybrid.go",
-    "decoder/gguf_build_qwen35.go"
+    "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/olmo_hybrid-tiny"
   ],
-  "deps_hash": "sha256:968aac0941f0cb492643de82285879b05f0d16a6c3715b02d66630cffd4975c4",
+  "deps_hash": "sha256:0e2d178696286efcbb532392ea70c635cc97d22d0311845c4dcc0cb53c841fcc",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
@@ -26,7 +26,7 @@
   "method": "full-forward-oracle",
   "metrics": {
     "argmax_pct": 100.0,
-    "cosine_min": 1.00000,
-    "cosine_mean": 1.00000
+    "cosine_min": 1.0,
+    "cosine_mean": 1.0
   }
 }

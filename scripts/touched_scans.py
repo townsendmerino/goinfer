@@ -93,14 +93,14 @@ SCANS = [
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder", "internal/runtime/families") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
     Scan("decoder", "TestParityManifest_coreClosed", NT("decoder") + F("testdata/parity/*.json")),
-    Scan("decoder", "TestParityManifest_loadersClosed", NT("decoder", "decoder/quant", "decoder/config", "internal/runtime/families") + F("testdata/parity/*.json")),
+    Scan("decoder", "TestParityManifest_loadersClosed", NT("decoder", "decoder/quant", "decoder/config", "internal/runtime/families", "internal/runtime/wbuild") + F("testdata/parity/*.json")),
     # A record that hashes a test file running through textParity hashes the helper too.
     Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
-    Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go", "decoder/gguf_build*.go")),
-    Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder")),
+    Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go", "internal/runtime/wbuild/gguf.go", "internal/runtime/wbuild/gguf_build*.go")),
+    Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder", "internal/runtime/wbuild")),
     Scan("decoder", "TestProgram_noFamilyLoopAndEveryFamilyWalks", NT("decoder")),
     Scan("decoder", "TestFP8_shapeCheckDistinguishesTranspose", F("decoder/fp8.go")),
     Scan("decoder", "TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams", NT("decoder")),

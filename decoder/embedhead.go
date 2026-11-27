@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"strings"
 
@@ -70,7 +71,7 @@ func estimateSafetensorsParams(dir string) int64 {
 	defer st.Close()
 	r := fit.Rates{Matrix: 1, Embedding: 1, Int8: 1}
 	if cfg, cerr := loadConfig(os.DirFS(dir), "config.json"); cerr == nil {
-		if qc, qerr := parseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
+		if qc, qerr := wbuild.ParseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
 			r.MLXBits = qc.Bits
 		}
 	}

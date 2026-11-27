@@ -111,7 +111,7 @@ func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
 		}
 
 		var fanouts atomic.Int64
-		inOrderCtx := withStreamTestHooks(context.Background(), streamTestHooks{expertsInOrder: true, expertFanouts: &fanouts})
+		inOrderCtx := withStreamTestHooks(context.Background(), streamTestHooks{ExpertsInOrder: true, ExpertFanouts: &fanouts})
 		ref := stream(inOrderCtx)
 		if len(ref) < 1000 {
 			t.Fatalf("%s: a %d-byte bundle: nothing was streamed", c.src, len(ref))
@@ -120,7 +120,7 @@ func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
 			t.Fatalf("%s: %d fan-outs with the experts held in order", c.src, n)
 		}
 
-		fanoutCtx := withStreamTestHooks(context.Background(), streamTestHooks{expertFanouts: &fanouts})
+		fanoutCtx := withStreamTestHooks(context.Background(), streamTestHooks{ExpertFanouts: &fanouts})
 		got := stream(fanoutCtx)
 		if n := fanouts.Load(); n == 0 {
 			t.Errorf("%s: a stream built no experts across cores: the source does not reach its expert loop", c.src)

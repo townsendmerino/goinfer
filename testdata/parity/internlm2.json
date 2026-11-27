@@ -5,12 +5,12 @@
     "quant"
   ],
   "own": [
-    "decoder/internlm2.go",
+    "internal/runtime/wbuild/internlm2.go",
     "decoder/internlm2_test.go",
     "scripts/pin_internlm2_tiny.py",
     "internal/runtime/families/arch_internlm2.go"
   ],
-  "deps_hash": "sha256:f9310ef884e4b100770ed7d614247e214212de48d4f4f4b4a8d4ac4960d2372c",
+  "deps_hash": "sha256:29ffa6637444f38f48f33b76a7c3dcbfeb2c35f6e94d7276717393ba6e213106",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
@@ -19,7 +19,7 @@
   "method": "full-forward-oracle",
   "metrics": {
     "argmax_pct": 100.0,
-    "cosine_min": 1.00000,
-    "cosine_mean": 1.00000
+    "cosine_min": 1.0,
+    "cosine_mean": 1.0
   }
 }
