@@ -99,3 +99,25 @@ func TestInkling2Tiny_matchesTransformers(t *testing.T) {
 	}
 	t.Logf("worst cosine: visits %.8f, logits %.8f", worstHidden, worstLogit)
 }
+
+// TestInkling2_kvPricedAsStored holds the KV plan to the cache: past the window, a local visit's cache still holds every
+// position (Inkling 2 has no rings), so the plan prices every position on every visit.
+func TestInkling2_kvPricedAsStored(t *testing.T) {
+	m, err := Load(inkling2TinyDir+"/model.gguf", Options{Quant: "f32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := m.w.Arch
+	const n = 10 // past the tiny window of 4
+	c := m.NewCache(n)
+	for p := range n {
+		if _, err := m.forward(p+1, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for l := range a.NumLayers {
+		if got, want := c.storedRows(l, a.KVDimAt(l)), a.KVPositionsAt(l, n); got != want {
+			t.Errorf("visit %d (global %v): the cache stores %d rows, the plan prices %d", l, a.IsGlobalLayer(l), got, want)
+		}
+	}
+}

@@ -278,9 +278,10 @@ func (a *Architecture) HasNoAttentionKVAt(i int) bool {
 
 // KVPositionsAt returns how many of ctx cache positions layer i's K/V must hold resident: ctx for an ordinary layer, or
 // SlidingWindow once ctx exceeds it for a local layer under a sliding-window architecture (the ring never grows past its
-// window). Meaningless but harmless for a layer kvDimAt prices at zero (the caller multiplies the two).
+// window). Meaningless but harmless for a layer kvDimAt prices at zero (the caller multiplies the two). Inkling 2's local
+// visits store every position (its cache has no rings), so they are priced at ctx.
 func (a *Architecture) KVPositionsAt(i, ctx int) int {
-	if a.SlidingWindow > 0 && !a.IsGlobalLayer(i) && ctx > a.SlidingWindow {
+	if a.SlidingWindow > 0 && !a.IsGlobalLayer(i) && ctx > a.SlidingWindow && a.Inkling2 == nil {
 		return a.SlidingWindow
 	}
 	return ctx
