@@ -8,6 +8,8 @@ github.com/townsendmerino/aikit v1.80.0 h1:wFr+zBmWtvr4Zwmf+SryZb3Y2Ws85ehealV9N
 github.com/townsendmerino/aikit v1.80.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
 github.com/townsendmerino/aikit v1.81.0 h1:wjK6IVdoKYoEnWi0dSxak8tLZJfNpytOxC9x0VzgJ6E=
 github.com/townsendmerino/aikit v1.81.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
+github.com/townsendmerino/aikit v1.82.0 h1:Cb580R9JfpuCfb16YTf0i5ELr2u1poH3O3JLprD7NYI=
+github.com/townsendmerino/aikit v1.82.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
 github.com/townsendmerino/goinfer v0.25.0 h1:UaxaoIrb52vl7U0by00Kl5dy+60v597knVfGjQfFLXo=
 github.com/townsendmerino/goinfer v0.25.0/go.mod h1:WP9sM4Ne5yJKFDM8bxbW9SUtpP+4lyZi6fpqymk8GsY=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
