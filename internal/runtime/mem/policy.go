@@ -39,6 +39,10 @@ const (
 	// MetalFitMargin is what the Metal context fit leaves under its budget, so the load-time guard's re-read after the choice
 	// does not halve a context taken at the exact edge.
 	MetalFitMargin = 384 << 20
+	// KVHostFraction is the denominator of the prefix-snapshot store's default host budget: 1/KVHostFraction of physical RAM.
+	KVHostFraction = 10
+	// KVHostCap is the ceiling on the prefix-snapshot store's default host budget (-kv-host-bytes auto).
+	KVHostCap = 8 << 30
 )
 
 // Policy is the thresholds a decision applies. DefaultPolicy is the committed one.
@@ -50,12 +54,14 @@ type Policy struct {
 	RequestFraction float64 // share of available memory one request's KV and scratch may take
 	PlanCtxFloor    int     // the context a device plan shrinks to before giving up
 	MetalFitMargin  int64   // the Metal context fit's margin under its budget
+	KVHostFraction  int     // denominator of physical RAM for -kv-host-bytes auto
+	KVHostCap       int64   // byte ceiling for -kv-host-bytes auto
 }
 
 // DefaultPolicy returns the thresholds in force.
 func DefaultPolicy() Policy {
 	return Policy{WeightsFraction: WeightsFraction, WarnRatio: WarnRatio, CtxFloor: CtxFloor, GIWMargin: GIWMargin, RequestFraction: WeightsFraction,
-		PlanCtxFloor: PlanCtxFloor, MetalFitMargin: MetalFitMargin}
+		PlanCtxFloor: PlanCtxFloor, MetalFitMargin: MetalFitMargin, KVHostFraction: KVHostFraction, KVHostCap: KVHostCap}
 }
 
 // KVCurve is the KV a load allocates at a context, in bytes. It is non-decreasing in the context; it need not be linear (a
