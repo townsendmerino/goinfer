@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 37241 -- lowered by MM13 (pure per-backend weight, KV, state, scratch and allocator pricing moved to internal/runtime/memprice)
+lines 37130 -- lowered by MM14 (pure MoE working-set prior, predictor and refusal moved to internal/runtime/mem)
 model_methods 457 -- lowered by MM13 (unexported Model pricing helpers moved to internal/runtime/memprice)
-model_knot_lines 12502 -- lowered by MM13 (Model pricing methods moved to internal/runtime/memprice)
+model_knot_lines 12470 -- lowered by MM14 (predictMoEWorkingSet slimmed over internal/runtime/mem)

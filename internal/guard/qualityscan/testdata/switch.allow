@@ -121,7 +121,6 @@ decoder/mem5vl_shared_test.go 8 -- assignments before the ratchet; move to testg
 decoder/mem8bp_stream_table_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/memprobe_test.go 20 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/moepaging_spike_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-decoder/moeworkingset_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/n_batch_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/perrow_phase0b_test.go 10 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/prefill_budget_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched
