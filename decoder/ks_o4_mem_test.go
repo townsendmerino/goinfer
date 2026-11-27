@@ -1,6 +1,10 @@
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
 
 // KS-O4's G-MEM (docs/measurements/ks-o4-2026-10/README.md): the bytes gpt-oss's KV cache holds, counted, on the tiny fixture past its
 // window, with the window layers on the ring (KS-O4) and with every layer append-forever (the layout before it). The drop must be exactly
@@ -52,9 +56,9 @@ func TestKSO4_kvHeldBytes(t *testing.T) {
 	if ring != wantRing {
 		t.Errorf("with the ring it holds %d bytes, want %d (window layers at 2 x %d positions)", ring, wantRing, a.SlidingWindow)
 	}
-	if plan := kvBytesForCtx(a, n, false, false); plan != ring {
+	if plan := memprice.CPUKVBytesForCtx(a, n, false, false); plan != ring {
 		t.Errorf("the fit plan prices %d bytes at %d positions; the ring layout holds %d", plan, n, ring)
 	}
 	t.Logf("%d positions, window %d: append-forever %d B, ring %d B (the fit plan prices %d B), a drop of %d B (%.1f%%)",
-		n, a.SlidingWindow, forever, ring, kvBytesForCtx(a, n, false, false), forever-ring, 100*float64(forever-ring)/float64(forever))
+		n, a.SlidingWindow, forever, ring, memprice.CPUKVBytesForCtx(a, n, false, false), forever-ring, 100*float64(forever-ring)/float64(forever))
 }

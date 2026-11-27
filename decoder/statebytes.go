@@ -1,69 +1,12 @@
 package decoder
 
-import (
-	"fmt"
-
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
-)
+import "github.com/townsendmerino/goinfer/internal/runtime/memprice"
 
 // StateSpec is one buffer of a recurrent or conv mixer's state, for one KV slot, before any allocator's rounding.
-type StateSpec struct {
-	Name   string // "window" (the rolling conv window, full), "state" (the matrix state), or "window-q", -k and -v
-	Floats int
-}
-
-// stateSpecs is layer l's state, its operations' per-slot buffers (layerBuffers): the one list a resident build allocates from and the
-// plan prices from.
-func stateSpecs(a *darch.Architecture, l int) []StateSpec {
-	var out []StateSpec
-	for _, b := range layerBuffers(a, l) {
-		if b.Unit == program.PerSlot {
-			out = append(out, StateSpec{b.Name, stateFloats(b)})
-		}
-	}
-	return out
-}
-
-// stateFloats is per-slot buffer b's size in floats. State is held and priced in f32 on every backend; a declaration at another precision
-// is a programming error, refused here rather than priced as floats (TestBuffers_stateIsF32 holds every declaration to it).
-func stateFloats(b program.Buf) int {
-	if b.Prec != program.PrecF32 {
-		panic(fmt.Sprintf("decoder: state buffer %q is declared at precision %d; recurrent state is f32", b.Name, b.Prec))
-	}
-	return b.Elems
-}
+type StateSpec = memprice.StateSpec
 
 // StateSpecs is layer l's recurrent or conv state on this model, nil for a layer with none.
-func (m *Model) StateSpecs(l int) []StateSpec { return stateSpecs(m.w.Arch, l) }
-
-// stateBuffers is one KV slot's recurrent and conv state for a, in bytes per buffer. It holds to what KVCache grows to
-// (TestPlan_pricesRecurrentState).
-func stateBuffers(a *darch.Architecture) []int64 {
-	var out []int64
-	for l := range a.NumLayers {
-		for _, s := range stateSpecs(a, l) {
-			if s.Floats > 0 {
-				out = append(out, int64(s.Floats)*4)
-			}
-		}
-	}
-	return out
-}
-
-// recurrentCheckpointBuffers is the state a resident build's rewind checkpoint copies, in bytes per buffer: what the operations mark
-// checkpointed (Gated-DeltaNet's and Mamba-2's; KDA and short conv keep none).
-func recurrentCheckpointBuffers(a *darch.Architecture) []int64 {
-	var out []int64
-	for l := range a.NumLayers {
-		for _, b := range layerBuffers(a, l) {
-			if b.Unit == program.PerSlot && b.Checkpointed && b.Elems > 0 {
-				out = append(out, int64(stateFloats(b))*4)
-			}
-		}
-	}
-	return out
-}
+func (m *Model) StateSpecs(l int) []StateSpec { return memprice.StateSpecs(m.w.Arch, l) }
 
 // CheckpointTotalBytes is CheckpointBuffers' sum: the checkpoint on a backend whose allocator rounds none of it.
 func (q BuildQuery) CheckpointTotalBytes() int64 {

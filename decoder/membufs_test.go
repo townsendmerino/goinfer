@@ -14,6 +14,7 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -21,27 +22,32 @@ import (
 // state lists read the operations' declarations, so none of them names a mixer, a family or a family's parameters.
 func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
-		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer"}
+		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer",
+		".Qwen35", ".LFM2", ".KDA", ".Granite", ".Nemotron", ".Gemma4", ".MLA", "IsLinearLayer", "IsConvLayer", "IsMambaLayer"}
 	scanPricingBodies(t, map[string][]string{
-		"residentneed.go":  {"metalKVParts", "MetalKVRowBytes", "cudaKVParts", "cudaKVRowBytes"},
-		"statebytes.go":    {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
-		"arch.go":          {"kvBytesForCtx", "kvBytesForRows"},                          // the CPU's K/V price (MM5's CPU half)
-		"fitplan.go":       {"kvBytesPerPositionAllLayers"},                              // WebGPU's K/V rate (MM5's WebGPU half)
-		"webgpu_vulkan.go": {"webgpuKVRowBytes", "webgpuKVBuffers", "webgpuKVBuffersOf"}, // and its per-layer cache buffers
+		"../internal/runtime/memprice/metal.go":  {"MetalKVPartsFor", "MetalRowBytesFor"},
+		"../internal/runtime/memprice/cuda.go":   {"CUDAKVParts", "CUDAKVRowBytes"},
+		"../internal/runtime/memprice/state.go":  {"StateSpecs", "StateBuffers", "RecurrentCheckpointBuffers"},
+		"../internal/runtime/memprice/cpu.go":    {"CPUKVBytesForCtx", "CPUKVBytesForRows"},
+		"../internal/runtime/memprice/webgpu.go": {"WebGPUKVRowBytes", "WebGPUKVBuffersOf", "WebGPUKVBytesPerPos"},
+		"residentneed.go":                        {"MetalKVRowBytes", "cudaKVParts"},
+		"fitplan.go":                             {"kvBytesPerPositionAllLayers"},
 	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")
 }
 
 // TestMM5b_decodeScratchNamesNoFamily is G-MS4: Metal's decode scratch is
 // priced from the operations' per-row declarations and the head's (program.Buffers, program.HeadBuffers), so its pricing function
 // names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by a row's name
-// (metalRowTerms), which the scan reads too. An operation's parameters are read from the operation; a layer whose V is its K (no
+// (MetalRowTerms), which the scan reads too. An operation's parameters are read from the operation; a layer whose V is its K (no
 // v projection, a shape the weights fix) is read from the weights.
 func TestMM5b_decodeScratchNamesNoFamily(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
 		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
 		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
-	scanPricingBodies(t, map[string][]string{"metal_scratch.go": {"MetalDecodeScratchBytes", "metalDecodeRows", "metalRowTerms", "metalMoETerms"}}, banned,
-		"decode's scratch is priced from the operations' per-row declarations and the head's, not the family")
+	scanPricingBodies(t, map[string][]string{
+		"../internal/runtime/memprice/metal.go": {"MetalDecodeScratchBytes", "ComputeMetalDecodeRows", "MetalRowTerms", "MetalMoETerms"},
+		"metal_scratch.go":                      {"MetalDecodeScratchBytes"},
+	}, banned, "decode's scratch is priced from the operations' per-row declarations and the head's, not the family")
 }
 
 // scanPricingBodies reports every function or variable in funcs (file to names) whose body or value names one of banned, and every
@@ -103,19 +109,19 @@ func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string,
 // holds them to.
 func stateSpecsByFamily(a *darch.Architecture, l int) []StateSpec {
 	mamba := func(p archparts.Mamba2Params) []StateSpec {
-		return []StateSpec{{"window", (p.DConv - 1) * p.Mixer().ConvDim()}, {"state", p.NHeads * p.HeadDim * p.DState}}
+		return []StateSpec{{Name: "window", Floats: (p.DConv - 1) * p.Mixer().ConvDim()}, {Name: "state", Floats: p.NHeads * p.HeadDim * p.DState}}
 	}
 	switch {
 	case a.Qwen35 != nil && a.IsLinearLayer(l):
 		p := a.Qwen35
 		keyDim, valueDim := p.NumKeyHeads*p.KeyHeadDim, p.NumValueHeads*p.ValueHeadDim
-		return []StateSpec{{"window", (p.ConvKernel - 1) * (2*keyDim + valueDim)}, {"state", p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim}}
+		return []StateSpec{{Name: "window", Floats: (p.ConvKernel - 1) * (2*keyDim + valueDim)}, {Name: "state", Floats: p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim}}
 	case a.LFM2 != nil && a.IsConvLayer(l):
-		return []StateSpec{{"window", (a.LFM2.ConvLCache - 1) * a.LFM2.ConvDim}}
+		return []StateSpec{{Name: "window", Floats: (a.LFM2.ConvLCache - 1) * a.LFM2.ConvDim}}
 	case a.KDA != nil && a.IsLinearLayer(l):
 		p := a.KDA
 		win := (p.ConvKernel - 1) * p.NumHeads * p.HeadDim
-		return []StateSpec{{"window-q", win}, {"window-k", win}, {"window-v", win}, {"state", p.NumHeads * p.HeadDim * p.HeadDim}}
+		return []StateSpec{{Name: "window-q", Floats: win}, {Name: "window-k", Floats: win}, {Name: "window-v", Floats: win}, {Name: "state", Floats: p.NumHeads * p.HeadDim * p.HeadDim}}
 	case a.Granite != nil && a.IsMambaLayer(l):
 		g := a.Granite
 		return mamba(archparts.Mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
@@ -156,7 +162,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 		t.Helper()
 		layers := 0
 		for l := range a.NumLayers {
-			got, want := stateSpecs(a, l), stateSpecsByFamily(a, l)
+			got, want := memprice.StateSpecs(a, l), stateSpecsByFamily(a, l)
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("%s layer %d: the operations declare %v, the family switch %v", name, l, got, want)
 			}
@@ -164,7 +170,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 				layers++
 			}
 		}
-		if got, want := recurrentCheckpointBuffers(a), checkpointByFamily(a); !reflect.DeepEqual(got, want) {
+		if got, want := memprice.RecurrentCheckpointBuffers(a), checkpointByFamily(a); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: the checkpoint from the operations is %v, the family switch's %v", name, got, want)
 		}
 		if layers == 0 {
@@ -245,7 +251,7 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 	}
 	for l := range a4.NumLayers {
 		rows := 0
-		for _, b := range layerBuffers(a4, l) {
+		for _, b := range memprice.LayerBuffers(a4, l) {
 			if b.Unit == program.PerPosition {
 				rows++
 			}
@@ -281,7 +287,7 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		}
 		for l := range a.NumLayers {
 			declared, held := map[string]int{}, map[string]int{}
-			for _, b := range layerBuffers(a, l) {
+			for _, b := range memprice.LayerBuffers(a, l) {
 				if b.Unit == program.PerRow { // a step's activations, which the cache does not hold
 					continue
 				}
@@ -462,7 +468,7 @@ func TestMM5_handTable(t *testing.T) {
 		if d := m.KVDeliveredFor("metal"); d != c.kv {
 			t.Errorf("%s: Metal delivers %s, the table is %s", c.dir, d, c.kv)
 		}
-		if _, perBlock := m.metalKVParts(4096); perBlock != c.perBlock {
+		if _, perBlock := memprice.MetalKVPartsFor(m.w.Arch, 4096, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks()); perBlock != c.perBlock {
 			t.Errorf("%s: the plan prices %d B of KV a block; the hand table %d", c.dir, perBlock, c.perBlock)
 		}
 		sum := func(bs []int64) (n int64) {
@@ -471,7 +477,7 @@ func TestMM5_handTable(t *testing.T) {
 			}
 			return n
 		}
-		if state, ckpt := sum(stateBuffers(m.w.Arch)), sum(recurrentCheckpointBuffers(m.w.Arch)); state != c.state || ckpt != c.checkpoint {
+		if state, ckpt := sum(memprice.StateBuffers(m.w.Arch)), sum(memprice.RecurrentCheckpointBuffers(m.w.Arch)); state != c.state || ckpt != c.checkpoint {
 			t.Errorf("%s: the plan prices %d B of state and %d B of checkpoint a slot; the hand table %d and %d", c.dir, state, ckpt, c.state, c.checkpoint)
 		}
 		m.Close()

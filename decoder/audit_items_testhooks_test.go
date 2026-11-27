@@ -2,16 +2,20 @@
 
 package decoder
 
-import "testing"
+import (
+	"testing"
 
-// TestResidentKV_webgpuSharedLayersOwnNone holds the plan's KV on WebGPU to the caches its build makes (webgpuLayerCaches, which a shared
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
+
+// TestResidentKV_webgpuSharedLayersOwnNone holds the plan's KV on WebGPU to the caches its build makes (WebGPULayerCaches, which a shared
 // layer has none of), on a Gemma 4 with KV-shared layers.
 func TestResidentKV_webgpuSharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
 	const ctx = 8
 	var built int64
 	for l := range m.w.Arch.NumLayers {
-		bufs, kv := m.webgpuLayerCaches(l, ctx, false, false)
+		bufs, kv := memprice.WebGPULayerCaches(m.w, m.LayerBuffers, l, ctx, false, false)
 		if !kv {
 			continue // recurrent state: not context
 		}

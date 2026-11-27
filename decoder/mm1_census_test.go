@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // The decision census: every memory decision the fit code
@@ -123,7 +124,7 @@ func censusHostClass() string {
 		m, _ := parseQuant(q)
 		parts = append(parts, fmt.Sprintf("%s=%.6f", q, quantBytesPerElem(m)))
 	}
-	if !webgpuVulkan {
+	if !memprice.WebGPUVulkan {
 		parts = append(parts, "webgpu=metal")
 	}
 	return runtime.GOARCH + " " + strings.Join(parts, " ")
@@ -422,7 +423,7 @@ type censusGoldenClass struct {
 // censusGoldenPath is this host's golden: testdata/census/<GOARCH>.txt.gz, with "-metal" where the host plans WebGPU as Metal (darwin).
 // The file's first line names the full host class (censusHostClass), so a host whose quantization sizes differ from the recorded
 // class's reads no golden instead of a wrong one.
-func censusGoldenPath() string { return censusGoldenPathFor(runtime.GOARCH, !webgpuVulkan) }
+func censusGoldenPath() string { return censusGoldenPathFor(runtime.GOARCH, !memprice.WebGPUVulkan) }
 
 func censusGoldenPathFor(arch string, metal bool) string {
 	if metal {

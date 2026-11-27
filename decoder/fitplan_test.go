@@ -4,6 +4,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // loadDenseTiny loads testdata/llama-tiny, TRACKED in git (unlike the MoE/hybrid fixtures below), so this row of the
@@ -199,8 +201,8 @@ func TestPlan_tableDriven(t *testing.T) {
 		const wantCtx = 100000                               // above the 65536 i8 ceiling
 		// Deliberately generous: bytes alone would fit wantCtx, so only the fixed ceiling — not
 		// the budget — should be what caps it. WebGPU's plan prices Vulkan's device and its blocks
-		// (webgpu_vulkan.go) beside the buffers, so the room includes them.
-		budget := dense + perPos*int64(wantCtx)*2 + webgpuVkFixed + 2*webgpuVkDevMax
+		// (memprice/webgpu.go) beside the buffers, so the room includes them.
+		budget := dense + perPos*int64(wantCtx)*2 + memprice.WebGPUVkFixed + 2*memprice.WebGPUVkDevMax
 		p := m.Plan("webgpu", budget, PlanRequest{Ctx: wantCtx, KVI8: true})
 		if p.Placement != PlacementResident {
 			t.Fatalf("Placement = %v, want resident (unpinned ctx shrinks to the ceiling, does not decline): %s", p.Placement, p.Reason)
@@ -255,8 +257,8 @@ func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	dense := m.ResidentDenseWeightBytes()
 	full := m.ResidentWeightBytesPaged(0) - dense
 	perExpert := full / int64(nExperts)
-	kv := m.ResidentKVBytes("cuda", 8192, m.kvF16, false)                        // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
-	budget := dense + m.cudaDerivedTableBytes() + kv + perExpert*int64(nExperts) // enough for EVERY expert with nothing else
+	kv := m.ResidentKVBytes("cuda", 8192, m.kvF16, false)                                               // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
+	budget := dense + memprice.CUDADerivedTableBytes(m.w, m.Program()) + kv + perExpert*int64(nExperts) // enough for EVERY expert with nothing else
 
 	without := m.Plan("cuda", budget, PlanRequest{Ctx: 8192, CtxPinned: true})
 	if without.Placement != PlacementResident {

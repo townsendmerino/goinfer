@@ -212,6 +212,27 @@
       "why": "internal/runtime/archparts holds per-family parameter and weight structs and small internal helpers below decoder/arch (SZ12 option (b)). It imports only internal/runtime/hybridattn and internal/runtime/mamba2 and never decoder or decoder/arch."
     },
     {
+      "name": "memprice-leaf",
+      "from": [
+        "internal/runtime/memprice"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/memprice": [
+          "decoder/arch",
+          "internal/runtime/archparts",
+          "internal/runtime/kvmgr",
+          "internal/runtime/mem",
+          "internal/runtime/program",
+          "internal/runtime/rope"
+        ]
+      },
+      "why": "internal/runtime/memprice holds pure per-backend weight, KV, recurrent-state, scratch, and allocator byte pricing over Architecture, Weights, and program declarations below decoder. It never imports decoder or any backend."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -487,6 +508,7 @@
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/memprice",
       "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/rope",
@@ -704,6 +726,14 @@
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
     ],
+    "internal/runtime/memprice": [
+      "decoder/arch",
+      "internal/runtime/archparts",
+      "internal/runtime/kvmgr",
+      "internal/runtime/mem",
+      "internal/runtime/program",
+      "internal/runtime/rope"
+    ],
     "internal/runtime/modelload": [
       "decoder",
       "decoder/fit",
@@ -904,6 +934,7 @@
       "internal/runtime/kvmgr",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/memprice",
       "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/rope",
@@ -1040,6 +1071,11 @@
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
+    ],
+    "internal/runtime/memprice": [
+      "decoder/arch",
+      "internal/runtime/mem",
+      "internal/runtime/program"
     ],
     "internal/runtime/modelload": [
       "decoder",

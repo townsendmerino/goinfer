@@ -1,29 +1,22 @@
 package decoder
 
-import "sync"
+import (
+	"sync"
 
-// The Metal window group's pool. A window group keeps only each
-// sequence's recent positions, so its pool can be a bounded number of blocks a slot instead of the context's. Whether a build may
-// bound it depends on the build's own prefill routes (every pass that writes the group must fit the bound), which only the Metal
-// backend knows, so the backend registers the function that decides and both the build and the plan call it.
-
-const (
-	// MetalKVWindowKeep is how many positions a Metal window group keeps behind the start of the window a write reads: the rollback
-	// budget, so an edit late in a prompt still finds its window held.
-	MetalKVWindowKeep = 448
-	// MetalKVWindowPass is the most rows one pass may write into a bounded window group: the cap on a blocked prefill's block, and
-	// the longest image turn or prompt pass the pool takes in one (a longer pass declines and the decoder runs it sequentially).
-	MetalKVWindowPass = 2048
-	// MetalKVWindowSlack is the blocks a bounded pool holds beyond the window, the pass and what the keep adds: the block being
-	// written, the alignment of the base to a block, and the blocks a release has not yet freed.
-	MetalKVWindowSlack = 4
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
-// MetalKVWindowBlocks is the 64-row blocks one slot's window group holds when its pool is bounded: the window less one position, the
-// larger of the retained rollback and one pass, in whole blocks, and the slack.
-func MetalKVWindowBlocks(window int) int {
-	return (window-1+max(MetalKVWindowKeep, MetalKVWindowPass)+KVBlockRows-1)/KVBlockRows + MetalKVWindowSlack
-}
+const (
+	// MetalKVWindowKeep is how many positions a Metal window group keeps behind the start of the window a write reads.
+	MetalKVWindowKeep = memprice.MetalKVWindowKeep
+	// MetalKVWindowPass is the most rows one pass may write into a bounded window group.
+	MetalKVWindowPass = memprice.MetalKVWindowPass
+	// MetalKVWindowSlack is the blocks a bounded pool holds beyond the window, the pass and what the keep adds.
+	MetalKVWindowSlack = memprice.MetalKVWindowSlack
+)
+
+// MetalKVWindowBlocks is the 64-row blocks one slot's window group holds when its pool is bounded.
+func MetalKVWindowBlocks(window int) int { return memprice.MetalWindowBlocksFor(window) }
 
 // MetalWindowPoolFunc decides, for a loaded model, how many blocks one slot's window group holds on Metal: MetalKVWindowBlocks of its
 // window when every pass that writes the group is bounded by MetalKVWindowPass rows, 0 when the group keeps the context's blocks.

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -90,52 +91,39 @@ func stateOnlyBuildDemand(q BuildQuery) BuildDemand {
 	return BuildDemand{StateBytes: q.StateTotalBytes()}
 }
 
-// cudaChargedBytes is what CUDA's allocator takes for a buffer of n bytes: one of its 2 MiB quantum or more rounds up to the next quantum,
-// and a smaller one is charged at its size (cuda/internal/gpudev.ChargedBytes, which TestBuildDemand_matchesDecoderDefault holds this to).
-func cudaChargedBytes(n int64) int64 {
-	const quantum = 2 << 20
-	if n < quantum {
-		return n
-	}
-	return (n + quantum - 1) / quantum * quantum
-}
+// cudaPackStageBytes is the staging memory the CUDA build streams packed weights through.
+const cudaPackStageBytes = memprice.CUDAPackStageBytes
 
-// cudaPackStageBytes is the staging memory the CUDA build streams packed weights through: up to four blocks of 8 MiB of words
-// with their scale scratch (20 MiB each).
-const cudaPackStageBytes = 80 << 20
-
-// defaultCUDABuildDemand: resident when CUDA is linked, is the load's backend, does not stream, and implements the
-// architecture; its KV is then device memory, and packing adds one packed layer and the staging blocks. A C' expert cache built
-// from a .gguf peaks at the weights, the experts' pinned copy, one packed layer (when the layer count is known) and the staging; a
-// .giw load's cache pins every routed expert at int4 with f16 group-32 scales (9/16 byte a weight).
 func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	o := q.Options
-	var d BuildDemand
-	d.Resident = o.Backend == "cuda" && !o.StreamWeights && slices.Contains(CompiledBackends(), "cuda") && q.FeaturesCovered
-	d.KVOnDevice = d.Resident
-	if d.Resident {
-		d.HostPackBytes = q.WeightBytes/int64(max(q.Layers, 1)) + cudaPackStageBytes
+	r := memprice.CUDABuildDemand(memprice.CUDABuildQuery{
+		BackendCUDA:        o.Backend == "cuda",
+		LinkedCUDA:         slices.Contains(CompiledBackends(), "cuda"),
+		StreamWeights:      o.StreamWeights,
+		GGUF:               q.GGUF,
+		FeaturesCovered:    q.FeaturesCovered,
+		ExpertCache:        q.ExpertCache,
+		MoEExpertsUnpinned: o.MoEExpertsUnpinned,
+		Layers:             q.Layers,
+		WeightBytes:        q.WeightBytes,
+		ExpertBytes:        q.ExpertBytes,
+		MoELayers:          q.MoELayers,
+		NumExperts:         q.NumExperts,
+		ExpertIntermediate: q.ExpertIntermediate,
+		Hidden:             q.Hidden,
+		StateBuffers:       q.StateBuffers,
+		CheckpointBuffers:  q.CheckpointBuffers,
+	})
+	return BuildDemand{
+		Resident:          r.Resident,
+		KVOnDevice:        r.KVOnDevice,
+		HostPackBytes:     r.HostPackBytes,
+		HostBuildPeak:     r.HostBuildPeak,
+		PinnedExpertBytes: r.PinnedExpertBytes,
+		StateBytes:        r.StateBytes,
+		CheckpointBytes:   r.CheckpointBytes,
+		CheckpointPerSlot: r.CheckpointPerSlot,
 	}
-	if o.Backend == "cuda" && q.GGUF && !o.StreamWeights && q.ExpertBytes > 0 && q.ExpertCache {
-		d.HostBuildPeak = q.WeightBytes + cudaPackStageBytes
-		if q.Layers > 0 {
-			d.HostBuildPeak += q.WeightBytes / int64(q.Layers)
-		}
-		if !o.MoEExpertsUnpinned { // unpinned, the packed experts are file pages, not a host copy
-			d.HostBuildPeak += q.ExpertBytes
-		}
-	}
-	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 && !o.MoEExpertsUnpinned {
-		d.PinnedExpertBytes = int64(q.MoELayers) * int64(q.NumExperts) * 3 * int64(q.ExpertIntermediate) * int64(q.Hidden) * 9 / 16
-	}
-	for _, b := range q.StateBuffers {
-		d.StateBytes += cudaChargedBytes(b)
-	}
-	for _, b := range q.CheckpointBuffers {
-		d.CheckpointBytes += cudaChargedBytes(b)
-	}
-	d.CheckpointPerSlot = d.CheckpointBytes > 0
-	return d
 }
 
 // defaultMetalBuildDemand: resident when Metal is linked, is the load's backend and implements the architecture. Its KV is
@@ -191,7 +179,7 @@ type archFacts struct {
 
 // configFacts is archFacts without covered: what c resolved to says on any backend.
 func configFacts(c *Config, arch *darch.Architecture) archFacts {
-	a := archFacts{resolved: true, state: stateBuffers(arch), checkpoint: recurrentCheckpointBuffers(arch)}
+	a := archFacts{resolved: true, state: memprice.StateBuffers(arch), checkpoint: memprice.RecurrentCheckpointBuffers(arch)}
 	if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 		a.moeLayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
 		a.numExperts, a.expertIntermediate, a.hidden = arch.MoE.NumExperts, arch.MoE.IntermediateDim, c.HiddenDim

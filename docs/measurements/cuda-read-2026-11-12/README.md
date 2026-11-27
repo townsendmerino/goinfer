@@ -52,7 +52,7 @@ Francis asked for graph capture on nobara (via the coordinator, 17:55). The CUDA
 `03a-memgate-red-exact.txt`):
 - 10 rows built resident and are not in `backend/cuda/testdata/memgate_rows.txt`: the nine `testdata/flint-tiny int4` rows (plain, `/ssm`, `/kv-f16`, `/kv-i8`, `/windowed`, `/expert-cache`, `/slots4`,
   `/windowed+expert-cache`, `/slots2`) **and `testdata/nemotron-tiny int4/kv-f16`**, which no Flint change explains: its nine siblings are in the file, and the row is a nemotron_h load with `--kv f16` that now builds
-  resident (nemotron_h is in `decoder/kvresolve.go:cudaKVF16Delivered`).
+  resident (nemotron_h is in `internal/runtime/memprice/cuda.go:CUDAF16Delivered`).
 - 20 unforgiven gap errors, ten rows at two lines (built, generated) each: `flint-tiny` line "dense", leased 113,056 B against a plan of 112,736: **320 B over** on all nine rows, and `nemotron-tiny int4/kv-f16`
   line "dense", 78,144 against 78,080: **64 B over**. Both are MM8's "dense vectors" class (the same 64 B the other nemotron-tiny rows carry as a known gap, and the `qwen25vl-vision-tiny` rows).
 

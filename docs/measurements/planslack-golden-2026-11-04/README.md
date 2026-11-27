@@ -5,7 +5,7 @@
 **Answer: (a).** The only change is that the plan now prices dense vectors, and it moved every decision boundary by exactly that amount. No decision changed except one, by one context block, which that amount predicts.
 
 ## What changed
-`3a899d303` (MM8, #645: "the plan prices dense vectors, gpt-oss's expert biases, the CPU's structs and the recurrent checkpoint") made the plan's dense bytes sum every tensor the load holds, not only the matrices: norms, biases and small f32 tables (`decoder/weightbytes.go:f32SliceBytes`). The test passed at `937cfe8fb` (the commit before it) and fails from `3a899d303` on, at every commit sampled.
+`3a899d303` (MM8, #645: "the plan prices dense vectors, gpt-oss's expert biases, the CPU's structs and the recurrent checkpoint") made the plan's dense bytes sum every tensor the load holds, not only the matrices: norms, biases and small f32 tables (`internal/runtime/memprice/weights.go:F32SliceBytes`). The test passed at `937cfe8fb` (the commit before it) and fails from `3a899d303` on, at every commit sampled.
 
 Per model, `DenseBytes` grew by a constant:
 
