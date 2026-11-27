@@ -106,6 +106,7 @@ func gemma3Checkpoint(t *testing.T, safetensorsBytes int64) string {
 		t.Fatal(err)
 	}
 	defer f.Close()
+	markSparseForTest(f)
 	if err := f.Truncate(safetensorsBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -209,14 +210,26 @@ func TestResolveGemma3VisionQuant(t *testing.T) {
 	if got := resolveGemma3VisionQuant(two, &bytes.Buffer{}); got.visionQuant != "" {
 		t.Errorf("two models got visionQuant %q", got.visionQuant)
 	}
+	if err := os.RemoveAll(dir4b); err != nil {
+		t.Fatal(err)
+	}
 	// an unresolved reference (hf:...) and a GGUF: the first is left alone, the second is read at its size
 	if _, ok := gemma3ResidentWeightsEstimate("hf:google/gemma-3-4b-it"); ok {
 		t.Error("an hf: reference was estimated")
 	}
 	gg := filepath.Join(t.TempDir(), "g.gguf")
-	f, _ := os.Create(gg)
-	_ = f.Truncate(2_490_000_000)
-	f.Close()
+	f, err := os.Create(gg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markSparseForTest(f)
+	if err := f.Truncate(2_490_000_000); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if w, ok := gemma3ResidentWeightsEstimate(gg); !ok || w != 2_490_000_000 {
 		t.Errorf("gguf estimate = %d, %v", w, ok)
 	}
