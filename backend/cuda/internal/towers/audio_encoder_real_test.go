@@ -1,6 +1,6 @@
 //go:build cuda && realckpt
 
-package cuda
+package towers
 
 import (
 	"encoding/json"

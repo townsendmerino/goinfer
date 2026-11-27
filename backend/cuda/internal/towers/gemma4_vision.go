@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -41,8 +41,8 @@ type g4Defect struct {
 	noRope        bool // skip the axial RoPE
 }
 
-// g4Tower is the tower on CUDA. One image at a time (mu): its scratch is per call.
-type g4Tower struct {
+// G4Tower is the tower on CUDA. One image at a time (mu): its scratch is per call.
+type G4Tower struct {
 	mu    sync.Mutex
 	ops   *towerOps
 	cfg   vision.Gemma4EncoderConfig
@@ -53,7 +53,7 @@ type g4Tower struct {
 	defect                   g4Defect
 }
 
-func newG4Tower(enc *vision.Gemma4Encoder) (tw *g4Tower, err error) {
+func NewG4Tower(enc *vision.Gemma4Encoder, ptx PTX) (tw *G4Tower, err error) {
 	w, err := enc.Weights()
 	if err != nil {
 		return nil, fmt.Errorf("cuda: %w", err)
@@ -63,11 +63,11 @@ func newG4Tower(enc *vision.Gemma4Encoder) (tw *g4Tower, err error) {
 		return nil, fmt.Errorf("cuda: Gemma 4 tower %d heads of %d over hidden %d: the kernels need heads*hd = hidden, hd a multiple of 4",
 			c.NumAttentionHeads, c.HeadDim, c.HiddenSize)
 	}
-	ops, err := newTowerOps(max(c.HiddenSize, c.IntermediateSize))
+	ops, err := newTowerOps(max(c.HiddenSize, c.IntermediateSize), ptx)
 	if err != nil {
 		return nil, err
 	}
-	tw = &g4Tower{ops: ops, cfg: c, theta: w.RopeTheta}
+	tw = &G4Tower{ops: ops, cfg: c, theta: w.RopeTheta}
 	if err := ops.do(func() error {
 		up := ops.up
 		proj := func(p vision.Gemma4Proj) g4Proj {
@@ -92,9 +92,9 @@ func newG4Tower(enc *vision.Gemma4Encoder) (tw *g4Tower, err error) {
 	return tw, nil
 }
 
-func (a *g4Tower) Name() string { return "cuda" }
+func (a *G4Tower) Name() string { return "cuda" }
 
-func (a *g4Tower) Close() error {
+func (a *G4Tower) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.ops.close()
@@ -104,7 +104,7 @@ func (a *g4Tower) Close() error {
 func finite32(v float32) bool { return !math.IsInf(float64(v), 0) }
 
 // proj runs one ClippableLinear over rows of x into out: the input clamp into the copy buffer cp when its bounds are finite, the GEMM, then the output clamp.
-func (a *g4Tower) proj(x Buffer, p *g4Proj, out, cp Buffer, rows int) {
+func (a *G4Tower) proj(x Buffer, p *g4Proj, out, cp Buffer, rows int) {
 	in := x
 	if !a.defect.noClamp && (finite32(p.inMin) || finite32(p.inMax)) {
 		a.ops.clampCopyTo(x, cp, rows*p.in, p.inMin, p.inMax)
@@ -117,7 +117,7 @@ func (a *g4Tower) proj(x Buffer, p *g4Proj, out, cp Buffer, rows int) {
 }
 
 // Hidden runs the patch embed and every layer (multimodal.Gemma4TowerAccelerator): the last layer's output, [np, hidden], for aikit's FinishHidden.
-func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
+func (a *G4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c := a.cfg
@@ -194,7 +194,7 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 // scale, the GELU product as geluTanh then mulVec, a residual add through addVec. An op that does not fit its kind
 // (vision.TowerOp.CheckRegs), its weight (vision.TowerOp.CheckShape) or this tower is an error before it is queued. The
 // planted defects (g4Defect) act at their ops.
-func (a *g4Tower) walkBlock(prog vision.TowerBlock, ly *g4Layer, r *towerRegs, cp, cs, sn Buffer, rows int) error {
+func (a *G4Tower) walkBlock(prog vision.TowerBlock, ly *g4Layer, r *towerRegs, cp, cs, sn Buffer, rows int) error {
 	c := a.cfg
 	o := a.ops
 	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim

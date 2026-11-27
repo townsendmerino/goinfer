@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -47,9 +47,9 @@ func (r *towerRegs) reg(n vision.TowerReg) (Buffer, error) {
 }
 
 // walkBlock queues one block's program over rows, each op through the tower's existing operation (towerOps.layerNorm and
-// rms, gridTower.linear and linearAdd, the fused qkv as the three split linears, towerOps.ropeHalfTo, towerOps.attention
+// rms, GridTower.linear and linearAdd, the fused qkv as the three split linears, towerOps.ropeHalfTo, towerOps.attention
 // per segment, towerOps.geluTanh, the SiLUMul kernel).
-func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs, rows int, env *towerWalkEnv) error {
+func (a *GridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs, rows int, env *towerWalkEnv) error {
 	o := a.ops
 	width := func(n vision.TowerReg) int { return vision.TowerRegWidth(n, a.hidden, a.inter) }
 	for i, op := range prog {

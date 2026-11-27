@@ -11,7 +11,7 @@ backend/cuda/gemma4_moe_localize_test.go 2 -- assignments before the ratchet; mo
 backend/cuda/gemma4_moe_resident_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/gemma4_moe_scaled_parity_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/gemma4_s10_seams_test.go 1 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/cuda/grid_vision_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+backend/cuda/internal/towers/grid_vision_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/keqv_copy_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/ksb8_test.go 12 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/ksh6c_breakdown_test.go 14 -- assignments before the ratchet; move to testgate.SetForTest when next touched
@@ -53,12 +53,12 @@ backend/cuda/qwen35_resident_parity_test.go 3 -- assignments before the ratchet;
 backend/cuda/recurrent_spec_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/s10_anchor_dump_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/s10_deepstack_prefill_test.go 10 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/cuda/s17_profile_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+backend/cuda/internal/towers/s17_profile_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/s896_gate_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/s896_layerdump_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/sb2_census_test.go 24 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/cuda/siglip_vision_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
-backend/cuda/tower_attn_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+backend/cuda/internal/towers/siglip_vision_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+backend/cuda/internal/towers/tower_attn_test.go 5 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/vramtrace_test.go 4 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/cuda/vsum_split_fidelity_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 backend/webgpu/gemma4_emodel_test.go 6 -- assignments before the ratchet; move to testgate.SetForTest when next touched

@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -124,7 +124,7 @@ func TestS17ProfileCUDA(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	imgs := []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"}
 	read := func(img string) []byte {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,7 +226,7 @@ func TestS17LeverA_wholeTower(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	read := func(img string) []byte {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -357,7 +357,7 @@ func TestS17ProfileQwen25CUDA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile("../../testdata/gemma3_preprocess_image.png")
+	data, err := os.ReadFile("../../../../testdata/gemma3_preprocess_image.png")
 	if err != nil {
 		t.Fatal(err)
 	}

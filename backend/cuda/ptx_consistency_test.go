@@ -203,11 +203,13 @@ func cKind(p string) string {
 func goBoundKernelNames(t *testing.T) []string {
 	t.Helper()
 	files, _ := filepath.Glob("*.go")
+	towerFiles, _ := filepath.Glob(filepath.Join("internal", "towers", "*.go"))
+	files = append(files, towerFiles...)
 	res := []*regexp.Regexp{
 		regexp.MustCompile(`NewComputePipeline\(\s*\w+\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)`),
 		regexp.MustCompile(`\bload\w*\(\s*&[\w.\[\]]+\s*,\s*(?:\w+\s*,\s*)?"([A-Za-z_][A-Za-z0-9_]*)"\s*\)`),
 		regexp.MustCompile(`\{\s*&[\w.\[\]]+\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\}`),
-		regexp.MustCompile(`\{\s*\w+PTX\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,\s*&`),
+		regexp.MustCompile(`\{\s*(?:\w+PTX|ptx\.\w+)\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,\s*&`),
 	}
 	seen := map[string]bool{}
 	for _, f := range files {

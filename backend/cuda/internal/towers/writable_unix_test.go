@@ -1,6 +1,6 @@
 //go:build cuda && unix
 
-package cuda
+package towers
 
 import (
 	"fmt"

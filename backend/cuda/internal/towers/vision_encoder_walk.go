@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -65,7 +65,7 @@ func linearsOnly(prog vision.TowerBlock, i int, r vision.TowerReg) bool {
 type int8Step struct {
 	op         vision.TowerOp
 	nw, nb     Buffer // a norm's
-	wt         cudaWQ // a linear's
+	wt         visWQ  // a linear's
 	bias       Buffer
 	quantizeIn bool
 }
@@ -238,7 +238,7 @@ func (L *visionLayer) towerNorm(w vision.TowerWeight) (weight, bias Buffer, ok b
 	return Buffer{}, Buffer{}, false
 }
 
-func (L *visionLayer) towerLinear(w vision.TowerWeight) (cudaWQ, Buffer, bool) {
+func (L *visionLayer) towerLinear(w vision.TowerWeight) (visWQ, Buffer, bool) {
 	switch w {
 	case vision.TowerWQ:
 		return L.qw, L.qb, true
@@ -253,5 +253,5 @@ func (L *visionLayer) towerLinear(w vision.TowerWeight) (cudaWQ, Buffer, bool) {
 	case vision.TowerWFC2:
 		return L.fc2w, L.fc2b, true
 	}
-	return cudaWQ{}, Buffer{}, false
+	return visWQ{}, Buffer{}, false
 }
