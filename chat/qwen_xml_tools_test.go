@@ -206,7 +206,7 @@ func TestParseXMLCalls_typedBySchema(t *testing.T) {
 	out := "I'll look that up.\n\n<tool_call>\n<function=search>\n<parameter=query>\ngo 1.24 release\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n" +
 		"<parameter=ratio>\n1.5\n</parameter>\n<parameter=safe>\nTrue\n</parameter>\n<parameter=tags>\n[\"a\", \"b c\"]\n</parameter>\n" +
 		"<parameter=opts>\n{\"k\": [1, 2]}\n</parameter>\n<parameter=numstr>\n123\n</parameter>\n<parameter=nothing>\nNone\n</parameter>\n</function>\n</tool_call>"
-	tm := &Template{name: "chatml"}
+	tm := ChatML()
 	calls, lead := tm.ParseToolCallsFor(out, []Tool{searchTool})
 	if len(calls) != 1 || calls[0].Name != "search" || lead != "I'll look that up." {
 		t.Fatalf("calls=%+v lead=%q", calls, lead)
@@ -239,7 +239,7 @@ func TestParseXMLCalls_typedBySchema(t *testing.T) {
 
 // The Hermes JSON form still parses as it did; the two forms can share one reply; and what is not a complete call is not a call.
 func TestParseXMLCalls_formsAndFailures(t *testing.T) {
-	tm := &Template{name: "chatml"}
+	tm := ChatML()
 	tools := []Tool{searchTool}
 	jsonCall := "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>"
 	xmlCall := "<tool_call>\n<function=search>\n<parameter=query>\nx\n</parameter>\n</function>\n</tool_call>"

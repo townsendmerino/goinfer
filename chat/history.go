@@ -13,8 +13,6 @@ const (
 )
 
 var (
-	detectHistoryKind        = chatcore.DetectHistoryKind
-	detectGemma4History      = chatcore.DetectGemma4History
 	splitTagged              = chatcore.SplitTagged
 	stripChannels            = chatcore.StripChannels
 	detectGroupedToolResults = chatcore.DetectGroupedToolResults
@@ -24,7 +22,7 @@ func (t *Template) historyKind() histKind {
 	if t == nil || t.reason == nil || t.think == ThinkAsIs {
 		return histNone
 	}
-	return t.reason.hist
+	return t.reason.Hist
 }
 
 func lastQueryIndex(turns []Turn) int {

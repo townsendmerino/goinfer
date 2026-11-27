@@ -20,7 +20,7 @@ var inklingEfforts = inkling2.Efforts
 func Inkling2() *Template { return inkling2Template(-1) }
 
 func inkling2Template(effort float64) *Template {
-	t := &Template{name: "inkling2", stops: []string{ikEOS}}
+	t := newTemplate("inkling2", []string{ikEOS}, nil)
 	e := ""
 	if effort >= 0 {
 		e = strconv.FormatFloat(effort, 'g', -1, 64)

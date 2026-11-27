@@ -47,7 +47,7 @@ func declaresQwen35XMLTools(tmpl string, r *Reasoning) bool {
 	if r == nil {
 		return false
 	}
-	return toolwire.DeclaresQwen35XML(tmpl, r.hist)
+	return toolwire.DeclaresQwen35XML(tmpl, r.Hist)
 }
 
 // WithToolFormat returns a copy of t that renders tools in format f.

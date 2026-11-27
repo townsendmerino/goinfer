@@ -11,7 +11,7 @@ var (
 )
 
 func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool) []Segment {
-	old := t.reason != nil && t.reason.oldGemma4
+	old := t.reason != nil && t.reason.OldGemma4
 	return gemma4tools.RenderTools(t.has, system, toCoreTurns(turns), toCoreTools(tools), gemma4tools.Opts{
 		Think:    t.gemma4Think(),
 		Hist:     t.historyKind() == histGemma4 || old,

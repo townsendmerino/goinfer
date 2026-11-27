@@ -59,50 +59,44 @@ type Stops struct {
 	Strings []string
 }
 
+type templateCore struct {
+	name          string
+	render        func(system string, turns []Turn) []Segment
+	stops         []string
+	bos           string
+	defaultSystem string
+}
+
+type templateThinking struct {
+	reason *Reasoning
+	think  ThinkMode
+	effort string
+}
+
+type templateTools struct {
+	nativeTools        bool
+	toolFormat         ToolFormat
+	nativeByDefault    bool
+	contentBeforeCalls bool
+	lenientFenced      bool
+	groupsToolResults  bool
+}
+
+type templateVocab struct {
+	has func(string) bool
+}
+
 // Template renders a conversation into a family's prompt string and reports its
 // turn-stop markers.
 type Template struct {
-	name   string
-	render func(system string, turns []Turn) []Segment
-	stops  []string
+	templateCore
+	templateThinking
+	templateTools
+	templateVocab
+}
 
-	// bos is a BOS token the checkpoint's template emits first and the family's renderer does not (LFM2: ChatML after
-	// {{- bos_token -}}), prepended as a Special segment; "" for none. Detect sets it (chatMLBOS).
-	bos string
-
-	// defaultSystem is the system message the checkpoint's own template inserts when the conversation has none (ChatML
-	// families only, read from the template by chatMLDefaultSystem); "" for none. Every render path applies it (systemOr).
-	defaultSystem string
-
-	// reason is this checkpoint's declared thinking behaviour (reasoning.go); nil = the family does not think in its
-	// template, or the template's control was not recognised. think is the mode WithThinking selected; the zero value
-	// ThinkAsIs renders exactly what render renders.
-	reason *Reasoning
-	think  ThinkMode
-
-	// effort is a Harmony (gpt-oss) template's reasoning effort, written on its `Reasoning:` line (templates.go); "" elsewhere.
-	effort string
-
-	// nativeTools: the template declares a tool form goinfer can reproduce byte for byte — Qwen3.5's XML (qwen_xml_tools.go) or Gemma 4's
-	// canonical template (gemma4_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is `auto`).
-	nativeTools bool
-	toolFormat  ToolFormat
-	// nativeByDefault: for this template the native form is what `auto` selects — true only where a pre-registered A/B adopted it.
-	nativeByDefault bool
-	// contentBeforeCalls: the Gemma 4 template writes an assistant message's text before its tool calls rather than after their
-	// results (detectGemma4ContentBeforeCalls); the native renderer follows it.
-	contentBeforeCalls bool
-	// lenientFenced: WithLenientToolCalls — also read ONE fenced JSON call at the end of a reply as a call (fenced_tool_calls.go). Off by default.
-	lenientFenced bool
-
-	// groupsToolResults: the template puts CONSECUTIVE tool results in one user turn (Qwen2.5, Qwen3, Qwen3.5 do), read from its text
-	// (detectGroupedToolResults). goinfer's Hermes renderer writes one user turn per result for a template that does not.
-	groupsToolResults bool
-
-	// has reports whether the checkpoint's vocabulary holds a string as a single token (Meta.HasToken, set by Detect); nil when the
-	// Template did not come from Detect. The tool renderers use it to decide which of a family's markers are control tokens
-	// (toolBuf.mark); a Template without it assumes the family's own tokens exist.
-	has func(string) bool
+func newTemplate(name string, stops []string, render func(system string, turns []Turn) []Segment) *Template {
+	return &Template{templateCore: templateCore{name: name, stops: stops, render: render}}
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -219,7 +213,7 @@ func detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
 			g := Gemma4()
 			g.reason = detectGemma4Reasoning(t)
-			g.nativeTools = g.reason != nil && g.reason.hist == histGemma4 // the canonical template, whose loop the native renderer ports
+			g.nativeTools = g.reason != nil && g.reason.Hist == histGemma4 // the canonical template, whose loop the native renderer ports
 			g.nativeByDefault = g.nativeTools                              // ADOPTED: docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md
 			g.contentBeforeCalls = detectGemma4ContentBeforeCalls(t)
 			return g, nil

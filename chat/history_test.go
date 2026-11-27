@@ -140,7 +140,7 @@ func TestThinkHistory_matchHF(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if tmpl.Reasoning() == nil || tmpl.Reasoning().hist == histNone {
+		if tmpl.Reasoning() == nil || tmpl.Reasoning().Hist == histNone {
 			t.Fatalf("%s: the history rule was not recognised from its real template", g.Checkpoint)
 		}
 		for _, c := range g.Cases {

@@ -1164,7 +1164,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/app/serveapp` |  |
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling`, `internal/testgate` |
 | `backend/webgpu/internal/kvdecl` | `internal/runtime/program` |  |
-| `chat` | `constrain`, `internal/chat/chatcore`, `internal/chat/gemma4tools`, `internal/chat/harmony`, `internal/chat/inkling2`, `internal/chat/toolwire`, `tokenizer` | `internal/codec`, `multimodal` |
+| `chat` | `constrain`, `internal/chat/chatcore`, `internal/chat/gemma4tools`, `internal/chat/harmony`, `internal/chat/inkling2`, `internal/chat/reasoning`, `internal/chat/toolwire`, `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/guard/gatecore`, `internal/guard/gatehygiene`, `internal/guard/gateidentity`, `internal/guard/gatequick`, `internal/guard/gaterelease` | `internal/guard/paritykey` |
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
@@ -1202,6 +1202,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/chat/gemma4tools` | `internal/chat/chatcore` |  |
 | `internal/chat/harmony` | `internal/chat/chatcore` |  |
 | `internal/chat/inkling2` | `internal/chat/chatcore` |  |
+| `internal/chat/reasoning` | `internal/chat/chatcore`, `tokenizer` |  |
 | `internal/chat/toolwire` | `internal/chat/chatcore` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/runtime/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
@@ -1294,5 +1295,6 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | chat-gemma4tools-leaf | `internal/chat/gemma4tools`, tests included | any goinfer package; (`internal/chat/gemma4tools` may import `internal/chat/chatcore`) | internal/chat/gemma4tools holds Gemma 4's non-JSON tool-calling micro-language renderers, O(N) control-marker sanitizer, schema formatter, and call parser below chat (CH3). It imports only internal/chat/chatcore and the standard library. |
 | chat-inkling2-leaf | `internal/chat/inkling2`, tests included | any goinfer package; (`internal/chat/inkling2` may import `internal/chat/chatcore`) | internal/chat/inkling2 holds Inkling 2's <|message_*|>/<|content_*|> prompt and tool rendering, reasoning effort levels, reply stream splitter, and tool-call parser below chat (CH3). It imports only internal/chat/chatcore and the standard library. |
 | chat-toolwire-leaf | `internal/chat/toolwire`, tests included | any goinfer package; (`internal/chat/toolwire` may import `internal/chat/chatcore`) | internal/chat/toolwire holds ChatML/Hermes, Qwen3.5 XML, Mistral, Llama-3, and Flint tool prompt renderers and parsers, schema-validated trailing fenced JSON call extraction, and ProseStreamer/StreamableLen below chat (CH4). It imports only internal/chat/chatcore and the standard library. |
+| chat-reasoning-leaf | `internal/chat/reasoning`, tests included | any goinfer package; (`internal/chat/reasoning` may import `internal/chat/chatcore`, `tokenizer`) | internal/chat/reasoning holds checkpoint thinking-mode detection, ThinkSplitter, UTF-8 rune-safe ReplySplitter, and token-level reasoning/call budgets below chat (CH5). It imports only internal/chat/chatcore, tokenizer, and the standard library. |
 
 <!-- imports:end -->

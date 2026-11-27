@@ -804,6 +804,23 @@
         ]
       },
       "why": "internal/chat/toolwire holds ChatML/Hermes, Qwen3.5 XML, Mistral, Llama-3, and Flint tool prompt renderers and parsers, schema-validated trailing fenced JSON call extraction, and ProseStreamer/StreamableLen below chat (CH4). It imports only internal/chat/chatcore and the standard library."
+    },
+    {
+      "name": "chat-reasoning-leaf",
+      "from": [
+        "internal/chat/reasoning"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/reasoning": [
+          "internal/chat/chatcore",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/chat/reasoning holds checkpoint thinking-mode detection, ThinkSplitter, UTF-8 rune-safe ReplySplitter, and token-level reasoning/call budgets below chat (CH5). It imports only internal/chat/chatcore, tokenizer, and the standard library."
     }
   ],
   "arrows": {
@@ -922,6 +939,7 @@
       "internal/chat/gemma4tools",
       "internal/chat/harmony",
       "internal/chat/inkling2",
+      "internal/chat/reasoning",
       "internal/chat/toolwire",
       "tokenizer"
     ],
@@ -1168,6 +1186,10 @@
     ],
     "internal/chat/inkling2": [
       "internal/chat/chatcore"
+    ],
+    "internal/chat/reasoning": [
+      "internal/chat/chatcore",
+      "tokenizer"
     ],
     "internal/chat/toolwire": [
       "internal/chat/chatcore"
