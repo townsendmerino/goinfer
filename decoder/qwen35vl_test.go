@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -84,15 +85,15 @@ func TestQwen35VL_loaderSetsMRope(t *testing.T) {
 	if !slices.Equal(a.MRopeSection, []int{3, 3, 2}) || !a.MRopeInterleaved {
 		t.Fatalf("MRopeSection %v interleaved %v, want [3 3 2] true (rope_parameters)", a.MRopeSection, a.MRopeInterleaved)
 	}
-	if err := m.checkQwen35VLReady(); err != nil {
-		t.Fatalf("checkQwen35VLReady on the image checkpoint: %v", err)
+	if err := vlprep.CheckQwen35VLReady(a); err != nil {
+		t.Fatalf("CheckQwen35VLReady on the image checkpoint: %v", err)
 	}
 	// The refusal must be real: a config without a usable section is refused, not scalar-rotated.
 	saved := a.MRopeSection
 	defer func() { a.MRopeSection = saved }()
 	for _, bad := range [][]int{nil, {3, 3}, {3, 3, 3}} {
 		a.MRopeSection = bad
-		if err := m.checkQwen35VLReady(); err == nil {
+		if err := vlprep.CheckQwen35VLReady(a); err == nil {
 			t.Errorf("MRopeSection %v accepted", bad)
 		}
 	}

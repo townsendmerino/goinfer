@@ -62,7 +62,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `internal/runtime/specdecode/` | speculative decoding drafters, trace collection, adaptive depth, optimistic-forward overlap, and verification loops below `decoder` (rule `specdecode-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
-| `internal/app/serveapp/` | HTTP serving shell behind `server/` and `cmd/serve`, backed by leaf subpackages `adminsock`, `banner`, `carriedids`, `embedders`, `jobs`, `media`, `netguard`, `sessions`, `stores`, `streamframe`, and `towerfit` (enforced by `serveapp-*-leaf` rules in `internal/layout/imports.json`) |
+| `internal/app/serveapp/` | HTTP serving shell behind `server/` and `cmd/serve`, backed by leaf subpackages `adminsock`, `anthropicapi`, `banner`, `batchapi`, `carriedids`, `embedders`, `jobs`, `media`, `netguard`, `responsesapi`, `sessions`, `stores`, `streamframe`, `systemone`, `towerfit`, `towers`, and `wirecore` (enforced by `serveapp-*-leaf` rules in `internal/layout/imports.json`) |
 | `chat/` | chat templates, thinking scaffolds, and tool-call rendering and parsing, no Jinja engine, backed by leaf subpackages under `internal/chat/` (`chatcore`, `harmony`, `gemma4tools`, `inkling2`, `toolwire`, and `reasoning`, enforced by `chatcore-leaf` and `chat-*-leaf` rules in `internal/layout/imports.json`) |
 | `constrain/` | constrained decoding: JSON Schema and grammar logit masks |
 | `tokenizer/` | the BPE tokenizers the models ship |

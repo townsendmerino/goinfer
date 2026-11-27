@@ -726,6 +726,43 @@
       "why": "internal/app/serveapp/responsesapi holds OpenAI /v1/responses request decoding, input-item and carried-reasoning translation, response-store byte accounting, tool-call item assembly, and response-object formatting below serveapp (SA9). It never imports serveapp or decoder."
     },
     {
+      "name": "serveapp-systemone-leaf",
+      "from": [
+        "internal/app/serveapp/systemone"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/systemone": [
+          "internal/clef",
+          "internal/decide"
+        ]
+      },
+      "why": "internal/app/serveapp/systemone holds TypeSafe /v1/systemone and Cloudflare Clef decision request parsing, ordered JSON encoding, and probability response formatting below serveapp (SA10). It imports only internal/clef and internal/decide."
+    },
+    {
+      "name": "serveapp-batchapi-leaf",
+      "from": [
+        "internal/app/serveapp/batchapi"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/batchapi": [
+          "internal/app/serveapp/anthropicapi",
+          "internal/app/serveapp/stores",
+          "internal/app/serveapp/streamframe",
+          "internal/app/serveapp/wirecore",
+          "internal/batchio"
+        ]
+      },
+      "why": "internal/app/serveapp/batchapi holds OpenAI /v1/files, /v1/batches, and Anthropic /v1/messages/batches input parsing, line validation, bounded worker-pool dispatch, and result formatting below serveapp (SA10). It never imports serveapp or decoder."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -917,6 +954,25 @@
         ]
       },
       "why": "internal/chat/reasoning holds checkpoint thinking-mode detection, ThinkSplitter, UTF-8 rune-safe ReplySplitter, and token-level reasoning/call budgets below chat (CH5). It imports only internal/chat/chatcore, tokenizer, and the standard library."
+    },
+    {
+      "name": "vlprep-leaf",
+      "from": [
+        "internal/runtime/vlprep"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/vlprep": [
+          "decoder/arch",
+          "internal/runtime/archparts",
+          "internal/runtime/cpuengine",
+          "internal/runtime/residency"
+        ]
+      },
+      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, and Gemma 4 row builders (VL1). It never imports decoder."
     }
   ],
   "arrows": {
@@ -1093,6 +1149,7 @@
       "internal/runtime/sampling",
       "internal/runtime/sidecar",
       "internal/runtime/specdecode",
+      "internal/runtime/vlprep",
       "internal/runtime/wbuild",
       "internal/testassets",
       "tokenizer"
@@ -1201,6 +1258,7 @@
       "internal/app/serveapp/adminsock",
       "internal/app/serveapp/anthropicapi",
       "internal/app/serveapp/banner",
+      "internal/app/serveapp/batchapi",
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/embedders",
       "internal/app/serveapp/jobs",
@@ -1210,11 +1268,11 @@
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/systemone",
       "internal/app/serveapp/towerfit",
       "internal/app/serveapp/towers",
       "internal/app/serveapp/wirecore",
       "internal/audio",
-      "internal/batchio",
       "internal/clef",
       "internal/codec",
       "internal/cost",
@@ -1245,6 +1303,13 @@
     "internal/app/serveapp/banner": [
       "decoder",
       "internal/runtime/mem"
+    ],
+    "internal/app/serveapp/batchapi": [
+      "internal/app/serveapp/anthropicapi",
+      "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/wirecore",
+      "internal/batchio"
     ],
     "internal/app/serveapp/carriedids": [
       "chat",
@@ -1282,6 +1347,10 @@
       "chat",
       "internal/app/serveapp/carriedids",
       "internal/codec"
+    ],
+    "internal/app/serveapp/systemone": [
+      "internal/clef",
+      "internal/decide"
     ],
     "internal/app/serveapp/towerfit": [
       "decoder",
@@ -1508,6 +1577,11 @@
       "internal/runtime/program",
       "internal/runtime/sampling"
     ],
+    "internal/runtime/vlprep": [
+      "decoder/arch",
+      "internal/runtime/cpuengine",
+      "internal/runtime/residency"
+    ],
     "internal/runtime/wbuild": [
       "decoder/arch",
       "decoder/config",
@@ -1709,6 +1783,7 @@
       "internal/runtime/sampling",
       "internal/runtime/sidecar",
       "internal/runtime/specdecode",
+      "internal/runtime/vlprep",
       "internal/runtime/wbuild",
       "internal/testassets",
       "internal/testgate",
@@ -1820,6 +1895,9 @@
     "internal/app/serveapp/streamframe": [
       "chat"
     ],
+    "internal/app/serveapp/systemone": [
+      "internal/clef"
+    ],
     "internal/app/serveapp/towerfit": [
       "multimodal"
     ],
@@ -1920,6 +1998,10 @@
     ],
     "internal/runtime/rope": [
       "internal/testpath"
+    ],
+    "internal/runtime/vlprep": [
+      "decoder/arch",
+      "internal/runtime/archparts"
     ],
     "internal/runtime/whisper": [
       "internal/audio",

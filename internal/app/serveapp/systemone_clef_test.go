@@ -195,14 +195,14 @@ func TestSystemOne_clefKeepsQuestionOrder(t *testing.T) {
 // Python's max() returns the first maximum, so equal probabilities pick the option listed first in the REQUEST, whatever order the head scored them in.
 func TestClefAnswer_firstMaximumInRequestOrderWins(t *testing.T) {
 	a := clef.Answer{ID: "q", Type: 1, Options: []string{"a", "b", "c"}, Probs: []float64{0.4, 0.4, 0.2}}
-	got, err := clefAnswer(clefQuestion{name: "q", typ: "choice", keys: []string{"b", "a", "c"}}, a)
+	got, err := clefAnswer(clefQuestion{Name: "q", Typ: "choice", Keys: []string{"b", "a", "c"}}, a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := got.(map[string]any)["choice"]; c != "b" {
 		t.Errorf("a tie between a and b, request order b, a, c: chose %v, want b", c)
 	}
-	if _, err := clefAnswer(clefQuestion{name: "q", typ: "choice", keys: []string{"x"}}, a); err == nil {
+	if _, err := clefAnswer(clefQuestion{Name: "q", Typ: "choice", Keys: []string{"x"}}, a); err == nil {
 		t.Error("an option the model did not score was accepted")
 	}
 }

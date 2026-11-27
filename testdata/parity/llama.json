@@ -11,7 +11,7 @@
     "testdata/llama-attnfa-tiny",
     "testdata/llama-tiny"
   ],
-  "deps_hash": "sha256:2ba42cb889e957233ed9f00931a3974d9584ad9d7d64502ed061dfa491535c10",
+  "deps_hash": "sha256:b0cfbc2a561c0e66fa1ffaba69602aa50322f205f7219d5ce9d7cded421ffcdb",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

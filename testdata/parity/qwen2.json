@@ -7,7 +7,7 @@
   "own": [
     "internal/runtime/families/arch_qwen2.go"
   ],
-  "deps_hash": "sha256:7af04703bf4da2b1cd3555a28cf894066bac96026cc7179e902b59c56cfac224",
+  "deps_hash": "sha256:e62159421f5880572eb9bd52a499750a6578695cea19910174000bb675f19d82",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

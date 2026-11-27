@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 21028 -- raised by 29 for the source release: the fit guard's in-flight source term (ggufInFlightSourceBytes) and its two probe seams (buildWorkers, reclaimsReleasedPages); before that, lowered by SZ16
-model_methods 350 -- lowered by SZ16 (residency, sidecar, paging, and thin cpuEngine wrapper methods moved off Model) after #1401
-model_knot_lines 8501 -- lowered by SZ16 (residency, sidecar, paging, blockdraft, and specdecode moved off the Model knot) after #1401
+lines 20799 -- lowered by multimodal sequence-prep extraction into internal/runtime/vlprep (image_spans, guards, Gemma 4 row builders)
+model_methods 344 -- lowered by multimodal sequence-prep extraction into internal/runtime/vlprep (guards and Gemma 4 row builders moved off Model)
+model_knot_lines 8355 -- lowered by multimodal sequence-prep extraction into internal/runtime/vlprep
