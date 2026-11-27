@@ -6,6 +6,7 @@ import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/resident"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 )
 
 // Host holds a lightweight view of a Model's resident-KV coordination state
@@ -16,7 +17,7 @@ type Host struct {
 	Resident          resident.Forward
 	KV                **kvmgr.Slots
 	KVNS              *[]string
-	KVSnaps           **KVSnapStore
+	KVSnaps           **kvsnap.Store
 	CkptPrompt        *[]int
 	DrafterSynced     *any
 	Arch              *darch.Architecture

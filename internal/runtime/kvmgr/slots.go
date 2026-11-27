@@ -128,18 +128,7 @@ type Request struct {
 // The producer class is not compared here: a sequence continuing in its own slot keeps the rows it wrote, as
 // resident reuse always has (the task doc's §5.6, property 3). DeclineShortLead is the one class rule on this path.
 func (a *Slots) Score(slot int, req Request, recurrent bool) int {
-	return SafeReuseLen(a.score(slot, req, recurrent), len(req.Tokens), a.floors[slot], nil)
-}
-
-func (a *Slots) score(slot int, req Request, recurrent bool) int {
-	s := a.seqs[slot]
-	if s == nil || len(s.tokens) == 0 || len(req.Tokens) == 0 {
-		return 0
-	}
-	if rootHash(req.Root, a.m.parts) != s.rootHash {
-		return 0
-	}
-	return scoreSeqTokens(s.tokens, s.images, s.ckpt, req, recurrent)
+	return ScoreSequence(a.StateWith(slot, recurrent, nil, nil), req)
 }
 
 func claimAt(images []ImageSpan, pos int) (ImageSpan, bool) {

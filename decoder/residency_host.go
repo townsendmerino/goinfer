@@ -6,13 +6,11 @@ import (
 	"sync/atomic"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 )
 
 type (
-	kvSnapStore        = residency.KVSnapStore
-	KVSnapshotStats    = residency.KVSnapshotStats
-	KVSnapshotInfo     = residency.KVSnapshotInfo
 	kvAcquired         = residency.KVAcquired
 	KVCopyDecline      = residency.KVCopyDecline
 	residentImageBlock = residency.ImageBlock
@@ -21,7 +19,7 @@ type (
 )
 
 const (
-	kvSnapMinShared = 512
+	kvSnapMinShared = kvsnap.MinShared
 )
 
 var (
@@ -44,8 +42,6 @@ func kvAdapterID(rt *loraRuntime) uint64 {
 	rt.kvID.CompareAndSwap(0, kvAdapterIDs.Add(1))
 	return rt.kvID.Load()
 }
-
-func newKVSnapStore(budget int64) *kvSnapStore { return residency.NewKVSnapStore(budget) }
 
 func (m *Model) resHost() *residency.Host {
 	var arch *darch.Architecture

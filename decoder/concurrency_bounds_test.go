@@ -21,6 +21,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/families"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
 
@@ -173,9 +174,14 @@ func (h *fakeSnapHandle) Serves(int) bool { return true }
 func (h *fakeSnapHandle) Release()        { h.released++ }
 
 func TestKVSnapStore_removeLockedIdempotent(t *testing.T) {
-	st := newKVSnapStore(1024)
+	st := kvsnap.NewStore(1024)
 	h := &fakeSnapHandle{bytes: 128}
-	if used := st.TestAddAndDoubleDrop(h); used != 0 {
+	x := &kvsnap.Entry{Handle: h, IDs: []int{1, 2, 3, 4}}
+	st.Add(x, nil, 0, 0)
+
+	st.Drop(x)
+	st.Drop(x) // second drop after prior eviction must be a no-op
+	if used := st.Stats().Used; used != 0 {
 		t.Fatalf("used = %d, want 0", used)
 	}
 	if h.released != 1 {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder/resident"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 )
 
 // Prefix reuse on the resident positional KV.
@@ -185,7 +186,16 @@ func (h *Host) BoundReuseLen(prompt []int, imgs []ImageClaim, adapterID uint64, 
 	if !a.Live(a.Bound()) {
 		a.Unrecorded(a.Bound())
 	}
-	return h.ReuseFloorFor(h.ReuseLenOf(a.Bound(), prompt, imgs, adapterID, ns, ckpt))
+	if h.ReuseDisabled {
+		return 0
+	}
+	req := kvmgr.Request{Root: h.KVRootIn(adapterID, ns), Tokens: prompt, Images: KVSpansOfClaims(imgs), Checkpoint: ckpt}
+	return kvmgr.ScoreSequence(a.StateWith(a.Bound(), h.hasRecurrentState(), func(prefix int) int {
+		if prefix <= 0 {
+			return 0
+		}
+		return h.ReuseFloorFor(prefix)
+	}, nil), req)
 }
 
 // ResidentKVPool reports the resident's KV pool (KVPool), the zero value when it has none.
@@ -299,7 +309,7 @@ type KVAcquired struct {
 	PromotedBlocks, PromotedRows int
 	SnapRows                     int
 	SnapDur                      time.Duration
-	snapFrom                     *kvSnap
+	snapFrom                     *kvsnap.Entry
 	MarkFired                    bool
 	MsgRows                      int
 	PreambleRows                 int

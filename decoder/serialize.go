@@ -33,7 +33,7 @@ var giwF32Kind1ForTest bool
 // giwIslandsF32ForTest writes bf16 island matrices as standalone f32 arrays for round-trip tests.
 var giwIslandsF32ForTest bool
 
-// giwWriter wraps wbuild.StreamWriter so decoder/kvsnapshot.go can attach snapshot helpers.
+// giwWriter wraps wbuild.StreamWriter so decoder/session_giwkv.go can attach snapshot helpers.
 type giwWriter struct {
 	wbuild.StreamWriter
 }
@@ -44,7 +44,7 @@ func newGIWWriter(sink io.Writer, target GIWTarget, layerBudget int64, hooks wbu
 	return w
 }
 
-// giwReader wraps giwcodec.Reader so decoder/kvsnapshot.go can attach snapshot helpers.
+// giwReader wraps giwcodec.Reader so decoder/session_giwkv.go can attach snapshot helpers.
 type giwReader struct {
 	giwcodec.Reader
 }
