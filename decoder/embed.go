@@ -14,7 +14,7 @@ import (
 
 // HiddenLast runs ids causally through the layer stack in one fresh KV cache and returns the final hidden state of the
 // last token after the model's final norm: HF's `last_hidden_state[:, -1, :]`, which sentence-transformers' last-token
-// pooling reads. It stops before the LM head, which an embedder never needs and which is the most expensive matmul in a
+// pooling reads. It stops before the LM head, which an embedder never needs and which is the most expensive cpuengine.Matmul in a
 // forward.
 //
 // It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
@@ -90,7 +90,7 @@ func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, e
 
 // hiddenLastBatched is HiddenLast's fast path: one batched forward over the whole
 // sequence via runLayersFromEmbedN, which returns rows already past the final
-// norm (its own doc: "post-final-norm hidden states") — this must NOT normalize
+// norm (its own doc: "post-final-norm hidden states") — this must NOT cpuengine.Normalize
 // again, unlike hiddenLastSequential.
 func (m *Model) hiddenLastBatched(ctx context.Context, ids []int) ([]float32, error) {
 	a := m.w.Arch
@@ -119,7 +119,7 @@ func (m *Model) hiddenLastSequential(ctx context.Context, ids []int) ([]float32,
 			return nil, err
 		}
 	}
-	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place (the
+	// Copy before normalizing: h aliases the decode scratch and cpuengine.Normalize mutates in place (the
 	// same in-place norm logitsFromHidden does on its way to the head).
 	out := slices.Clone(h[:a.HiddenDim])
 	m.finalNorm(out)
@@ -218,7 +218,7 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 			return nil, err
 		}
 	}
-	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
+	// Copy before normalizing: h aliases the decode scratch and cpuengine.Normalize mutates in place.
 	out := slices.Clone(h[:a.HiddenDim])
 	m.finalNorm(out)
 	return out, nil

@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"cmp"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"slices"
@@ -122,12 +123,12 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	}
 
 	// ---- R1: cpu f64 SSM (reference) + record its routing decisions ----
-	ssmForceF32 = false
-	moeSelTrace = make([][]int, 0, 1<<14)
-	moeWtsTrace = make([][]float32, 0, 1<<14)
+	cpuengine.SSMForceF32 = false
+	cpuengine.MoESelTrace = make([][]int, 0, 1<<14)
+	cpuengine.MoEWtsTrace = make([][]float32, 0, 1<<14)
 	r1Dist, r1Arg := run()
-	routeIdx, routeWts := moeSelTrace, moeWtsTrace
-	moeSelTrace, moeWtsTrace = nil, nil
+	routeIdx, routeWts := cpuengine.MoESelTrace, cpuengine.MoEWtsTrace
+	cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = nil, nil
 	r1NLL := 0.0
 	for i := range N {
 		r1NLL += -math.Log(math.Max(r1Dist[i][ids[i+1]], 1e-12))
@@ -161,12 +162,12 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	}
 
 	// ---- E1: cpu f32 SSM (record routing to count selection divergence) ----
-	ssmForceF32 = true
-	moeSelTrace = make([][]int, 0, 1<<14)
-	moeWtsTrace = make([][]float32, 0, 1<<14)
+	cpuengine.SSMForceF32 = true
+	cpuengine.MoESelTrace = make([][]int, 0, 1<<14)
+	cpuengine.MoEWtsTrace = make([][]float32, 0, 1<<14)
 	e1Dist, e1Arg := run()
-	e1Idx := moeSelTrace
-	moeSelTrace, moeWtsTrace = nil, nil
+	e1Idx := cpuengine.MoESelTrace
+	cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = nil, nil
 	score("E1: cpu f32 SSM", e1Dist, e1Arg)
 	flips, tot := 0, 0
 	for c := range routeIdx {
@@ -189,11 +190,11 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 		flips, tot, 100*float64(flips)/float64(tot))
 
 	// ---- E2: cpu f32 SSM + forced f64 (R1) routing (router-null control) ----
-	ssmForceF32 = true
-	moeSelOverride, moeWtsOverride, moeOverridePos = routeIdx, routeWts, 0
+	cpuengine.SSMForceF32 = true
+	cpuengine.MoESelOverride, cpuengine.MoEWtsOverride, cpuengine.MoEOverridePos = routeIdx, routeWts, 0
 	e2Dist, e2Arg := run()
-	moeSelOverride, moeWtsOverride = nil, nil
-	ssmForceF32 = false
+	cpuengine.MoESelOverride, cpuengine.MoEWtsOverride = nil, nil
+	cpuengine.SSMForceF32 = false
 	score("E2: cpu f32 SSM + f64 routing", e2Dist, e2Arg)
 
 	// D1 and D2 isolate the one thing R2 keeps f32 but the resident quantizes: the int8 MAMBA projections (W8A8 weights +
@@ -221,12 +222,12 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	}
 
 	// ---- D1: cpu int8 mamba (W8A8), f64 SSM otherwise ----
-	ssmQ8CPU = true
-	moeSelTrace = make([][]int, 0, 1<<14)
-	moeWtsTrace = make([][]float32, 0, 1<<14)
+	cpuengine.SSMQ8CPU = true
+	cpuengine.MoESelTrace = make([][]int, 0, 1<<14)
+	cpuengine.MoEWtsTrace = make([][]float32, 0, 1<<14)
 	d1Dist, d1Arg := run()
-	d1Idx := moeSelTrace
-	moeSelTrace, moeWtsTrace = nil, nil
+	d1Idx := cpuengine.MoESelTrace
+	cpuengine.MoESelTrace, cpuengine.MoEWtsTrace = nil, nil
 	score("D1: cpu int8 mamba (W8A8)", d1Dist, d1Arg)
 	if df, dn := flipCount(d1Idx); dn > 0 {
 		t.Logf("D1 vs R1 routing: %d/%d MoE calls picked a different expert set (%.1f%%)",
@@ -234,9 +235,9 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	}
 
 	// ---- D2: cpu int8 mamba + forced f64 (R1) routing ----
-	moeSelOverride, moeWtsOverride, moeOverridePos = routeIdx, routeWts, 0
+	cpuengine.MoESelOverride, cpuengine.MoEWtsOverride, cpuengine.MoEOverridePos = routeIdx, routeWts, 0
 	d2Dist, d2Arg := run()
-	moeSelOverride, moeWtsOverride = nil, nil
-	ssmQ8CPU = false
+	cpuengine.MoESelOverride, cpuengine.MoEWtsOverride = nil, nil
+	cpuengine.SSMQ8CPU = false
 	score("D2: cpu int8 mamba + f64 routing", d2Dist, d2Arg)
 }

@@ -52,7 +52,7 @@ func TestCPUAttnShareProbe(t *testing.T) {
 	if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
-	fmt.Fprintf(os.Stderr, "[attn-share] prefill to %d took %s; KV quant %v\n", depth, time.Since(t0).Round(time.Millisecond), cache.quant)
+	fmt.Fprintf(os.Stderr, "[attn-share] prefill to %d took %s; KV quant %v\n", depth, time.Since(t0).Round(time.Millisecond), cache.c.Quant)
 	sampler := NewSampler(SamplingParams{Temperature: 0})
 	logits, err := m.forward(tok, cache)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestCPUAttnShareProbe(t *testing.T) {
 	}
 	next, _ := sampler.Sample(logits)
 	c := cost.New()
-	cache.cost, cache.costPhase = c, cost.Decode
+	cache.c.Cost, cache.c.CostPhase = c, cost.Decode
 	t1 := time.Now()
 	for range n {
 		logits, err := m.forward(next, cache)
@@ -70,7 +70,7 @@ func TestCPUAttnShareProbe(t *testing.T) {
 		next, _ = sampler.Sample(logits)
 	}
 	wall := time.Since(t1)
-	cache.cost = nil
+	cache.c.Cost = nil
 	r := c.Report()
 	if r.Decode == nil {
 		t.Fatal("VACUOUS: the decode phase counted nothing")

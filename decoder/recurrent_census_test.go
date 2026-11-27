@@ -236,8 +236,8 @@ func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
 		if names, _ := recurrentKinds(s.cache); len(names) == 0 {
 			t.Fatal("the session cache holds no recurrent kinds")
 		}
-		if got := s.rewindForReuse(prompt); got != 0 || s.cache.recurrentResets != 0 {
-			t.Errorf("rewindForReuse = %d with %d recurrent resets; want 0 and 0 (a born-zero cache needs none)", got, s.cache.recurrentResets)
+		if got := s.rewindForReuse(prompt); got != 0 || s.cache.c.RecurrentResets != 0 {
+			t.Errorf("rewindForReuse = %d with %d recurrent resets; want 0 and 0 (a born-zero cache needs none)", got, s.cache.c.RecurrentResets)
 		}
 	})
 
@@ -251,21 +251,21 @@ func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
 		s.tokens = []int{1, 2, 3}
 		s.cleanCache = false // as after a real generation
 		s.Reset()
-		if s.cache.recurrentResets != 1 {
-			t.Fatalf("Session.Reset made %d recurrent resets, want 1", s.cache.recurrentResets)
+		if s.cache.c.RecurrentResets != 1 {
+			t.Fatalf("Session.Reset made %d recurrent resets, want 1", s.cache.c.RecurrentResets)
 		}
 		if d := recurrentDirt(names, fields); len(d) > 0 {
 			t.Fatalf("Reset left state behind: %v", d)
 		}
-		if got := s.rewindForReuse(prompt); got != 0 || s.cache.recurrentResets != 1 {
-			t.Errorf("rewindForReuse after Reset = %d with %d recurrent resets; want 0 and still 1", got, s.cache.recurrentResets)
+		if got := s.rewindForReuse(prompt); got != 0 || s.cache.c.RecurrentResets != 1 {
+			t.Errorf("rewindForReuse after Reset = %d with %d recurrent resets; want 0 and still 1", got, s.cache.c.RecurrentResets)
 		}
 		// The flag is consumed by the first rewind. Dirty the state WITHOUT moving pos or adding tokens, the shape of a forward that errored mid-sweep
 		// (state advanced, pos not): the pos and token guards cannot see it, so only the consumed flag makes this second rewind reset.
 		fillRecurrent(t, fields)
 		s.rewindForReuse(prompt)
-		if s.cache.recurrentResets != 2 {
-			t.Errorf("a second rewindForReuse skipped its reset (%d resets); the clean flag must be consumed by the first", s.cache.recurrentResets)
+		if s.cache.c.RecurrentResets != 2 {
+			t.Errorf("a second rewindForReuse skipped its reset (%d resets); the clean flag must be consumed by the first", s.cache.c.RecurrentResets)
 		}
 		if d := recurrentDirt(names, fields); len(d) > 0 {
 			t.Errorf("state survived the second rewind: %v", d)
@@ -283,9 +283,9 @@ func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
 			names, fields := recurrentKinds(s.cache)
 			fillRecurrent(t, fields)
 			mutate(s)
-			before := s.cache.recurrentResets
+			before := s.cache.c.RecurrentResets
 			s.rewindForReuse(prompt)
-			if s.cache.recurrentResets != before+1 {
+			if s.cache.c.RecurrentResets != before+1 {
 				t.Errorf("%s: the reset was skipped on a cache that is not provably empty", name)
 			}
 			if d := recurrentDirt(names, fields); len(d) > 0 {
@@ -297,8 +297,8 @@ func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
 		_, fields := recurrentKinds(s.cache)
 		fillRecurrent(t, fields)
 		s.rewindForReuse(prompt)
-		if s.cache.recurrentResets != 1 {
-			t.Errorf("a session constructed without NewSession skipped its reset (%d)", s.cache.recurrentResets)
+		if s.cache.c.RecurrentResets != 1 {
+			t.Errorf("a session constructed without NewSession skipped its reset (%d)", s.cache.c.RecurrentResets)
 		}
 	})
 }

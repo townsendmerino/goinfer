@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+
 // The cache-state grid: every kind of per-sequence state a
 // KVCache can hold, against every lifecycle path that has to know about it, with what that path does with it. It
 // guards against a kind of state a lifecycle path never accounted for (Mamba-2 and DeltaNet state across a reset,
@@ -239,41 +241,41 @@ var recurrentCells = map[lifecyclePath]stateCell{
 // counters or scratch rather than per-sequence state are in kvCacheNotState instead, with a reason.
 // TestKVCache_everyFieldHasAState fails a field that is in neither.
 var kvCacheFieldState = map[string]cacheState{
-	"keys": statePositional, "vals": statePositional, "stride": statePositional, "pos": statePositional, "manualPos": statePositional,
-	"keysH": statePositional, "valsH": statePositional, // the same rows at f16 (KVQuant f16)
-	"rings": stateRing, "localAny": stateRing,
-	"quant": stateInt8KV, "keysQ": stateInt8KV, "valsQ": stateInt8KV, "keyScale": stateInt8KV, "valScale": stateInt8KV,
-	"mlaLatent": stateMLALatent,
-	"delta":     stateDeltaNet,
-	"conv":      stateShortConv,
-	"mamba":     stateMamba2,
-	"kda":       stateKDA,
-	"imgBlocks": stateImageBlocks,
-	"mropePos":  stateMRoPE, "mropeDelta": stateMRoPE,
-	"deepstack":     stateDeepstack,
-	"captureLayers": stateCapture, "captured": stateCapture, "layerInputs": stateCapture,
-	"subCapture": stateCapture, "subAttn": stateCapture, "subMLP": stateCapture, "subMLPpre": stateCapture, "subCtx": stateCapture, "subPLE": stateCapture,
-	"treeRowPos": stateTree, "treeMask": stateTree,
-	"lora": stateAdapter,
+	"KeysBuf": statePositional, "ValsBuf": statePositional, "Stride": statePositional, "PosN": statePositional, "ManualPos": statePositional,
+	"KeysH": statePositional, "ValsH": statePositional, // the same rows at f16 (KVQuant f16)
+	"Rings": stateRing, "LocalAny": stateRing,
+	"Quant": stateInt8KV, "KeysQ": stateInt8KV, "ValsQ": stateInt8KV, "KeyScale": stateInt8KV, "ValScale": stateInt8KV,
+	"MLALatent": stateMLALatent,
+	"Delta":     stateDeltaNet,
+	"Conv":      stateShortConv,
+	"Mamba":     stateMamba2,
+	"KDA":       stateKDA,
+	"ImgBlocks": stateImageBlocks,
+	"MRopePos":  stateMRoPE, "MRopeDelta": stateMRoPE,
+	"Deepstack":     stateDeepstack,
+	"CaptureLayers": stateCapture, "Captured": stateCapture, "LayerInputs": stateCapture,
+	"SubCapture": stateCapture, "SubAttn": stateCapture, "SubMLP": stateCapture, "SubMLPPre": stateCapture, "SubCtx": stateCapture, "SubPLE": stateCapture,
+	"TreeRowPos": stateTree, "TreeMask": stateTree,
+	"LoRALayers": stateAdapter,
 }
 
 var kvCacheNotState = map[string]string{
-	"numLayers":       "geometry, fixed at NewCache",
-	"kvDim":           "geometry, fixed at NewCache",
-	"window":          "geometry: the ring capacity, fixed at NewCache",
-	"headDim":         "geometry, fixed at NewCache",
-	"latentDim":       "geometry: the MLA latent width, fixed at NewCache",
-	"recurrentResets": "a counter of resetRecurrent calls, for tests (audit R-16)",
-	"scr":             "per-stream scratch buffers, overwritten by every forward",
-	"planRows":        "the current request's planned size, set by every generation before its prefill; capacity only",
-	"rowCeiling":      "the context size the current request may grow to, set with planRows; capacity only",
-	"regrownBytes":    "bytes a growth dropped within the position being appended, zeroed at its last layer",
-	"skipAppend":      "geometry: the layers that reserve no append-forever capacity, fixed at NewCache",
-	"cost":            "the cost counters a forward charges (internal/cost); nil is off. What a forward cost, not what the sequence holds",
-	"costPhase":       "the phase the cost counters charge, set with cost",
-	"rowPad":          "geometry: the row pad the global layers' rows carry, fixed at NewCache; the share paths copy it with the rows",
-	"f16InPlaceReads": "a counter of how decode read the f16 rows, not what the sequence holds",
-	"knobs":           "the owning model's operator-knob snapshot, set at NewCache; configuration the forward reads, not what the sequence holds",
+	"NumLayers":       "geometry, fixed at NewCache",
+	"KVDim":           "geometry, fixed at NewCache",
+	"Window":          "geometry: the ring capacity, fixed at NewCache",
+	"HeadDim":         "geometry, fixed at NewCache",
+	"LatentDim":       "geometry: the MLA latent width, fixed at NewCache",
+	"RecurrentResets": "a counter of resetRecurrent calls, for tests (audit R-16)",
+	"Scr":             "per-stream scratch buffers, overwritten by every forward",
+	"PlanRows":        "the current request's planned size, set by every generation before its prefill; capacity only",
+	"RowCeiling":      "the context size the current request may grow to, set with planRows; capacity only",
+	"RegrownBytes":    "bytes a growth dropped within the position being appended, zeroed at its last layer",
+	"SkipAppend":      "geometry: the layers that reserve no append-forever capacity, fixed at NewCache",
+	"Cost":            "the cost counters a forward charges (internal/cost); nil is off. What a forward cost, not what the sequence holds",
+	"CostPhase":       "the phase the cost counters charge, set with cost",
+	"RowPad":          "geometry: the row pad the global layers' rows carry, fixed at NewCache; the share paths copy it with the rows",
+	"F16InPlaceReads": "a counter of how decode read the f16 rows, not what the sequence holds",
+	"Knobs":           "the owning model's operator-knob snapshot, set at NewCache; configuration the forward reads, not what the sequence holds",
 }
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as
@@ -281,31 +283,31 @@ var kvCacheNotState = map[string]string{
 func (c *KVCache) holdsState(s cacheState) bool {
 	switch s {
 	case statePositional:
-		return len(c.keys) > 0 || len(c.keysQ) > 0 || len(c.keysH) > 0
+		return len(c.c.KeysBuf) > 0 || len(c.c.KeysQ) > 0 || len(c.c.KeysH) > 0
 	case stateRing:
-		return c.localAny
+		return c.c.LocalAny
 	case stateInt8KV:
-		return c.quant == kvI8
+		return c.c.Quant == kvI8
 	case stateMLALatent:
-		return len(c.mlaLatent) > 0
+		return len(c.c.MLALatent) > 0
 	case stateDeltaNet:
-		return c.delta != nil
+		return c.c.Delta != nil
 	case stateShortConv:
-		return c.conv != nil
+		return c.c.Conv != nil
 	case stateMamba2:
-		return c.mamba != nil
+		return c.c.Mamba != nil
 	case stateKDA:
-		return c.kda != nil
+		return c.c.KDA != nil
 	case stateImageBlocks:
-		return len(c.imgBlocks) > 0
+		return len(c.c.ImgBlocks) > 0
 	case stateMRoPE:
-		return c.mropePos != nil || c.mropeDelta != 0
+		return c.c.MRopePos != nil || c.c.MRopeDelta != 0
 	case stateDeepstack:
-		return c.deepstack != nil
+		return c.c.Deepstack != nil
 	case stateCapture:
-		return c.captureLayers != nil || c.subCapture || c.layerInputs != nil
+		return c.c.CaptureLayers != nil || c.c.SubCapture || c.c.LayerInputs != nil
 	case stateTree:
-		return c.treeMask != nil || c.treeRowPos != nil
+		return c.c.TreeMask != nil || c.c.TreeRowPos != nil
 	case stateAdapter:
 		return c.lora != nil
 	}
@@ -323,4 +325,10 @@ func (c *KVCache) holdsStateHandled(p lifecyclePath, h stateHandling) bool {
 		}
 	}
 	return false
+}
+
+func init() {
+	cpuengine.SetInexactRewindCheck(func(c *cpuengine.Cache) bool {
+		return (&KVCache{c: c}).holdsStateHandled(lcRewind, hInexact)
+	})
 }

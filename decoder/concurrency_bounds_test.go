@@ -214,12 +214,12 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 		kvI8: true,
 	}
 	ref := m.NewCache(0)
-	if ref.quant != kvI8 {
-		t.Fatalf("synthetic cache quant = %d, want kvI8 (%d)", ref.quant, kvI8)
+	if ref.c.Quant != kvI8 {
+		t.Fatalf("synthetic cache quant = %d, want kvI8 (%d)", ref.c.Quant, kvI8)
 	}
 	const pos = 2
-	kvDim := ref.kvDim // 8
-	nKV := kvDim / ref.headDim
+	kvDim := ref.c.KVDim // 8
+	nKV := kvDim / ref.c.HeadDim
 
 	buildBlob := func(kLen, vLen, ksLen, vsLen int) []byte {
 		wr := &giwWriter{}
@@ -227,10 +227,10 @@ func TestLoadSession_rejectsAsymmetricKVAndMissingScales(t *testing.T) {
 		wr.U32(kvSnapVersion)
 		wr.Str("m")
 		wr.Str("")
-		wr.U32(uint32(ref.numLayers))
+		wr.U32(uint32(ref.c.NumLayers))
 		wr.U32(uint32(kvDim))
-		wr.U32(uint32(ref.window))
-		wr.U32(uint32(ref.headDim))
+		wr.U32(uint32(ref.c.Window))
+		wr.U32(uint32(ref.c.HeadDim))
 		wr.Raw([]byte{0, byte(kvI8)})
 		wr.U32(pos)
 		wr.ints([]int{1, 2})

@@ -29,7 +29,7 @@ func TestLoRAMerge(t *testing.T) {
 	const scale = 0.5
 	base := make([]float32, out*in) // zeros, so the result is purely the delta
 	adapter := &loraAdapter{deltas: map[string]loraDelta{
-		"w": {a: a, b: b, r: r, in: in, out: out, scale: scale},
+		"w": {A: a, B: b, R: r, In: in, Out: out, Scale: scale},
 	}}
 	if err := adapter.Merge("w", base, out, in); err != nil {
 		t.Fatal(err)
@@ -129,11 +129,11 @@ func TestLoadLoRA(t *testing.T) {
 	if !ok {
 		t.Fatalf("delta not mapped to base name; have %v", keysOf(a.deltas))
 	}
-	if d.scale != 16.0/8.0 {
-		t.Errorf("scale = %v, want 2.0 (alpha/r)", d.scale)
+	if d.Scale != 16.0/8.0 {
+		t.Errorf("scale = %v, want 2.0 (alpha/r)", d.Scale)
 	}
-	if d.r != 8 || d.in != 4 || d.out != 6 {
-		t.Errorf("dims r=%d in=%d out=%d, want 8/4/6", d.r, d.in, d.out)
+	if d.R != 8 || d.In != 4 || d.Out != 6 {
+		t.Errorf("dims r=%d in=%d out=%d, want 8/4/6", d.R, d.In, d.Out)
 	}
 }
 

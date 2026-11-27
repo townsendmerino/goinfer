@@ -7,7 +7,7 @@
     "deltanet"
   ],
   "own": [
-    "decoder/forward_qwen35.go",
+    "internal/runtime/cpuengine/forward_qwen35.go",
     "internal/runtime/wbuild/qwen3next.go",
     "decoder/qwen3next_real_test.go",
     "decoder/qwen3next_slice_test.go",

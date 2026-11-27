@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"math"
 	"os"
@@ -25,12 +26,7 @@ import (
 // Only the safetensors base path supports merge — PEFT adapters target HF module
 // names; a GGUF base + LoRA is rejected (see Load).
 
-type loraDelta struct {
-	a          []float32 // lora_A: [r, in]
-	b          []float32 // lora_B: [out, r]
-	r, in, out int
-	scale      float64
-}
+type loraDelta = cpuengine.LoRADelta
 
 type loraAdapter struct {
 	st     *embed.SafetensorsFile
@@ -87,11 +83,11 @@ func loadLoRA(dir string) (*loraAdapter, error) {
 			return nil, err
 		}
 		d := a.deltas[base]
-		d.scale = scale
+		d.Scale = scale
 		if isA {
-			d.a, d.r, d.in = data, shape[0], shape[1]
+			d.A, d.R, d.In = data, shape[0], shape[1]
 		} else {
-			d.b, d.out = data, shape[0]
+			d.B, d.Out = data, shape[0]
 		}
 		a.deltas[base] = d
 	}
@@ -100,13 +96,13 @@ func loadLoRA(dir string) (*loraAdapter, error) {
 		return nil, fmt.Errorf("decoder(lora): no lora_A/lora_B tensors found in %s", dir)
 	}
 	for base, d := range a.deltas {
-		if d.a == nil || d.b == nil {
+		if d.A == nil || d.B == nil {
 			st.Close()
 			return nil, fmt.Errorf("decoder(lora): %q has only one of lora_A/lora_B", base)
 		}
-		if len(d.b) != d.out*d.r {
+		if len(d.B) != d.Out*d.R {
 			st.Close()
-			return nil, fmt.Errorf("decoder(lora): %q lora_B [%d,?] vs r=%d mismatch", base, d.out, d.r)
+			return nil, fmt.Errorf("decoder(lora): %q lora_B [%d,?] vs r=%d mismatch", base, d.Out, d.R)
 		}
 	}
 	return a, nil
@@ -178,9 +174,9 @@ func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []darch.Laye
 		if !ok {
 			return nil
 		}
-		if d.out != proj.Rows() || d.in != proj.Cols() {
+		if d.Out != proj.Rows() || d.In != proj.Cols() {
 			return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]",
-				base, d.out, d.in, proj.Rows(), proj.Cols())
+				base, d.Out, d.In, proj.Rows(), proj.Cols())
 		}
 		return nil
 	}
@@ -211,8 +207,8 @@ func (a *loraAdapter) Merge(name string, data []float32, out, in int) error {
 	if !ok {
 		return nil
 	}
-	if d.out != out || d.in != in {
-		return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]", name, d.out, d.in, out, in)
+	if d.Out != out || d.In != in {
+		return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]", name, d.Out, d.In, out, in)
 	}
 	a.mu.Lock()
 	if a.merged == nil {
@@ -220,16 +216,16 @@ func (a *loraAdapter) Merge(name string, data []float32, out, in int) error {
 	}
 	a.merged[name] = true
 	a.mu.Unlock()
-	sc := float32(d.scale)
+	sc := float32(d.Scale)
 	for o := range out {
-		brow := d.b[o*d.r : o*d.r+d.r]
+		brow := d.B[o*d.R : o*d.R+d.R]
 		row := data[o*in : o*in+in]
-		for k := 0; k < d.r; k++ {
+		for k := 0; k < d.R; k++ {
 			bk := sc * brow[k]
 			if bk == 0 {
 				continue
 			}
-			arow := d.a[k*in : k*in+in]
+			arow := d.A[k*in : k*in+in]
 			for j := range in {
 				row[j] += bk * arow[j]
 			}
@@ -291,9 +287,7 @@ func (a *loraAdapter) close() {
 
 // loraLayerDelta holds one transformer layer's per-projection deltas; a nil entry
 // is a projection the adapter does not target (the apply is a no-op).
-type loraLayerDelta struct {
-	q, k, v, o, gate, up, down *loraDelta
-}
+type loraLayerDelta = cpuengine.LoRALayerDelta
 
 // loraRuntime is a loaded adapter indexed for the forward: layer → projection
 // deltas. The deltas alias the adapter's mmapped tensors (read-only), so it costs
@@ -329,8 +323,8 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *archparts.T
 	}
 	for i := range numLayers {
 		rt.layers[i] = loraLayerDelta{
-			q: get(i, s.QProj), k: get(i, s.KProj), v: get(i, s.VProj), o: get(i, s.OProj),
-			gate: get(i, s.GateProj), up: get(i, s.UpProj), down: get(i, s.DownProj),
+			Q: get(i, s.QProj), K: get(i, s.KProj), V: get(i, s.VProj), O: get(i, s.OProj),
+			Gate: get(i, s.GateProj), Up: get(i, s.UpProj), Down: get(i, s.DownProj),
 		}
 	}
 	return rt
@@ -425,27 +419,4 @@ func (m *Model) adapter(name string) *loraRuntime {
 	reg.mu.Lock()
 	defer reg.mu.Unlock()
 	return reg.byName[name]
-}
-
-// applyLoRA adds the low-rank delta s·B(A·x) into y in place — the compute-time
-// equivalent of merge(): (W + s·B·A)·x = W·x + s·B·(A·x), where y already holds the
-// base output W·x. x is the projection input ([d.in]), y the output ([d.out]).
-// No-op when d is nil. Not bit-identical to merge() (the f32 reduction is split
-// across two dots instead of one fused weight) but algebraically equal — the gate
-// is greedy-token parity, not bit-exactness (see TestLoRACompute_matchesMerge).
-func applyLoRA(d *loraDelta, x, y []float32, scr *decodeScratch) {
-	if d == nil {
-		return
-	}
-	t := scr.loraBuf(d.r)
-	linalg.MatmulBT(x, d.a, t, 1, d.in, d.r) // t = A·x  (A is [r,in])
-	sc := float32(d.scale)
-	for o := 0; o < d.out; o++ {
-		brow := d.b[o*d.r : o*d.r+d.r]
-		var s float32
-		for k := 0; k < d.r; k++ {
-			s += brow[k] * t[k]
-		}
-		y[o] += sc * s
-	}
 }

@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,16 +25,16 @@ func TestG40KV_decodeWithinBudgetNeverRegrows(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			prevC, prevHook := prefillChunkRows, prefillChunkDone
-			defer func() { prefillChunkRows, prefillChunkDone = prevC, prevHook }()
-			prefillChunkRows = 256
+			prevC, prevHook := cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone
+			defer func() { cpuengine.PrefillChunkRows, cpuengine.PrefillChunkDone = prevC, prevHook }()
+			cpuengine.PrefillChunkRows = 256
 			var atPrefillEnd int64
 			chunks := 0
-			prefillChunkDone = func(chunk int) {
+			cpuengine.PrefillChunkDone = func(chunk int) {
 				if chunk >= 0 {
 					chunks++
 				}
-				atPrefillEnd = kvRegrows.Load()
+				atPrefillEnd = cpuengine.KVRegrows.Load()
 			}
 			_, _, _, _, _, _, vocab := m.Dims()
 			prompt := make([]int, 1000)
@@ -57,10 +58,10 @@ func TestG40KV_decodeWithinBudgetNeverRegrows(t *testing.T) {
 			if n < 100 {
 				t.Fatalf("generation stopped after %d tokens: too few to cross the reserve's rounding slack, so the gate cannot see a missing reserve", n)
 			}
-			if d := kvRegrows.Load() - atPrefillEnd; d != 0 {
+			if d := cpuengine.KVRegrows.Load() - atPrefillEnd; d != 0 {
 				t.Errorf("decoding %d tokens within a budget of %d grew a KV layer %d time(s): the prefill did not reserve the budget", n, budget, d)
 			}
-			fmt.Fprintf(os.Stderr, "[g40-kv] kv=%q: %d chunks, %d tokens decoded, regrows during decode %d\n", kvq, chunks, n, kvRegrows.Load()-atPrefillEnd)
+			fmt.Fprintf(os.Stderr, "[g40-kv] kv=%q: %d chunks, %d tokens decoded, regrows during decode %d\n", kvq, chunks, n, cpuengine.KVRegrows.Load()-atPrefillEnd)
 		})
 	}
 }
@@ -112,7 +113,7 @@ func TestG40KV_forcedRegrowReleases(t *testing.T) {
 	releaseHostMemory()
 	liveBase, fpBase := live(), fp()
 	c := NewKVCache(layers, nKV, hd, 0, 0, nil)
-	c.planRequest(rows, 0, 32768)
+	c.c.PlanRequest(rows, 0, 32768)
 	row := make([]float32, nKV*hd)
 	app := func(n int) {
 		for range n {
@@ -122,23 +123,23 @@ func TestG40KV_forcedRegrowReleases(t *testing.T) {
 		}
 	}
 	app(2048)
-	c.reserveRows(c.planRows - c.Pos())
+	c.c.ReserveRows(c.c.PlanRows - c.Pos())
 	app(rows - 2048)
-	app(cap(c.keys[0])/(nKV*hd) - c.Pos()) // the reserve's rounding slack: still no growth
-	before := kvRegrows.Load()
+	app(cap(c.c.KeysBuf[0])/(nKV*hd) - c.Pos()) // the reserve's rounding slack: still no growth
+	before := cpuengine.KVRegrows.Load()
 	app(1) // past the capacity: a forced regrow of every layer
-	if d := kvRegrows.Load() - before; d != layers {
+	if d := cpuengine.KVRegrows.Load() - before; d != layers {
 		t.Fatalf("one row past the plan grew %d layers, want %d", d, layers)
 	}
 	var capBytes int64
 	for l := range layers {
-		capBytes += 4 * int64(cap(c.keys[l])+cap(c.vals[l]))
+		capBytes += 4 * int64(cap(c.c.KeysBuf[l])+cap(c.c.ValsBuf[l]))
 	}
 	time.Sleep(2 * time.Second)
 	liveAfter, fpAfter := live()-liveBase, fp()
 	const MiB = 1 << 20
 	fmt.Fprintf(os.Stderr, "[g40-kv] forced regrow: KV capacity %.1f MiB (%d rows); live heap over base %.1f MiB (bound +16); footprint %.1f -> %.1f MiB (bound base + KV + 64)\n",
-		float64(capBytes)/MiB, cap(c.keys[0])/(nKV*hd), float64(liveAfter)/MiB, float64(fpBase)/MiB, float64(fpAfter)/MiB)
+		float64(capBytes)/MiB, cap(c.c.KeysBuf[0])/(nKV*hd), float64(liveAfter)/MiB, float64(fpBase)/MiB, float64(fpAfter)/MiB)
 	if liveAfter > capBytes+16*MiB {
 		t.Errorf("live heap %d bytes over its base after the regrow; the grown KV is %d: the old arrays are still referenced", liveAfter, capBytes)
 	}

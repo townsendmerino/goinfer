@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -35,7 +36,7 @@ func fitQueryAt(path string, opts Options, read func() int64) (FitAnswer, error)
 		}
 		d := decideGIWFitAt(cfg, opts, read)
 		a := FitAnswer{Guard: "giw", Fits: d.err == nil, Ctx: d.ctx, CtxPinned: d.pinned, CtxCapped: d.pinCtx > 0,
-			MaxCtx: cfg.MaxPositions, NeedBytes: d.need, BudgetBytes: d.budget, KVBytes: max(d.need-d.pinnedExperts-prefillAttnScratchBudget, 0), PinnedExpertBytes: d.pinnedExperts, AvailBytes: d.avail}
+			MaxCtx: cfg.MaxPositions, NeedBytes: d.need, BudgetBytes: d.budget, KVBytes: max(d.need-d.pinnedExperts-cpuengine.PrefillAttnScratchBudget, 0), PinnedExpertBytes: d.pinnedExperts, AvailBytes: d.avail}
 		if !d.known {
 			a.Unpriced = unpricedReason(opts, cfg != nil)
 			a.KVBytes = 0

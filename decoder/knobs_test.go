@@ -33,7 +33,7 @@ func TestKnobs_snapshotAtLoad_overridePerModel(t *testing.T) {
 	if got := over.knobs.optFwdTempCap(); got != 1.5 {
 		t.Errorf("a knob Options.Knobs does not name must still come from the environment: cap %g, want 1.5", got)
 	}
-	if c := env.NewCache(8); c.knobs != env.knobs || c.scr.knobs != env.knobs {
+	if c := env.NewCache(8); c.c.Knobs != env.knobs || c.c.Scr.Knobs != env.knobs {
 		t.Error("a model's cache and its scratch must carry the model's snapshot — the deep forward helpers read it there")
 	}
 	if _, ok := over.knobs.val["GOINFER_NOT_A_KNOB"]; ok {

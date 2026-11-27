@@ -196,7 +196,7 @@ func TestKVBytes_mlaHoldsOneLatentRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	var held int64
-	for _, l := range c.mlaLatent {
+	for _, l := range c.c.MLALatent {
 		if len(l) == 0 {
 			t.Fatal("VOID: a layer holds no latent after a forward")
 		}

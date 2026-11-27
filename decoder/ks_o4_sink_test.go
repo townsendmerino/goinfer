@@ -44,7 +44,7 @@ func ksO4Batched(t *testing.T, arch *darch.Architecture, sh ksO4Shape, p attenti
 	ctx := make([]float32, sh.nH*sh.hd)
 	nKeys := len(cache.Keys(0)) / (sh.nKV * sh.hd)
 	scr := newDecodeScratch(arch, nil)
-	pool := scr.headWorkerPool(sh.nH, 1, nKeys, sh.hd, false, true)
+	pool := scr.HeadWorkerPool(sh.nH, 1, nKeys, sh.hd, false, true)
 	attendBatchedHeadsP(q, ctx, cache.Keys(0), cache.Vals(0), 0, cache, 0, pos, 1, p, arch, true, pool)
 	return ctx
 }

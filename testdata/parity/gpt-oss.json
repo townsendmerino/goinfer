@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/forward_gptoss.go",
+    "internal/runtime/cpuengine/forward_gptoss.go",
     "decoder/gptoss120_test.go",
     "internal/runtime/wbuild/gptoss_safetensors.go",
     "decoder/gptoss_safetensors_test.go",

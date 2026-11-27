@@ -154,6 +154,35 @@
       "why": "internal/runtime/wbuild implements safetensors and GGUF weight building, quantization/row streaming, and .giw streaming sinks below decoder (SZ13b). It never imports decoder."
     },
     {
+      "name": "cpuengine-leaf",
+      "from": [
+        "internal/runtime/cpuengine"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/cpuengine": [
+          "decoder/arch",
+          "decoder/config",
+          "internal/cost",
+          "internal/runtime/archparts",
+          "internal/runtime/f16",
+          "internal/runtime/families",
+          "internal/runtime/hybridattn",
+          "internal/runtime/kvmgr",
+          "internal/runtime/logs",
+          "internal/runtime/mamba2",
+          "internal/runtime/normact",
+          "internal/runtime/program",
+          "internal/runtime/rope",
+          "internal/runtime/wbuild"
+        ]
+      },
+      "why": "internal/runtime/cpuengine implements the CPU forward pass, KV cache, decode scratch, attention/MLP/recurrent kernels, and matmul dispatch below decoder (SZ15). It never imports decoder."
+    },
+    {
       "name": "families-leaf",
       "from": [
         "internal/runtime/families"
@@ -472,6 +501,7 @@
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
       "internal/runtime/diskfree",
       "internal/runtime/f16",
       "internal/runtime/families",
@@ -674,6 +704,19 @@
     "internal/runtime/archparts": [
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2"
+    ],
+    "internal/runtime/cpuengine": [
+      "decoder/arch",
+      "internal/cost",
+      "internal/runtime/archparts",
+      "internal/runtime/hybridattn",
+      "internal/runtime/kvmgr",
+      "internal/runtime/logs",
+      "internal/runtime/mamba2",
+      "internal/runtime/normact",
+      "internal/runtime/program",
+      "internal/runtime/rope",
+      "internal/runtime/wbuild"
     ],
     "internal/runtime/families": [
       "decoder/arch",
@@ -887,6 +930,7 @@
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
       "internal/runtime/families",
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
@@ -1025,6 +1069,12 @@
     "internal/guard/swapguard": [
       "decoder",
       "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/cpuengine": [
+      "decoder/arch",
+      "decoder/config",
+      "internal/runtime/families",
+      "internal/runtime/wbuild"
     ],
     "internal/runtime/families": [
       "decoder/config"

@@ -10,20 +10,20 @@ import "testing"
 func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {
 	// Uniform-width cache: snapshot succeeds (control).
 	uni := NewKVCache(2, 4, 16, 0, 4, nil) // kvDim = 64
-	uni.stride[0], uni.stride[1] = 64, 64
-	uni.pos = 1
-	uni.keys[0] = make([]float32, 64)
-	uni.vals[0] = make([]float32, 64)
-	uni.keys[1] = make([]float32, 64)
-	uni.vals[1] = make([]float32, 64)
+	uni.c.Stride[0], uni.c.Stride[1] = 64, 64
+	uni.c.PosN = 1
+	uni.c.KeysBuf[0] = make([]float32, 64)
+	uni.c.ValsBuf[0] = make([]float32, 64)
+	uni.c.KeysBuf[1] = make([]float32, 64)
+	uni.c.ValsBuf[1] = make([]float32, 64)
 	if b := (&Session{cache: uni, tokens: []int{7}}).Snapshot("s"); b == nil {
 		t.Fatal("uniform-width cache should snapshot, got refusal")
 	}
 
 	// Non-uniform: layer 1 has a wider KV stride (gemma-4 style) → must refuse.
 	non := NewKVCache(2, 4, 16, 0, 4, nil) // kvDim = 64
-	non.stride[0], non.stride[1] = 64, 128
-	non.pos = 1
+	non.c.Stride[0], non.c.Stride[1] = 64, 128
+	non.c.PosN = 1
 	if b := (&Session{cache: non, tokens: []int{7}}).Snapshot("s"); b != nil {
 		t.Error("non-uniform per-layer KV width (gemma-4) must be refused by Snapshot (C-05), got a blob")
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"reflect"
 	"slices"
 	"testing"
@@ -17,22 +18,22 @@ import (
 // TestCacheStateGrid_holdsStateKnowsEveryKind fails a kind without one.
 var markState = map[cacheState]func(c *KVCache){
 	statePositional: func(c *KVCache) {
-		if len(c.keys) == 0 {
-			c.keys, c.vals, c.stride = make([][]float32, 1), make([][]float32, 1), make([]int, 1)
+		if len(c.c.KeysBuf) == 0 {
+			c.c.KeysBuf, c.c.ValsBuf, c.c.Stride = make([][]float32, 1), make([][]float32, 1), make([]int, 1)
 		}
 	},
-	stateRing:        func(c *KVCache) { c.localAny = true },
-	stateInt8KV:      func(c *KVCache) { c.quant = kvI8 },
-	stateMLALatent:   func(c *KVCache) { c.mlaLatent = [][]float32{{}} },
-	stateDeltaNet:    func(c *KVCache) { c.delta = []*deltaState{} },
-	stateShortConv:   func(c *KVCache) { c.conv = []*shortConvState{} },
-	stateMamba2:      func(c *KVCache) { c.mamba = []*mamba2State{} },
-	stateKDA:         func(c *KVCache) { c.kda = []*kdaState{} },
-	stateImageBlocks: func(c *KVCache) { c.imgBlocks = [][2]int{{1, 3}} },
-	stateMRoPE:       func(c *KVCache) { c.mropePos = [][3]int{{0, 0, 0}, {1, 1, 1}, {1, 2, 2}}; c.mropeDelta = -1 },
-	stateDeepstack:   func(c *KVCache) { c.deepstack = &deepstackRows{} },
-	stateCapture:     func(c *KVCache) { c.captureLayers = []int{0} },
-	stateTree:        func(c *KVCache) { c.treeMask = [][]bool{{true}} },
+	stateRing:        func(c *KVCache) { c.c.LocalAny = true },
+	stateInt8KV:      func(c *KVCache) { c.c.Quant = kvI8 },
+	stateMLALatent:   func(c *KVCache) { c.c.MLALatent = [][]float32{{}} },
+	stateDeltaNet:    func(c *KVCache) { c.c.Delta = []*deltaState{} },
+	stateShortConv:   func(c *KVCache) { c.c.Conv = []*shortConvState{} },
+	stateMamba2:      func(c *KVCache) { c.c.Mamba = []*mamba2State{} },
+	stateKDA:         func(c *KVCache) { c.c.KDA = []*kdaState{} },
+	stateImageBlocks: func(c *KVCache) { c.c.ImgBlocks = [][2]int{{1, 3}} },
+	stateMRoPE:       func(c *KVCache) { c.c.MRopePos = [][3]int{{0, 0, 0}, {1, 1, 1}, {1, 2, 2}}; c.c.MRopeDelta = -1 },
+	stateDeepstack:   func(c *KVCache) { c.c.Deepstack = &deepstackRows{} },
+	stateCapture:     func(c *KVCache) { c.c.CaptureLayers = []int{0} },
+	stateTree:        func(c *KVCache) { c.c.TreeMask = [][]bool{{true}} },
 	stateAdapter:     func(c *KVCache) { c.lora = &loraRuntime{name: markedAdapter} },
 }
 
@@ -40,7 +41,7 @@ var markState = map[cacheState]func(c *KVCache){
 // kind of state it is, or why it is not state. A field nothing classified (KDA's) is missed at every lifecycle site;
 // this fails that commit.
 func TestKVCache_everyFieldHasAState(t *testing.T) {
-	ty := reflect.TypeFor[KVCache]()
+	ty := reflect.TypeFor[cpuengine.Cache]()
 	seen := map[string]bool{}
 	for field := range ty.Fields() {
 		name := field.Name
@@ -201,15 +202,15 @@ func TestCacheStateGrid_rewindNeverLeavesMultimodalStatePastPos(t *testing.T) {
 		if !exact {
 			continue // the caller goes cold; nothing stale is reused
 		}
-		for _, b := range c.imgBlocks {
+		for _, b := range c.c.ImgBlocks {
 			if b[1] > 2 {
 				t.Errorf("%q: an exact rewind to 2 left image block %v in place; new text at position 2 "+
 					"would attend bidirectionally", s, b)
 			}
 		}
-		if len(c.mropePos) > 2 {
+		if len(c.c.MRopePos) > 2 {
 			t.Errorf("%q: an exact rewind to 2 left %d m-RoPE positions; the ones at 2 and beyond belong "+
-				"to the dropped tokens", s, len(c.mropePos))
+				"to the dropped tokens", s, len(c.c.MRopePos))
 		}
 	}
 }
@@ -252,9 +253,9 @@ func TestCacheStateGrid_snapshotCells(t *testing.T) {
 		}
 		t.Run(string(s), func(t *testing.T) {
 			sess := m.NewSession(4)
-			sess.cache.Append(0, make([]float32, sess.cache.kvDim), make([]float32, sess.cache.kvDim))
-			for l := 1; l < sess.cache.numLayers; l++ {
-				sess.cache.Append(l, make([]float32, sess.cache.kvDim), make([]float32, sess.cache.kvDim))
+			sess.cache.Append(0, make([]float32, sess.cache.c.KVDim), make([]float32, sess.cache.c.KVDim))
+			for l := 1; l < sess.cache.c.NumLayers; l++ {
+				sess.cache.Append(l, make([]float32, sess.cache.c.KVDim), make([]float32, sess.cache.c.KVDim))
 			}
 			sess.tokens = []int{7}
 			markState[s](sess.cache)
@@ -358,9 +359,9 @@ func TestSession_snapshotRecordsAdapter(t *testing.T) {
 		s := m.NewSession(8)
 		s.cache.lora = under
 		s.rewindForReuse([]int{1, 2, 3})
-		for l := 0; l < s.cache.numLayers; l++ {
+		for l := 0; l < s.cache.c.NumLayers; l++ {
 			for range 3 {
-				s.cache.Append(l, make([]float32, s.cache.kvDim), make([]float32, s.cache.kvDim))
+				s.cache.Append(l, make([]float32, s.cache.c.KVDim), make([]float32, s.cache.c.KVDim))
 			}
 		}
 		for range 3 {

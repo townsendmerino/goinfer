@@ -17,29 +17,29 @@ func cacheStateBytes(c *KVCache) int64 {
 			floats += len(row)
 		}
 	}
-	for _, s := range c.delta {
+	for _, s := range c.c.Delta {
 		if s != nil {
-			win(s.convWin)
-			floats += len(s.s)
+			win(s.ConvWin)
+			floats += len(s.S)
 		}
 	}
-	for _, s := range c.conv {
+	for _, s := range c.c.Conv {
 		if s != nil {
-			win(s.convWin)
+			win(s.ConvWin)
 		}
 	}
-	for _, s := range c.mamba {
+	for _, s := range c.c.Mamba {
 		if s != nil {
 			win(s.ConvWin)
 			floats += len(s.SSM)
 		}
 	}
-	for _, s := range c.kda {
+	for _, s := range c.c.KDA {
 		if s != nil {
-			win(s.convWinQ)
-			win(s.convWinK)
-			win(s.convWinV)
-			floats += len(s.s)
+			win(s.ConvWinQ)
+			win(s.ConvWinK)
+			win(s.ConvWinV)
+			floats += len(s.S)
 		}
 	}
 	return int64(floats) * 4

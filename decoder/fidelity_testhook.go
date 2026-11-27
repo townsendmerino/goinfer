@@ -120,7 +120,7 @@ func MRopePositionsForTest(ids []int, imageToken int, gridTHW [][3]int, merge in
 // MRopeDeltaForTest exposes the KVCache's m-RoPE decode-position delta (set by prefillLogitsQwenVL): scalar decode past
 // the prefill rotates at seqPos+delta. A cross-package resident-decode test needs it to reproduce GenerateQwenVL's rope
 // position.
-func (c *KVCache) MRopeDeltaForTest() int { return c.mropeDelta }
+func (c *KVCache) MRopeDeltaForTest() int { return c.c.MRopeDelta }
 
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at, as a fraction of the reference's logit range; read
 // NearTieArgmaxForTest before changing it.

@@ -41,9 +41,3 @@
 // All compute matmuls route through a Backend (see backend.go) so a GPU backend can replace the CPU one without
 // touching the forward pass.
 package decoder
-
-import "errors"
-
-// errNotImplemented is the sentinel for a path that cannot run: the "weights not loaded" guards in the forward paths,
-// and a feature combination no family needs yet, which fails loudly rather than computing a wrong answer.
-var errNotImplemented = errors.New("decoder: not implemented")

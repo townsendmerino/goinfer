@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"slices"
 	"sync/atomic"
 )
@@ -80,20 +81,20 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	// Passes of prefillChunkRows rows, cut outside the image blocks: each pass embeds its own rows, with the raw projected
+	// Passes of cpuengine.PrefillChunkRows rows, cut outside the image blocks: each pass embeds its own rows, with the raw projected
 	// features (no embed scale) spliced in. A capture or a speculative tree keeps one pass.
 	n, C := len(ids), len(ids)
-	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {
-		C = prefillChunkRows
+	if cache.c.CaptureLayers == nil && !cache.c.SubCapture && cache.c.TreeRowPos == nil && cache.c.TreeMask == nil {
+		C = cpuengine.PrefillChunkRows
 	}
 	blocks, start := imageSpanBlocks(spans), cache.Pos()
 	var buf, hLast []float32
 	for c0, i := 0, 0; c0 < n; i++ {
-		c1 := cutOutsideBlocks(blocks, start, c0, min(c0+C, n))
+		c1 := cpuengine.CutOutsideBlocks(blocks, start, c0, min(c0+C, n))
 		if i == 1 {
-			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first pass taught the cache each layer's width
-			if prefillChunkDone != nil {
-				prefillChunkDone(-1)
+			cache.c.ReserveRows(max(start+n, cache.c.PlanRows) - cache.Pos()) // the first pass taught the cache each layer's width
+			if cpuengine.PrefillChunkDone != nil {
+				cpuengine.PrefillChunkDone(-1)
 			}
 		}
 		if cap(buf) < (c1-c0)*hidden {
@@ -101,19 +102,19 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		}
 		h := m.embedNInto(buf[:(c1-c0)*hidden], ids[c0:c1])
 		spliceImageSpansRange(h, spans, imageEmbeds, hidden, c0, c1)
-		atomic.AddInt64(&prefillPasses, 1)
+		atomic.AddInt64(&cpuengine.PrefillPasses, 1)
 		var err error
 		if hLast, err = m.runLayersGemma4FromEmbedN(ctx, h, ids[c0:c1], spans, cache); err != nil {
 			return nil, err
 		}
-		if prefillChunkDone != nil {
-			prefillChunkDone(i)
+		if cpuengine.PrefillChunkDone != nil {
+			cpuengine.PrefillChunkDone(i)
 		}
 		c0 = c1
 	}
-	t0 := costStart(cache)
+	t0 := cpuengine.CostStart(cache.c)
 	lg := m.logitsFromNormed(hLast, cache) // the walker applied the head's norm
-	if cache.cost != nil {
+	if cache.c.Cost != nil {
 		m.countHead(cache, 1, t0)
 	}
 	return lg, nil

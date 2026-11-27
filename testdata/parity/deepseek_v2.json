@@ -6,9 +6,10 @@
     "moe"
   ],
   "own": [
-    "decoder/forward_deepseek.go",
+    "internal/runtime/cpuengine/forward_deepseek.go",
     "internal/runtime/families/arch_deepseek.go",
-    "decoder/mla_int8.go"
+    "decoder/mla_int8.go",
+    "internal/runtime/cpuengine/mla_int8.go"
   ],
   "deps_hash": "sha256:3f603a397f5a8280ae7b7840e1c54a028d372bcac6c65433c812c51614648dee",
   "status": "validated",

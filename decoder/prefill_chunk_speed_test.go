@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"path/filepath"
 	"slices"
@@ -53,9 +54,9 @@ func TestG40Speed(t *testing.T) {
 			}
 			prompt := chunkPrompt(cell.n, vocab, 1)
 			arm := func(chunk int) time.Duration {
-				prev := prefillChunkRows
-				defer func() { prefillChunkRows = prev }()
-				prefillChunkRows = chunk
+				prev := cpuengine.PrefillChunkRows
+				defer func() { cpuengine.PrefillChunkRows = prev }()
+				cpuengine.PrefillChunkRows = chunk
 				cache := m.NewCache(0)
 				s := time.Now()
 				if _, err := m.prefillLogits(context.Background(), prompt, cache); err != nil {

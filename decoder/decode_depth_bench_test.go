@@ -96,8 +96,8 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 			}
 			decodeAtDepthOnce(b, m, cache, tok)
 			// After the timed loop: its ResetTimer drops metrics reported before it.
-			b.ReportMetric(float64(cache.rowPad), "rowpad")
-			b.ReportMetric(float64(cache.f16InPlaceReads), "f16inplace")
+			b.ReportMetric(float64(cache.c.RowPad), "rowpad")
+			b.ReportMetric(float64(cache.c.F16InPlaceReads), "f16inplace")
 		})
 	}
 }

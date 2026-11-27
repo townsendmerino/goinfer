@@ -9,9 +9,9 @@ import "testing"
 func TestTruncateTo_resetsRecurrent(t *testing.T) {
 	newCache := func() *KVCache {
 		c := NewKVCache(1, 1, 1, 0, 4, nil)
-		c.pos = 5
-		c.mamba = []*mamba2State{{SSM: []float32{1, 2, 3}, ConvWin: [][]float32{{9}}}}
-		c.delta = []*deltaState{{s: []float32{4, 5}, convWin: [][]float32{{7}}}}
+		c.c.PosN = 5
+		c.c.Mamba = []*mamba2State{{SSM: []float32{1, 2, 3}, ConvWin: [][]float32{{9}}}}
+		c.c.Delta = []*deltaState{{S: []float32{4, 5}, ConvWin: [][]float32{{7}}}}
 		return c
 	}
 
@@ -20,17 +20,17 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 	if exact := c.TruncateTo(0); !exact {
 		t.Errorf("TruncateTo(0) reported inexact")
 	}
-	for _, v := range c.mamba[0].SSM {
+	for _, v := range c.c.Mamba[0].SSM {
 		if v != 0 {
-			t.Fatalf("mamba ssm not zeroed after TruncateTo(0): %v", c.mamba[0].SSM)
+			t.Fatalf("mamba ssm not zeroed after TruncateTo(0): %v", c.c.Mamba[0].SSM)
 		}
 	}
-	if c.mamba[0].ConvWin != nil {
-		t.Errorf("mamba convWin not cleared: %v", c.mamba[0].ConvWin)
+	if c.c.Mamba[0].ConvWin != nil {
+		t.Errorf("mamba convWin not cleared: %v", c.c.Mamba[0].ConvWin)
 	}
-	for _, v := range c.delta[0].s {
+	for _, v := range c.c.Delta[0].S {
 		if v != 0 {
-			t.Fatalf("delta state not zeroed after TruncateTo(0): %v", c.delta[0].s)
+			t.Fatalf("delta state not zeroed after TruncateTo(0): %v", c.c.Delta[0].S)
 		}
 	}
 
@@ -50,22 +50,22 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 // (non-recurrent) cache, proving the reset happens outside the recurrent guard.
 func TestTruncateTo_resetsMultimodal(t *testing.T) {
 	c := NewKVCache(1, 1, 1, 0, 4, nil)
-	c.pos = 5
+	c.c.PosN = 5
 	c.SetImageBlocks([][2]int{{1, 4}})
-	c.mropePos = [][3]int{{0, 0, 0}, {1, 1, 1}}
-	c.mropeDelta = -3
+	c.c.MRopePos = [][3]int{{0, 0, 0}, {1, 1, 1}}
+	c.c.MRopeDelta = -3
 
 	if exact := c.TruncateTo(0); !exact {
 		t.Errorf("TruncateTo(0) reported inexact on a text/VL cache")
 	}
-	if c.imgBlocks != nil {
-		t.Errorf("imgBlocks not cleared after TruncateTo(0): %v", c.imgBlocks)
+	if c.c.ImgBlocks != nil {
+		t.Errorf("imgBlocks not cleared after TruncateTo(0): %v", c.c.ImgBlocks)
 	}
-	if c.mropePos != nil {
-		t.Errorf("mropePos not cleared after TruncateTo(0): %v", c.mropePos)
+	if c.c.MRopePos != nil {
+		t.Errorf("mropePos not cleared after TruncateTo(0): %v", c.c.MRopePos)
 	}
-	if c.mropeDelta != 0 {
-		t.Errorf("mropeDelta not zeroed after TruncateTo(0): %d", c.mropeDelta)
+	if c.c.MRopeDelta != 0 {
+		t.Errorf("mropeDelta not zeroed after TruncateTo(0): %d", c.c.MRopeDelta)
 	}
 }
 
@@ -78,21 +78,21 @@ func TestTruncateTo_resetsMultimodal(t *testing.T) {
 func TestTruncateTo_resetsConvWindowAlone(t *testing.T) {
 	newCache := func() *KVCache {
 		c := NewKVCache(1, 1, 1, 0, 4, nil)
-		c.pos = 5
-		c.conv = []*shortConvState{{convWin: [][]float32{{9}, {8}}}}
+		c.c.PosN = 5
+		c.c.Conv = []*shortConvState{{ConvWin: [][]float32{{9}, {8}}}}
 		return c
 	}
-	if c := newCache(); c.mamba != nil || c.delta != nil {
-		t.Fatalf("the premise broke: this cache must carry conv ONLY (mamba=%v delta=%v)", c.mamba, c.delta)
+	if c := newCache(); c.c.Mamba != nil || c.c.Delta != nil {
+		t.Fatalf("the premise broke: this cache must carry conv ONLY (mamba=%v delta=%v)", c.c.Mamba, c.c.Delta)
 	}
 
 	c := newCache()
 	if exact := c.TruncateTo(0); !exact {
 		t.Errorf("TruncateTo(0) reported inexact")
 	}
-	if c.conv[0].convWin != nil {
+	if c.c.Conv[0].ConvWin != nil {
 		t.Errorf("conv window not cleared by TruncateTo(0): %v — the prior sequence's last Bx "+
-			"vectors are still what the next sequence's first tokens convolve over", c.conv[0].convWin)
+			"vectors are still what the next sequence's first tokens convolve over", c.c.Conv[0].ConvWin)
 	}
 
 	c2 := newCache()
@@ -108,8 +108,8 @@ func TestTruncateTo_resetsConvWindowAlone(t *testing.T) {
 // Reachable through -session-dir and -kv-idle-demote (audit-2026-09-02 C-02, the C-05 shape).
 func TestSnapshot_refusesConvCache(t *testing.T) {
 	c := NewKVCache(1, 1, 1, 0, 4, nil)
-	c.pos = 2
-	c.conv = []*shortConvState{{convWin: [][]float32{{9}}}}
+	c.c.PosN = 2
+	c.c.Conv = []*shortConvState{{ConvWin: [][]float32{{9}}}}
 	s := &Session{cache: c}
 	if b := s.Snapshot("id"); b != nil {
 		t.Errorf("Snapshot returned %d bytes for a cache with a short-conv window; it must refuse "+

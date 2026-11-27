@@ -6,7 +6,7 @@
     "deltanet"
   ],
   "own": [
-    "decoder/forward_qwen35.go",
+    "internal/runtime/cpuengine/forward_qwen35.go",
     "decoder/qwen3_5_test.go",
     "scripts/pin_qwen3_5_forward.py",
     "internal/runtime/families/arch_qwen3_5.go",

@@ -23,9 +23,9 @@ import (
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 	floor := 0
 	for l := 0; l < m.w.Arch.NumLayers; l++ {
-		if r := cache.rings[l]; r != nil && m.w.Arch.Gemma4KVSrcAt(l) == l {
+		if r := cache.c.Rings[l]; r != nil && m.w.Arch.Gemma4KVSrcAt(l) == l {
 			if _, _, base := cache.LayerKV(l); base > 0 {
-				floor = max(floor, base+r.w-1)
+				floor = max(floor, base+r.W-1)
 			}
 		}
 	}

@@ -43,9 +43,9 @@ func TestKV2_G0cpuSplitInvariance(t *testing.T) {
 	}
 	firstDiff := func(a, b *KVCache) int {
 		row := -1
-		for l := range a.keys {
-			w := len(a.keys[l]) / N
-			for _, pair := range [][2][]float32{{a.keys[l], b.keys[l]}, {a.vals[l], b.vals[l]}} {
+		for l := range a.c.KeysBuf {
+			w := len(a.c.KeysBuf[l]) / N
+			for _, pair := range [][2][]float32{{a.c.KeysBuf[l], b.c.KeysBuf[l]}, {a.c.ValsBuf[l], b.c.ValsBuf[l]}} {
 				for i := range pair[0] {
 					if pair[0][i] != pair[1][i] {
 						if r := i / w; row < 0 || r < row {

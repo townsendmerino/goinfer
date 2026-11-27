@@ -21,14 +21,14 @@ import (
 //   - a family on the generic batched path (canBatchN): runLayersFromEmbedN, whose last step applies the final norm to each row;
 //   - Qwen3.5 (qwen35BatchN): runLayersQwen35N, which returns the post-final-norm rows;
 //   - everything else, and K == 1: one runLayers per token in a fresh cache, then the final norm on a copy of each row (h aliases the
-//     decode scratch and normalize mutates in place).
+//     decode scratch and cpuengine.Normalize mutates in place).
 //
 // Memory is K x HiddenDim f32 (a 4K-token prompt on a 5120-wide model is about 84 MB), on top of the K x HiddenDim activations the forward
 // itself holds; the length bound is checkHiddenIDs's. The rows are the caller's to keep or modify. ctx is checked once per layer (the
 // Qwen3.5 batched path) or per token (the sequential path), so a long prompt can be abandoned.
 //
 // The batched paths are bounded against the sequential one by TestPromptHiddenAll_batchedMatchesSequential; they are not claimed bit-identical,
-// since a batched matmul may reduce in another order than its matvec.
+// since a batched cpuengine.Matmul may reduce in another order than its matvec.
 func (m *Model) PromptHiddenAll(ctx context.Context, prompt []int) ([][]float32, error) {
 	parent := ctx
 	ctx, done, err := m.enterCall(ctx)
@@ -118,7 +118,7 @@ func (m *Model) promptHiddenAllSequential(ctx context.Context, prompt []int) ([]
 		if err != nil {
 			return nil, err
 		}
-		// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
+		// Copy before normalizing: h aliases the decode scratch and cpuengine.Normalize mutates in place.
 		row := slices.Clone(h[:a.HiddenDim])
 		m.finalNorm(row)
 		out[i] = row

@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand"
 	"os"
@@ -16,16 +17,16 @@ import (
 
 // mirrorEqual reports whether the mirror half equals the canonical half (true when there is no mirror).
 func mirrorEqual(r *ring) (bool, string) {
-	if !r.mirrored() {
+	if !r.Mirrored() {
 		return true, ""
 	}
-	ws := r.w * r.stride
+	ws := r.W * r.Stride
 	for i := range ws {
-		if math.Float32bits(r.k[i]) != math.Float32bits(r.k[ws+i]) {
-			return false, fmt.Sprintf("k slot %d differs from its mirror", i/r.stride)
+		if math.Float32bits(r.K[i]) != math.Float32bits(r.K[ws+i]) {
+			return false, fmt.Sprintf("k slot %d differs from its mirror", i/r.Stride)
 		}
-		if math.Float32bits(r.v[i]) != math.Float32bits(r.v[ws+i]) {
-			return false, fmt.Sprintf("v slot %d differs from its mirror", i/r.stride)
+		if math.Float32bits(r.V[i]) != math.Float32bits(r.V[ws+i]) {
+			return false, fmt.Sprintf("v slot %d differs from its mirror", i/r.Stride)
 		}
 	}
 	return true, ""
@@ -40,39 +41,39 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 		const stride = nKV * hd
 		rng := rand.New(rand.NewSource(int64(W) * 17))
 		c := NewKVCache(1, nKV, hd, W, 64, nil)
-		c.enableRings(W, func(int) bool { return false })
-		r := c.rings[0]
+		c.c.EnableRings(W, func(int) bool { return false })
+		r := c.c.Rings[0]
 		pos := 0
 		sawMirror := false
 		check := func(op string) {
 			t.Helper()
 			if ok, why := mirrorEqual(r); !ok {
-				t.Fatalf("W=%d after %s (pos %d, count %d): %s", W, op, pos, r.count, why)
+				t.Fatalf("W=%d after %s (pos %d, count %d): %s", W, op, pos, r.Count, why)
 			}
 		}
 		readWindow := func() {
 			t.Helper()
-			if r.count == 0 {
+			if r.Count == 0 {
 				return
 			}
-			p := r.count - 1 // the newest resident position: the one a decode just wrote
+			p := r.Count - 1 // the newest resident position: the one a decode just wrote
 			base := max(p-W+1, 0)
 			n := p - base + 1
-			wk, wv := r.window(base, n)
+			wk, wv := r.Window(base, n)
 			// reference: the copy path over the same live rows, assembled the way batchReadLocal does for startPos=p with the newest row as "new"
 			dk, dv := make([]float32, n*stride), make([]float32, n*stride)
-			newK := slices.Clone(r.k[(p%W)*stride : (p%W+1)*stride])
-			newV := slices.Clone(r.v[(p%W)*stride : (p%W+1)*stride])
+			newK := slices.Clone(r.K[(p%W)*stride : (p%W+1)*stride])
+			newV := slices.Clone(r.V[(p%W)*stride : (p%W+1)*stride])
 			// history = rows [base, p) read from the ring; batchReadLocal reads them from slots, which the newest row's slot may alias only when n == W+1, never here
-			c.rings[0].count-- // batchReadLocal's contract: the new row is NOT yet in the ring
-			c.batchReadLocal(0, p, 1, newK, newV, dk, dv)
-			c.rings[0].count++
+			c.c.Rings[0].Count-- // batchReadLocal's contract: the new row is NOT yet in the ring
+			c.c.BatchReadLocal(0, p, 1, newK, newV, dk, dv)
+			c.c.Rings[0].Count++
 			for i := range wk {
 				if math.Float32bits(wk[i]) != math.Float32bits(dk[i]) || math.Float32bits(wv[i]) != math.Float32bits(dv[i]) {
 					t.Fatalf("W=%d window [%d,%d) differs from the copy path at float %d", W, base, base+n, i)
 				}
 			}
-			if r.mirrored() {
+			if r.Mirrored() {
 				sawMirror = true
 			}
 		}
@@ -80,7 +81,7 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 		for range 400 {
 			switch op := rng.Intn(10); {
 			case op < 5: // a decode token: write the next position
-				r.write(pos, vec(), vec())
+				r.Write(pos, vec(), vec())
 				pos++
 				check("write")
 				readWindow()
@@ -90,19 +91,19 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 				for i := range nk {
 					nk[i], nv[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
 				}
-				c.commitBatch(0, pos, K, nk, nv)
+				c.c.CommitBatch(0, pos, K, nk, nv)
 				pos += K
 				check("commitBatch")
 				readWindow()
 			case op < 8 && pos > 0: // truncate to a random earlier position, then keep writing from there
 				p := rng.Intn(pos + 1)
-				r.truncate(p)
+				r.Truncate(p)
 				pos = p
 				check("truncate")
-			case op < 9 && r.mirrored(): // a snapshot restore rebuilds k/v at w slots: the mirror is gone and must come back coherent
-				ws := r.w * r.stride
-				r.k, r.v = slices.Clone(r.k[:ws]), slices.Clone(r.v[:ws])
-				if r.mirrored() {
+			case op < 9 && r.Mirrored(): // a snapshot restore rebuilds k/v at w slots: the mirror is gone and must come back coherent
+				ws := r.W * r.Stride
+				r.K, r.V = slices.Clone(r.K[:ws]), slices.Clone(r.V[:ws])
+				if r.Mirrored() {
 					t.Fatalf("W=%d: a w-slot ring reports mirrored", W)
 				}
 				readWindow() // ensureMirror inside window() when the run wraps
@@ -132,8 +133,8 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			prev := ringDirectDecode
-			defer func() { ringDirectDecode = prev }()
+			prev := cpuengine.RingDirectDecode
+			defer func() { cpuengine.RingDirectDecode = prev }()
 			vocab := m.w.Arch.VocabSize
 			if vocab <= 8 {
 				t.Fatalf("vocab %d", vocab)
@@ -145,7 +146,7 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 				toks[i] = 1 + rng.Intn(vocab-1)
 			}
 			run := func(direct bool) ([][]float32, *KVCache) {
-				ringDirectDecode = direct
+				cpuengine.RingDirectDecode = direct
 				cache := m.NewCache(N + 2)
 				var all [][]float32
 				for i, tok := range toks {
@@ -168,8 +169,8 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 			}
 			mirrors := func(c *KVCache) int {
 				n := 0
-				for _, r := range c.rings {
-					if r != nil && r.mirrored() {
+				for _, r := range c.c.Rings {
+					if r != nil && r.Mirrored() {
 						n++
 					}
 				}
@@ -181,7 +182,7 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 			if mirrors(refC) != 0 {
 				t.Fatal("the copy-path run allocated a mirror: ringDirectDecode=false must leave rings exactly as before")
 			}
-			for l, r := range gotC.rings {
+			for l, r := range gotC.c.Rings {
 				if r != nil {
 					if ok, why := mirrorEqual(r); !ok {
 						t.Fatalf("layer %d: %s", l, why)

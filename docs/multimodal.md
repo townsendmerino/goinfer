@@ -808,7 +808,7 @@ number is published without provenance.
      per-token loop, so the image rows are just fed through the same loop; (c) the rotary call in
      `qwen35Attention` is `applyRoPE(q, …, pos, …)` — scalar only; it must become `ropeAt(...)` with
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
-     generic attention makes (`decoder/program_cpu.go:applyRope`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
+     generic attention makes (`internal/runtime/cpuengine/program_cpu.go:applyRope`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
      are set for `qwen3_vl` (`internal/runtime/families/arch_qwen3_vl.go:Qwen3VLArchitecture`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or

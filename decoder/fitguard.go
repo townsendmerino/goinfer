@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"path/filepath"
@@ -215,7 +216,7 @@ const giwMemMargin = mem.GIWMargin // 1 GB
 // AVAILABLE memory minus giwMemMargin. Same return shape as guardFit (0 = no pin needed). Every unknown proceeds, as in guardFit: no
 // cfg, no live probe reading, or no usable context all mean cannot price, so do not refuse.
 //
-// Scratch is priced at prefillAttnScratchBudget alone, the fixed attention-scratch cap every prefill enforces; prefillScratchBytes' other
+// Scratch is priced at cpuengine.PrefillAttnScratchBudget alone, the fixed attention-scratch cap every prefill enforces; prefillScratchBytes' other
 // term (gate/up MLP activations) scales with a prompt's length, which load time does not know.
 //
 // The one weight term priced is the CUDA expert cache's pinned host copy (giwPinnedExpertBytes); every other build reads its weights from
@@ -262,7 +263,7 @@ func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 	if !ok {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
-	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: prefillAttnScratchBudget,
+	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: cpuengine.PrefillAttnScratchBudget,
 		PinnedExperts: giwPinnedExpertBytes(cfg, opts), SnapshotBytes: snapshotStoreBytes(cfg, opts),
 		KV: func(ctx int) int64 { return p.bytes(cfg, ctx) }},
 		mem.HostMachine(avail), mem.DefaultPolicy())
@@ -401,7 +402,7 @@ func estimateGGUFWeightBreakdownWith(path string, q quantMode, q4kAsInt4 bool) (
 
 // fitRates are the per-element prices of q's load, measured through the loader's quantizer. Matrix is left for the caller to set.
 func fitRates(q quantMode) fit.Rates {
-	r := fit.Rates{MambaProjInt8: mambaProjInt8(q), MLAProjInt8: mlaProjInt8(q)}
+	r := fit.Rates{MambaProjInt8: func() bool { h := wbuildHooks(); return h.MambaProjInt8(q) }(), MLAProjInt8: func() bool { h := wbuildHooks(); return h.MLAProjInt8(q) }()}
 	if r.MambaProjInt8 || r.MLAProjInt8 {
 		r.Int8 = quantBytesPerElem(quantInt8I8)
 	}

@@ -1,146 +1,24 @@
 package decoder
 
 import (
-	"math"
 	"os"
-	"runtime"
-	"sync"
 
-	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 )
 
-// cpuFusedGateUp is the fused gate+up+SwiGLU decode path for W4A8 SiLU-gated MLPs: ONE fork/join per
-// layer in which every worker computes gate AND up for its own column chunk and then applies the
-// activation to that same chunk, instead of two fork/joins followed by a serial activation
-// (docs/measurements/cpu-decode-roofline-2026-09-23.md).
-//
-// It removes two costs the per-component roofline attributes to the MLP block: a fork/join (about one goroutine-wake
-// stagger) and the SwiGLU's scalar float64 exp, which ran serial because fanning it out separately loses
-// (docs/measurements/cpu-decode-attribution-2026-09-22-linux.md). Folded into the matmul's own barrier it costs nothing
-// extra to run in parallel.
-//
-// Bit-identical to the unfused path, not merely close: each output column is a self-contained int4·int8
-// dot whose value does not depend on which worker computes it or how the columns are chunked (the
-// contract linalg's own width/fan-out already rests on), and swiglu is elementwise on the same values.
-// Nothing here reorders any arithmetic. TestGatedMLPFusedGateUp_bitIdentical pins that; the paired A/B
-// harness (cpu_roofline_ab_test.go) additionally fails on any greedy-token divergence.
-//
-// Default per architecture (fusedGateUpDefault, cpu_tuning_{arm64,other}.go): on where it was measured (amd64), off where
-// it was not (arm64). GOINFER_CPU_FUSED_GATEUP=0 forces the unfused path (an A/B handle and an escape hatch), =1 forces
-// it on.
-var cpuFusedGateUp = envBoolDefault("GOINFER_CPU_FUSED_GATEUP", fusedGateUpDefault)
+const fusedGateUpDefault = cpuengine.FusedGateUpDefault
 
-func envBoolDefault(name string, def bool) bool {
-	switch os.Getenv(name) {
-	case "":
-		return def
-	case "0", "false", "off":
+// envBoolDefault reads a 0/1 boolean env var, returning def when unset or empty.
+func envBoolDefault(key string, def bool) bool {
+	switch os.Getenv(key) {
+	case "1":
+		return true
+	case "0":
 		return false
 	default:
-		return true
+		return def
 	}
 }
 
-// fusedPairScratch holds the per-worker serial Workspaces the fused path reuses across layers and tokens
-// (each grows its own int8/f32 quant buffers once). The fan-out threshold is set above any reachable MAC
-// count so every worker's call runs linalg's serial span — the parallelism here is this file's, not
-// linalg's, and the two levels must not nest.
-type fusedPairScratch struct {
-	ws []*linalg.Workspace
-}
-
-func (s *fusedPairScratch) workspaces(n int) []*linalg.Workspace {
-	for len(s.ws) < n {
-		w := &linalg.Workspace{}
-		w.SetThreshold(math.MaxInt / 4)
-		s.ws = append(s.ws, w)
-	}
-	return s.ws[:n]
-}
-
-// fusedWorkers is the fan-out width: linalg's process-wide width cap (SetParallelWidth, 0 = GOMAXPROCS),
-// bounded by GOMAXPROCS and by the column count — the same rule linalg's own resolveWidth applies, so a
-// width sweep (TestR9_parWidthSweep) moves this path with the matmuls it replaces.
-func fusedWorkers(n int) int {
-	g := runtime.GOMAXPROCS(0)
-	w := linalg.ParallelWidth()
-	if w <= 0 || w > g {
-		w = g
-	}
-	if n < 2*w {
-		w = max(1, n/2)
-	}
-	return w
-}
-
-// gatedMLPFusedGateUp computes scr.gate = silu(gate·h) * (up·h) in one fork/join. It reports false,
-// having touched nothing, when its preconditions do not hold — the caller then runs the normal path.
-func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr *decodeScratch) bool {
-	return gatedMLPFusedGateUpAct(h, lw, arch.Act, scr)
-}
-
-// gatedMLPFusedGateUpAct is gatedMLPFusedGateUp with the activation given: the program walker's form.
-func gatedMLPFusedGateUpAct(h []float32, lw *LayerWeights, act ActKind, scr *decodeScratch) bool {
-	if int4FloatActForTest {
-		return false
-	}
-	if act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {
-		return false
-	}
-	if lw.GateProj.Int4Layout() != "canonical" || lw.UpProj.Int4Layout() != "canonical" {
-		return false // repacked layouts (arm64 row4, amd64 split-half) need aikit's own per-arch dispatch
-	}
-	q4g, sg, group, _ := lw.GateProj.Int4F16()
-	q4u, su, groupU, _ := lw.UpProj.Int4F16()
-	N, K := lw.GateProj.Rows(), lw.GateProj.Cols()
-	if group != groupU || lw.UpProj.Rows() != N || lw.UpProj.Cols() != K || group <= 0 || K%group != 0 ||
-		len(h) < K || N > len(scr.gate) || N > len(scr.up) {
-		return false
-	}
-	bpr, ng := (K+1)/2, K/group
-	gate, up := scr.gate[:N], scr.up[:N]
-
-	w := fusedWorkers(N)
-	wss := scr.fusedPair.workspaces(w)
-	// h is quantized once for every worker's gate and up chunk: each MatmulBTW4A8F16Into would otherwise re-quantize all of
-	// h, 2w times a layer. The workers' workspaces carry the weight's activation group, or none (then aikit's process
-	// default applies), so the block is quantized with the group they resolve to; the kernels only read it. w4a8PreOff
-	// (tests only) restores a quantization per call.
-	pre := !w4a8PreOff
-	if pre {
-		ag := lw.GateProj.ActQuantGroup()
-		if ag == 0 {
-			ag = linalg.ActQuantGroup()
-		}
-		linalg.QuantizeActQ(h, 1, K, ag, &scr.gateUpQ)
-		w4a8PreCalls.Add(2) // gate and up, every worker's chunk of each, on the one block
-	}
-	chunk := func(i int) {
-		j0, j1 := N*i/w, N*(i+1)/w
-		if j0 >= j1 {
-			return
-		}
-		wss[i].SetActQuantGroup(lw.GateProj.ActQuantGroup())
-		if pre {
-			linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
-			linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
-		} else {
-			linalg.MatmulBTW4A8F16Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
-			linalg.MatmulBTW4A8F16Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
-		}
-		swiglu(gate[j0:j1], up[j0:j1])
-	}
-	if w == 1 {
-		chunk(0)
-		return true
-	}
-	var wg sync.WaitGroup
-	for i := 1; i < w; i++ {
-		wg.Go(func() {
-			chunk(i)
-		})
-	}
-	chunk(0)
-	wg.Wait()
-	return true
-}
+// cpuFusedGateUp enables the fused gate+up projection on CPU decode (GOINFER_CPU_FUSED_GATEUP=0/1).
+var cpuFusedGateUp = envBoolDefault("GOINFER_CPU_FUSED_GATEUP", fusedGateUpDefault)

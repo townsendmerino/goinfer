@@ -13,7 +13,7 @@ import "testing"
 func TestTruncateTo_wrappedRingRewindIsInexact(t *testing.T) {
 	const W, hd, nKV = 4, 2, 1
 	c := NewKVCache(1, nKV, hd, W, 16, nil)
-	c.enableRings(W, func(l int) bool { return false }) // layer 0 local (ring)
+	c.c.EnableRings(W, func(l int) bool { return false }) // layer 0 local (ring)
 	kvDim := nKV * hd
 	for range 10 { // 10 positions into a W=4 ring ⇒ wraps
 		c.Append(0, make([]float32, kvDim), make([]float32, kvDim))
@@ -47,7 +47,7 @@ func TestTruncateTo_raggedLayerUsesRecordedStride(t *testing.T) {
 		t.Fatalf("pos = %d, want 2", c.Pos())
 	}
 	c.TruncateTo(2)
-	if got, want := len(c.keys[0]), 2*kvDim; got != want {
+	if got, want := len(c.c.KeysBuf[0]), 2*kvDim; got != want {
 		t.Errorf("ragged layer truncated to %d elems, want %d (2 positions × stride %d) — len/pos mis-sliced it (M11)", got, want, kvDim)
 	}
 }

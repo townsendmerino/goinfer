@@ -23,10 +23,10 @@ func TestNewCache_mlaSkipsKeysValsReservation(t *testing.T) {
 	}}}
 	mc := mlaModel.NewCache(capHint)
 	for l := range numLayers {
-		if c := cap(mc.keys[l]); c != 0 {
+		if c := cap(mc.c.KeysBuf[l]); c != 0 {
 			t.Errorf("mla model layer %d: cap(keys) = %d, want 0 — the wasted reservation is still happening", l, c)
 		}
-		if c := cap(mc.vals[l]); c != 0 {
+		if c := cap(mc.c.ValsBuf[l]); c != 0 {
 			t.Errorf("mla model layer %d: cap(vals) = %d, want 0 — the wasted reservation is still happening", l, c)
 		}
 	}
@@ -37,10 +37,10 @@ func TestNewCache_mlaSkipsKeysValsReservation(t *testing.T) {
 	dc := denseModel.NewCache(capHint)
 	wantCap := capHint * numKVHeads * headDim
 	for l := range numLayers {
-		if c := cap(dc.keys[l]); c != wantCap {
+		if c := cap(dc.c.KeysBuf[l]); c != wantCap {
 			t.Errorf("dense model layer %d: cap(keys) = %d, want %d — the fix over-reached onto a non-mla family", l, c, wantCap)
 		}
-		if c := cap(dc.vals[l]); c != wantCap {
+		if c := cap(dc.c.ValsBuf[l]); c != wantCap {
 			t.Errorf("dense model layer %d: cap(vals) = %d, want %d — the fix over-reached onto a non-mla family", l, c, wantCap)
 		}
 	}

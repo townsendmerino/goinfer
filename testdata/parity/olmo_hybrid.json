@@ -6,7 +6,7 @@
     "deltanet"
   ],
   "own": [
-    "decoder/forward_qwen35.go",
+    "internal/runtime/cpuengine/forward_qwen35.go",
     "decoder/olmo_hybrid_real_test.go",
     "decoder/olmo_hybrid_test.go",
     "scripts/pin_olmo_hybrid_real.py",

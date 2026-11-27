@@ -8,7 +8,7 @@ registration, committed before any code. A separate PR from KS-F2's.
 ## The change
 
 - **Step 1, the attention (changes output):** gpt-oss's attention order becomes `attnBatchedAcc64`, with the per-head learned sink joining
-  the max-shift and the denominator, as `decoder/forward_gptoss.go:attendSinksToken` does today. It joins in every softmax the batched
+  the max-shift and the denominator, as `internal/runtime/cpuengine/forward_gptoss.go:AttendSinksToken` does today. It joins in every softmax the batched
   path takes for gpt-oss.
   - **What moves:** each score's dot is rounded to float32 before the float64 scale (`MatmulQKAcc64`), where today the float64 dot is
     scaled. AV accumulates in float64 (`MatmulAVAcc64`), where today it accumulates in float32. So the candidate's numbers differ from

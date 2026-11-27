@@ -6,7 +6,7 @@
     "moe"
   ],
   "own": [
-    "decoder/forward_llama4.go",
+    "internal/runtime/cpuengine/forward_llama4.go",
     "internal/runtime/families/arch_llama4_text.go",
     "internal/runtime/wbuild/gguf_build_llama4.go"
   ],

@@ -230,16 +230,16 @@ func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 	t.Run("wantFused_true_fusionOn_skips", func(t *testing.T) {
 		t.Setenv("GOINFER_FUSED_ATTENTION", "1")
 		pool := newHeadWorkerPool(1, K, nKeys, hd, true)
-		if pool[0].vt != nil {
-			t.Errorf("vt allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].vt))
+		if pool[0].VT != nil {
+			t.Errorf("vt allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].VT))
 		}
-		if pool[0].scores != nil {
-			t.Errorf("scores allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].scores))
+		if pool[0].Scores != nil {
+			t.Errorf("scores allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].Scores))
 		}
-		if pool[0].fused == nil {
+		if pool[0].Fused == nil {
 			t.Fatal("TAUTOLOGY GUARD: fused scratch is nil with fusion enabled — skipping vt/scores would be a correctness bug here, not a savings, if this ever fired")
 		}
-		if pool[0].kh == nil {
+		if pool[0].KH == nil {
 			t.Error("kh must stay allocated — the fused path still reads it (attendTileFused's kh argument; only V moves to vBlk)")
 		}
 	})
@@ -247,22 +247,22 @@ func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 	t.Run("wantFused_true_fusionOff_stillAllocates", func(t *testing.T) {
 		t.Setenv("GOINFER_FUSED_ATTENTION", "0")
 		pool := newHeadWorkerPool(1, K, nKeys, hd, true)
-		if len(pool[0].vt) != nKeys*hd {
-			t.Errorf("vt = %d floats, want %d — GOINFER_FUSED_ATTENTION=0 must fall back to materialized scratch even though the caller promised wantFused", len(pool[0].vt), nKeys*hd)
+		if len(pool[0].VT) != nKeys*hd {
+			t.Errorf("vt = %d floats, want %d — GOINFER_FUSED_ATTENTION=0 must fall back to materialized scratch even though the caller promised wantFused", len(pool[0].VT), nKeys*hd)
 		}
-		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].scores) != want {
-			t.Errorf("scores = %d floats, want %d", len(pool[0].scores), want)
+		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].Scores) != want {
+			t.Errorf("scores = %d floats, want %d", len(pool[0].Scores), want)
 		}
 	})
 
 	t.Run("wantFused_false_alwaysAllocates", func(t *testing.T) {
 		t.Setenv("GOINFER_FUSED_ATTENTION", "1")
 		pool := newHeadWorkerPool(1, K, nKeys, hd, false)
-		if len(pool[0].vt) != nKeys*hd {
-			t.Errorf("vt = %d floats, want %d — a caller that does not hold the wantFused promise (e.g. mixes useAcc64 states across calls) must always get vt/scores", len(pool[0].vt), nKeys*hd)
+		if len(pool[0].VT) != nKeys*hd {
+			t.Errorf("vt = %d floats, want %d — a caller that does not hold the wantFused promise (e.g. mixes useAcc64 states across calls) must always get vt/scores", len(pool[0].VT), nKeys*hd)
 		}
-		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].scores) != want {
-			t.Errorf("scores = %d floats, want %d", len(pool[0].scores), want)
+		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].Scores) != want {
+			t.Errorf("scores = %d floats, want %d", len(pool[0].Scores), want)
 		}
 	})
 }
@@ -276,23 +276,23 @@ func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
 	const nH, K, nKeys, hd = 2, 1, 64, 4
 
 	accScr := newDecodeScratch(arch, nil)
-	accPool := accScr.headWorkerPool(nH, K, nKeys, hd, false, true)
-	if accPool[0].kh != nil {
-		t.Errorf("kh allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].kh))
+	accPool := accScr.HeadWorkerPool(nH, K, nKeys, hd, false, true)
+	if accPool[0].KH != nil {
+		t.Errorf("kh allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].KH))
 	}
-	if accPool[0].vt != nil {
-		t.Errorf("vt allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].vt))
+	if accPool[0].VT != nil {
+		t.Errorf("vt allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].VT))
 	}
-	if len(accPool[0].scores) != K*nKeys {
-		t.Errorf("scores = %d floats, want %d — acc64 still needs it (MatmulQKAcc64 writes into it)", len(accPool[0].scores), K*nKeys)
+	if len(accPool[0].Scores) != K*nKeys {
+		t.Errorf("scores = %d floats, want %d — acc64 still needs it (MatmulQKAcc64 writes into it)", len(accPool[0].Scores), K*nKeys)
 	}
 
 	matScr := newDecodeScratch(arch, nil)
-	matPool := matScr.headWorkerPool(nH, K, nKeys, hd, false, false)
-	if len(matPool[0].kh) != nKeys*hd {
-		t.Errorf("kh = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].kh), nKeys*hd)
+	matPool := matScr.HeadWorkerPool(nH, K, nKeys, hd, false, false)
+	if len(matPool[0].KH) != nKeys*hd {
+		t.Errorf("kh = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].KH), nKeys*hd)
 	}
-	if len(matPool[0].vt) != nKeys*hd {
-		t.Errorf("vt = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].vt), nKeys*hd)
+	if len(matPool[0].VT) != nKeys*hd {
+		t.Errorf("vt = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].VT), nKeys*hd)
 	}
 }
