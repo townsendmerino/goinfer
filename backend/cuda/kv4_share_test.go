@@ -113,7 +113,7 @@ func kv4SharedPreamble(t *testing.T, kv string) {
 		got[s] = slices.Clone(lg)
 	}
 	inUse := 0
-	if err := r.do(func() error { inUse = r.kvPools[kvGroupFull].inUse(); return nil }); err != nil {
+	if err := r.do(func() error { inUse = r.kvPools[kvGroupFull].InUse(); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	limit := pre/kvBlock + slots*(kvBlocksFor(tail)+1)

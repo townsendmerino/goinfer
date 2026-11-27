@@ -140,7 +140,7 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 			src, dst, start, end, src, r.kvBases[src], dst, lo, r.kvBudgetText())
 	}
 	logs.Debugf("cuda: kv copy: slot %d -> %d shares rows [%d, %d), %d blocks; %d of %d full-pool blocks in use",
-		src, dst, start, end, (end-start)/kvBlock, r.kvPools[kvGroupFull].inUse(), r.kvPools[kvGroupFull].blocks-1)
+		src, dst, start, end, (end-start)/kvBlock, r.kvPools[kvGroupFull].InUse(), r.kvPools[kvGroupFull].Blocks()-1)
 	return nil
 }
 

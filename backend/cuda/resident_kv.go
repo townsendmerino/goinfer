@@ -7,7 +7,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // UploadKV writes a layer's post-RoPE K and raw V into the bound slot's caches at absolute positions base..base+n-1 (prefill
@@ -36,14 +35,8 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			w = pass.w // one write with the other layers: EndKVUpload ends it
 			// A sliding layer's ring can have wrapped, so it may start late, as long as its rows cover its window. A full-attention layer's run from position 0.
 			end, window := base+len(keys)/kvDim, int(r.layers[layer].window)
-			if _, again := pass.reached[layer]; again {
-				return fmt.Errorf("cuda: upload pass: layer %d uploaded twice", layer)
-			}
-			if base > 0 && window <= 0 {
-				return fmt.Errorf("cuda: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
-			}
-			if base > 0 && !decoder.KVWindowReusable(base, end, window) {
-				return fmt.Errorf("cuda: upload pass: layer %d's rows [%d, %d) do not cover its %d-row window", layer, base, end, window)
+			if err := pass.pass.CheckLayer("cuda", pass.pass.Slot(), layer, base, end, window, false); err != nil {
+				return err
 			}
 		} else {
 			if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
@@ -108,11 +101,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			return failed(e)
 		}
 		if pass != nil {
-			pass.end = max(pass.end, hi)
-			pass.reached[layer] = hi
-			if base > 0 {
-				pass.floor = max(pass.floor, base+int(r.layers[layer].window)-1)
-			}
+			pass.pass.RecordLayer(layer, base, hi, int(r.layers[layer].window))
 		} else {
 			r.kvWriteDone(w, hi)
 		}

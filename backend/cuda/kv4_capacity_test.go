@@ -360,12 +360,12 @@ func kv7FillPool(t *testing.T, r *cudaResident, slot, lo int) {
 	t.Helper()
 	if err := r.do(func() error {
 		p := &r.kvPools[kvGroupFull]
-		return r.kvMap(slot, kvGroupFull, lo, lo+(p.blocks-1-p.inUse())*kvBlock)
+		return r.kvMap(slot, kvGroupFull, lo, lo+(p.Blocks()-1-p.InUse())*kvBlock)
 	}); err != nil {
 		t.Fatalf("filling the pool from slot %d: %v", slot, err)
 	}
-	if p := &r.kvPools[kvGroupFull]; p.inUse() != p.blocks-1 {
-		t.Fatalf("pool not full: %d of %d", p.inUse(), p.blocks-1)
+	if p := &r.kvPools[kvGroupFull]; p.InUse() != p.Blocks()-1 {
+		t.Fatalf("pool not full: %d of %d", p.InUse(), p.Blocks()-1)
 	}
 }
 
@@ -377,7 +377,7 @@ func kv7Hole(t *testing.T, r *cudaResident, slot, b int) {
 		if ids[b] == 0 {
 			return fmt.Errorf("block %d of slot %d is not mapped", b, slot)
 		}
-		r.kvPools[kvGroupFull].unref(ids[b])
+		r.kvPools[kvGroupFull].Unref(ids[b])
 		ids[b] = 0
 		r.kvTabs[slot].dirty[kvGroupFull] = true
 		return nil
@@ -529,7 +529,7 @@ func TestKV7_promoteFailureLeavesTheCopy(t *testing.T) {
 	}
 	if err := r.do(func() error {
 		p := &r.kvPools[kvGroupFull]
-		return r.kvMap(0, kvGroupFull, 0, (p.blocks-1-p.inUse())*kvBlock)
+		return r.kvMap(0, kvGroupFull, 0, (p.Blocks()-1-p.InUse())*kvBlock)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2192,7 +2192,7 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 		t.Skipf("this fixture takes no batched step (range %d..%d)", lo, hi)
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
-	pool := r.kvPools[kvGroupFull].blocks - 1
+	pool := r.kvPools[kvGroupFull].Blocks() - 1
 	share := r.kvShareBlocks * kvBlock
 	conv0 := share - 1024
 	conv3 := conv0
@@ -2208,7 +2208,7 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 			t.Fatalf("slot %d: %v", c.slot, err)
 		}
 	}
-	if free := len(r.kvPools[kvGroupFull].free); free != 0 {
+	if free := r.kvPools[kvGroupFull].Free(); free != 0 {
 		t.Fatalf("%d blocks are free before the step; the case needs the pool full", free)
 	}
 	held := func() (h [4]int, free int) {
@@ -2216,7 +2216,7 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 			for s := range h {
 				h[s] = r.kvHeld(s)
 			}
-			free = len(r.kvPools[kvGroupFull].free)
+			free = r.kvPools[kvGroupFull].Free()
 			return nil
 		})
 		return h, free

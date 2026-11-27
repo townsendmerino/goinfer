@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -537,9 +538,7 @@ type kvSlotBuf struct {
 }
 
 // kvBlocksFor is how many 64-row blocks hold positions rows.
-func kvBlocksFor(positions int) int {
-	return (positions + decoder.KVBlockRows - 1) / decoder.KVBlockRows
-}
+func kvBlocksFor(positions int) int { return kvmgr.BlocksFor(positions) }
 
 // kvScrambleForTest hands blocks out alternately from the two ends of the pool and skips each slot's home block (kvTake), so a
 // sequence's consecutive blocks are physically far apart and out of order. Bit-identity against the in-order layout is what shows every
