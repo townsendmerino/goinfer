@@ -172,8 +172,21 @@ func (m *Model) denseVectorBytes() int64 {
 	}
 	w := m.w
 	n := f32SliceBytes(w.FinalNorm, w.FinalNormBias, w.PerLayerProjNorm)
+	if h := w.Arch.Inkling2Head; h != nil {
+		n += f32SliceBytes(h.EmbedNorm, h.OutputResQuery)
+	}
 	for i := range w.Layers {
+		if w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer
+		}
 		l := &w.Layers[i]
+		if x := l.Inkling; x != nil {
+			n += f32SliceBytes(x.QClip, x.RelClip, x.RelBias, x.KConv, x.VConv, x.AttnConv, x.FFConv, x.KInpNorm, x.VInpNorm,
+				x.AttnResQuery, x.FFNResQuery, x.MsgQuery)
+			for c := range x.Ctrl {
+				n += f32SliceBytes(x.Ctrl[c].Down, x.Ctrl[c].Gain, x.Ctrl[c].Forget)
+			}
+		}
 		n += f32SliceBytes(l.QBias, l.KBias, l.VBias, l.OBias, l.QNorm, l.KNorm, l.PreAttnNorm, l.PreAttnNormBias, l.PostAttnNorm,
 			l.UpBias, l.DownBias, l.PreMLPNorm, l.PreMLPNormBias, l.PostMLPNorm, l.RouterBias, l.AttnSinks, l.PostPLENorm,
 			l.SharedExpert.GateBias, l.SharedExpert.UpBias, l.SharedExpert.DownBias)
@@ -232,7 +245,10 @@ func (m *Model) cpuStructBytes() (dense, experts int64) {
 		int64(len(w.KQuant))*int64(unsafe.Sizeof((*int8)(nil))+unsafe.Sizeof(archparts.KQuantSrc{}))
 	for i := range w.Layers {
 		l := &w.Layers[i]
-		dense += ptrSize(l.Delta) + ptrSize(l.QAttn) + ptrSize(l.ShortConv) + ptrSize(l.Mamba) + ptrSize(l.MLA) + ptrSize(l.KDA) + ptrSize(l.Gemma4MoE)
+		if w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer shares the first visit's structs
+		}
+		dense += ptrSize(l.Delta) + ptrSize(l.QAttn) + ptrSize(l.ShortConv) + ptrSize(l.Mamba) + ptrSize(l.MLA) + ptrSize(l.KDA) + ptrSize(l.Gemma4MoE) + ptrSize(l.Inkling)
 		experts += int64(cap(l.Experts)) * int64(unsafe.Sizeof(archparts.ExpertWeights{}))
 		if mo := l.Gemma4MoE; mo != nil {
 			experts += int64(cap(mo.ExpertsGateUp)+cap(mo.ExpertsDown)) * int64(unsafe.Sizeof(linalg.WeightMat{}))
@@ -324,6 +340,9 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 	var fullExpertBytes, mmapExpertBytes []int64 // one entry per (layer, expert-kind) — generic l.Experts and gemma4moe's fused set are both "kinds"
 	var expertCounts []int
 	for i := range w.Layers {
+		if w.Arch.WeightLayerOf(i) != i {
+			continue // a later visit of an Inkling 2 loop layer: its tensors are the first visit's
+		}
 		l := &w.Layers[i]
 		for _, mat := range []*linalg.WeightMat{
 			&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj,
@@ -373,6 +392,11 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 				count(w)
 			}
 			dense += f32SliceBytes(k.QConvW, k.KConvW, k.VConvW, k.BProj, k.DtBias, k.ALog, k.ONormW)
+		}
+		if x := l.Inkling; x != nil {
+			for _, w := range []*linalg.WeightMat{&x.SinkProj, &x.Rel, &x.KConvProj, &x.VConvProj} {
+				count(w)
+			}
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.Mamba; mb != nil {

@@ -62,8 +62,9 @@ func GGUFWeightBytes(names []string, dims func(name string) ([]int, bool), arch 
 			sum += r.Int8 * float64(n)
 			continue
 		}
-		// Mamba-2 and MLA tensors stay f32 whatever the requested quant: price them at what they cost.
-		if F32PinnedTensorName(name) {
+		// Mamba-2 and MLA tensors stay f32 whatever the requested quant, as do Inkling 2's 2-D small tensors: price them at
+		// what they cost.
+		if F32PinnedTensorName(name) || arch == "inkling2_loop" && inkling2F32Tensor(name) {
 			sum += 4 * float64(n)
 			continue
 		}
@@ -245,6 +246,19 @@ func embeddingTensorName(name string) bool {
 	}
 	for _, s := range []string{"embed_tokens.weight", "lm_head.weight", "tok_embeddings.weight", "wte.weight", "word_embeddings.weight", "embed_in.weight", "embed_out.weight"} {
 		if name == s || strings.HasSuffix(name, "."+s) {
+			return true
+		}
+	}
+	return false
+}
+
+// inkling2F32Tensor reports whether an Inkling 2 GGUF tensor of two or more dimensions loads as f32 (the conv taps, the clip
+// scales, the relative-bias profiles, the attention-residual and message queries, the loop controllers). The router's own
+// f32 load is priced as every family's router is.
+func inkling2F32Tensor(name string) bool {
+	for _, s := range []string{"_conv.weight", "_clip.weight", "attn_rel_bias.weight", "_res_query.weight", "loop_msg_query.weight",
+		"_ctrl_down.weight", "_ctrl_gain.weight", "_ctrl_forget.weight"} {
+		if strings.HasSuffix(name, s) {
 			return true
 		}
 	}

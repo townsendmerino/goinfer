@@ -566,3 +566,18 @@ func (a *Architecture) KVRowPad(elemBytes int) int {
 	}
 	return archparts.KVRowPadElems(kvDim, elemBytes, a.KVRowPadAlign)
 }
+
+// WeightLayerOf is the first layer whose weights layer i shares: i itself, except on an Inkling 2 loop model, where a later
+// visit of a core layer holds a copy of its first visit's LayerWeights. A sum over the weights counts only layers it returns
+// themselves for.
+func (a *Architecture) WeightLayerOf(i int) int {
+	p := a.Inkling2
+	if p == nil || p.LoopPasses <= 1 {
+		return i
+	}
+	v := p.Visits()
+	if i < 0 || i >= len(v) || v[i].Pass == 0 {
+		return i
+	}
+	return v[i].Phys
+}

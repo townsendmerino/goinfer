@@ -184,6 +184,12 @@ testdata/granite-dense-tiny int4/kv-i8
 testdata/granite-dense-tiny int4/kvquant-f16
 testdata/granite-dense-tiny int8int8
 testdata/granite-dense-tiny int8int8/g32
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf f32
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf f32/g32
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf int4
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf int4/g32
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf int8int8
+testdata/inkling2-loop-tiny/inkling2-loop-tiny.gguf int8int8/g32
 testdata/internlm2-tiny f32
 testdata/internlm2-tiny f32/g32
 testdata/internlm2-tiny int4
