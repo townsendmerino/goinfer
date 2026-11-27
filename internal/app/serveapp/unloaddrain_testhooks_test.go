@@ -16,12 +16,10 @@ import (
 // end-to-end with no backend. allowAdmin is on.
 func newDrainTestServer(wait time.Duration) (*server, io.Closer) {
 	m := &fakeCloser{}
-	lm := &loadedModel{name: "t", closer: m}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "t", closer: m}}
 	s := &server{
-		models:   map[string]*loadedModel{"t": lm},
-		liveness: map[io.Closer]*modelLiveness{m: {refs: 1}},
-		draining: map[string]struct{}{},
-		cfg:      config{allowAdmin: true, unloadDrainWait: wait},
+		cfg:           config{allowAdmin: true, unloadDrainWait: wait},
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{"t": lm}, liveness: map[io.Closer]*modelLiveness{m: {refs: 1}}, draining: map[string]struct{}{}},
 	}
 	return s, m
 }

@@ -563,18 +563,9 @@ func newServer(cfg config) (*server, error) {
 		return nil, fmt.Errorf("-job-dir %q: %w", cfg.jobDir, err)
 	}
 	s := &server{
-		models:    map[string]*loadedModel{},
-		speech:    map[string]*speechModel{},
-		liveness:  map[io.Closer]*modelLiveness{},
-		draining:  map[string]struct{}{},
-		cfg:       cfg,
-		responses: newResponseStore(256),
-		gens:      stores.NewGenerationRegistry(),
-		jobs:      jobs,
-		// 256 matches the bounds above: no dedicated -file-cap/-batch-cap flag, and a record past this many old is only evicted
-		// once terminal.
-		files:   stores.NewFileStore(256, cfg.maxFileStoreBytes),
-		batches: stores.NewBatchStore(256),
+		cfg:           cfg,
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{}, speech: map[string]*speechModel{}, liveness: map[io.Closer]*modelLiveness{}, draining: map[string]struct{}{}},
+		serverStores:  serverStores{responses: newResponseStore(256), gens: stores.NewGenerationRegistry(), jobs: jobs, files: stores.NewFileStore(256, cfg.maxFileStoreBytes), batches: stores.NewBatchStore(256)},
 	}
 	if !cfg.noCarryIDs {
 		if s.idsKey, err = loadIDsKey(cfg.idsKeyFile); err != nil {

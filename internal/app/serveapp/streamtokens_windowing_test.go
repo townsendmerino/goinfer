@@ -71,7 +71,7 @@ func referenceStreamTokens(tk *tokenizer.Tokenizer, ids []int, stops []string) (
 // start right at a token boundary a naive window could clip.
 func TestStreamTokens_windowedScanMatchesFullRescan(t *testing.T) {
 	tk := streamTokensTestTokenizer(t)
-	lm := &loadedModel{tk: tk}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk}}
 	palette := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9} // a b c EN D ST OP E N O
 	stopSets := [][]string{
 		{"END"},

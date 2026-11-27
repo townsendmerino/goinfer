@@ -19,8 +19,8 @@ import (
 // (it is lossless by construction). An operator would see correct responses at plain speed and
 // have nothing to look at. So the decline is the feature.
 func TestAttachBlockDrafter_declinesWithoutResident(t *testing.T) {
-	lm := &loadedModel{name: "test"}      // no model ⇒ not block-spec capable
-	err := attachBlockDrafter(lm, nil, 0) // never dereferenced: the resident check declines first
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "test"}} // no model ⇒ not block-spec capable
+	err := attachBlockDrafter(lm, nil, 0)                          // never dereferenced: the resident check declines first
 	if err == nil {
 		t.Fatal("attachBlockDrafter succeeded with no resident model — it must decline")
 	}
@@ -45,11 +45,11 @@ func TestWarnThinkingTemplate(t *testing.T) {
 		lm   *loadedModel
 		want bool
 	}{
-		{"drafter, template default on", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkTemplate)}, true},
-		{"drafter, -thinking on", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkOn)}, true},
-		{"drafter, -thinking off", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkOff)}, false},
-		{"drafter, no template", &loadedModel{name: "x", blockSpec: bs}, false},
-		{"no drafter", &loadedModel{name: "x", tmpl: nine.WithThinking(chat.ThinkTemplate)}, false},
+		{"drafter, template default on", &loadedModel{modelIdentity: modelIdentity{name: "x", tmpl: nine.WithThinking(chat.ThinkTemplate)}, modelSpecConfig: modelSpecConfig{blockSpec: bs}}, true},
+		{"drafter, -thinking on", &loadedModel{modelIdentity: modelIdentity{name: "x", tmpl: nine.WithThinking(chat.ThinkOn)}, modelSpecConfig: modelSpecConfig{blockSpec: bs}}, true},
+		{"drafter, -thinking off", &loadedModel{modelIdentity: modelIdentity{name: "x", tmpl: nine.WithThinking(chat.ThinkOff)}, modelSpecConfig: modelSpecConfig{blockSpec: bs}}, false},
+		{"drafter, no template", &loadedModel{modelIdentity: modelIdentity{name: "x"}, modelSpecConfig: modelSpecConfig{blockSpec: bs}}, false},
+		{"no drafter", &loadedModel{modelIdentity: modelIdentity{name: "x", tmpl: nine.WithThinking(chat.ThinkTemplate)}}, false},
 	} {
 		if got := warnThinkingTemplate(c.lm); got != c.want {
 			t.Errorf("%s: warned %v, want %v", c.name, got, c.want)

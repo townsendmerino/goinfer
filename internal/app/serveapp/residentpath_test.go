@@ -103,7 +103,7 @@ func residentServed(t *testing.T) (*loadedModel, *fakeResident) {
 	if !m.ResidentActive() {
 		t.Fatal("fake resident backend did not activate — ResidentActive() = false")
 	}
-	return &loadedModel{name: "tiny-resident", model: m}, be.rf
+	return &loadedModel{modelIdentity: modelIdentity{name: "tiny-resident", model: m}}, be.rf
 }
 
 // TestLoadedModel_residentPathTrueForAdapterWhenResidentActive is M-01's own gate
@@ -131,7 +131,7 @@ func TestLoadedModel_residentPathTrueForAdapterWhenResidentActive(t *testing.T) 
 // lm.model.ResidentActive() call — an embedding-only loadedModel (lm.model == nil, per
 // s.pathFields' own guard) must not panic.
 func TestLoadedModel_residentPathNilModel(t *testing.T) {
-	lm := &loadedModel{name: "embed-only"}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "embed-only"}}
 	if lm.residentPath() {
 		t.Error("residentPath() = true with lm.model == nil, want false")
 	}

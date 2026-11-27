@@ -49,12 +49,10 @@ func (s *server) loadAdapters(cfg config) error {
 		}
 		fp := base.fp + "+adapter:" + spec.name // distinct snapshot namespace from the base + sibling adapters
 		lm := &loadedModel{
-			tk: base.tk, model: base.model, closer: base.closer, tmpl: base.tmpl, stopIDs: base.stopIDs,
-			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
-			spec:         cfg.spec == "ngram",
-			specAdaptive: cfg.specAdaptive,
-			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
-			caches:       modelCaches{tokenBytesFrom: base},
+			caches:           modelCaches{tokenBytesFrom: base},
+			modelIdentity:    modelIdentity{tk: base.tk, model: base.model, closer: base.closer, tmpl: base.tmpl, stopIDs: base.stopIDs, eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name},
+			modelSpecConfig:  modelSpecConfig{sampling: base.sampling, spec: cfg.spec == "ngram", specAdaptive: cfg.specAdaptive},
+			modelConcurrency: modelConcurrency{sessions: newSessionLRU(base.model, cfg.kvSessions, 0, fp)},
 		}
 		lm.sessions.SetAdapter(spec.name)
 		if cfg.maxQueue > 0 {
@@ -164,13 +162,10 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, decisions: decisionState{head: head}, source: spec.path,
-		sampling:     mcfg.Sampling,
-		spec:         cfg.spec == "ngram",
-		specAdaptive: cfg.specAdaptive,
-		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
-		// this exact model+quant so a -session-dir reused across models is rejected.
-		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
+		decisions:        decisionState{head: head},
+		modelIdentity:    modelIdentity{tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, source: spec.path},
+		modelSpecConfig:  modelSpecConfig{sampling: mcfg.Sampling, spec: cfg.spec == "ngram", specAdaptive: cfg.specAdaptive},
+		modelConcurrency: modelConcurrency{sessions: newSessionLRU(model, cfg.kvSessions, 0, fp)},
 	}
 	// --drafter: attach a pretrained block drafter ONCE, here, on the BASE model only. Adapter-bearing requests route down
 	// the session path, where the block-spec branch does not run, so attaching one there would upload ~500 MB and never be

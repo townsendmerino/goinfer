@@ -40,19 +40,19 @@ func TestAdapterFlag_parse(t *testing.T) {
 // load — base missing, name collision, stream-weights, attaching to an adapter.
 func TestLoadAdapters_errors(t *testing.T) {
 	mk := func(adapters adapterFlag, models map[string]*loadedModel, stream bool) error {
-		s := &server{models: models, cfg: config{}}
+		s := &server{cfg: config{}, modelRegistry: modelRegistry{models: models}}
 		return s.loadAdapters(config{adapters: adapters, load: loadflags.Flags{StreamWeights: stream}})
 	}
 	if err := mk(adapterFlag{{"a", "missing", "/d"}}, map[string]*loadedModel{}, false); err == nil {
 		t.Error("expected base-not-found error")
 	}
-	if err := mk(adapterFlag{{"a", "b", "/d"}}, map[string]*loadedModel{"b": {name: "b"}}, true); err == nil {
+	if err := mk(adapterFlag{{"a", "b", "/d"}}, map[string]*loadedModel{"b": {modelIdentity: modelIdentity{name: "b"}}}, true); err == nil {
 		t.Error("expected stream-weights incompatibility error")
 	}
-	if err := mk(adapterFlag{{"b", "b", "/d"}}, map[string]*loadedModel{"b": {name: "b"}}, false); err == nil {
+	if err := mk(adapterFlag{{"b", "b", "/d"}}, map[string]*loadedModel{"b": {modelIdentity: modelIdentity{name: "b"}}}, false); err == nil {
 		t.Error("expected name-collision error")
 	}
-	if err := mk(adapterFlag{{"a", "x", "/d"}}, map[string]*loadedModel{"x": {name: "x", adapter: "x"}}, false); err == nil {
+	if err := mk(adapterFlag{{"a", "x", "/d"}}, map[string]*loadedModel{"x": {modelIdentity: modelIdentity{name: "x", adapter: "x"}}}, false); err == nil {
 		t.Error("expected attach-to-adapter error")
 	}
 }
@@ -74,8 +74,8 @@ func TestServe_multiAdapter(t *testing.T) {
 		t.Fatalf("decoder.Load base: %v", err)
 	}
 	defer m.Close()
-	baseLM := &loadedModel{model: m, name: "base", fp: "base", sessions: newSessionLRU(m, 4, 0, "base")}
-	srv := &server{models: map[string]*loadedModel{"base": baseLM}, cfg: config{}}
+	baseLM := &loadedModel{modelIdentity: modelIdentity{model: m, name: "base", fp: "base"}, modelConcurrency: modelConcurrency{sessions: newSessionLRU(m, 4, 0, "base")}}
+	srv := &server{cfg: config{}, modelRegistry: modelRegistry{models: map[string]*loadedModel{"base": baseLM}}}
 	if err := srv.loadAdapters(config{adapters: adapterFlag{{"a1", "base", a1}, {"a2", "base", a2}}, kvSessions: 4}); err != nil {
 		t.Fatalf("loadAdapters: %v", err)
 	}
@@ -283,8 +283,8 @@ func TestLoadVisionTower_countsCfgModelsNotSMap(t *testing.T) {
 		t.Fatalf("decoder.Load base: %v", err)
 	}
 	defer m.Close()
-	baseLM := &loadedModel{model: m, name: "base", fp: "base", sessions: newSessionLRU(m, 4, 0, "base")}
-	s := &server{models: map[string]*loadedModel{"base": baseLM}}
+	baseLM := &loadedModel{modelIdentity: modelIdentity{model: m, name: "base", fp: "base"}, modelConcurrency: modelConcurrency{sessions: newSessionLRU(m, 4, 0, "base")}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"base": baseLM}}}
 	cfg := config{
 		models:     modelFlag{{name: "base", path: base}},
 		adapters:   adapterFlag{{"ft", "base", adapterDir}},

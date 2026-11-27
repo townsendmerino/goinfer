@@ -11,7 +11,7 @@ import (
 // (TestGemma4VLReal_E2B_logprobs is the through-the-model proof), and the streamed vision reply, which has no logprobs field, refuses the combination
 // the way the text route does rather than dropping them.
 func TestHandleChat_imageStreamLogprobsRejected(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	img := `{"type":"image_url","image_url":{"url":"data:image/png;base64,` + png1x1b64 + `"}}`
 	body := func(extra string) string {
 		return `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"what is this"},` + img + `]}],` + extra + `}`

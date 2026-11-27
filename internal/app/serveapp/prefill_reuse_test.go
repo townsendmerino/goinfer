@@ -48,7 +48,7 @@ func TestUsage_prefillReuseSources(t *testing.T) {
 		{"cold", engine.Report{}, nil},
 	} {
 		s := &server{}
-		lm := &loadedModel{tk: tk, name: "m", fakeEngine: reuseEngine{ids: ids, rep: c.rep}}
+		lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{fakeEngine: reuseEngine{ids: ids, rep: c.rep}}}
 		lm.tmpl = s.cfg.tuneTemplate(qwen35Template(t))
 		s.models = map[string]*loadedModel{"m": lm}
 		mux := http.NewServeMux()

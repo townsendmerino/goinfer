@@ -61,16 +61,16 @@ func TestKVHostBytes_bannerAndLog(t *testing.T) {
 		return ""
 	}
 	on := config{kvHostBytes: 6 << 30, kvHostBytesHow: "auto: 1/10 of 64.0 GiB of RAM, at most 8.0 GiB"}
-	if l := line(bannerFacts{resident: true, snapshots: true}, on); !strings.Contains(l, "budget 6.00 GiB") || !strings.Contains(l, "0 B held") || !strings.Contains(l, "held only while a snapshot is") {
+	if l := line(bannerFacts{Resident: true, Snapshots: true}, on); !strings.Contains(l, "budget 6.00 GiB") || !strings.Contains(l, "0 B held") || !strings.Contains(l, "held only while a snapshot is") {
 		t.Errorf("on: %q", l)
 	}
-	if l := line(bannerFacts{resident: true, snapshots: false}, on); !strings.Contains(l, "not on this backend") {
+	if l := line(bannerFacts{Resident: true, Snapshots: false}, on); !strings.Contains(l, "not on this backend") {
 		t.Errorf("a resident that cannot: %q", l)
 	}
-	if l := line(bannerFacts{resident: true}, config{kvHostBytesHow: "-kv-host-bytes 0"}); l != "prefix snapshots: OFF (-kv-host-bytes 0)" {
+	if l := line(bannerFacts{Resident: true}, config{kvHostBytesHow: "-kv-host-bytes 0"}); l != "prefix snapshots: OFF (-kv-host-bytes 0)" {
 		t.Errorf("off: %q", l)
 	}
-	if l := line(bannerFacts{resident: false}, on); l != "" {
+	if l := line(bannerFacts{Resident: false}, on); l != "" {
 		t.Errorf("a model off the resident path reports snapshots: %q", l)
 	}
 	// the request log names the rows a restore brought back, and only then

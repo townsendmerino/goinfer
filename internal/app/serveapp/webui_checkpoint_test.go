@@ -285,7 +285,7 @@ func TestWebLoad_checkpointFitDecline(t *testing.T) {
 		got = spec.path
 		return nil, fmt.Errorf("decoder: needs 9.1 GB resident, 4.0 GB free: %w", fit.ErrWontFitResident)
 	}
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	s.cfg.web = true
 	evs := readLoadEvents(t, postLoad(s, context.Background(), dir).Body)
 	if len(evs) != 2 || evs[1].name != "error" {

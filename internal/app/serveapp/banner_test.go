@@ -47,7 +47,7 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 		{"resident, -kv-sessions not given, Metal's default 2", true, false, 4, true, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots, decodePath: "metal-resident (int4)"}, config{kvSessions: tc.kvSessions, kvSessionsSet: !tc.byDefault})
+			lines := modelBannerFrom(bannerFacts{Resident: tc.resident, ResidentReuseOff: tc.reuseOff, HasTemplate: true, KVSlots: tc.kvSlots, DecodePath: "metal-resident (int4)"}, config{kvSessions: tc.kvSessions, kvSessionsSet: !tc.byDefault})
 			line := bannerLine(lines, "session reuse:")
 			if line == "" {
 				t.Fatal("no session-reuse line in the banner")
@@ -87,7 +87,7 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 // actually resolved to, not what was asked for. These fall back SILENTLY, which is the whole
 // reason they are printed.
 func TestBanner_reportsResolvedNotRequested(t *testing.T) {
-	f := bannerFacts{decodePath: "cpu (int4)", prefillPath: "sequential — no batched prefill", hasTemplate: true}
+	f := bannerFacts{DecodePath: "cpu (int4)", PrefillPath: "sequential — no batched prefill", HasTemplate: true}
 	lines := modelBannerFrom(f, config{load: loadflags.Flags{Backend: "cuda"}}) // asked for cuda, resolved to cpu
 	if got := bannerLine(lines, "decode path:"); !strings.Contains(got, "cpu (int4)") {
 		t.Errorf("decode line must report the RESOLVED path, got %q", got)
@@ -136,7 +136,7 @@ func TestBanner_contextAndKV(t *testing.T) {
 		if rep.Requested != rep.Delivered {
 			rep.Reason = "auto's pick"
 		}
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kv: []decoder.KVPrecisionReport{rep}}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
+		lines := modelBannerFrom(bannerFacts{HasTemplate: true, CtxWindow: tc.window, MaxPositions: tc.max, KV: []decoder.KVPrecisionReport{rep}}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {
@@ -158,8 +158,8 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 	_, lm := tinyServed(t)
 	f := factsOf(lm)
 	want := lm.contextWindow(lm.adapter == "")
-	if want <= 0 || f.ctxWindow != want || f.maxPositions != lm.model.Config().MaxPositions {
-		t.Fatalf("factsOf: ctxWindow=%d maxPositions=%d, want %d / %d", f.ctxWindow, f.maxPositions, want, lm.model.Config().MaxPositions)
+	if want <= 0 || f.CtxWindow != want || f.MaxPositions != lm.model.Config().MaxPositions {
+		t.Fatalf("factsOf: ctxWindow=%d maxPositions=%d, want %d / %d", f.CtxWindow, f.MaxPositions, want, lm.model.Config().MaxPositions)
 	}
 	got := bannerLine(modelBanner(lm, config{}), "context:")
 	if !strings.Contains(got, fmt.Sprintf("context: %d tokens", want)) {
@@ -174,7 +174,7 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	facts := string(src)[strings.Index(string(src), "func factsOf("):]
-	if !strings.Contains(facts[:strings.Index(facts, "\n}\n")], "f.ctxWindow = lm.contextWindow(lm.adapter == \"\")") {
+	if !strings.Contains(facts[:strings.Index(facts, "\n}\n")], "f.CtxWindow = lm.contextWindow(lm.adapter == \"\")") {
 		t.Error("factsOf no longer takes ctxWindow from lm.contextWindow — the banner can drift from the enforced limit")
 	}
 	loadSrc, err := os.ReadFile("model_load.go")
@@ -189,15 +189,15 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 // TestBanner_toolSupportIsNotAssumed: M-20 (gemma-4's parse-only tool form) is exactly the
 // case a harness must know about BEFORE it sends a named tool_choice and gets a 400.
 func TestBanner_toolSupportIsNotAssumed(t *testing.T) {
-	on := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, toolCallForm: true}, config{}), "features:")
+	on := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: true, ToolCallForm: true}, config{}), "features:")
 	if !strings.Contains(on, "tools (constrainable") {
 		t.Errorf("a constrainable template should advertise tools, got %q", on)
 	}
-	off := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, toolCallForm: false}, config{}), "features:")
+	off := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: true, ToolCallForm: false}, config{}), "features:")
 	if !strings.Contains(off, "parse-only") {
 		t.Errorf("a non-constrainable template must NOT claim plain tool support, got %q", off)
 	}
-	none := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: false}, config{}), "features:")
+	none := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: false}, config{}), "features:")
 	if !strings.Contains(none, "raw completion") {
 		t.Errorf("no template must be stated, got %q", none)
 	}
@@ -207,7 +207,7 @@ func TestBanner_toolSupportIsNotAssumed(t *testing.T) {
 // when -web registered them. Route lists drift from route registration; that is the M-07
 // class applied to the one document every user reads.
 func TestServerBanner_routesMatchRegistration(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{"m": {}}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {}}}}
 	withWeb := strings.Join(serverBanner(s, config{web: true}), "\n")
 	if !strings.Contains(withWeb, "(web UI)") {
 		t.Error("-web must appear in the routes line")
@@ -253,7 +253,7 @@ func TestBanner_concurrency(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resident := strings.HasPrefix(tc.name, "resident")
-			f := bannerFacts{hasTemplate: true, concurrent: tc.concurrent, resident: resident, kvSlots: tc.cfg.kvSessions}
+			f := bannerFacts{HasTemplate: true, Concurrent: tc.concurrent, Resident: resident, KVSlots: tc.cfg.kvSessions}
 			if l := bannerLine(modelBannerFrom(f, tc.cfg), "concurrency:"); l != "" {
 				t.Errorf("the load-time banner printed %q — concurrency is decided after load (setConcurrency)", l)
 			}
@@ -274,15 +274,15 @@ func TestBanner_concurrency(t *testing.T) {
 // TestConcurrencyLine_cpuBatch pins the banner's MC3c step-2 wording: a CPU model whose concurrent generations batch
 // their decode tokens says so and names -cpu-batch; one left on independent workers under -cpu-batch auto says why.
 func TestConcurrencyLine_cpuBatch(t *testing.T) {
-	batched := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true}, config{maxConcurrent: 4, kvSessions: 4})
+	batched := concurrencyLine(bannerFacts{Concurrent: 4, CPUBatched: true}, config{maxConcurrent: 4, kvSessions: 4})
 	if !strings.Contains(batched, "decode tokens batched on the CPU") || !strings.Contains(batched, "-cpu-batch") {
 		t.Errorf("batched CPU model: %q", batched)
 	}
-	workers := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
+	workers := concurrencyLine(bannerFacts{Concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
 	if !strings.Contains(workers, "independent workers") || strings.Contains(workers, "batched on the CPU") {
 		t.Errorf("CPU model on the workers under auto: %q", workers)
 	}
-	off := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchOff})
+	off := concurrencyLine(bannerFacts{Concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchOff})
 	if strings.Contains(off, "independent workers") || strings.Contains(off, "batched") {
 		t.Errorf("-cpu-batch off: %q (want step 1's line unchanged)", off)
 	}
@@ -293,7 +293,7 @@ func TestConcurrencyLine_cpuBatch(t *testing.T) {
 // is below the model's maximum.
 func TestBanner_cpuContextIsACeiling(t *testing.T) {
 	const note = "the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held"
-	base := bannerFacts{hasTemplate: true, ctxWindow: 262144, maxPositions: 262144, fitKnown: true, fitCtx: 262144, fitKVBytes: 10 << 30, fitWeightBytes: 13 << 30, fitBudgetBytes: 25 << 30}
+	base := bannerFacts{HasTemplate: true, CtxWindow: 262144, MaxPositions: 262144, FitKnown: true, FitCtx: 262144, FitKVBytes: 10 << 30, FitWeightBytes: 13 << 30, FitBudgetBytes: 25 << 30}
 	line := func(f bannerFacts, prefix string) string { return bannerLine(modelBannerFrom(f, config{}), prefix) }
 
 	cpu := line(base, "context:")
@@ -305,19 +305,19 @@ func TestBanner_cpuContextIsACeiling(t *testing.T) {
 	}
 
 	declined := base
-	declined.residentDecline = "cuda: device allocation failed"
+	declined.ResidentDecline = "cuda: device allocation failed"
 	d := line(declined, "context:")
 	if !strings.Contains(d, note) || !strings.Contains(d, "a GPU-resident load caps it with --ctx, but this model declined one (see decode path)") {
 		t.Errorf("CPU fallback after a decline: %q", d)
 	}
 
 	res := base
-	res.resident = true
+	res.Resident = true
 	if got := line(res, "context:"); strings.Contains(got, "CPU path") || strings.Contains(line(res, "fit:"), "ceiling") {
 		t.Errorf("a resident model got the CPU note: %q / %q", got, line(res, "fit:"))
 	}
 	below := base
-	below.ctxWindow, below.fitCtx = 8192, 8192
+	below.CtxWindow, below.FitCtx = 8192, 8192
 	if got := line(below, "context:"); strings.Contains(got, "CPU path") || strings.Contains(line(below, "fit:"), "ceiling") {
 		t.Errorf("a window below the model maximum got the CPU note: %q", got)
 	}
@@ -342,10 +342,10 @@ func TestFactsOf_carriesTheResidentDecline(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	lm := &loadedModel{name: "declined", model: m}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "declined", model: m}}
 	f := factsOf(lm)
-	if f.resident || !strings.Contains(f.residentDecline, "no card in this test") {
-		t.Fatalf("factsOf: resident=%v residentDecline=%q, want the backend's own reason", f.resident, f.residentDecline)
+	if f.Resident || !strings.Contains(f.ResidentDecline, "no card in this test") {
+		t.Fatalf("factsOf: resident=%v residentDecline=%q, want the backend's own reason", f.Resident, f.ResidentDecline)
 	}
 	if got := bannerLine(modelBanner(lm, config{}), "context:"); !strings.Contains(got, "this model declined one") {
 		t.Errorf("the banner of a model that declined residency: %q", got)
@@ -374,7 +374,7 @@ func TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = m.Close() })
-		return &loadedModel{name: "declined", model: m}
+		return &loadedModel{modelIdentity: modelIdentity{name: "declined", model: m}}
 	}
 	unpinned := load(0)
 	window := unpinned.model.Config().MaxPositions
@@ -382,13 +382,13 @@ func TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow(t *testing.T) {
 		t.Skip("the fixture declares no window")
 	}
 	want := factsOf(unpinned)
-	if !want.fitKnown || want.fitCtx != window {
-		t.Fatalf("unpinned decline: fitKnown=%v fitCtx=%d, want the window %d", want.fitKnown, want.fitCtx, window)
+	if !want.FitKnown || want.FitCtx != window {
+		t.Fatalf("unpinned decline: fitKnown=%v fitCtx=%d, want the window %d", want.FitKnown, want.FitCtx, window)
 	}
 	pinned := load(window * 8)
 	got := factsOf(pinned)
-	if !got.fitKnown || got.fitCtx != window || got.fitKVBytes != want.fitKVBytes {
-		t.Errorf("a pin of %d past the window %d after a decline: fit ctx %d, KV %d bytes; want ctx %d, KV %d", window*8, window, got.fitCtx, got.fitKVBytes, window, want.fitKVBytes)
+	if !got.FitKnown || got.FitCtx != window || got.FitKVBytes != want.FitKVBytes {
+		t.Errorf("a pin of %d past the window %d after a decline: fit ctx %d, KV %d bytes; want ctx %d, KV %d", window*8, window, got.FitCtx, got.FitKVBytes, window, want.FitKVBytes)
 	}
 	if line := bannerLine(modelBanner(pinned, config{}), "fit:"); !strings.Contains(line, fmt.Sprintf("fit: %d-token cap", window)) {
 		t.Errorf("the banner's fit line prices a context other than the window %d: %q", window, line)
@@ -404,8 +404,8 @@ func TestFactsOf_aPlainCPULoadDeclinedNothing(t *testing.T) {
 		t.Skip("decoder no longer records a decline for a CPU load, so this guard has nothing to guard against")
 	}
 	f := factsOf(lm)
-	if f.residentDecline != "" {
-		t.Errorf("factsOf reports a decline for a plain CPU load: %q", f.residentDecline)
+	if f.ResidentDecline != "" {
+		t.Errorf("factsOf reports a decline for a plain CPU load: %q", f.ResidentDecline)
 	}
 	got := bannerLine(modelBanner(lm, config{}), "context:")
 	if strings.Contains(got, "declined") {
@@ -432,20 +432,20 @@ func TestKVPlanLine(t *testing.T) {
 		wantNone bool
 	}{
 		{"a tower held 2.4 GB back and the card allowed 2 of 4 (Gemma 3 4B on the 8 GB card, float32 tower)",
-			bannerFacts{resident: true, kvSlots: 2, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 2_400_000_000}, config{kvSessions: 4},
+			bannerFacts{Resident: true, KVSlots: 2, CtxWindow: 4096, DecodePath: "cuda-resident (int4)", TowerReserve: 2_400_000_000}, config{kvSessions: 4},
 			"KV plan: 2 conversations x 4096 positions (4 asked for; 2.24 GiB held back for the vision tower)", false},
-		{"one slot", bannerFacts{resident: true, kvSlots: 1, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 959_000_000}, config{kvSessions: 4},
+		{"one slot", bannerFacts{Resident: true, KVSlots: 1, CtxWindow: 4096, DecodePath: "cuda-resident (int4)", TowerReserve: 959_000_000}, config{kvSessions: 4},
 			"KV plan: 1 conversation x 4096 positions (4 asked for; 0.89 GiB held back for the vision tower)", false},
-		{"nothing reduced, no tower: no parenthesis", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 5057, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
+		{"nothing reduced, no tower: no parenthesis", bannerFacts{Resident: true, KVSlots: 4, CtxWindow: 5057, DecodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
 			"KV plan: 4 conversations x 5057 positions", false},
-		{"an explicit -ctx is named", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}},
+		{"an explicit -ctx is named", bannerFacts{Resident: true, KVSlots: 2, CtxWindow: 8192, DecodePath: "cuda-resident (int4)"}, config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}},
 			"KV plan: 2 conversations x 8192 positions (4 asked for; --ctx 8192)", false},
 		{"a shared pool one conversation can use past its share (the 7B on the 8 GB card)",
-			bannerFacts{resident: true, kvSlots: 4, ctxWindow: 32768, kvPool: 48128, kvShare: 12032, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
+			bannerFacts{Resident: true, KVSlots: 4, CtxWindow: 32768, KVPool: 48128, KVShare: 12032, DecodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
 			"KV plan: a 48128-position pool for 4 conversations; each is guaranteed 12032, and one can use up to 32768", false},
-		{"a pool whose cap is its share reads as before", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, kvPool: 16384, kvShare: 8192, decodePath: "cuda-resident (int4)"},
+		{"a pool whose cap is its share reads as before", bannerFacts{Resident: true, KVSlots: 2, CtxWindow: 8192, KVPool: 16384, KVShare: 8192, DecodePath: "cuda-resident (int4)"},
 			config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}}, "KV plan: 2 conversations x 8192 positions (4 asked for; --ctx 8192)", false},
-		{"not resident: no line", bannerFacts{kvSlots: 0, ctxWindow: 4096, decodePath: "cpu (int4)"}, config{kvSessions: 4}, "", true},
+		{"not resident: no line", bannerFacts{KVSlots: 0, CtxWindow: 4096, DecodePath: "cpu (int4)"}, config{kvSessions: 4}, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := bannerLine(modelBannerFrom(tc.f, tc.cfg), "KV plan:")
@@ -465,11 +465,11 @@ func TestKVPlanLine(t *testing.T) {
 // The session-reuse line names Metal only for a Metal decode path, not for a CUDA card's granted count.
 func TestBanner_sessionReuseNamesMetalOnlyOnMetal(t *testing.T) {
 	cfg := config{kvSessions: 4}
-	cuda := bannerLine(modelBannerFrom(bannerFacts{resident: true, hasTemplate: true, kvSlots: 2, decodePath: "cuda-resident (int4)"}, cfg), "session reuse:")
+	cuda := bannerLine(modelBannerFrom(bannerFacts{Resident: true, HasTemplate: true, KVSlots: 2, DecodePath: "cuda-resident (int4)"}, cfg), "session reuse:")
 	if strings.Contains(cuda, "Metal") || !strings.Contains(cuda, "the default asks for 4 and the memory guard allowed 2") {
 		t.Errorf("CUDA session-reuse line = %q", cuda)
 	}
-	metal := bannerLine(modelBannerFrom(bannerFacts{resident: true, hasTemplate: true, kvSlots: 2, decodePath: "metal-resident (int4)"}, cfg), "session reuse:")
+	metal := bannerLine(modelBannerFrom(bannerFacts{Resident: true, HasTemplate: true, KVSlots: 2, DecodePath: "metal-resident (int4)"}, cfg), "session reuse:")
 	if !strings.Contains(metal, "Metal keeps 2 by default") {
 		t.Errorf("Metal session-reuse line = %q", metal)
 	}
@@ -477,11 +477,11 @@ func TestBanner_sessionReuseNamesMetalOnlyOnMetal(t *testing.T) {
 
 // A config that declares no maximum (Gemma 3's) must not have the resident capacity called the model maximum.
 func TestBanner_contextWhenTheModelDeclaresNoMaximum(t *testing.T) {
-	unpinned := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 0}, config{}), "context:")
+	unpinned := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: true, CtxWindow: 4096, MaxPositions: 0}, config{}), "context:")
 	if strings.Contains(unpinned, "model maximum") || !strings.Contains(unpinned, "declares no maximum") || !strings.Contains(unpinned, "raise with --ctx") {
 		t.Errorf("unpinned: %q", unpinned)
 	}
-	pinned := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 8192, maxPositions: 0}, config{load: loadflags.Flags{Ctx: 8192}}), "context:")
+	pinned := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: true, CtxWindow: 8192, MaxPositions: 0}, config{load: loadflags.Flags{Ctx: 8192}}), "context:")
 	if strings.Contains(pinned, "model maximum") || !strings.Contains(pinned, "--ctx") {
 		t.Errorf("pinned: %q", pinned)
 	}
@@ -495,12 +495,12 @@ func TestBanner_headTable(t *testing.T) {
 		{"int4", "head table: int4 (--embed-int4; --embed-int4=false pins int8)"},
 		{"int8", "head table: int8"},
 	} {
-		got := bannerLine(modelBannerFrom(bannerFacts{decodePath: "cpu (int4)", headTable: c.kind}, config{}), "head table:")
+		got := bannerLine(modelBannerFrom(bannerFacts{DecodePath: "cpu (int4)", HeadTable: c.kind}, config{}), "head table:")
 		if got != c.want {
 			t.Errorf("head table %q: banner line %q, want %q", c.kind, got, c.want)
 		}
 	}
-	if got := bannerLine(modelBannerFrom(bannerFacts{decodePath: "cpu (int4)"}, config{}), "head table:"); got != "" {
+	if got := bannerLine(modelBannerFrom(bannerFacts{DecodePath: "cpu (int4)"}, config{}), "head table:"); got != "" {
 		t.Errorf("an unknown head table printed a line: %q", got)
 	}
 }
@@ -515,14 +515,14 @@ func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load (embed-int4 %v): %v", embed4, err)
 		}
-		f := factsOf(&loadedModel{name: "tiny", model: m})
+		f := factsOf(&loadedModel{modelIdentity: modelIdentity{name: "tiny", model: m}})
 		_ = m.Close()
 		want := "int8"
 		if embed4 {
 			want = "int4"
 		}
-		if f.headTable != want {
-			t.Errorf("EmbedInt4=%v: facts report head table %q, want %q", embed4, f.headTable, want)
+		if f.HeadTable != want {
+			t.Errorf("EmbedInt4=%v: facts report head table %q, want %q", embed4, f.HeadTable, want)
 		}
 	}
 }
@@ -531,8 +531,8 @@ func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
 // -kv f16 the family cannot hold refuses the load: decoder.KVRefusal.)
 func TestBanner_f16KVDecline(t *testing.T) {
 	why := "sliding-window attention (the windowed KV ring) has no f16 form"
-	lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 32768,
-		kv: []decoder.KVPrecisionReport{{Cache: "resident", Requested: "auto", Delivered: "f32", Reason: why}}}, config{load: loadflags.Flags{KV: "auto"}})
+	lines := modelBannerFrom(bannerFacts{HasTemplate: true, CtxWindow: 4096, MaxPositions: 32768,
+		KV: []decoder.KVPrecisionReport{{Cache: "resident", Requested: "auto", Delivered: "f32", Reason: why}}}, config{load: loadflags.Flags{KV: "auto"}})
 	got := bannerLine(lines, "context:")
 	for _, want := range []string{"KV f32", "requested auto: sliding-window attention"} {
 		if !strings.Contains(got, want) {
@@ -559,35 +559,38 @@ func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
 		harness []string // substrings of the harness line; nil = no such line
 	}{
 		{"grown by the fit: no warning",
-			bannerFacts{resident: true, ctxWindow: 16384, maxPositions: 32768, ctxNote: "fit: 2 slots, 1.9 GB KV", kvSlots: 2, harnessKVBytes: gib}, 0,
+			bannerFacts{Resident: true, CtxWindow: 16384, MaxPositions: 32768, CtxNote: "fit: 2 slots, 1.9 GB KV", KVSlots: 2, HarnessKVBytes: gib}, 0,
 			"context: 16384 tokens (fit: 2 slots, 1.9 GB KV; model maximum 32768 — raise with --ctx)", nil},
 		{"paged MoE keeps the default: the first request is refused",
-			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 131072, ctxNote: "paged MoE keeps the default", kvSlots: 2, harnessKVBytes: gib}, 0,
+			bannerFacts{Resident: true, CtxWindow: 4096, MaxPositions: 131072, CtxNote: "paged MoE keeps the default", KVSlots: 2, HarnessKVBytes: gib}, 0,
 			"context: 4096 tokens (paged MoE keeps the default; model maximum 131072 — raise with --ctx)",
 			[]string{"harness: 4096 tokens is short for a coding agent", "about 11k tokens (opencode: 11137)", "will be refused (context_length_exceeded)", "--ctx 16384 holds it for 2.00 GiB of KV (2 slots)"}},
 		{"shrunk to 12000: fits, with little room",
-			bannerFacts{resident: true, ctxWindow: 12000, maxPositions: 32768, ctxNote: "fit: 2 slots, 1.4 GB KV", kvSlots: 1, harnessKVBytes: gib / 2}, 0,
+			bannerFacts{Resident: true, CtxWindow: 12000, MaxPositions: 32768, CtxNote: "fit: 2 slots, 1.4 GB KV", KVSlots: 1, HarnessKVBytes: gib / 2}, 0,
 			"context: 12000 tokens (fit: 2 slots, 1.4 GB KV; model maximum 32768 — raise with --ctx)",
 			[]string{"which leaves 863 for the session", "--ctx 16384 holds it for 0.50 GiB of KV (1 slot)"}},
 		{"no note from the backend: the old words",
-			bannerFacts{resident: true, ctxWindow: 8192, maxPositions: 40960, kvSlots: 4, harnessKVBytes: gib}, 0,
+			bannerFacts{Resident: true, CtxWindow: 8192, MaxPositions: 40960, KVSlots: 4, HarnessKVBytes: gib}, 0,
 			"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)",
 			[]string{"will be refused", "4.00 GiB of KV (4 slots)"}},
 		{"an explicit --ctx 4096 is warned too",
-			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 32768, kvSlots: 2, harnessKVBytes: gib}, 4096,
+			bannerFacts{Resident: true, CtxWindow: 4096, MaxPositions: 32768, KVSlots: 2, HarnessKVBytes: gib}, 4096,
 			"context: 4096 tokens (--ctx; model maximum 32768)", []string{"will be refused", "--ctx 16384 holds it"}},
 		{"the model's own window is the limit",
-			bannerFacts{resident: true, ctxWindow: 8192, maxPositions: 8192, kvSlots: 2, harnessKVBytes: gib}, 0,
+			bannerFacts{Resident: true, CtxWindow: 8192, MaxPositions: 8192, KVSlots: 2, HarnessKVBytes: gib}, 0,
 			"context: 8192 tokens (model maximum)", []string{"will be refused", "the model's own maximum is 8192, so --ctx cannot raise it to 16384"}},
 		{"the CPU path: no resident context to warn about",
-			bannerFacts{ctxWindow: 4096, maxPositions: 4096}, 0, "context: 4096 tokens (model maximum)", nil},
+			bannerFacts{CtxWindow: 4096, MaxPositions: 4096}, 0, "context: 4096 tokens (model maximum)", nil},
 	} {
-		tc.f.hasTemplate = true
+		tc.f.HasTemplate = true
 		lines := modelBannerFrom(tc.f, config{load: loadflags.Flags{Ctx: tc.ctx}})
 		if got := bannerLine(lines, "context:"); !strings.HasPrefix(got, tc.ctxWant) {
 			t.Errorf("%s: context line %q, want it to start %q", tc.name, got, tc.ctxWant)
 		}
 		got := bannerLine(lines, "harness:")
+		if got != harnessLine(tc.f) {
+			t.Errorf("%s: harnessLine = %q, want %q", tc.name, harnessLine(tc.f), got)
+		}
 		if (got != "") != (tc.harness != nil) {
 			t.Errorf("%s: harness line %q, want one: %v", tc.name, got, tc.harness != nil)
 		}
@@ -602,7 +605,7 @@ func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
 // TestBanner_cpuKVBothCaches: a resident load whose adapter's session path takes the CPU cache prints both caches, each with what was
 // requested and what it holds.
 func TestBanner_cpuKVBothCaches(t *testing.T) {
-	f := bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, kv: []decoder.KVPrecisionReport{
+	f := bannerFacts{HasTemplate: true, CtxWindow: 4096, MaxPositions: 4096, KV: []decoder.KVPrecisionReport{
 		{Cache: "resident", Requested: "i8", Delivered: "i8"}, {Cache: "cpu", Requested: "i8", Delivered: "i8"}}}
 	got := bannerLine(modelBannerFrom(f, config{load: loadflags.Flags{KV: "i8"}}), "context:")
 	if !strings.Contains(got, "· KV i8 (requested i8, lossy) · CPU KV i8 (requested i8, lossy)") {
@@ -615,8 +618,8 @@ func TestBanner_cpuKVBothCaches(t *testing.T) {
 func TestBanner_kvPoolLine(t *testing.T) {
 	pool := decoder.KVPoolDetail{Positions: 58000, Guaranteed: 14500, BlockRows: 64, Groups: []string{"full"}, Precision: "f16", Bytes: 3_543_348_019}
 	facts := func(f bannerFacts) bannerFacts {
-		f.resident, f.decodePath = true, "cuda-resident (int4)"
-		f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
+		f.Resident, f.DecodePath = true, "cuda-resident (int4)"
+		f.KVPool, f.KVShare = f.KVPoolDetail.Positions, f.KVPoolDetail.Guaranteed
 		return f
 	}
 	window := decoder.KVPoolDetail{Positions: 8192, Guaranteed: 4096, BlockRows: 64, WindowRows: 1216, Groups: []string{"sliding window"}, Precision: "f32", Bytes: 3_834_880}
@@ -624,23 +627,23 @@ func TestBanner_kvPoolLine(t *testing.T) {
 		name, want, plan string
 		f                bannerFacts
 	}{
-		{name: "one conversation can use all of it", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "on"},
+		{name: "one conversation can use all of it", f: bannerFacts{KVSlots: 4, CtxWindow: 58000, KVPoolDetail: pool, KVShareState: "on"},
 			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
 			plan: "KV plan: a 58000-position pool for 4 conversations; each is guaranteed 14500, and one can use up to 58000"},
-		{name: "one slot: nothing to share with", f: bannerFacts{kvSlots: 1, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "none", kvShareWhy: "one KV slot"},
+		{name: "one slot: nothing to share with", f: bannerFacts{KVSlots: 1, CtxWindow: 58000, KVPoolDetail: pool, KVShareState: "none", KVShareWhy: "one KV slot"},
 			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use all of it."},
-		{name: "resident reuse off", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "off", kvShareWhy: "GOINFER_NO_RESIDENT_REUSE"},
+		{name: "resident reuse off", f: bannerFacts{KVSlots: 4, CtxWindow: 58000, KVPoolDetail: pool, KVShareState: "off", KVShareWhy: "GOINFER_NO_RESIDENT_REUSE"},
 			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); no conversation takes another's KV rows (GOINFER_NO_RESIDENT_REUSE); one conversation can use all of it."},
-		{name: "a cap below the pool, sharing off, both groups", f: bannerFacts{kvSlots: 4, ctxWindow: 32768, kvShareState: "off", kvShareWhy: "--kv-share off",
-			kvPoolDetail: decoder.KVPoolDetail{Positions: 48128, Guaranteed: 12032, BlockRows: 64, WindowRows: 1216, Groups: []string{"full", "sliding window"}, Precision: "f32", Bytes: 1 << 30}},
+		{name: "a cap below the pool, sharing off, both groups", f: bannerFacts{KVSlots: 4, CtxWindow: 32768, KVShareState: "off", KVShareWhy: "--kv-share off",
+			KVPoolDetail: decoder.KVPoolDetail{Positions: 48128, Guaranteed: 12032, BlockRows: 64, WindowRows: 1216, Groups: []string{"full", "sliding window"}, Precision: "f32", Bytes: 1 << 30}},
 			want: "KV pool: 48,128 tokens in blocks of 64 (f32, 1.00 GiB; groups: full, sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them."},
-		{name: "a pure sliding-window pool: named, in MB, never all one conversation's, and the pool no smaller than a share", f: bannerFacts{kvSlots: 2, ctxWindow: 8192, kvShareState: "on", kvPoolDetail: window},
+		{name: "a pure sliding-window pool: named, in MB, never all one conversation's, and the pool no smaller than a share", f: bannerFacts{KVSlots: 2, CtxWindow: 8192, KVShareState: "on", KVPoolDetail: window},
 			want: "KV pool: 8,192 tokens in blocks of 64 (f32, 3.7 MiB; group: sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); a prompt can take another conversation's KV rows; one conversation can use up to 8,192 of them.",
 			plan: "KV plan: a 8192-position pool for 2 conversations; each is guaranteed 4096, and one can use up to 8192"},
-		{name: "no pool: no line", f: bannerFacts{kvSlots: 1, ctxWindow: 4096}},
+		{name: "no pool: no line", f: bannerFacts{KVSlots: 1, CtxWindow: 4096}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(facts(tc.f), config{kvSessions: tc.f.kvSlots})
+			lines := modelBannerFrom(facts(tc.f), config{kvSessions: tc.f.KVSlots})
 			if got := bannerLine(lines, "KV pool:"); got != tc.want {
 				t.Errorf("KV pool line\n got %q\nwant %q", got, tc.want)
 			}
@@ -673,7 +676,7 @@ func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
 		{"cuda resident and its cpu cache", "cuda-resident (int4)", []decoder.KVPrecisionReport{i8("resident"), i8("cpu")},
 			[]string{"· KV i8 (requested i8, lossy: " + kvI8Cost + ") · CPU KV i8 (requested i8, lossy)"}, nil},
 	} {
-		got := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, decodePath: tc.decodePath, kv: tc.kv},
+		got := bannerLine(modelBannerFrom(bannerFacts{HasTemplate: true, CtxWindow: 4096, MaxPositions: 4096, DecodePath: tc.decodePath, KV: tc.kv},
 			config{load: loadflags.Flags{KV: "i8"}}), "context:")
 		for _, w := range tc.want {
 			if !strings.Contains(got, w) {
@@ -692,9 +695,9 @@ func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
 // account, decoder.Model.ResidentKVPool), not one conversation's cap, and the room left for a prefill is the budget less all of it.
 // A one-slot resident and the CPU path keep the one-cap figure.
 func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
-	f := bannerFacts{hasTemplate: true, resident: true, kvSlots: 2, ctxWindow: 2048, maxPositions: 4096, fitKnown: true, fitCtx: 2048,
-		fitKVBytes: 792 << 20, fitWeightBytes: 2680 << 20, fitBudgetBytes: 7884 << 20,
-		kvPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
+	f := bannerFacts{HasTemplate: true, Resident: true, KVSlots: 2, CtxWindow: 2048, MaxPositions: 4096, FitKnown: true, FitCtx: 2048,
+		FitKVBytes: 792 << 20, FitWeightBytes: 2680 << 20, FitBudgetBytes: 7884 << 20,
+		KVPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
 	line := func(f bannerFacts) string { return bannerLine(modelBannerFrom(f, config{}), "fit:") }
 
 	want := fmt.Sprintf("fit: 2 KV slots at a 2048-token cap hold %s KV (weights %s, budget %s, %s left for a request's own prefill)",
@@ -703,7 +706,7 @@ func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
 		t.Errorf("two resident slots:\n got %q\nwant %q", got, want)
 	}
 	one := f
-	one.kvSlots, one.kvPoolDetail.Positions, one.kvPoolDetail.Bytes = 1, 2048, 792<<20
+	one.KVSlots, one.KVPoolDetail.Positions, one.KVPoolDetail.Bytes = 1, 2048, 792<<20
 	if got := line(one); !strings.HasPrefix(got, "fit: 2048-token cap needs 0.77 GiB KV (") {
 		t.Errorf("one resident slot: %q, want the cap's own figure", got)
 	}

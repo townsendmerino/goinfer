@@ -132,7 +132,7 @@ func TestImageFitsContext(t *testing.T) {
 		t.Fatalf("fixture context %d, this test assumes 512", ctx)
 	}
 	glmv := &glmVision{merge: 2}
-	lm := &loadedModel{model: m, vision: glmv}
+	lm := &loadedModel{modelIdentity: modelIdentity{model: m}, modelModalities: modelModalities{vision: glmv}}
 	glmv.pp, _ = multimodal.LoadGlmOcrPreprocessConfig(writeQwen35Dir(t, glmConf, glmPre))
 	if err := lm.imageFitsContext(100, [3]int{1, 20, 20}); err != nil {
 		t.Errorf("a 100-token image in a 512 context was refused: %v", err)
@@ -192,7 +192,7 @@ func TestGlmOcr_visionPromptIDs(t *testing.T) {
 	}
 	defer m.Close()
 	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
-	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, model: m, tmpl: tmpl}, modelModalities: modelModalities{vision: glmv}}
 	glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -308,7 +308,7 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 	}
 	defer m.Close()
 	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
-	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, model: m, tmpl: tmpl}, modelModalities: modelModalities{vision: glmv}}
 	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}

@@ -33,8 +33,8 @@ func turnWireServer(t *testing.T, reply string) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{gens: stores.NewGenerationRegistry(), jobs: jobs}
-	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	s := &server{serverStores: serverStores{gens: stores.NewGenerationRegistry(), jobs: jobs}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}

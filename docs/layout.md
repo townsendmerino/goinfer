@@ -62,6 +62,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `internal/runtime/specdecode/` | speculative decoding drafters, trace collection, adaptive depth, optimistic-forward overlap, and verification loops below `decoder` (rule `specdecode-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
+| `internal/app/serveapp/` | HTTP serving shell behind `server/` and `cmd/serve`, backed by leaf subpackages `adminsock`, `banner`, `carriedids`, `embedders`, `jobs`, `media`, `netguard`, `sessions`, `stores`, `streamframe`, and `towerfit` (enforced by `serveapp-*-leaf` rules in `internal/layout/imports.json`) |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
 | `constrain/` | constrained decoding: JSON Schema and grammar logit masks |
 | `tokenizer/` | the BPE tokenizers the models ship |
