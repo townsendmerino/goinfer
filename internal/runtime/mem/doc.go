@@ -7,7 +7,8 @@
 //
 // Contract. SolveHost is the resident load guard, SolveGIW the guard for a .giw load (file-backed weights), AdmitRequest the
 // per-request check, HostBudget, WeightCacheBudget and SnapshotHostBudget the budgets the banner, the expert pager and the
-// prefix-snapshot store size by. SolvePlacement
+// prefix-snapshot store size by, and PredictMoEWorkingSet and MoEWorkingSetRefusal the paged-MoE working-set prior and
+// slow-decode refusal. SolvePlacement
 // places a model on one backend's memory (context first, then an expert cache), and SolveMetalCtx picks an unpinned Metal
 // load's context with it. ResolveKV is the KV precision a backend's cache holds. In the guards (SolveHost, SolveGIW,
 // AdmitRequest) every unknown proceeds: a Machine whose reading is 0, or a load whose weights could not be priced, gets no
@@ -26,6 +27,7 @@
 //	a build leases what its plan prices, line by line  internal/memgate, with metal's TestMemGate_metal, backend/webgpu's TestMemGate_webgpu and memgate's TestMemGate_cpu
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (its rules called only from ruleCallers)
 //	the snapshot store's budget is priced              TestSolveHost_snapshotStore; decoder's TestFitGuard_snapshotBudgetCounts, decoder's TestDecideGIWFit_snapshotBudgetCounts
+//	the paged-MoE working-set prior and refusal are pure  TestMoEHitRatePrior, TestPredictedMoETokPerSec, TestMoEWorkingSetRefusal
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //
 // I5 holds MoE included because a placement's experts are reserved before the context grows (resident first, then the expert

@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 36798 -- raised for Inkling 2 (+62 over main): its architecture, config and fit terms, the walker case, cache windows and host adapter, and the fingerprint's omitzero tag; its builder is internal/runtime/wbuild and its visit internal/runtime/inkling2
+lines 36687 -- raised for Inkling 2 (+62 over main): its architecture, config and fit terms, the walker case, cache windows and host adapter, and the fingerprint's omitzero tag; its builder is internal/runtime/wbuild and its visit internal/runtime/inkling2
 model_methods 448 -- lowered by KV14 (unexported snapshot planning helpers moved to internal/runtime/kvsnap)
-model_knot_lines 12356 -- raised for Inkling 2 (+20 over main): the KVCache conv windows, the walker's opInkling2 case and its token state
+model_knot_lines 12324 -- raised for Inkling 2 (+20 over main): the KVCache conv windows, the walker's opInkling2 case and its token state
