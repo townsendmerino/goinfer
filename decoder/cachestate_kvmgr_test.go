@@ -55,7 +55,7 @@ func TestCacheStateGrid_managerCells(t *testing.T) {
 		m.residentCommitIDs(hist, nil, blocks, lora)
 		return m
 	}
-	img := []residentImageBlock{{start: 70, end: 90, hash: 0xA11CE}}
+	img := []residentImageBlock{{Start: 70, End: 90, Hash: 0xA11CE}}
 	claim := func(hash uint64) []residentImageClaim { return []residentImageClaim{{Start: 70, Len: 20, Hash: hash}} }
 
 	checks := map[lifecyclePath]map[stateHandling]func(t *testing.T, s cacheState){

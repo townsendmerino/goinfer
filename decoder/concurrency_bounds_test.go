@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/townsendmerino/goinfer/internal/runtime/paging"
+	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -24,10 +25,7 @@ import (
 )
 
 func testResidentBatcher(lo, hi int) *residentBatcher {
-	b := &residentBatcher{maxHolders: hi, slotBusy: make([]bool, hi)}
-	b.cond = sync.NewCond(&b.mu)
-	b.lo, b.hi, b.wait = lo, hi, time.Millisecond
-	return b
+	return residency.NewTestBatcher(lo, hi, time.Millisecond)
 }
 
 func TestBatcher_claimExclusiveBlockedWhileBusy(t *testing.T) {
@@ -38,18 +36,18 @@ func TestBatcher_claimExclusiveBlockedWhileBusy(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		b.exclusive(func() {
+		b.Exclusive(func() {
 			close(entered)
 			<-release
 		})
 	}()
 	<-entered
-	if b.claimExclusive(&resBusy) {
+	if b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive succeeded while batcher busy flag was held")
 	}
 	close(release)
 	<-done
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive failed after batcher became idle")
 	}
 }
@@ -59,58 +57,58 @@ func TestBatcher_claimExclusiveAndAdaptiveMutualExclusion(t *testing.T) {
 	var resBusy int32
 
 	// Whole-generation exclusive claim blocks adaptive entry.
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("initial claimExclusive failed")
 	}
-	if b.claimAdaptive(&resBusy) {
+	if b.ClaimAdaptive(&resBusy) {
 		t.Fatal("claimAdaptive succeeded while whole-generation resBusy was held")
 	}
 	atomic.StoreInt32(&resBusy, 0)
 
 	// Active adaptive generation blocks whole-generation exclusive claim, and can take round claims when alone.
-	if !b.claimAdaptive(&resBusy) {
+	if !b.ClaimAdaptive(&resBusy) {
 		t.Fatal("claimAdaptive failed when idle")
 	}
-	if b.claimExclusive(&resBusy) {
+	if b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive succeeded while an adaptive generation was active")
 	}
-	if !b.claimAdaptiveRound(&resBusy) {
+	if !b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound failed for a lone adaptive generation")
 	}
 	// A second adaptive generation may still register while the first holds its round claim,
 	// after which neither can claim a solo round so both join the batcher cleanly.
-	if !b.claimAdaptive(&resBusy) {
+	if !b.ClaimAdaptive(&resBusy) {
 		t.Fatal("second claimAdaptive failed while first held only a round claim")
 	}
 	atomic.StoreInt32(&resBusy, 0)
-	if b.claimAdaptiveRound(&resBusy) {
+	if b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound succeeded with two concurrent adaptive generations")
 	}
-	b.releaseAdaptive()
-	if !b.claimAdaptiveRound(&resBusy) {
+	b.ReleaseAdaptive()
+	if !b.ClaimAdaptiveRound(&resBusy) {
 		t.Fatal("claimAdaptiveRound failed after second adaptive generation released")
 	}
 	atomic.StoreInt32(&resBusy, 0)
-	b.releaseAdaptive()
+	b.ReleaseAdaptive()
 
-	if !b.claimExclusive(&resBusy) {
+	if !b.ClaimExclusive(&resBusy) {
 		t.Fatal("claimExclusive failed after all adaptive generations released")
 	}
 }
 
 func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
 	b := testResidentBatcher(2, 2)
-	b.step = func([]*batchReq) { panic("boom in StepBatch") }
-	b.enterDecode()
-	b.enterDecode()
-	defer b.exitDecode()
-	defer b.exitDecode()
-	q1 := &batchReq{solo: func() error { return nil }}
-	q2 := &batchReq{solo: func() error { return nil }}
+	b.Step = func([]*batchReq) { panic("boom in StepBatch") }
+	b.EnterDecode()
+	b.EnterDecode()
+	defer b.ExitDecode()
+	defer b.ExitDecode()
+	q1 := &batchReq{Solo: func() error { return nil }}
+	q2 := &batchReq{Solo: func() error { return nil }}
 	var wg sync.WaitGroup
 	var err1, err2 error
-	wg.Go(func() { err1 = b.forward(q1) })
-	wg.Go(func() { err2 = b.forward(q2) })
+	wg.Go(func() { err1 = b.Forward(q1) })
+	wg.Go(func() { err2 = b.Forward(q2) })
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -129,7 +127,7 @@ func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
 	}
 	// Batcher must still be usable afterwards (b.busy cleared).
 	ran := false
-	b.exclusive(func() { ran = true })
+	b.Exclusive(func() { ran = true })
 	if !ran {
 		t.Fatal("exclusive did not run after recovered step panic")
 	}
@@ -177,14 +175,8 @@ func (h *fakeSnapHandle) Release()        { h.released++ }
 func TestKVSnapStore_removeLockedIdempotent(t *testing.T) {
 	st := newKVSnapStore(1024)
 	h := &fakeSnapHandle{bytes: 128}
-	x := &kvSnap{h: h, ids: []int{1, 2, 3, 4}}
-	st.list = append(st.list, x)
-	st.used = 128
-
-	st.drop(x)
-	st.drop(x) // second drop after prior eviction must be a no-op
-	if st.used != 0 {
-		t.Fatalf("used = %d, want 0", st.used)
+	if used := st.TestAddAndDoubleDrop(h); used != 0 {
+		t.Fatalf("used = %d, want 0", used)
 	}
 	if h.released != 1 {
 		t.Fatalf("released = %d, want 1", h.released)

@@ -356,7 +356,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		// copy of another sequence's rows would not bring with it.
 		sc := opt.scope
 		sc.Off = true
-		reuseFrom = m.residentAcquireIn(prompt, nil, nil, nil, sc).reuse
+		reuseFrom = m.resHost().AcquireIn(prompt, nil, 0, nil, sc).Reuse
 		// A matching bound sequence is NOT enough on its own: a plain Generate or n-gram-speculative turn
 		// can commit one without ever touching THIS drafter's own context, so the token
 		// prefix can match while rd's state does not reflect it at all. Only trust reuseFrom
@@ -367,7 +367,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		// Forget FIRST — from here until the generation completes (or this call returns early)
 		// the resident KV is mid-write, so the next turn must cold-prefill rather than trust it
 		// (decoder/resident_reuse.go).
-		m.residentForgetIDs()
+		m.resHost().ForgetIDs()
 	}
 	if err := host.SetBatchedCapture(s.taps); err != nil {
 		return nil, 0, err
@@ -608,7 +608,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				}
 			}
 		}
-		m.residentCommitIDs(prompt, out[:keep], nil, nil) // BlockSpec never binds an adapter
+		m.resHost().CommitIDs(prompt, out[:keep], nil, 0) // BlockSpec never binds an adapter
 		m.resDrafterSynced = s
 	}
 	return out, rounds, nil

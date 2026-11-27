@@ -189,7 +189,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			// engaging) forgets unconditionally, as in GenerateVL's upload bridge.
 			defer func() {
 				if !committed {
-					m.residentForgetIDsIn(kvScopeOf(ctx))
+					m.resHost().ForgetIDsIn(kvScopeOf(ctx))
 				}
 				atomic.StoreInt32(&m.resBusy, 0)
 			}()
@@ -221,7 +221,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			// Commit the image block the way GenerateVL and GenerateQwenVL do, so residentReuseLen's prefix scan has something to
 			// key a later turn's reuse check on, instead of a plain id comparison that Gemma 4's content-independent soft-token ids
 			// can satisfy by coincidence.
-			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
+			m.resHost().CommitIDs(ids, generated, residentImageBlocksOf(spans), 0)
 			committed = true
 		}
 	})
@@ -266,8 +266,8 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		atomic.StoreInt32(&m.resBusy, 0)
 		return false
 	}
-	m.residentForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
-	m.residentWritesFromZero()
+	m.resHost().ForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
+	m.resHost().WritesFromZero()
 	logits, err := prefill(rows)
 	if err != nil {
 		atomic.StoreInt32(&m.resBusy, 0)
@@ -291,9 +291,9 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		return l, err
 	})
 	if g.err == nil {
-		m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
+		m.resHost().CommitIDs(ids, generated, residentImageBlocksOf(spans), 0)
 	} else {
-		m.residentForgetIDsIn(kvScopeOf(ctx))
+		m.resHost().ForgetIDsIn(kvScopeOf(ctx))
 	}
 	atomic.StoreInt32(&m.resBusy, 0)
 	return true

@@ -132,7 +132,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				// Forget first: from here until this generation completes, the resident KV is mid-write, so the next turn must
 				// cold-prefill rather than trust a half-written cache (resident_reuse.go). This path always seeds from position 0, so
 				// there is nothing to preserve by deferring it.
-				target.residentForgetIDs()
+				target.resHost().ForgetIDs()
 			} else {
 				resident = false
 			}
@@ -142,7 +142,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				defer atomic.StoreInt32(&draft.resBusy, 0)
 				// Same as the target's claim above, for the draft model: until this generation completes its resident KV is
 				// mid-write, so a later generation on the same draft Model must not trust a stale bound sequence.
-				draft.residentForgetIDs()
+				draft.resHost().ForgetIDs()
 			} else {
 				draftResident = false
 			}

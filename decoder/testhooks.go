@@ -206,7 +206,7 @@ func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
 }
 
 // ResidentCommitIDsForTest records ids as the bound slot's sequence, as the upload bridge does when its decode ends.
-func (m *Model) ResidentCommitIDsForTest(ids []int) { m.residentCommitIDs(ids, nil, nil, nil) }
+func (m *Model) ResidentCommitIDsForTest(ids []int) { m.resHost().CommitIDs(ids, nil, nil, 0) }
 
 // ResidentUploadPrefillForTest wraps residentUploadPrefill, the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV
 // bridge GenerateGemma4VL's resident branch uses after a CPU bidirectional prefill, so a real-hardware gate (cuda/) can upload
@@ -653,7 +653,7 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 		return nil, fmt.Errorf("decoder: the resident is claimed or absent")
 	}
 	defer func() {
-		m.residentForgetIDs()
+		m.resHost().ForgetIDs()
 		atomic.StoreInt32(&m.resBusy, 0)
 	}()
 	if err := m.residentUploadPrefill(cache); err != nil {
@@ -691,7 +691,7 @@ func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)
 // KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its
 // sequence: "fast", "exact" or "unknown" (nil when the slot holds nothing known).
 func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
-	a := m.kvSlots()
+	a := m.resHost().KVSlots()
 	slot = a.Bound()
 	s := a.Seq(slot)
 	if s == nil {
@@ -848,7 +848,7 @@ func TripBlockSpecGuardForTest() (restore func()) {
 }
 
 // ForgetResidentForTest clears the resident's record of committed ids, so the next generation prefills cold.
-func (m *Model) ForgetResidentForTest() { m.residentForgetIDs() }
+func (m *Model) ForgetResidentForTest() { m.resHost().ForgetIDs() }
 
 // GenerateFirstTokenForTest is BlockSpec.Generate that also returns when its first token was emitted, so a speed gate can time
 // decode apart from the prompt's prefill.

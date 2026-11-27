@@ -261,7 +261,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// TestSpecAdaptiveSwitch_offByDefaultUnaffected exercises the combination.
 		claimed := false
 		if target.batcher != nil {
-			claimed = target.batcher.claimExclusive(&target.resBusy)
+			claimed = target.batcher.ClaimExclusive(&target.resBusy)
 		} else {
 			claimed = atomic.CompareAndSwapInt32(&target.resBusy, 0, 1)
 		}
@@ -282,7 +282,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				if adaptive {
 					// Another generation may have bound a different slot since our last round; rebind
 					// ours before touching the resident (a no-op when we are already bound).
-					if err := target.residentBind(mc3Slot); err != nil {
+					if err := target.resHost().Bind(mc3Slot); err != nil {
 						return nil, err
 					}
 				}
@@ -300,19 +300,19 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		targetVerifyBatch := func(tok, base int) ([][]float32, error) {
 			emb := target.embedResident(tok)
 			var row []float32
-			q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: base, Emb: emb}, solo: func() error {
-				if err := target.residentBind(mc3Slot); err != nil {
+			q := &batchReq{Seq: ResidentBatchSeq{Slot: mc3Slot, Pos: base, Emb: emb}, Solo: func() error {
+				if err := target.resHost().Bind(mc3Slot); err != nil {
 					return err
 				}
 				var ferr error
 				row, ferr = target.resident.Forward(emb, base)
 				return ferr
 			}}
-			if err := target.batcher.forward(q); err != nil {
+			if err := target.batcher.Forward(q); err != nil {
 				return nil, err
 			}
-			if q.out != nil {
-				row = q.out.Logits
+			if q.Out != nil {
+				row = q.Out.Logits
 			}
 			return [][]float32{row}, nil
 		}
@@ -330,7 +330,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				var oneRow [1][]float32 // a one-row verify's batch, reused across rounds
 				idsVerify = func(seq []int, base int) ([]int, error) {
 					if adaptive {
-						if err := target.residentBind(mc3Slot); err != nil {
+						if err := target.resHost().Bind(mc3Slot); err != nil {
 							return nil, err
 						}
 					}
@@ -354,7 +354,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		targetTruncate := func(keep int) {
 			if resident {
 				if adaptive {
-					if err := target.residentBind(mc3Slot); err != nil {
+					if err := target.resHost().Bind(mc3Slot); err != nil {
 						// TruncateTo has no error return; a rebind failure here would surface as the next
 						// verify call's own error instead (it rebinds too), so this is not silently lost.
 						_ = err
@@ -395,8 +395,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
 				// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
 				// first would only lose reuse. generateInto uses the same order (resident_reuse.go).
-				reuseFrom := target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; binds the resident KV slot
-				target.residentForgetIDs()
+				reuseFrom := target.resHost().AcquireIn(prompt, nil, 0, nil, kvScopeOf(ctx)).Reuse // the n-gram target never binds an adapter; binds the resident KV slot
+				target.resHost().ForgetIDs()
 				if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 					g.err = err
 					return
@@ -436,9 +436,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// has returned); the batcher may be mid-run for other generations right now, so rebinding our
 				// slot needs the same momentary exclusive access their own prefills take, not a bare
 				// unsynchronized call. mc3Slot is only ever valid (>= 0) when adaptive.
-				target.batcher.exclusive(func() {
-					if err := target.residentBind(mc3Slot); err == nil {
-						target.residentCommitIDs(prompt, generated, nil, nil)
+				target.batcher.Exclusive(func() {
+					if err := target.resHost().Bind(mc3Slot); err == nil {
+						target.resHost().CommitIDs(prompt, generated, nil, 0)
 					}
 				})
 				if releaseAdaptive != nil {
@@ -446,7 +446,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				}
 			} else {
 				// The whole-generation exclusive claim means our slot is already the bound one; no residentBind needed.
-				target.residentCommitIDs(prompt, generated, nil, nil)
+				target.resHost().CommitIDs(prompt, generated, nil, 0)
 			}
 		}
 		var samp *Sampler
@@ -458,8 +458,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			commitResident: commitResident, isStop: func(tok int) bool { return target.isStop(tok, sp) },
 			ctxCap: target.ResidentContextCap, adaptive: adaptive,
 			neverYield: adaptive && target.knobs.get(knobSpecAdaptiveNeverYield) != "",
-			exclusive:  func(f func()) { target.batcher.exclusive(f) },
-			claim:      func() bool { return target.batcher.claimAdaptiveRound(&target.resBusy) },
+			exclusive:  func(f func()) { target.batcher.Exclusive(f) },
+			claim:      func() bool { return target.batcher.ClaimAdaptiveRound(&target.resBusy) },
 			release:    func() { atomic.StoreInt32(&target.resBusy, 0) },
 		}
 		ngramSpecLoop(ctx, tg, seedLogits, out, g, stats, drafter, prompt, maxTokens, K, samp, needHist, tr, ad, commit)
@@ -469,7 +469,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 // prefillNgramAdaptive claims an adaptive slot on the resident batcher and runs the prompt prefill.
 // On ok == true the caller must invoke release (idempotent) when done with the slot.
 func (target *Model) prefillNgramAdaptive(ctx context.Context, g *Generation, prompt []int) (seedLogits []float32, slot int, release func(), ok bool, err error) {
-	if !target.batcher.claimAdaptive(&target.resBusy) {
+	if !target.batcher.ClaimAdaptive(&target.resBusy) {
 		return nil, -1, nil, false, nil
 	}
 	var reuseFrom int
@@ -483,32 +483,32 @@ func (target *Model) prefillNgramAdaptive(ctx context.Context, g *Generation, pr
 	// Our own slot, reserved for the whole generation: busySlots keeps this pick from colliding with another generation's.
 	// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
 	// themselves, as generateInto's batched prefill does (model.go); neither is safe bare.
-	target.batcher.exclusive(func() {
-		acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
-		reuseFrom, slot = acq.reuse, acq.slot
+	target.batcher.Exclusive(func() {
+		acq := target.resHost().AcquireIn(prompt, nil, 0, target.batcher.BusySlots(), kvScopeOf(ctx))
+		reuseFrom, slot = acq.Reuse, acq.Slot
 		if slot >= 0 {
-			target.batcher.markSlot(slot, true)
-			target.residentForgetIDs()
+			target.batcher.MarkSlot(slot, true)
+			target.resHost().ForgetIDs()
 		}
 	})
 	if slot < 0 {
 		// No free slot: not resident for this call; fall back to the staged CPU path, as the claim above does.
-		target.batcher.releaseAdaptive()
+		target.batcher.ReleaseAdaptive()
 		return nil, -1, nil, false, nil
 	}
 	released := false
 	release = func() {
 		if !released {
 			released = true
-			target.batcher.markSlot(slot, false)
-			target.batcher.releaseAdaptive()
+			target.batcher.MarkSlot(slot, false)
+			target.batcher.ReleaseAdaptive()
 		}
 	}
-	target.batcher.prefillExclusive(func() {
+	target.batcher.PrefillExclusive(func() {
 		// Re-bind: the slot-acquisition section above has ended, so another generation could have rebound the resident to a
 		// different slot since (mc3Prefill, model.go, rebinds for the same reason). Skipping this made the prefill write
 		// another generation's slot, intermittently (TestSpecAdaptiveSwitch_matchesPlainDecode).
-		if err = target.residentBind(slot); err != nil {
+		if err = target.resHost().Bind(slot); err != nil {
 			return
 		}
 		seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false)

@@ -1,12 +1,12 @@
-package decoder
+package residency
 
 import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync/atomic"
 	"time"
 
+	"github.com/townsendmerino/goinfer/decoder/resident"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -42,11 +42,7 @@ import (
 // manager cannot know (the slot count, the window a slot still holds, the prefill floor) and binds slots. The manager's
 // sequence for the bound slot is the one record of what the resident KV holds there.
 
-// residentReuseDisabled is the escape hatch / A-B switch, same convention as
-// GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
-func (m *Model) residentReuseDisabled() bool { return m.knobs.get(knobNoResidentReuse) != "" }
-
-// residentImageBlock records one image block committed to the resident KV: its absolute position span within the sequence and
+// ImageBlock records one image block committed to the resident KV: its absolute position span within the sequence and
 // a content hash of the raw image bytes that produced it (docs/multimodal.md). Every position inside [start,end)
 // attended every other position in the block under a bidirectional mask during its CPU prefill, so a reuse match must
 // treat the block as one atomic unit: either the whole span verifies and is skipped together, or none of it is.
@@ -57,103 +53,88 @@ func (m *Model) residentReuseDisabled() bool { return m.knobs.get(knobNoResident
 // the per-position id comparison, which would treat two different images sharing a slot as identical, because image
 // placeholder ids are content-independent. Recording keeps the atomicity check in play; the guard ensures it never
 // emits a false positive.
-type residentImageBlock struct {
-	start, end int
-	hash       uint64
+type ImageBlock struct {
+	Start, End int
+	Hash       uint64
 }
 
-// residentImageClaim describes one image block in the PROMPT being checked for reuse.
+// ImageClaim describes one image block in the PROMPT being checked for reuse.
 // GenerateVL/GenerateQwenVL each produce exactly one claim per call (today's one-image-per-turn
 // shape), but residentReuseLen itself doesn't assume a count of one.
-type residentImageClaim struct {
+type ImageClaim struct {
 	Start, Len int
 	Hash       uint64
 }
 
 // kvSlots returns the model's KV manager, built on first use: a Model made by hand in a test has none until it asks.
-func (m *Model) kvSlots() *kvmgr.Slots {
-	if m.kv == nil {
-		m.kv = kvmgr.NewSlots(m.residentSlotCount())
+func (h *Host) KVSlots() *kvmgr.Slots {
+	if *h.KV == nil {
+		*h.KV = kvmgr.NewSlots(h.SlotCount())
 	}
-	return m.kv
-}
-
-// kvAdapterIDs hands out adapter identities; 0 is the base weights.
-var kvAdapterIDs atomic.Uint64
-
-// kvAdapterID is the identity of a loaded adapter runtime in a KV key: assigned once, on first use, never reused.
-func kvAdapterID(rt *loraRuntime) uint64 {
-	if rt == nil {
-		return 0
-	}
-	if id := rt.kvID.Load(); id != 0 {
-		return id
-	}
-	rt.kvID.CompareAndSwap(0, kvAdapterIDs.Add(1))
-	return rt.kvID.Load()
+	return *h.KV
 }
 
 // kvRoot is kvRootIn in the single local namespace.
-func (m *Model) kvRoot(lora *loraRuntime) kvmgr.Root { return m.kvRootIn(lora, "") }
+func (h *Host) KVRoot(adapterID uint64) kvmgr.Root { return h.KVRootIn(adapterID, "") }
 
 // kvRootIn is the root a sequence built under lora in namespace ns is keyed by: the model's numerics identity, the
 // sharing namespace (KVScope), the adapter and the KV precision.
-func (m *Model) kvRootIn(lora *loraRuntime, ns string) kvmgr.Root {
-	r := kvmgr.Root{Namespace: ns, Adapter: kvAdapterID(lora), Precision: m.ResidentKVPrecision()}
-	if m.w != nil && m.w.Arch != nil {
-		a := m.w.Arch
+func (h *Host) KVRootIn(adapterID uint64, ns string) kvmgr.Root {
+	r := kvmgr.Root{Namespace: ns, Adapter: adapterID, Precision: h.KVPrecision}
+	if h.Arch != nil {
+		a := h.Arch
 		r.Model = fmt.Sprintf("%s/%dx%d/%d", a.Name, a.NumLayers, a.HiddenDim, a.VocabSize)
 	}
-	if m.be != nil {
-		r.Model += "@" + m.be.Name()
+	if h.BackendName != "" {
+		r.Model += "@" + h.BackendName
 	}
 	return r
 }
 
-// fastPrefillMinRows is the fewest rows a pass needs to run a fast-prefill resident's fast kernels (ResidentCaps.HasFastPrefill): a pass of
+// FastPrefillMinRows is the fewest rows a pass needs to run a fast-prefill resident's fast kernels (ResidentCaps.HasFastPrefill): a pass of
 // 15 rows or fewer is exact whatever the prompt's length (docs/measurements/kv0-invariance-2026-10-13.md).
-const fastPrefillMinRows = 16
+const FastPrefillMinRows = 16
 
 // kvLeadClassMap is the class rule the short-prefix guard reads: a fast-prefill resident's (ResidentCaps.HasFastPrefill).
-func (m *Model) kvLeadClassMap() kvmgr.ClassMap {
-	if fast, ok, _, _ := m.residentFloors(); ok {
-		return fastClassMap(fast)
+func (h *Host) KVLeadClassMap() kvmgr.ClassMap {
+	if fast, ok, _, _ := h.residentFloors(); ok {
+		return FastClassMap(fast)
 	}
 	return kvmgr.ClassMap{}
 }
 
 // fastClassMap is the class rule of a resident with fast prefill kernels from floor prompt tokens.
-func fastClassMap(floor int) kvmgr.ClassMap {
-	return kvmgr.ClassMap{Floor: floor, MinRows: fastPrefillMinRows}
+func FastClassMap(floor int) kvmgr.ClassMap {
+	return kvmgr.ClassMap{Floor: floor, MinRows: FastPrefillMinRows}
 }
 
 // kvClassMap is the rule for which kernel class a prefill pass of this resident writes, recorded with each committed
 // row. A kernel-floor resident (ResidentCaps.HasKernelFloor) judges a pass on where it ends and has no row minimum. On a model with
 // sliding-window layers a fast pass that starts off a block boundary is recorded with no producer
 // (kvmgr.ClassMap.Windowed; measured on CUDA, applied to every backend with a fast class).
-func (m *Model) kvClassMap() kvmgr.ClassMap {
+func (h *Host) KVClassMap() kvmgr.ClassMap {
 	cm := kvmgr.ClassMap{}
-	if fast, hasFast, kernel, hasKernel := m.residentFloors(); hasFast {
-		cm = fastClassMap(fast)
+	if fast, hasFast, kernel, hasKernel := h.residentFloors(); hasFast {
+		cm = FastClassMap(fast)
 	} else if hasKernel {
 		cm = kvmgr.ClassMap{Floor: kernel, MinRows: 1}
 	}
-	cm.Windowed = m.w != nil && m.w.Arch != nil && m.w.Arch.SlidingWindow > 0
+	cm.Windowed = h.Arch != nil && h.Arch.SlidingWindow > 0
 	return cm
 }
 
-func kvSpansOfBlocks(blocks []residentImageBlock) []kvmgr.ImageSpan {
+func KVSpansOfBlocks(blocks []ImageBlock) []kvmgr.ImageSpan {
 	if len(blocks) == 0 {
 		return nil
 	}
 	out := make([]kvmgr.ImageSpan, len(blocks))
 	for i, b := range blocks {
-		out[i] = kvmgr.ImageSpan{Start: b.start, Len: b.end - b.start, Hash: b.hash}
+		out[i] = kvmgr.ImageSpan{Start: b.Start, Len: b.End - b.Start, Hash: b.Hash}
 	}
 	return out
 }
 
-func kvSpansOfClaims(claims []residentImageClaim) []kvmgr.ImageSpan {
+func KVSpansOfClaims(claims []ImageClaim) []kvmgr.ImageSpan {
 	if len(claims) == 0 {
 		return nil
 	}
@@ -166,17 +147,17 @@ func kvSpansOfClaims(claims []residentImageClaim) []kvmgr.ImageSpan {
 
 // kvSetNS records the sharing namespace of the request that took slot; the commit that ends it keys the slot's
 // sequence under it.
-func (m *Model) kvSetNS(slot int, ns string) {
-	for len(m.kvNS) <= slot {
-		m.kvNS = append(m.kvNS, "")
+func (h *Host) KVSetNS(slot int, ns string) {
+	for len((*h.KVNS)) <= slot {
+		(*h.KVNS) = append((*h.KVNS), "")
 	}
-	m.kvNS[slot] = ns
+	(*h.KVNS)[slot] = ns
 }
 
 // kvNSOf is the namespace recorded for slot ("" when none was).
-func (m *Model) kvNSOf(slot int) string {
-	if slot < len(m.kvNS) {
-		return m.kvNS[slot]
+func (h *Host) KVNSOf(slot int) string {
+	if slot < len((*h.KVNS)) {
+		return (*h.KVNS)[slot]
 	}
 	return ""
 }
@@ -185,57 +166,52 @@ func (m *Model) kvNSOf(slot int) string {
 // describes any image blocks in prompt (nil for plain text). The rules are kvmgr.Slots.Score's. lora is the adapter
 // bound for this generation (nil = base weights). A caller that takes this length without going through
 // residentAcquireSlot has not told the manager what it will write, so the commit that follows names no producer.
-func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	return m.residentReuseLenIn(prompt, imgs, lora, KVScope{})
+func (h *Host) ReuseLen(prompt []int, imgs []ImageClaim, adapterID uint64) int {
+	return h.ReuseLenIn(prompt, imgs, adapterID, KVScope{})
 }
 
 // residentReuseLenIn is residentReuseLen for a request under scope sc that takes the bound slot as it is: the caller
 // prefills into it and commits there.
-func (m *Model) residentReuseLenIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope) int {
-	n := m.boundReuseLen(prompt, imgs, lora, sc.Namespace, false)
-	m.kvSetNS(m.kvSlots().Bound(), sc.Namespace)
+func (h *Host) ReuseLenIn(prompt []int, imgs []ImageClaim, adapterID uint64, sc KVScope) int {
+	n := h.BoundReuseLen(prompt, imgs, adapterID, sc.Namespace, false)
+	h.KVSetNS(h.KVSlots().Bound(), sc.Namespace)
 	return n
 }
 
 // boundReuseLen scores the bound slot for prompt; ckpt lets a recurrent sequence's checkpoint score (kvmgr.Request.Checkpoint).
 // A live slot's announcement is a running generation's, so it is not marked unrecorded.
-func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string, ckpt bool) int {
-	a := m.kvSlots()
+func (h *Host) BoundReuseLen(prompt []int, imgs []ImageClaim, adapterID uint64, ns string, ckpt bool) int {
+	a := h.KVSlots()
 	if !a.Live(a.Bound()) {
 		a.Unrecorded(a.Bound())
 	}
-	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns, ckpt))
+	return h.ReuseFloorFor(h.ReuseLenOf(a.Bound(), prompt, imgs, adapterID, ns, ckpt))
 }
 
-// ErrKVPoolFull is what a resident whose KV slots share one block pool returns, wrapped, when a conversation past its guaranteed share of
-// the pool needs a block and none is free (docs/measurements/kv4-cuda-2026-10-21.md). A conversation within its share never
-// sees it. The generation it stops ends as at the context cap: finish_reason "length", with what it emitted.
-var ErrKVPoolFull = errors.New("decoder: resident KV pool is full")
-
 // ResidentKVPool reports the resident's KV pool (KVPool), the zero value when it has none.
-func (m *Model) ResidentKVPool() KVPoolDetail {
-	return m.resKV().KVPool()
+func (h *Host) KVPool() resident.KVPoolDetail {
+	return h.resKV().KVPool()
 }
 
 // KVShareState says whether a request on this resident can take KV rows another conversation computed, by residentShare's own tests:
 // "on"; "off" when the operator turned it off (--kv-share off, GOINFER_NO_RESIDENT_REUSE), with why; or "none" when this load cannot
 // share at all (off the resident path, one KV slot, a backend that copies no rows, recurrent state), with why.
-func (m *Model) KVShareState() (state, why string) {
+func (h *Host) KVShareState() (state, why string) {
 	switch {
-	case !m.ResidentActive():
+	case h.Resident == nil:
 		return "none", "not resident"
-	case m.residentSlotCount() <= 1:
+	case h.SlotCount() <= 1:
 		return "none", "one KV slot"
-	case m.hasRecurrentState():
+	case h.hasRecurrentState():
 		return "none", "recurrent state cannot be copied"
 	}
-	if !m.resKV().KVCopierAvailable() {
+	if !h.resKV().KVCopierAvailable() {
 		return "none", "this backend copies no KV rows"
 	}
 	switch {
-	case m.opts.KVShareOff:
+	case h.ShareOff:
 		return "off", "--kv-share off"
-	case m.residentReuseDisabled():
+	case h.ReuseDisabled:
 		return "off", "GOINFER_NO_RESIDENT_REUSE"
 	}
 	return "on", ""
@@ -248,50 +224,50 @@ func (d *KVCopyDecline) Error() string { return "kv copy declined: " + d.Reason 
 
 // residentPromote brings the bound slot's demoted rows back when this request reuses them. A failure leaves nothing of the slot's to
 // trust, so the request prefills cold.
-func (m *Model) residentPromote(acq *kvAcquired) {
-	kv := m.resKV()
-	if !kv.KVDemoterAvailable() || acq.slot < 0 || acq.reuse <= 0 {
+func (h *Host) Promote(acq *KVAcquired) {
+	kv := h.resKV()
+	if !kv.KVDemoterAvailable() || acq.Slot < 0 || acq.Reuse <= 0 {
 		return
 	}
-	blocks, err := kv.PromoteKV(acq.slot, acq.reuse)
+	blocks, err := kv.PromoteKV(acq.Slot, acq.Reuse)
 	if err != nil {
-		acq.declined, acq.reuse, acq.shared = err.Error(), 0, 0
-		m.residentForgetIDs()
+		acq.Declined, acq.Reuse, acq.Shared = err.Error(), 0, 0
+		h.ForgetIDs()
 		return
 	}
 	if blocks > 0 {
-		acq.promotedBlocks, acq.promotedRows = acq.promotedBlocks+blocks, acq.reuse
-		m.kvSnaps.promoted(blocks)
-		fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d; the request reuses %d rows\n", blocks, acq.slot, acq.reuse)
+		acq.PromotedBlocks, acq.PromotedRows = acq.PromotedBlocks+blocks, acq.Reuse
+		(*h.KVSnaps).Promoted(blocks)
+		fmt.Fprintf(h.stderr(), "kv host: promoted %d blocks into slot %d; the request reuses %d rows\n", blocks, acq.Slot, acq.Reuse)
 	}
 }
 
 // residentReuseFloor caps a reuse length of the BOUND slot at what its resident can serve (ReusableKV); a resident that keeps every
 // position is untouched. A cap only ever lengthens the prefill, never changes what it computes.
-func (m *Model) residentReuseFloor(reuse int) int {
+func (h *Host) ReuseFloorFor(reuse int) int {
 	if reuse <= 0 {
 		return reuse
 	}
-	return kvmgr.SafeReuseLen(reuse, reuse+1, m.kvSlots().State(m.kvSlots().Bound()).Floor(), m.resKV().ReusableKV)
+	return kvmgr.SafeReuseLen(reuse, reuse+1, h.KVSlots().State(h.KVSlots().Bound()).Floor(), h.resKV().ReusableKV)
 }
 
 // reuseLenOf is how many leading tokens of prompt the sequence in slot holds, the bound slot's or a parked one's,
 // before the resident's own floor.
-func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string, ckpt bool) int {
-	if m.residentReuseDisabled() {
+func (h *Host) ReuseLenOf(slot int, prompt []int, imgs []ImageClaim, adapterID uint64, ns string, ckpt bool) int {
+	if h.ReuseDisabled {
 		return 0
 	}
-	req := kvmgr.Request{Root: m.kvRootIn(lora, ns), Tokens: prompt, Images: kvSpansOfClaims(imgs), Checkpoint: ckpt}
-	return m.kvSlots().Score(slot, req, m.hasRecurrentState())
+	req := kvmgr.Request{Root: h.KVRootIn(adapterID, ns), Tokens: prompt, Images: KVSpansOfClaims(imgs), Checkpoint: ckpt}
+	return h.KVSlots().Score(slot, req, h.hasRecurrentState())
 }
 
 // residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
 // (KVSlotterAvailable), else 1. A family with recurrent state keeps one unless the resident's backend keeps that state
 // once per slot (recurrentSlotsOn): otherwise its state is mutated in place outside any slot, so two conversations could
 // not both keep theirs.
-func (m *Model) residentSlotCount() int {
-	kv := m.resKV()
-	if !kv.KVSlotterAvailable() || (m.hasRecurrentState() && (m.be == nil || !m.recurrentSlotsOn(m.be.Name()))) {
+func (h *Host) SlotCount() int {
+	kv := h.resKV()
+	if !kv.KVSlotterAvailable() || (h.hasRecurrentState() && !h.RecurrentSlotsOK) {
 		return 1
 	}
 	return max(1, kv.KVSlots())
@@ -299,154 +275,140 @@ func (m *Model) residentSlotCount() int {
 
 // residentAcquire binds the resident KV slot a generation over prompt will use and returns how many leading tokens of
 // prompt that slot already holds (residentReuseLen's contract, for the slot it bound). With one slot it is
-// residentReuseLen. With several it scores every slot and binds pickResidentSlot's choice. Call it where
+// residentReuseLen. With several it scores every slot and binds PickResidentSlot's choice. Call it where
 // residentReuseLen was called: under the resident claim, before the forget.
-func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	return m.residentAcquireIn(prompt, imgs, lora, nil, KVScope{}).reuse
+func (h *Host) Acquire(prompt []int, imgs []ImageClaim, adapterID uint64) int {
+	return h.AcquireIn(prompt, imgs, adapterID, nil, KVScope{}).Reuse
 }
 
 // residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (under the
 // batched decode, another running generation's). With every slot busy it binds nothing and returns slot -1. It tells the manager
 // what the generation will do in the slot (skip reuse rows, prefill the rest of prompt), which the commit reads.
-func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
-	acq := m.residentAcquireIn(prompt, imgs, lora, busy, KVScope{})
-	return acq.reuse, acq.slot
+func (h *Host) AcquireSlot(prompt []int, imgs []ImageClaim, adapterID uint64, busy []bool) (reuse, slot int) {
+	acq := h.AcquireIn(prompt, imgs, adapterID, busy, KVScope{})
+	return acq.Reuse, acq.Slot
 }
 
-// kvAcquired is what residentAcquireIn did: the rows the generation skips, the slot it bound (-1: none), and how many
+// KVAcquired is what residentAcquireIn did: the rows the generation skips, the slot it bound (-1: none), and how many
 // of the skipped rows were copied from another slot, from which, at what cost, or why a copy was declined.
-type kvAcquired struct {
-	reuse, slot int
-	shared, src int
-	copyDur     time.Duration
-	declined    string
-	// promotedBlocks is how many blocks came back from host memory, the bound slot's own or another slot's copy written into it (residentShare),
-	// and promotedRows how many rows the request reuses from the bound slot's (residentPromote).
-	promotedBlocks, promotedRows int
-	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
-	snapRows int
-	snapDur  time.Duration
-	snapFrom *kvSnap // the snapshot those rows came from
-	// markFired is set when the prefill reached its snapshot mark and offered a boundary snapshot (taken or declined): the end of the prompt takes none.
-	markFired bool
-	// msgRows is the row count of the message-boundary snapshot this request's prefill offered (0: none), which Keep's snapshot does not replace.
-	msgRows int
-	// preambleRows is the row count of the preamble snapshot this request's prefill offered (0: none).
-	preambleRows int
-	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
-	// (Generation.PrefillSlot and PrefillMatch).
-	slotLen, match int
-	// ckptRestored is the position a recurrent checkpoint was restored at (0: none), ckptDur the copy's time, and ckptDeclined why a
-	// checkpoint hit fell back to a cold prefill (residentCheckpointRestore).
-	ckptRestored int
-	ckptDur      time.Duration
-	ckptDeclined string
+type KVAcquired struct {
+	Reuse, Slot                  int
+	Shared, Src                  int
+	CopyDur                      time.Duration
+	Declined                     string
+	PromotedBlocks, PromotedRows int
+	SnapRows                     int
+	SnapDur                      time.Duration
+	snapFrom                     *kvSnap
+	MarkFired                    bool
+	MsgRows                      int
+	PreambleRows                 int
+	SlotLen, Match               int
+	CkptRestored                 int
+	CkptDur                      time.Duration
+	CkptDeclined                 string
 }
 
 // residentAcquireIn is residentAcquireSlot for a request under scope sc. When another slot's published blocks hold
 // more of the prompt than the bound slot does, it copies them into the bound slot (KVCopierAvailable) and skips them.
-func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
-	acq := m.residentAcquireSlotAll(prompt, imgs, lora, busy, sc)
+func (h *Host) AcquireIn(prompt []int, imgs []ImageClaim, adapterID uint64, busy []bool, sc KVScope) KVAcquired {
+	acq := h.AcquireSlotAll(prompt, imgs, adapterID, busy, sc)
 	if imgs == nil {
-		m.residentRestoreSnapshot(prompt, lora, sc, &acq)
+		h.RestoreSnapshot(prompt, adapterID, sc, &acq)
 	}
 	// the slot is bound now, so its window is the one to ask (a parked slot's score was not floored when it was counted)
-	acq.reuse = m.residentReuseFloor(m.capInPlaceReuse(m.declineShortLeadReuse(prompt, acq.reuse), prompt, acq))
-	if acq.reuse < acq.shared { // the bound slot's window cannot serve the copied rows: none of them count
-		acq.shared = 0
+	acq.Reuse = h.ReuseFloorFor(h.CapInPlaceReuse(h.DeclineShortLeadReuse(prompt, acq.Reuse), prompt, acq))
+	if acq.Reuse < acq.Shared { // the bound slot's window cannot serve the copied rows: none of them count
+		acq.Shared = 0
 	}
-	m.residentPromote(&acq)
-	if acq.slot >= 0 {
-		a := m.kvSlots()
+	h.Promote(&acq)
+	if acq.Slot >= 0 {
+		a := h.KVSlots()
 		if sq := a.Seq(a.Bound()); sq != nil {
-			acq.slotLen, acq.match = sq.Len(), kvmgr.CommonPrefixLen(sq.Tokens(), prompt)
+			acq.SlotLen, acq.Match = sq.Len(), kvmgr.CommonPrefixLen(sq.Tokens(), prompt)
 		}
-		if sc.checkpoint {
-			m.residentCheckpointRestore(prompt, &acq) // before the manager records what the request skips
+		if CheckpointEnabled(sc) {
+			h.CheckpointRestore(prompt, &acq) // before the manager records what the request skips
 		}
-		a.Acquired(a.Bound(), acq.reuse, prompt)
-		m.kvSetNS(a.Bound(), sc.Namespace)
+		a.Acquired(a.Bound(), acq.Reuse, prompt)
+		h.KVSetNS(a.Bound(), sc.Namespace)
 	}
 	return acq
 }
 
-// minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels
+// MinLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels
 // (ResidentCaps.HasFastPrefill), for a prompt that will run them (kvmgr.MinLeadReuse). Not an Options field: it is a
 // correctness margin, not an operator choice.
-const minLeadReuseFast = kvmgr.MinLeadReuse
+const MinLeadReuseFast = kvmgr.MinLeadReuse
 
 // declineShortLeadReuse zeroes a short reuse when the resident prefills this prompt on non-exact kernels, so the prompt is prefilled whole by one kernel class
 // (kvmgr.ClassMap.DeclineShortLead). Every caller forgets the slot's ids and prefills from the returned index, so 0 simply means a cold prefill into the slot it
 // already bound.
-func (m *Model) declineShortLeadReuse(prompt []int, reuse int) int {
-	return m.kvLeadClassMap().DeclineShortLead(len(prompt), reuse)
+func (h *Host) DeclineShortLeadReuse(prompt []int, reuse int) int {
+	return h.KVLeadClassMap().DeclineShortLead(len(prompt), reuse)
 }
 
 // capInPlaceReuse caps a reuse of the bound slot's own rows so the prompt's remaining pass runs the kernel class its cold
 // prefill runs (kvmgr.ClassMap.CapInPlace). Copied and restored rows were capped where they were chosen and pass through. A
 // recurrent model's state cannot be rewound to an earlier row, so its reuse is never capped.
-func (m *Model) capInPlaceReuse(reuse int, prompt []int, acq kvAcquired) int {
-	if kvInPlaceCapOff || acq.shared > 0 || acq.snapRows > 0 || acq.slot < 0 || m.hasRecurrentState() {
+func (h *Host) CapInPlaceReuse(reuse int, prompt []int, acq KVAcquired) int {
+	if h.InPlaceCapOff || acq.Shared > 0 || acq.SnapRows > 0 || acq.Slot < 0 || h.hasRecurrentState() {
 		return reuse
 	}
-	a := m.kvSlots()
+	a := h.KVSlots()
 	sq := a.Seq(a.Bound())
 	if sq == nil {
 		return reuse
 	}
-	return m.kvClassMap().CapInPlace(sq.Classes(), sq.Images(), len(prompt), reuse)
+	return h.KVClassMap().CapInPlace(sq.Classes(), sq.Images(), len(prompt), reuse)
 }
 
-// kvInPlaceCapOff switches capInPlaceReuse off. Set only by in-package tests that compare the slot choice with the
-// per-slot bookkeeping that predates internal/kvmgr, which knew no kernel classes.
-var kvInPlaceCapOff bool
-
-func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
-	n := m.residentSlotCount()
-	a := m.kvSlots()
+func (h *Host) AcquireSlotAll(prompt []int, imgs []ImageClaim, adapterID uint64, busy []bool, sc KVScope) KVAcquired {
+	n := h.SlotCount()
+	a := h.KVSlots()
 	a.Resize(n)
 	if n <= 1 {
-		return kvAcquired{reuse: m.boundReuseLen(prompt, imgs, lora, sc.Namespace, sc.checkpoint), src: -1}
+		return KVAcquired{Reuse: h.BoundReuseLen(prompt, imgs, adapterID, sc.Namespace, CheckpointEnabled(sc)), Src: -1}
 	}
 	scores, lens, firsts, uses := make([]int, n), make([]int, n), make([]int, n), make([]uint64, n)
 	bound := a.Bound()
 	if bound >= len(busy) || !busy[bound] { // a busy slot is never picked, and its record is another generation's
-		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace, sc.checkpoint && m.checkpointHeld(bound)) // adopts the bound record first, and asks its window
+		scores[bound] = h.BoundReuseLen(prompt, imgs, adapterID, sc.Namespace, CheckpointEnabled(sc) && h.CheckpointHeld(bound)) // adopts the bound record first, and asks its window
 	}
 	for i := range n {
 		if i != bound {
-			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace, sc.checkpoint && m.checkpointHeld(i))
+			scores[i] = h.ReuseLenOf(i, prompt, imgs, adapterID, sc.Namespace, CheckpointEnabled(sc) && h.CheckpointHeld(i))
 		}
 		lens[i], uses[i] = a.Len(i), a.Use(i)
 		if a.KeepsFirst(i, prompt) {
 			firsts[i] = a.FirstPrompt(i)
 		}
 	}
-	if kvAllowanceOverride > 0 {
+	if h.AllowanceOverride > 0 {
 		firsts = nil
 	}
-	pick := kvmgr.PickSlotFor(scores, lens, firsts, uses, busy, m.kvRollbackAllowance())
+	pick := kvmgr.PickSlotFor(scores, lens, firsts, uses, busy, h.KVRollbackAllowance())
 	if pick < 0 {
-		return kvAcquired{slot: -1, src: -1}
+		return KVAcquired{Slot: -1, Src: -1}
 	}
-	if err := m.residentBind(pick); err != nil {
+	if err := h.Bind(pick); err != nil {
 		// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it. Slot -1: a batched caller
 		// must not decode on a binding it did not choose (it may be another generation's slot); residentAcquire's
 		// callers carry on cold on the previous binding, as they always have.
-		m.residentForgetIDs()
-		return kvAcquired{slot: -1, src: -1}
+		h.ForgetIDs()
+		return KVAcquired{Slot: -1, Src: -1}
 	}
 	a.Touch(pick)
-	acq := kvAcquired{reuse: scores[pick], slot: pick, src: -1}
-	m.residentShare(prompt, imgs, lora, sc, &acq)
+	acq := KVAcquired{Reuse: scores[pick], Slot: pick, Src: -1}
+	h.Share(prompt, imgs, adapterID, sc, &acq)
 	return acq
 }
 
-// kvChooseDonor picks the slot to copy from: of the slots other than dst whose capped hit beats reuse, the longest hit
+// KVChooseDonor picks the slot to copy from: of the slots other than dst whose capped hit beats reuse, the longest hit
 // (the lower slot on a tie) that the resident says still holds the rows (ReusableKVSlotAvailable; a resident without it
 // holds every row it has). src is -1 when none beats reuse, and when every candidate's window has moved past its rows,
 // in which case declined says so.
-func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, reuse int) (src, hit int, declined string) {
+func KVChooseDonor(res resident.Forward, hits []int, cm kvmgr.ClassMap, n, dst, reuse int) (src, hit int, declined string) {
 	type cand struct{ slot, hit int }
 	var cands []cand
 	for s, h := range hits {
@@ -455,7 +417,7 @@ func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, r
 		}
 	}
 	slices.SortStableFunc(cands, func(a, b cand) int { return b.hit - a.hit })
-	kv := SubsystemsOf(res).KV
+	kv := ResolveSubsystems(res).KV
 	windowed := kv.ReusableKVSlotAvailable()
 	for _, c := range cands {
 		if !windowed || kv.ReusableKVSlot(c.slot, c.hit) >= c.hit {
@@ -468,10 +430,10 @@ func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, r
 	return -1, 0, ""
 }
 
-// kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
+// KVOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
 // windows still hold. It changes nothing; it is the diagnostic of how much of a decline is the choice of donor
 // (docs/measurements/kv2-cuda-2026-10-15.md, §6).
-func kvOtherDonors(rk ResidentKVSubsystem, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
+func KVOtherDonors(rk resident.KVSubsystem, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
 	k := 0
 	for s, h := range hits {
 		if s == src || s == dst {
@@ -484,20 +446,20 @@ func kvOtherDonors(rk ResidentKVSubsystem, hits []int, cm kvmgr.ClassMap, n, src
 	return fmt.Sprintf("; other slots that could serve: %d", k)
 }
 
-// residentShare copies into the bound slot acq.slot the longest run of prompt another slot's published blocks hold
-// (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.reuse, the rows the slot itself
+// residentShare copies into the bound slot acq.Slot the longest run of prompt another slot's published blocks hold
+// (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.Reuse, the rows the slot itself
 // holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without KVCopierAvailable, or when the source's
-// window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
-func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
-	kv := m.resKV()
-	if !kv.KVCopierAvailable() || sc.Off || m.opts.KVShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+// window no longer holds the rows. A decline or an error leaves acq.Reuse at what the slot can still trust.
+func (h *Host) Share(prompt []int, imgs []ImageClaim, adapterID uint64, sc KVScope, acq *KVAcquired) {
+	kv := h.resKV()
+	if !kv.KVCopierAvailable() || sc.Off || h.ShareOff || h.ReuseDisabled || h.hasRecurrentState() {
 		return
 	}
-	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()
-	hits := a.Hits(kvmgr.Request{Root: m.kvRootIn(lora, sc.Namespace), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, cm.ColdClasses(len(prompt)))
-	src, hit, declined := kvChooseDonor(m.resident, hits, cm, len(prompt), dst, acq.reuse)
+	a, dst, cm := h.KVSlots(), acq.Slot, h.KVClassMap()
+	hits := a.Hits(kvmgr.Request{Root: h.KVRootIn(adapterID, sc.Namespace), Tokens: prompt, Images: KVSpansOfClaims(imgs)}, cm.ColdClasses(len(prompt)))
+	src, hit, declined := KVChooseDonor(h.Resident, hits, cm, len(prompt), dst, acq.Reuse)
 	if src < 0 {
-		acq.declined = declined
+		acq.Declined = declined
 		return
 	}
 	start := min(hits[dst], hit) // dst already holds these as the same published blocks
@@ -507,70 +469,66 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	if kv.KVDemoterAvailable() {
 		var blocks int
 		if blocks, held, err = kv.CopyDemotedKV(src, dst, start, hit); blocks > 0 {
-			acq.promotedBlocks += blocks
-			m.kvSnaps.promoted(blocks)
-			fmt.Fprintf(stderrKV, "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)
+			acq.PromotedBlocks += blocks
+			(*h.KVSnaps).Promoted(blocks)
+			fmt.Fprintf(h.stderr(), "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)
 		}
 	}
 	if !held && err == nil {
 		err = kv.CopyKV(src, dst, start, hit)
 	}
-	acq.copyDur = time.Since(t0)
+	acq.CopyDur = time.Since(t0)
 	if err != nil {
 		if d, ok := errors.AsType[*KVCopyDecline](err); ok {
-			acq.declined = d.Reason
+			acq.Declined = d.Reason
 			if kv.ReusableKVSlotAvailable() {
-				acq.declined += kvOtherDonors(kv, hits, cm, len(prompt), src, dst, acq.reuse)
+				acq.Declined += KVOtherDonors(kv, hits, cm, len(prompt), src, dst, acq.Reuse)
 			}
 		} else {
-			acq.declined = err.Error()
-			acq.reuse = min(acq.reuse, start)
+			acq.Declined = err.Error()
+			acq.Reuse = min(acq.Reuse, start)
 		}
 		return
 	}
 	a.Copied(src, dst, start, hit)
-	acq.reuse, acq.shared, acq.src = hit, hit, src
+	acq.Reuse, acq.Shared, acq.Src = hit, hit, src
 }
 
 // residentBind binds resident KV slot `slot`, whose sequence in the manager becomes the bound record. A no-op when it is
 // already bound. Switching slots also clears resDrafterSynced: a block drafter's own context
 // follows ONE conversation, the one the previous slot was serving.
-func (m *Model) residentBind(slot int) error {
-	a := m.kvSlots()
-	if slot == a.Bound() || m.residentSlotCount() <= 1 {
+func (h *Host) Bind(slot int) error {
+	a := h.KVSlots()
+	if slot == a.Bound() || h.SlotCount() <= 1 {
 		return nil
 	}
-	if err := m.resKV().UseKVSlot(slot); err != nil {
+	if err := h.resKV().UseKVSlot(slot); err != nil {
 		return err
 	}
-	a.Resize(m.residentSlotCount())
+	a.Resize(h.SlotCount())
 	a.SetBound(slot)
-	m.resDrafterSynced = nil
+	if h.DrafterSynced != nil {
+		*h.DrafterSynced = nil
+	}
 	return nil
 }
 
-// kvAllowanceOverride, when positive, replaces kvRollbackAllowance and leaves the slot choice no first-prompt lengths,
-// so an own rollback is held to the keep-at-least-as-much-as-it-overwrites rule like any request. Set only by in-package
-// tests: a large value switches both off, so a test can compare the rest of the slot choice with the per-slot
-// bookkeeping that predates internal/kvmgr.
-var kvAllowanceOverride int
-
 // kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
 // block, or for a model with sliding-window layers the window group's rollback floor (the task doc's §5.12).
-func (m *Model) kvRollbackAllowance() int {
-	if kvAllowanceOverride > 0 {
-		return kvAllowanceOverride
+func (h *Host) KVRollbackAllowance() int {
+	if h.AllowanceOverride > 0 {
+		return h.AllowanceOverride
 	}
-	if m.w != nil && m.w.Arch != nil && m.w.Arch.SlidingWindow > 0 {
+	if h.Arch != nil && h.Arch.SlidingWindow > 0 {
 		return kvmgr.RollbackFloor
 	}
 	return kvmgr.BlockRows
 }
 
-// pickResidentSlot chooses a slot for a prompt from each slot's reuse score, its committed length and its last-use
+// PickResidentSlot chooses a slot for a prompt from each slot's reuse score, its committed length and its last-use
 // tick (kvmgr.PickSlot): a continuation keeps its slot; a shared lead takes an empty slot, else the least recently
 // used. busy (nil: none) marks slots another running generation holds (the batched decode); -1 when all are busy.
-func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
+func PickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 	return kvmgr.PickSlot(scores, lens, uses, busy)
 }
 
@@ -580,11 +538,11 @@ func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 //
 // Called only on the fully completed path, which is what lets the manager publish the sequence's full blocks here.
 // Everything else leaves the bound slot forgotten.
-func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentImageBlock, lora *loraRuntime) {
+func (h *Host) CommitIDs(prompt, generated []int, newBlocks []ImageBlock, adapterID uint64) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
 	ids = append(ids, generated...)
-	a := m.kvSlots()
+	a := h.KVSlots()
 	var images []kvmgr.ImageSpan
 	if s := a.Seq(a.Bound()); s != nil {
 		images = s.Images()
@@ -592,24 +550,24 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentI
 	if len(newBlocks) > 0 {
 		var kept []kvmgr.ImageSpan
 		for _, sp := range images {
-			if sp.Start+sp.Len <= newBlocks[0].start { // still valid: append-only, earlier positions unchanged
+			if sp.Start+sp.Len <= newBlocks[0].Start { // still valid: append-only, earlier positions unchanged
 				kept = append(kept, sp)
 			}
 		}
-		images = append(kept, kvSpansOfBlocks(newBlocks)...)
+		images = append(kept, KVSpansOfBlocks(newBlocks)...)
 	}
-	a.Commit(a.Bound(), m.kvRootIn(lora, m.kvNSOf(a.Bound())), ids, images, len(prompt), m.kvClassMap())
-	if m.resCkptPrompt != nil && slices.Equal(m.resCkptPrompt, prompt) {
+	a.Commit(a.Bound(), h.KVRootIn(adapterID, h.KVNSOf(a.Bound())), ids, images, len(prompt), h.KVClassMap())
+	if (*h.CkptPrompt) != nil && slices.Equal((*h.CkptPrompt), prompt) {
 		a.SetCheckpoint(a.Bound(), len(prompt)) // this generation saved the state at the end of this prompt
 	}
-	m.resCkptPrompt = nil
+	(*h.CkptPrompt) = nil
 }
 
 // residentPublishPrompt publishes the full blocks of prompt, which the generation in slot has just finished
 // prefilling, so a request arriving while it decodes can copy them (kvmgr.Slots.Prefilled). Only a generation that
 // shares the resident with others while it runs (the batched decode) needs it; the slot stays live until its commit or forget.
-func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime) {
-	m.kvSlots().Prefilled(slot, m.kvRootIn(lora, m.kvNSOf(slot)), prompt, nil, m.kvClassMap())
+func (h *Host) PublishPrompt(slot int, prompt []int, adapterID uint64) {
+	h.KVSlots().Prefilled(slot, h.KVRootIn(adapterID, h.KVNSOf(slot)), prompt, nil, h.KVClassMap())
 }
 
 // residentForgetIDs marks the resident KV's contents unknown. Anything that writes the cache
@@ -618,11 +576,13 @@ func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime)
 // merely slow. The sequence goes with its image blocks, always — an image block's identity is
 // meaningless once the token sequence backing its position is no longer trusted — and its
 // blocks leave the manager's index with it.
-func (m *Model) residentForgetIDs() {
-	m.resDrafterSynced = nil // any resident write invalidates a block drafter's own reuse too
-	m.resCkptPrompt = nil
-	if m.kv != nil {
-		m.kv.Forget(m.kv.Bound())
+func (h *Host) ForgetIDs() {
+	if h.DrafterSynced != nil {
+		*h.DrafterSynced = nil
+	} // any resident write invalidates a block drafter's own reuse too
+	(*h.CkptPrompt) = nil
+	if *h.KV != nil {
+		(*h.KV).Forget((*h.KV).Bound())
 	}
 }
 
@@ -631,35 +591,32 @@ func (m *Model) residentForgetIDs() {
 // record, so a chat parked in another slot keeps its rows for its next turn. With one slot the chat's rows are lost to the
 // call; its next turn prefills cold. A failed bind leaves the previous binding, forgotten. Call it under the exclusive
 // resident claim (tryClaimResident).
-func (m *Model) residentForgetScratch() {
-	if n := m.residentSlotCount(); n > 1 {
-		a := m.kvSlots()
+func (h *Host) ForgetScratch() {
+	if n := h.SlotCount(); n > 1 {
+		a := h.KVSlots()
 		a.Resize(n)
 		lens, uses := make([]int, n), make([]uint64, n)
 		for i := range n {
 			lens[i], uses[i] = a.Len(i), a.Use(i)
 		}
-		if pick := pickResidentSlot(make([]int, n), lens, uses, nil); pick >= 0 && !scratchSlotPlantForTest {
-			_ = m.residentBind(pick) // on an error the resident keeps its binding, which the forget below makes cold
+		if pick := PickResidentSlot(make([]int, n), lens, uses, nil); pick >= 0 && !h.ScratchSlotPlant {
+			_ = h.Bind(pick) // on an error the resident keeps its binding, which the forget below makes cold
 		}
 	}
-	m.residentForgetIDs()
+	h.ForgetIDs()
 }
-
-// scratchSlotPlantForTest makes residentForgetScratch write the bound slot, for the test that shows its gate red.
-var scratchSlotPlantForTest bool
 
 // residentWritesFromZero says the bound slot's next write starts at position 0, so no rows stay missing below a wrapped upload's floor
 // (kvmgr.Slots.SetFloor). Its caller has forgotten the slot's record, so a write that fails part way grants nothing. A path that
 // writes from 0 and does not say so only keeps a floor it could have dropped: the slot re-prefills a prefix it could have reused.
-func (m *Model) residentWritesFromZero() {
-	a := m.kvSlots()
+func (h *Host) WritesFromZero() {
+	a := h.KVSlots()
 	a.SetFloor(a.Bound(), 0)
 }
 
 // residentForgetIDsIn is residentForgetIDs for a path that is about to write the bound slot for a request under scope
 // sc, without residentAcquireIn: the commit that follows keys the slot under sc's namespace.
-func (m *Model) residentForgetIDsIn(sc KVScope) {
-	m.residentForgetIDs()
-	m.kvSetNS(m.kvSlots().Bound(), sc.Namespace)
+func (h *Host) ForgetIDsIn(sc KVScope) {
+	h.ForgetIDs()
+	h.KVSetNS(h.KVSlots().Bound(), sc.Namespace)
 }
