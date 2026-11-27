@@ -36,6 +36,9 @@ type ggufBuild struct {
 	h                       Hooks
 }
 
+// release drops a converted tensor's mapped pages (releaseTensor); a family builder defers it beside each direct read.
+func (b *ggufBuild) release(name string) { releaseTensor(b.g, name) }
+
 // loadLayers is the loader every family without its own branch takes: the shared per-layer tensor set (attention, MLA or the
 // standard q/k/v/o; the dense or MoE feed-forward), loaded in parallel and streamed to the sink when one is set.
 func (b *ggufBuild) loadLayers() (*darch.Weights, error) {

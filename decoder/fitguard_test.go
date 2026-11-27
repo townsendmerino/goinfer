@@ -728,8 +728,8 @@ func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
 	}
 }
 
-// TestFitGuard_pricesTheSourceInFlight holds the source term to what a releasing build holds at once: the smaller of the
-// file and one largest tensor per layer worker, never more than the file.
+// TestFitGuard_pricesTheSourceInFlight holds the source term to what a releasing build holds at once: on Linux the smaller
+// of the file and one largest tensor per layer worker, elsewhere (where releasing is only a hint) the whole file.
 func TestFitGuard_pricesTheSourceInFlight(t *testing.T) {
 	const gguf = "../testdata/gemma2-hd-tiny.gguf"
 	g, err := OpenGGUFMmap(gguf)
@@ -755,7 +755,11 @@ func TestFitGuard_pricesTheSourceInFlight(t *testing.T) {
 		t.Fatalf("one worker holds %d (largest tensor %d of a %d-byte file): the fixture cannot tell the bound from the file", got, largest, file)
 	}
 	probe := fitCheckFor(gguf, "int8", quantInt8, Options{})
-	if want := min(file, ggufInFlightSourceBytes(g, runtime.GOMAXPROCS(0))); probe.srcFileBytes != want {
+	want := file
+	if runtime.GOOS == "linux" {
+		want = min(file, ggufInFlightSourceBytes(g, runtime.GOMAXPROCS(0)))
+	}
+	if probe.srcFileBytes != want {
 		t.Fatalf("fitCheckFor priced the source at %d, want %d", probe.srcFileBytes, want)
 	}
 }

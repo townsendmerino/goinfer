@@ -21,6 +21,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *darch.LayerWeights, ar
 	pa := arch.MLA
 	qkHeadDim := pa.QKHeadDim()
 	f32 := func(name string, out, in int) ([]float32, error) {
+		defer releaseTensor(g, name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -31,6 +32,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *darch.LayerWeights, ar
 		return data, nil
 	}
 	flat := func(name string, n int) ([]float32, error) {
+		defer releaseTensor(g, name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -154,9 +156,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	w := &darch.Weights{Cfg: *cfg, Arch: arch, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	skipRow4 = skipRow4 || !RepackForDecode(sink) // every closure and family branch below takes it from here
 	native56 := q4kNative56(&h, needCanonical, sink)
-	// release drops a converted tensor's pages from the mapping (GGUFFile.ReleaseTensors), so the build does not hold the
-	// whole source resident beside the weights built from it. Advisory: a later read re-faults the same bytes.
-	release := func(name string) { _ = g.ReleaseTensors(name) } //nolint:errcheck // advisory; every name here was just read
+	release := func(name string) { releaseTensor(g, name) }
 
 	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
@@ -247,6 +247,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 			*dst = m
 			return err
 		}
+		defer release(name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return err
@@ -459,6 +460,15 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	}
 
 	return b.loadLayers()
+}
+
+// releaseTensor drops a converted tensor's pages, and its `.scale` companion's, from the mapping (GGUFFile.ReleaseTensors),
+// so a build does not hold the whole source resident beside the weights built from it. Every builder that reads a tensor
+// releases it (TestWbuild_everyTensorReadReleases); the fit guard prices the source on that basis (ggufInFlightSourceBytes).
+// Advisory: a later read re-faults the same bytes.
+func releaseTensor(g *embed.GGUFFile, name string) {
+	_ = g.ReleaseTensors(name)            //nolint:errcheck // advisory; the name was just read
+	_ = g.ReleaseTensors(name + ".scale") //nolint:errcheck // absent on most tensors
 }
 
 // GGUFScaledRowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale` tensor is present (llama.cpp

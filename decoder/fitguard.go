@@ -71,8 +71,10 @@ type fitCheck struct {
 	// and a safetensors directory's loader has its own accounting. Zero when not applicable, so a fitCheck literal built elsewhere is
 	// unaffected. The measurement: docs/code-notes/decoder.md#fitCheck.srcFileBytes.
 	//
-	// The build releases each tensor's pages once it is converted (wbuild's release), so what the mapping holds at once is
-	// one tensor per layer worker: srcFileBytes is the smaller of the file and that bound (ggufInFlightSourceBytes).
+	// On Linux the build releases each tensor's pages once it is converted (wbuild's releaseTensor, held for every builder by
+	// TestWbuild_everyTensorReadReleases), so the mapping holds one tensor per layer worker at once: srcFileBytes is the
+	// smaller of the file and that bound (ggufInFlightSourceBytes). Elsewhere the release is only a hint to the kernel, and
+	// the whole file is priced.
 	srcFileBytes int64
 
 	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf: the
@@ -530,7 +532,7 @@ func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read f
 		if !opts.StreamWeights {
 			if n, ok := GGUFFileBytes(path); ok { // a split set's whole size, not its first shard's
 				f.srcFileBytes = n
-				if err == nil {
+				if err == nil && runtime.GOOS == "linux" {
 					f.srcFileBytes = min(n, ggufInFlightSourceBytes(g, runtime.GOMAXPROCS(0)))
 				}
 			}
