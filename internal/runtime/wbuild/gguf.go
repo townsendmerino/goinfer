@@ -154,6 +154,9 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	w := &darch.Weights{Cfg: *cfg, Arch: arch, Layers: make([]darch.LayerWeights, arch.NumLayers)}
 	skipRow4 = skipRow4 || !RepackForDecode(sink) // every closure and family branch below takes it from here
 	native56 := q4kNative56(&h, needCanonical, sink)
+	// release drops a converted tensor's pages from the mapping (GGUFFile.ReleaseTensors), so the build does not hold the
+	// whole source resident beside the weights built from it. Advisory: a later read re-faults the same bytes.
+	release := func(name string) { _ = g.ReleaseTensors(name) } //nolint:errcheck // advisory; every name here was just read
 
 	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
@@ -161,6 +164,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// a destination row index to its source element offset in the tensor (identity
 	// for a plain load; a permutation for the RoPE-permuted q/k projections).
 	streamMat := func(name string, out, in int, mode QuantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
+		defer release(name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -188,6 +192,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
 	// allows it. See quantizeBatchedProjWM for the safety argument.
 	streamMatBatched := func(name string, out, in int, mode QuantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
+		defer release(name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -222,6 +227,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// embMatAt streams an embedding-shaped table at q through streamQuantizedEmbed, which may build repacked-only when
 	// needCanonical is false and int4 mode applies; see that function.
 	embMatAt := func(name string, out, in int, q QuantMode) (linalg.WeightMat, error) {
+		defer release(name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -263,6 +269,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {
+		defer release(name)
 		dims, data, err := g.Tensor(name)
 		if err != nil {
 			return nil, err
@@ -318,6 +325,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// (fastest-first) blob where each expert occupies a contiguous [out, in]
 	// row-major slice — and returns one quantized linalg.WeightMat per expert.
 	stackedExperts := func(name string, out, in, nExpert int) ([]linalg.WeightMat, error) {
+		defer release(name)
 		dims, into, err := GGUFScaledRowDequantizer(g, name)
 		if err != nil {
 			return nil, err
@@ -351,6 +359,7 @@ func BuildWeightsFromGGUF(cfg *config.Config, arch *darch.Architecture, g *embed
 	// [outTotal, in] tensor into its own quantized linalg.WeightMat — Phi-3's fused
 	// attn_qkv (q‖k‖v) and ffn_up (gate‖up), split without a whole-tensor f32 buffer.
 	fusedSplit := func(name string, outTotal, in, rowStart, rows int) (linalg.WeightMat, error) {
+		defer release(name)
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err

@@ -84,11 +84,18 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 		return nil, err
 	}
 	w.Prof = prof
+	if ggufBuiltHookForTest != nil {
+		ggufBuiltHookForTest(path) // the mapping is still open here
+	}
 	if len(w.KQuant) > 0 {
 		w.KQuantFile, w.GGUFPath, keep = g, path, true
 	}
 	return w, nil
 }
+
+// ggufBuiltHookForTest, when non-nil, runs after a direct .gguf build and before its mapping closes, with the file's path. A
+// test seam only: nil in production.
+var ggufBuiltHookForTest func(path string)
 
 // buildGGUFWeights builds the weight bundle from an already-open GGUF — whether
 // memory-mapped (loadGGUFWeights) or backed by an in-memory slice
