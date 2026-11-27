@@ -20,6 +20,7 @@ func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	inter := arch.IntermediateDim
 	f32mat := func(name string, out, in int) ([]float32, error) {
+		defer b.release(name)
 		dims, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr
@@ -30,6 +31,7 @@ func (b *ggufBuild) loadNemotron(npar *archparts.NemotronParams) (*darch.Weights
 		return data, nil
 	}
 	flat := func(name string, n int) ([]float32, error) {
+		defer b.release(name)
 		_, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr

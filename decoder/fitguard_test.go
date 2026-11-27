@@ -73,7 +73,10 @@ func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T)
 
 	// availBytes doesn't affect weightBytes/kvBytes/srcFileBytes, so this reads the real terms
 	// before choosing what RAM to inject.
-	probe := fitCheckFor(gguf, "int4", quantInt4, Options{})
+	// The context is pinned so the guard cannot answer by capping it: the test is about the source term, and an unpinned
+	// load that fits at a smaller context loads there (TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing).
+	opts := Options{Quant: "int4", ResidentContext: 4096}
+	probe := fitCheckFor(gguf, "int4", quantInt4, opts)
 	if probe.weightBytes <= 0 {
 		t.Fatal("estimator returned 0 for a real GGUF")
 	}
@@ -96,7 +99,7 @@ func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T)
 	defer restore()
 
 	before := weightAllocs.Load()
-	m, err := Load(gguf, Options{Quant: "int4"})
+	m, err := Load(gguf, opts)
 	if err == nil {
 		if m != nil {
 			m.Close()
@@ -721,5 +724,41 @@ func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
 		if got := strings.Contains(line, "--quant int4"); got != want {
 			t.Errorf("%s: the smaller-load line %q names --quant int4 = %v, want %v", quant, line, got, want)
 		}
+	}
+}
+
+// TestFitGuard_pricesTheSourceInFlight holds the source term to what a releasing build holds at once: where released pages
+// are reclaimed the smaller of the file and one largest tensor per layer worker, elsewhere the whole file.
+func TestFitGuard_pricesTheSourceInFlight(t *testing.T) {
+	const gguf = "../testdata/gemma2-hd-tiny.gguf"
+	g, err := OpenGGUFMmap(gguf)
+	if err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	defer g.Close()
+	var largest int64
+	for _, name := range g.Names() {
+		n, ok := g.TensorBytes(name)
+		if !ok {
+			t.Fatalf("%s: no stored size", name)
+		}
+		largest = max(largest, int64(n))
+	}
+	file, _ := GGUFFileBytes(gguf)
+	for _, workers := range []int{1, 2, 1 << 20} {
+		if got, want := min(file, ggufInFlightSourceBytes(g, workers)), min(file, int64(workers)*largest); got != want {
+			t.Errorf("%d workers: in-flight source %d, want %d", workers, got, want)
+		}
+	}
+	if got := ggufInFlightSourceBytes(g, 1); got != largest || largest*4 > file {
+		t.Fatalf("one worker holds %d (largest tensor %d of a %d-byte file): the fixture cannot tell the bound from the file", got, largest, file)
+	}
+	probe := fitCheckFor(gguf, "int8", quantInt8, Options{})
+	want := file
+	if reclaimsReleasedPages() {
+		want = min(file, ggufInFlightSourceBytes(g, buildWorkers()))
+	}
+	if probe.srcFileBytes != want {
+		t.Fatalf("fitCheckFor priced the source at %d, want %d", probe.srcFileBytes, want)
 	}
 }
