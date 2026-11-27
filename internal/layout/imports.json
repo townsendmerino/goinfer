@@ -788,6 +788,22 @@
         ]
       },
       "why": "internal/chat/inkling2 holds Inkling 2's <|message_*|>/<|content_*|> prompt and tool rendering, reasoning effort levels, reply stream splitter, and tool-call parser below chat (CH3). It imports only internal/chat/chatcore and the standard library."
+    },
+    {
+      "name": "chat-toolwire-leaf",
+      "from": [
+        "internal/chat/toolwire"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/toolwire": [
+          "internal/chat/chatcore"
+        ]
+      },
+      "why": "internal/chat/toolwire holds ChatML/Hermes, Qwen3.5 XML, Mistral, Llama-3, and Flint tool prompt renderers and parsers, schema-validated trailing fenced JSON call extraction, and ProseStreamer/StreamableLen below chat (CH4). It imports only internal/chat/chatcore and the standard library."
     }
   ],
   "arrows": {
@@ -906,6 +922,7 @@
       "internal/chat/gemma4tools",
       "internal/chat/harmony",
       "internal/chat/inkling2",
+      "internal/chat/toolwire",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -1150,6 +1167,9 @@
       "internal/chat/chatcore"
     ],
     "internal/chat/inkling2": [
+      "internal/chat/chatcore"
+    ],
+    "internal/chat/toolwire": [
       "internal/chat/chatcore"
     ],
     "internal/clef": [
@@ -1635,6 +1655,9 @@
     ],
     "internal/audio": [
       "internal/vision"
+    ],
+    "internal/chat/toolwire": [
+      "internal/chat/chatcore"
     ],
     "internal/clef": [
       "decoder",

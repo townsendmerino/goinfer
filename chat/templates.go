@@ -5,7 +5,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
 	"github.com/townsendmerino/goinfer/internal/chat/harmony"
+	"github.com/townsendmerino/goinfer/internal/chat/toolwire"
 )
 
 // Each constructor returns the family's renderer, written to match HuggingFace apply_chat_template byte for byte
@@ -394,8 +396,7 @@ func Mistral() *Template {
 	return t
 }
 
-// mistralMarks are the control-token strings of Mistral's prompts, tool dialect included.
-var mistralMarks = []string{"<s>", "</s>", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_CALLS]", "[TOOL_RESULTS]", "[/TOOL_RESULTS]", "[INST]", "[/INST]"}
+var mistralMarks = toolwire.MistralMarks
 
 func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 	lastUser := -1
@@ -404,7 +405,7 @@ func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 			lastUser = i
 		}
 	}
-	b := t.newToolBuf(mistralMarks...)
+	b := chatcore.NewToolBuf(t.has, mistralMarks...)
 	b.Lit("<s>")
 	for i, m := range turns {
 		if m.Role == "assistant" {
