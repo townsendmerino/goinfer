@@ -7,7 +7,7 @@
   "own": [
     "internal/runtime/families/arch_gpt2.go"
   ],
-  "deps_hash": "sha256:71d6d89f73b65dc4983d2fc71943f71570b63b6e967c685ad43857f56c882008",
+  "deps_hash": "sha256:95ff36c63e796bf2003e458baeddccbd776622e6b3b76827a96c439f63531a7e",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
