@@ -12,6 +12,7 @@
     "internal/runtime/families/arch_qwen3_5_moe.go",
     "decoder/generate_vl_qwen35.go",
     "internal/runtime/vlprep/guards.go",
+    "internal/runtime/vlprep/qwen35.go",
     "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [

@@ -4,6 +4,7 @@
     "internal/runtime/cpuengine/model_forward.go",
     "decoder/forwardn.go",
     "internal/runtime/cpuengine/forwardn.go",
+    "internal/runtime/vlprep/prefill.go",
     "internal/runtime/cpuengine/attention.go",
     "internal/runtime/cpuengine/mlp.go",
     "decoder/kvcache.go",

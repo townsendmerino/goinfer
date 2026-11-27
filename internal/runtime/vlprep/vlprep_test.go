@@ -6,6 +6,8 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 func TestSpansSpliceAndClaims(t *testing.T) {
@@ -64,5 +66,32 @@ func TestGuardsAndGemma4Rows(t *testing.T) {
 	}, []int{5, 99}, []float32{2, 3}, []ImageSpan{{Pos: 1, Len: 1}}, 0)
 	if err != nil || !slices.Equal(rows[0], []float32{5, 0, -1}) || !slices.Equal(rows[1], []float32{2, 3, 9}) {
 		t.Fatalf("Gemma4EModelImageRows = %v, %v", rows, err)
+	}
+}
+
+func TestUploadPrefillKVSetsFloor(t *testing.T) {
+	arch := &darch.Architecture{
+		NumLayers:     1,
+		NumKVHeads:    1,
+		HeadDim:       2,
+		SlidingWindow: 2,
+	}
+	cache := &cpuengine.Cache{}
+	cache.Rings = []*cpuengine.Ring{{
+		W: 2, Count: 3, Stride: 2, HeadDim: 2,
+		K: []float32{9, 10, 5, 6},
+		V: []float32{11, 12, 7, 8},
+	}}
+	slots := kvmgr.NewSlots(1)
+	var uploaded int
+	err := UploadPrefillKV(arch, cache, nil, slots, func() {}, func(layer, base int, k, v []float32) error {
+		uploaded++
+		if layer != 0 || base != 1 || len(k) != 4 {
+			t.Fatalf("unexpected upload layer=%d base=%d len=%d", layer, base, len(k))
+		}
+		return nil
+	})
+	if err != nil || uploaded != 1 || slots.State(0).Floor() != 2 {
+		t.Fatalf("UploadPrefillKV err=%v uploaded=%d floor=%d, want nil, 1, 2", err, uploaded, slots.State(0).Floor())
 	}
 }

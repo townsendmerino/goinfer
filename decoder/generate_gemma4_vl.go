@@ -4,125 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
-	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
-	"slices"
 	"sync/atomic"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 )
 
-// prefillLogitsGemma4VL sequentially prefills a Gemma 4 multimodal prompt (ids with a run of imgLen image-placeholder
-// ids at [imgPos, imgPos+imgLen)) and returns the last-position logits.
-//
-// Unlike prefillLogitsVL and prefillLogitsQwenVL, this walks ids one token at a time via the Gemma 4 program walk and
-// runLayersFromEmbedPLE: Gemma 4's program has no batched causal walk (the batched walker declines its operations, and its
-// batched twin serves only the bidirectional spans). That is exact for a checkpoint that ships
-// use_bidirectional_attention="" (the E-models, docs/multimodal.md, the Gemma 4 vision entry): the reference attends to the image block
-// strictly causally too, so a sequential per-position walk is that forward. A checkpoint with
-// use_bidirectional_attention="vision" needs the batched, blockwise-masked forward
-// (prefillLogitsGemma4VLBidirectional); GenerateGemma4VL dispatches, and this function is never called for a
-// "vision"-mode checkpoint.
 func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsGemma4VLSpans(ctx, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, cache)
 }
 
-// prefillLogitsGemma4VLSpans is prefillLogitsGemma4VL for several images: every span's rows, concatenated in span
-// order in imageEmbeds, replace that span's placeholders.
 func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	arch := m.w.Arch
-	if arch.Gemma4 == nil {
-		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VL called on a non-gemma4 model")
-	}
-	hidden := arch.HiddenDim
-	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
-		return nil, err
-	}
-	padID := arch.Gemma4.PadTokenID
-	var h []float32
-	var err error
-	for i, id := range ids {
-		if err = ctx.Err(); err != nil {
-			return nil, err
-		}
-		if r, in := imageSpanRow(spans, i); in {
-			off := r * hidden
-			// runLayersFromEmbedPLE names this case: a multimodal caller substitutes a projected embedding for the token-id
-			// lookup, and pleTokenID must be the checkpoint's pad_token_id, not the placeholder's own id, because the reference
-			// substitutes the PAD token's embedding at every image position before computing PLE's token-identity term. The feature
-			// row is used as is, with no embed_scale: that scaling is the Gemma 4 program walk's job for a real token embedding, and a
-			// tower's projected output is already in the target embedding space.
-			row := slices.Clone(imageEmbeds[off : off+hidden])
-			e := m.cpuEngine()
-			h, err = e.RunLayersFromEmbedPLE(row, padID, unwrapCache(cache))
-		} else {
-			h, err = m.runLayers(id, cache)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
 	e := m.cpuEngine()
-	return e.LogitsFromHidden(h, unwrapCache(cache)), nil
+	return vlprep.PrefillGemma4VLSpans(ctx, &e, ids, imageEmbeds, spans, unwrapCache(cache))
 }
 
-// prefillLogitsGemma4VLBidirectional is prefillLogitsGemma4VL's batched twin for checkpoints with
-// use_bidirectional_attention: "vision": a query position inside the image or audio block must see later block
-// positions too, which a sequential per-token walk can never provide (their K/V do not exist yet when an earlier
-// position is processed). See runLayersGemma4FromEmbedN (forward_gemma4_batched.go) for the batched forward and
-// gemma4BatchRange for the masking primitive and its correctness proof.
 func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, cache)
 }
 
-// prefillLogitsGemma4VLBidirectionalSpans is prefillLogitsGemma4VLBidirectional for several images: each span is its
-// own bidirectional block (gemma4BatchRange).
 func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
-	arch := m.w.Arch
-	if arch.Gemma4 == nil {
-		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VLBidirectional called on a non-gemma4 model")
-	}
-	hidden := arch.HiddenDim
-	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
-		return nil, err
-	}
-	// Passes of cpuengine.PrefillChunkRows rows, cut outside the image blocks: each pass embeds its own rows, with the raw projected
-	// features (no embed scale) spliced in. A capture or a speculative tree keeps one pass.
-	n, C := len(ids), len(ids)
-	if cache.c.CaptureLayers == nil && !cache.c.SubCapture && cache.c.TreeRowPos == nil && cache.c.TreeMask == nil {
-		C = cpuengine.PrefillChunkRows
-	}
-	blocks, start := imageSpanBlocks(spans), cache.Pos()
-	var buf, hLast []float32
-	for c0, i := 0, 0; c0 < n; i++ {
-		c1 := cpuengine.CutOutsideBlocks(blocks, start, c0, min(c0+C, n))
-		if i == 1 {
-			cache.c.ReserveRows(max(start+n, cache.c.PlanRows) - cache.Pos()) // the first pass taught the cache each layer's width
-			if cpuengine.PrefillChunkDone != nil {
-				cpuengine.PrefillChunkDone(-1)
-			}
-		}
-		if cap(buf) < (c1-c0)*hidden {
-			buf = make([]float32, (c1-c0)*hidden)
-		}
-		e := m.cpuEngine()
-		h := e.EmbedNInto(buf[:(c1-c0)*hidden], ids[c0:c1])
-		spliceImageSpansRange(h, spans, imageEmbeds, hidden, c0, c1)
-		atomic.AddInt64(&cpuengine.PrefillPasses, 1)
-		var err error
-		if hLast, err = e.RunLayersGemma4FromEmbedN(ctx, h, ids[c0:c1], spans, unwrapCache(cache)); err != nil {
-			return nil, err
-		}
-		if cpuengine.PrefillChunkDone != nil {
-			cpuengine.PrefillChunkDone(i)
-		}
-		c0 = c1
-	}
-	t0 := cpuengine.CostStart(&cache.c)
 	e := m.cpuEngine()
-	lg := e.LogitsFromNormed(hLast, unwrapCache(cache)) // the walker applied the head's norm
-	if cache.c.Cost != nil {
-		e.CountHead(unwrapCache(cache), 1, t0)
-	}
-	return lg, nil
+	return vlprep.PrefillGemma4VLBidirectionalSpans(ctx, &e, ids, imageEmbeds, spans, unwrapCache(cache))
 }
 
 // GenerateGemma4VL streams a continuation for a Gemma 4 multimodal prompt, in the shape of GenerateVL and

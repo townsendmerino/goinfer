@@ -966,12 +966,15 @@
       "allow_goinfer": {
         "internal/runtime/vlprep": [
           "decoder/arch",
+          "decoder/resident",
           "internal/runtime/archparts",
           "internal/runtime/cpuengine",
-          "internal/runtime/residency"
+          "internal/runtime/kvmgr",
+          "internal/runtime/residency",
+          "internal/runtime/rope"
         ]
       },
-      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, and Gemma 4 row builders (VL1). It never imports decoder."
+      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, Gemma 4 row builders, CPU multimodal prefill walkers, and prefill KV upload (VL1-VL3). It never imports decoder."
     }
   ],
   "arrows": {
@@ -1577,8 +1580,11 @@
     ],
     "internal/runtime/vlprep": [
       "decoder/arch",
+      "decoder/resident",
       "internal/runtime/cpuengine",
-      "internal/runtime/residency"
+      "internal/runtime/kvmgr",
+      "internal/runtime/residency",
+      "internal/runtime/rope"
     ],
     "internal/runtime/wbuild": [
       "decoder/arch",

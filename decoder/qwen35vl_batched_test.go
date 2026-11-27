@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 )
 
 // P26: the Qwen3.5 image prefill runs every projection as one matmul over the prompt
@@ -42,13 +43,14 @@ func TestQwen35VL_batchedPrefillMatchesPerToken(t *testing.T) {
 			cache.c.MRopeDelta = rope.MRoPEDelta(pos, len(ids))
 			var lg []float32
 			var err error
+			eng := m.cpuEngine()
 			if batched {
 				if !m.qwen35BatchNAnyPos(len(ids), cache) {
 					t.Fatalf("%s: the batched path is not eligible on this fixture, so the comparison would be the per-token loop against itself", L.name)
 				}
-				lg, err = m.prefillQwen35VLBatched(context.Background(), ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, cache)
+				lg, err = vlprep.PrefillQwen35VLBatched(context.Background(), &eng, ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, unwrapCache(cache))
 			} else {
-				lg, err = m.prefillQwen35VLPerToken(context.Background(), ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, cache)
+				lg, err = vlprep.PrefillQwen35VLPerToken(context.Background(), &eng, ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, unwrapCache(cache))
 			}
 			if err != nil {
 				t.Fatalf("%s (batched=%v): %v", L.name, batched, err)

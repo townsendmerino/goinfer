@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 )
 
 // v1Prompt is a 60-token prompt with two image spans: one longer than a 7-row chunk and crossing the 16-row cut, and one a cut
@@ -92,7 +93,8 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 		if route == "deepstack" {
 			c.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 		}
-		if rows, err = m.prefillSpliced(ctx, ids, spans, feats, c, true); err != nil {
+		eng := m.cpuEngine()
+		if rows, err = vlprep.PrefillSpliced(ctx, &eng, ids, spans, feats, unwrapCache(c), true); err != nil {
 			t.Fatal(err)
 		}
 		cache := m.NewCache(len(ids) + 8)
