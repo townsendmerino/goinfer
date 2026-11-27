@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
@@ -94,7 +95,7 @@ type Model struct {
 	knobs        *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq    int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resCtxPinned bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	kvSnaps      *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
+	kvSnaps      *kvsnap.Store // Options.KVHostBytes: the held prefix snapshots, nil when off
 
 	loadAbortErr error // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
 
@@ -442,7 +443,7 @@ func modelFromOptions(w *darch.Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.Arch, w.HasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		kvSnaps: newKVSnapStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.Arch, opts.Drafter)}
+		kvSnaps: kvsnap.NewStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.Arch, opts.Drafter)}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a.
@@ -665,7 +666,7 @@ func (m *Model) Close() error {
 		_ = m.pager.close()
 		m.pager = nil
 	}
-	m.kvSnaps.releaseAll() // pinned host memory, freed before the device it was pinned for
+	m.kvSnaps.ReleaseAll() // pinned host memory, freed before the device it was pinned for
 	if m.resident != nil {
 		_ = m.resident.Close()
 		m.resident = nil

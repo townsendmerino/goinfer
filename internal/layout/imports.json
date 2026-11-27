@@ -233,6 +233,23 @@
       "why": "internal/runtime/memprice holds pure per-backend weight, KV, recurrent-state, scratch, and allocator byte pricing over Architecture, Weights, and program declarations below decoder. It never imports decoder or any backend."
     },
     {
+      "name": "kvsnap-leaf",
+      "from": [
+        "internal/runtime/kvsnap"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/kvsnap": [
+          "decoder/resident",
+          "internal/runtime/kvmgr"
+        ]
+      },
+      "why": "internal/runtime/kvsnap manages GPU-to-host prefix KV snapshots, LRU byte budgets (resident.KVHostBudget), candidate matching, and boundary/recurrent cut planning below decoder. It imports only decoder/resident and internal/runtime/kvmgr and never decoder."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -503,6 +520,7 @@
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/kvsnap",
       "internal/runtime/logs",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
@@ -717,6 +735,10 @@
       "internal/runtime/families",
       "internal/runtime/program"
     ],
+    "internal/runtime/kvsnap": [
+      "decoder/resident",
+      "internal/runtime/kvmgr"
+    ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
     ],
@@ -925,6 +947,7 @@
       "internal/runtime/giwcodec",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/kvsnap",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/memprice",
@@ -1061,6 +1084,9 @@
     ],
     "internal/runtime/families": [
       "decoder/config"
+    ],
+    "internal/runtime/kvsnap": [
+      "internal/runtime/kvmgr"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
