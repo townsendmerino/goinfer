@@ -45,7 +45,7 @@ func TestProgram_noFamilyLoopAndEveryFamilyWalks(t *testing.T) {
 
 	walked := map[opKind]bool{opNorm: true, opProjQKV: true, opQKNorm: true, opRope: true, opAttnTemp: true, opAttention: true,
 		opOutGate: true, opProjO: true, opFFN: true, opResidual: true, opMLA: true, opKDA: true, opShortConv: true, opMamba2: true,
-		opDeltaNet: true, opGatedAttn: true, opGemma4Attn: true, opGemma4MoE: true, opPLE: true, opLayerScale: true}
+		opDeltaNet: true, opGatedAttn: true, opGemma4Attn: true, opGemma4MoE: true, opPLE: true, opLayerScale: true, opInkling2: true}
 	for _, mt := range modelTypes(t) {
 		arch, _, err := resolveArchitecture(representativeConfig(mt))
 		if err != nil {

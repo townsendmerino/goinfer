@@ -113,3 +113,12 @@ func TestInkling2_parsesToolCalls(t *testing.T) {
 		t.Fatalf("ParseToolCalls = %+v", got)
 	}
 }
+
+// TestInkling2_detectsBareVocab: a checkpoint with no template string but Inkling 2's control tokens gets the renderer.
+func TestInkling2_detectsBareVocab(t *testing.T) {
+	toks := map[string]bool{ikModel: true, ikText: true, ikEnd: true, ikUser: true}
+	tp, err := Detect(Meta{HasToken: func(s string) bool { return toks[s] }})
+	if err != nil || tp.Name() != "inkling2" {
+		t.Fatalf("Detect = %v, %v", tp, err)
+	}
+}

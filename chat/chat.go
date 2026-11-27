@@ -283,8 +283,6 @@ func detect(meta Meta) (*Template, error) {
 			return Harmony(), nil
 		case has("<|im_start|>"):
 			return ChatML(), nil
-		case has(ikModel) && has(ikText) && has(ikEnd):
-			return Inkling2(), nil
 		case has("<start_of_turn>"):
 			return Gemma3(), nil
 		case has("<|turn>"):
@@ -297,6 +295,8 @@ func detect(meta Meta) (*Template, error) {
 			return Ministral(), nil
 		case has("<|observation|>") && has("<|developer|>") && has("<arg_key>"):
 			return Flint(), nil
+		case has(ikModel) && has(ikText) && has(ikEnd):
+			return Inkling2(), nil
 		}
 	}
 	return nil, ErrUnknownTemplate
