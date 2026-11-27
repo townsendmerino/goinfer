@@ -14,8 +14,6 @@ const (
 	blockSpecFuseRows     = specdecode.BlockSpecFuseRows
 )
 
-var ngramAlphaAnchors = specdecode.NgramAlphaAnchors
-
 func thetaFor(backend string) float64           { return specdecode.ThetaFor(backend) }
 func ngramAlpha(matchLen int) float64           { return specdecode.NgramAlpha(matchLen) }
 func specRoundDraftWidth(k, pos, cap int) int   { return specdecode.RoundDraftWidth(k, pos, cap) }

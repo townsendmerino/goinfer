@@ -12,36 +12,24 @@ type sidecarTestHooks = sidecar.TestHooks
 const giwReplacedInfix = sidecar.ReplacedInfix
 
 func publishGIW(tmp, out string) error { return sidecar.PublishGIW(sidecarOps(), tmp, out) }
-func sweepReplacedGIW(out string)      { sidecar.SweepReplacedGIW(out) }
 func gatherTableTag(src, quant string, embedInt4 bool) string {
 	return sidecar.GatherTableTag(sidecarOps(), src, quant, embedInt4)
 }
-func kquantTag(quant string, target GIWTarget) string { return sidecar.KQuantTag(quant, target) }
 func streamCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) string {
 	return sidecar.StreamCachePath(sidecarOps(), ggufPath, quant, embedInt4, target)
 }
 func legacyCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) string {
 	return sidecar.LegacyCachePath(sidecarOps(), ggufPath, quant, embedInt4, target)
 }
-func metadataPrefixLen(raw []byte) (int, error)     { return sidecar.MetadataPrefixLen(raw) }
-func readHead(path string, cap int) ([]byte, error) { return sidecar.ReadHead(path, cap) }
 func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
 	return sidecar.ProjectedSidecarBytes(sidecarOps(), ggufPath, quant)
 }
 func projectedDirSidecarBytes(dir, quant string) (int64, bool) {
 	return sidecar.ProjectedDirSidecarBytes(dir, quant)
 }
-func markWritten(tmp, src string) {
-	sidecar.MarkWritten(tmp, src, func() int64 { return sidecarHostRAM() }, MarkGIWWritten)
-}
-func loraSidecar(giwPath string) string { return sidecar.LoraSidecar(giwPath) }
 func withSidecarTestHooks(ctx context.Context, h sidecarTestHooks) context.Context {
 	return sidecar.WithTestHooks(ctx, h)
 }
-func freshCache(cache, legacy, src string) bool {
-	return sidecar.FreshCache(sidecarOps(), cache, legacy, src)
-}
-func hasPerLayerTable(src string) bool { return sidecar.HasPerLayerTable(sidecarOps(), src) }
 
 func cacheNewer(cache, src string) bool   { return sidecar.CacheNewer(sidecarOps(), cache, src) }
 func cacheFresh(cache, src string) bool   { return sidecar.CacheFresh(sidecarOps(), cache, src) }

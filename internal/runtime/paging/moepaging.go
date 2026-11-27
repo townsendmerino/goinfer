@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-// expertPager bounds the resident RAM of a MoE model's expert weights by paging them on demand out of the read-only.
+// ExpertPager bounds the resident RAM of a MoE model's expert weights by paging them on demand out of the read-only.
 // giw mapping (docs/ideas-weight-memory.md). The router's top-k selection is the demand signal: a 35B-A3B holds ~32 GB
 // of experts but activates only K*L per token. The generic span-residency pager (touch faults in with WILLNEED, eviction
 // over budget releases with DONTNEED) lives in aikit/mmap.SpanCache, which this pager runs with the frequency-aware
@@ -67,13 +67,13 @@ type ExpertPager struct {
 	faultCounts            func() (int64, int64, bool)
 }
 
-// Lock/Unlock should wrap touch() and the matmul reads that follow it, for the duration of one
+// Lock and Unlock wrap Touch and the matmul reads that follow it, for the duration of one
 // MoE FFN call (see readMu's doc comment). Required for correctness in pool mode; a no-op-ish
 // safety margin in mmap mode, where touch() is already self-contained-safe on its own.
 func (p *ExpertPager) Lock()   { p.readMu.Lock() }
 func (p *ExpertPager) Unlock() { p.readMu.Unlock() }
 
-// MoEPagerDefault is the registered default pager mode: darwin, where MADV_DONTNEED is a no-op and mmap mode therefore
+// DefaultMoEPagerMode is the registered default pager mode: darwin, where MADV_DONTNEED is a no-op and mmap mode therefore
 // cannot enforce its budget, gets the owned-buffer pool; every other platform keeps mmap mode, where DONTNEED works and
 // the alias is free. It is the one source for the default: serve's --moe-pager default and a library Load with
 // Options.MoEPager unset both resolve here.
@@ -84,7 +84,7 @@ func DefaultMoEPagerMode(goos string) string {
 	return "mmap"
 }
 
-// resolveMoEPagerPool reports whether the CPU expert pager uses the owned-buffer pool: an explicit
+// UseMoEPagerPool reports whether the CPU expert pager uses the owned-buffer pool: an explicit
 // Options.MoEPager wins; otherwise GOINFER_MOE_PREAD_CPU ("1"/"0") when set — preadCPU, read once at Load
 // (loadKnob), so Options.Knobs can set it per model; otherwise the platform default.
 func UseMoEPagerPool(opt, preadCPU string) bool {
@@ -161,7 +161,7 @@ func PagerBudget(budget, total, maxExpert int64) int64 {
 	return max(min(budget, total), maxExpert)
 }
 
-// newExpertPager builds a pager over the experts of an mmap-backed MoE model, or returns nil when paging does not apply
+// NewExpertPager builds a pager over the experts of an mmap-backed MoE model, or returns nil when paging does not apply
 // (not MoE, not mmap-backed, or no expert weights alias the mapping). budget <= 0 selects an automatic budget (about half
 // of available RAM); it is clamped to [one expert, total expert bytes]. giwPath is the .giw file the mapping was built
 // from (Model.GiwPath), used only when pool mode is requested, to open an independent fd for pread (the mmap's own fd is
@@ -248,7 +248,7 @@ func NewExpertPager(w *darch.Weights, mapping []byte, budget int64, giwPath stri
 		minfltBase: minfltBase, majfltBase: majfltBase, faultsOK: faultsOK, faultCounts: faultCounts}
 }
 
-// touch records that the expert at key is needed now: it becomes most-recently-used and, if it was not resident, is
+// Touch records that the expert at key is needed now: it becomes most-recently-used and, if it was not resident, is
 // faulted in (mmap mode, evicting the LRU tail to stay within budget) or refilled into an owned pread slot (pool mode).
 // A no-op for experts the pager does not manage. Safe to call directly and concurrently (mu is held internally), but in
 // pool mode the caller must also hold Lock() across this call and its subsequent reads of the repointed WeightMat
@@ -269,7 +269,7 @@ func (p *ExpertPager) Touch(key unsafe.Pointer) {
 	p.cache.Touch(key)
 }
 
-// stats returns cumulative (hits, misses, evictions) over all touch calls. A
+// Stats returns cumulative (hits, misses, evictions) over all touch calls. A
 // non-zero eviction count means the budget was actually enforced (the LRU tail was
 // released), as opposed to mere cold-start misses.
 func (p *ExpertPager) Stats() (hits, misses, evictions int64) {
@@ -281,7 +281,7 @@ func (p *ExpertPager) Stats() (hits, misses, evictions int64) {
 	return p.cache.Stats()
 }
 
-// advisedBytes returns cumulative bytes fetched from disk over every miss: WILLNEED-hinted bytes in mmap mode, pread'd
+// AdvisedBytes returns cumulative bytes fetched from disk over every miss: WILLNEED-hinted bytes in mmap mode, pread'd
 // bytes in pool mode. It is a contamination-proof I/O check, independent of whatever else the machine's disk is doing: a
 // member registering redundant spans (see addExpert) shows up directly as bytes-per-miss above the expected per-expert
 // working set.
@@ -294,7 +294,7 @@ func (p *ExpertPager) AdvisedBytes() int64 {
 	return p.cache.AdvisedBytes()
 }
 
-// faultDelta reports this process's minor and major page faults since the pager was created, for comparing mmap mode
+// FaultDelta reports this process's minor and major page faults since the pager was created, for comparing mmap mode
 // (WILLNEED-triggered page faults) with pool mode (pread, which should add near none). The count is process-wide, not
 // pager-attributed: see minfltBase.
 func (p *ExpertPager) FaultDelta() (minflt, majflt int64, ok bool) {
@@ -312,7 +312,7 @@ func (p *ExpertPager) FaultDelta() (minflt, majflt int64, ok bool) {
 	return nowMin - p.minfltBase, nowMaj - p.majfltBase, true
 }
 
-// close releases the pager's resources — currently only meaningful in pool mode (the
+// Close releases the pager's resources — currently only meaningful in pool mode (the
 // independent pread fd; mmap mode owns nothing beyond the mapping itself, which the caller
 // unmaps separately).
 func (p *ExpertPager) Close() error {
@@ -322,7 +322,7 @@ func (p *ExpertPager) Close() error {
 	return nil
 }
 
-// budget is the resident-bytes cap this pager was built with, in either mode; moeworkingset.go's working-set prediction
+// Budget is the resident-bytes cap this pager was built with, in either mode; moeworkingset.go's working-set prediction
 // asks it too, so the mode dispatch lives in one place.
 func (p *ExpertPager) Budget() int64 {
 	if p.pool != nil {
@@ -331,7 +331,7 @@ func (p *ExpertPager) Budget() int64 {
 	return p.cache.Budget()
 }
 
-// pagerSummary is a one-line description of a built pager for the load banner.
+// ExpertPagerSummary is a one-line description of a built pager for the load banner.
 func ExpertPagerSummary(p *ExpertPager) string {
 	if p == nil {
 		return ""

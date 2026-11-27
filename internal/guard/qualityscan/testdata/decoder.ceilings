@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 21015 -- lowered by SZ16 (paging, blockdraft, residency, sidecar, and specdecode moved to internal/runtime/*; thin cpuEngine wrappers trimmed) after #1401
+lines 20999 -- lowered by SZ16 (paging, blockdraft, residency, sidecar, and specdecode moved to internal/runtime/*; thin cpuEngine wrappers trimmed) after #1401
 model_methods 350 -- lowered by SZ16 (residency, sidecar, paging, and thin cpuEngine wrapper methods moved off Model) after #1401
 model_knot_lines 8501 -- lowered by SZ16 (residency, sidecar, paging, blockdraft, and specdecode moved off the Model knot) after #1401

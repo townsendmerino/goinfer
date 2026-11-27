@@ -27,12 +27,12 @@ type KVScope struct {
 
 type kvScopeKey struct{}
 
-// WithKVScope returns ctx carrying the request's KV sharing scope, which Generate and its variants read.
+// ContextWithKVScope returns ctx carrying the request's KV sharing scope, which Generate and its variants read.
 func ContextWithKVScope(ctx context.Context, s KVScope) context.Context {
 	return context.WithValue(ctx, kvScopeKey{}, s)
 }
 
-// kvScopeOf is the scope ctx carries, or the zero scope.
+// ScopeFromContext is the scope ctx carries, or the zero scope.
 func ScopeFromContext(ctx context.Context) KVScope {
 	if ctx == nil {
 		return KVScope{}
@@ -41,7 +41,7 @@ func ScopeFromContext(ctx context.Context) KVScope {
 	return s
 }
 
-// WithCheckpoint returns a copy of s with recurrent checkpoint restore enabled.
+// ScopeWithCheckpoint returns a copy of s with recurrent checkpoint restore enabled.
 func ScopeWithCheckpoint(s KVScope, on bool) KVScope { s.checkpoint = on; return s }
 
 // CheckpointEnabled reports whether s permits recurrent checkpoint restore.

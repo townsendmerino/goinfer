@@ -219,7 +219,7 @@ func NewExpertBufferPool(giwPath string, members []PoolMember, budget int64, min
 	return p, nil
 }
 
-// ensure makes key resident: MRU + no-op on a hit, or picks a slot (evicting the LRU tail if
+// Ensure makes key resident: MRU + no-op on a hit, or picks a slot (evicting the LRU tail if
 // the pool is full), preads every field into it, and repoints key's WeightMat fields at the
 // filled buffer. Caller must hold expertPager's lock (see expertPager's doc comment) --
 // ensure does no locking of its own.
@@ -302,7 +302,7 @@ func (p *ExpertBufferPool) Stats() (hits, misses, evictions int64) {
 	return p.hits, p.misses, p.evictions
 }
 
-// budget returns the pool's actual resident cap in bytes: slot count × slot size.
+// Budget returns the pool's actual resident cap in bytes: slot count × slot size.
 func (p *ExpertBufferPool) Budget() int64 { return int64(len(p.slotBuf)) * int64(p.slotSize) }
 
 func (p *ExpertBufferPool) Close() error {

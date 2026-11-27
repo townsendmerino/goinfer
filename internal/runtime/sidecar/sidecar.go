@@ -31,7 +31,7 @@ import (
 // 64 MiB is comfortably more than any real header.
 const metaPrefixCap = 64 << 20
 
-// TranscodeGIW writes a .giw bundle at out from the model at in, quantized to quant
+// Transcode writes a .giw bundle at out from the model at in, quantized to quant
 // ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one layer at a
 // time, peak RAM about one layer: fits a 35B on a modest box) OR a safetensors model DIRECTORY (the
 // path for safetensors-only models like Mellum2; see transcodeDir). A failed write removes the
@@ -87,7 +87,7 @@ func (p TranscodePhases) String() string {
 	return fmt.Sprintf("stream %.1fs, self-check %.1fs", p.Stream.Seconds(), p.SelfCheck.Seconds())
 }
 
-// TranscodeGIWTimed is TranscodeGIW, and reports where the time went. A phase that did not finish reads zero.
+// TranscodeTimed is TranscodeGIW, and reports where the time went. A phase that did not finish reads zero.
 func TranscodeTimed(ops Ops, ctx context.Context, in, out, quant string, embedInt4 bool, target giwcodec.Target) (TranscodePhases, error) {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
 		return TranscodeDir(ops, ctx, in, "", out, quant, embedInt4, target)
@@ -164,7 +164,7 @@ func TranscodeTimed(ops Ops, ctx context.Context, in, out, quant string, embedIn
 	return ph, nil
 }
 
-// transcodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
+// TranscodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
 // path for Mellum2 and other safetensors-only models). It streams the weights into the
 // bundle one layer at a time (StreamTranscodeDir; a LoRA merge or a family whose loader
 // does not stream loads the whole model instead), and carries the dir's tokenizer.json
@@ -257,7 +257,7 @@ func TranscodeDir(ops Ops, ctx context.Context, dir, lora, out, quant string, em
 	return ph, nil
 }
 
-// EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant, promised to backend,
+// EnsureCached returns a .giw for the GGUF at ggufPath quantized to quant, promised to backend,
 // transcoding once into a sidecar cache (alongside the GGUF, "<base>.<quant>.<target>.v<N>.giw", or
 // "<base>.<quant>.e4h.<target>.v<N>.giw" when embedInt4 is set; streamCachePath) when no fresh cache exists. The cache is
 // fresh when it is newer than the source AND was built for the same target (the cache key carries the
@@ -312,7 +312,7 @@ func EnsureCached(ops Ops, ctx context.Context, ggufPath, quant, backend string,
 	return cache, nil
 }
 
-// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and embedInt4
+// PathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and embedInt4
 // setting, and true, ONLY when a fresh one already exists: it never transcodes. For a caller like `fit`
 // where measuring is supposed to stay cheap: forcing a
 // transcode just to check fit would cost as much as the resident build it avoids.
@@ -334,7 +334,7 @@ const (
 	SidecarLegacy                      // only a legacy-named one, which the load adopts if it loads, else rebuilds
 )
 
-// SidecarPathIfCurrent is SidecarPathIfFresh without the load: the sidecar exists, is newer than the source, and its
+// PathIfCurrent is SidecarPathIfFresh without the load: the sidecar exists, is newer than the source, and its
 // header is this build's format (GIWHeaderCheck). It never loads the bundle, so it does not prove the bundle loads:
 // a truncated payload or a missing tensor is found by the load's own freshness check, which then rebuilds it. For a
 // caller that must not load (POST /admin/models/fit).
@@ -350,13 +350,13 @@ func PathIfCurrent(ops Ops, src, quant, backend string, embedInt4 bool) (string,
 	return cache, SidecarMissing
 }
 
-// SidecarPath is the sidecar .giw a load of ggufPath (a .gguf or a safetensors directory) at quant/backend's target and
+// Path is the sidecar .giw a load of ggufPath (a .gguf or a safetensors directory) at quant/backend's target and
 // embedInt4 setting opens, or builds first when it is not there or not fresh (EnsureCachedGIW). It reads nothing.
 func Path(ops Ops, ggufPath, quant, backend string, embedInt4 bool) string {
 	return StreamCachePath(ops, ggufPath, quant, embedInt4, ops.TargetForBackend(backend))
 }
 
-// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default: the.
+// DefaultEnabled reports whether a .gguf source should resolve to its sidecar .giw by default: the.
 // gguf direct heap load is the opt-out, not the default. True on darwin (where the swap incidents
 // happened) and on linux (the sidecar showed no CPU decode cost and a load that maps instead of
 // re-quantizing; docs/measurements/cpu-giw-vs-direct-2026-09-24.md); other platforms keep the direct
@@ -369,12 +369,7 @@ func DefaultEnabled(directLoad bool) bool {
 	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 }
 
-// sidecarInTests is whether Load takes the sidecar default inside a test binary. Off: a test that loads a .gguf or a
-// safetensors directory keeps testing that load, and writes nothing beside its fixture or checkpoint. A test of the
-// default itself turns it on.
-var sidecarInTests = false
-
-// streamCachePath is the sidecar cache for a GGUF at a quant, embedInt4 setting and target:
+// StreamCachePath is the sidecar cache for a GGUF at a quant, embedInt4 setting and target:
 // "<base>.<quant>.<target>.v<N>.giw", or "<base>.<quant>.e4h.<target>.v<N>.giw" when embedInt4 is set, N being the
 // weights format version this build reads (giwcodec.FormatVersion). The version is in the name so two builds at
 // different formats on one box keep a sidecar each instead of rewriting one file in turn (a build that reads only vN
@@ -386,7 +381,7 @@ func StreamCachePath(ops Ops, ggufPath, quant string, embedInt4 bool, target giw
 	return strings.TrimSuffix(LegacyCachePath(ops, ggufPath, quant, embedInt4, target), ".giw") + fmt.Sprintf(".v%d.giw", giwcodec.FormatVersion)
 }
 
-// legacyCachePath is the sidecar name builds before the version was in it wrote: "<base>.<quant>[.e4h].<target>.giw".
+// LegacyCachePath is the sidecar name builds before the version was in it wrote: "<base>.<quant>[.e4h].<target>.giw".
 // A build from before the change still reads and rewrites that name, so this build never writes or deletes it; it only
 // adopts a file there that already loads as this build's format (adoptLegacy).
 func LegacyCachePath(ops Ops, ggufPath, quant string, embedInt4 bool, target giwcodec.Target) string {
@@ -408,7 +403,7 @@ func LegacyCachePath(ops Ops, ggufPath, quant string, embedInt4 bool, target giw
 	return base + "." + label + "." + tgt + ".giw"
 }
 
-// kquantTag is the name segment of a q4k sidecar that keeps the GGUF's Q5_K and Q6_K tensors natively (kinds 11 and 12,
+// KQuantTag is the name segment of a q4k sidecar that keeps the GGUF's Q5_K and Q6_K tensors natively (kinds 11 and 12,
 // q4kNative56), ".k56"; "" otherwise. A q4k sidecar written before those kinds widened them under the name without the
 // segment, so the two are never mistaken for each other, and no legacy (unversioned) name carries it.
 func KQuantTag(quant string, target giwcodec.Target) string {
@@ -418,7 +413,7 @@ func KQuantTag(quant string, target giwcodec.Target) string {
 	return ".k56"
 }
 
-// gatherTableTag is the name segment of a sidecar whose per-layer token table (Gemma 4's E-models) is int4 while the head
+// GatherTableTag is the name segment of a sidecar whose per-layer token table (Gemma 4's E-models) is int4 while the head
 // keeps the int8 pin, ".ple4" (quantMode.gatherTable); "" otherwise. A sidecar written before the table left the pin holds it
 // at int8 under the name without the segment, so the two are never mistaken for each other, and no legacy (unversioned) name
 // carries it, so none is adopted.
@@ -429,7 +424,7 @@ func GatherTableTag(ops Ops, src, quant string, embedInt4 bool) string {
 	return ".ple4"
 }
 
-// hasPerLayerTable reports whether src (a .gguf or a safetensors directory) carries Gemma 4's per-layer token table, from
+// HasPerLayerTable reports whether src (a .gguf or a safetensors directory) carries Gemma 4's per-layer token table, from
 // the GGUF's tensor directory or the directory's config.json. An unreadable source reads as false.
 func HasPerLayerTable(ops Ops, src string) bool {
 	if IsDir(src) {
@@ -457,7 +452,7 @@ func HasPerLayerTable(ops Ops, src string) bool {
 	return ok
 }
 
-// freshCache reports whether the sidecar at cache is fresh for src, adopting the legacy-named file first when this
+// FreshCache reports whether the sidecar at cache is fresh for src, adopting the legacy-named file first when this
 // build has none of its own: a legacy file that is newer than src and loads under this build's format is already
 // this build's sidecar, so it is hard-linked to the versioned name (no copy, no transcode). The old name stays, for
 // the builds that still use it, and an older build rewriting it by temp-and-rename leaves this link untouched. A
@@ -484,7 +479,7 @@ func adoptLegacy(ops Ops, cache, legacy, src string) bool {
 	return true
 }
 
-// cacheFresh reports whether cache exists, is newer than src, AND actually loads.
+// CacheFresh reports whether cache exists, is newer than src, AND actually loads.
 //
 // mtime alone is not freshness: it cannot see a bundle that is truncated, written by an older writer,
 // or missing a tensor a newer reader requires, all of which are newer than the source and all of which
@@ -509,7 +504,7 @@ func CacheFresh(ops Ops, cache, src string) bool {
 	return true
 }
 
-// GIWWeightsQuant reads the quant of the .giw at path as a load would label it, "native" for f32, without copying any weights: what
+// WeightsQuant reads the quant of the .giw at path as a load would label it, "native" for f32, without copying any weights: what
 // a caller decides on before the load.
 func WeightsQuant(ops Ops, path string) (string, error) {
 	data, err := ops.MapGIW(path)
@@ -527,7 +522,7 @@ func WeightsQuant(ops Ops, path string) (string, error) {
 // ReplacedInfix names a bundle publishGIW moved aside. Its name does not end in ".giw", so nothing lists or loads it.
 const ReplacedInfix = ".replaced-"
 
-// publishGIW moves a finished bundle to its name. Where the name is taken by a bundle a model holds mapped, and the platform refuses to
+// PublishGIW moves a finished bundle to its name. Where the name is taken by a bundle a model holds mapped, and the platform refuses to
 // replace it (Windows can), the old file moves aside first: renaming a mapped file is allowed where replacing one is not, the mapping
 // keeps reading it, and it is removed here or by a later publish once nothing holds it. A publish that still cannot complete puts the
 // old file back.
@@ -549,7 +544,7 @@ func PublishGIW(ops Ops, tmp, out string) error {
 	return nil
 }
 
-// sweepReplacedGIW removes what earlier publishes of out moved aside, where nothing holds it now.
+// SweepReplacedGIW removes what earlier publishes of out moved aside, where nothing holds it now.
 func SweepReplacedGIW(out string) {
 	entries, err := os.ReadDir(filepath.Dir(out))
 	if err != nil {
@@ -563,7 +558,7 @@ func SweepReplacedGIW(out string) {
 	}
 }
 
-// cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what
+// CacheNewer is the mtime half of freshness, kept separate so each half can be tested for what
 // it actually decides: this one answers "has the source changed since the cache was built",
 // which is all an mtime can answer.
 func CacheNewer(ops Ops, cache, src string) bool {
@@ -621,13 +616,13 @@ func sidecarQuantLabel(q string) string {
 	return q
 }
 
-// removeTempGIW deletes a temp bundle and its verified-marker.
+// RemoveTempGIW deletes a temp bundle and its verified-marker.
 func RemoveTempGIW(ops Ops, tmp string) {
 	_ = os.Remove(tmp)
 	_ = os.Remove(ops.VerifyMarkerPath(tmp))
 }
 
-// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has published
+// CarryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has published
 // tmp onto out (the publish stays at the call site because TestTranscode_writesViaTempThenRenames asserts it
 // structurally). The transcode marked tmp at its (size, mtime) and a rename preserves both, so the marker is still true
 // of out: the first real load of a fresh sidecar does not read the whole file. Best-effort: a marker that fails to move
@@ -638,7 +633,7 @@ func CarryVerifiedMarker(ops Ops, tmp, out string) {
 	}
 }
 
-// readHead reads up to capBytes from the front of path (a GGUF's metadata + tensor
+// ReadHead reads up to capBytes from the front of path (a GGUF's metadata + tensor
 // directory live at the front). Returns fewer bytes for a smaller file.
 func ReadHead(path string, capBytes int) ([]byte, error) {
 	f, err := os.Open(path)

@@ -15,7 +15,7 @@ type AdaptiveDepth struct {
 	inited bool
 }
 
-// Ensure initializes default fields on a if not already initialized.
+// EnsureAdaptive initializes default fields on a if not already initialized.
 func EnsureAdaptive(a *AdaptiveDepth) { a.ensure() }
 
 // SetAlpha overrides a's running acceptance estimate (used by unit tests).

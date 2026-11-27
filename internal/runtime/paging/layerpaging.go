@@ -10,7 +10,7 @@ import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 )
 
-// layerPager streams a dense model's per-layer weights out of the read-only .giw mapping (docs/ideas-weight-memory.md,
+// LayerPager streams a dense model's per-layer weights out of the read-only .giw mapping (docs/ideas-weight-memory.md,
 // idea #4). The layer loop is sequential and known in advance, so the pager prefetches the upcoming layer (Advise
 // WILLNEED) while the current one computes and releases (Advise DONTNEED) the layer that slides out the back of a
 // window. It is a windowed prefetch, not an LRU, so it does not use aikit/mmap.SpanCache; it borrows the span
@@ -40,7 +40,7 @@ type LayerPager struct {
 	prefetches, evictions int64
 }
 
-// newLayerPager builds a streaming pager over a dense mmap-backed model, or returns
+// OpenLayerPager builds a streaming pager over a dense mmap-backed model, or returns
 // nil when paging doesn't apply (MoE, not mmap-backed, no mapped layer weights, or
 // the budget already holds every layer). budget ≤ 0 selects ~half of available RAM.
 func OpenLayerPager(w *darch.Weights, mapping []byte, budget int64) *LayerPager {
@@ -101,7 +101,7 @@ func OpenLayerPager(w *darch.Weights, mapping []byte, budget int64) *LayerPager 
 	return &LayerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, n)}
 }
 
-// enterLayer is called at the top of the layer loop before layer l is read. It
+// EnterLayer is called at the top of the layer loop before layer l is read. It
 // prefetches l and the layer `ahead` of it (so the next fault overlaps this layer's
 // compute) and releases the layer `window` behind (keeping resident RAM bounded).
 func (p *LayerPager) EnterLayer(l int) {
@@ -125,7 +125,7 @@ func (p *LayerPager) EnterLayer(l int) {
 	}
 }
 
-// finishLayers releases every layer still hinted resident at the end of a forward,
+// FinishLayers releases every layer still hinted resident at the end of a forward,
 // so resident RAM returns to ~zero between tokens and stays bounded by `window+ahead`
 // during the loop (the cross-token re-read of one window is negligible for a model
 // that doesn't fit anyway). Idempotent.
@@ -143,7 +143,7 @@ func (p *LayerPager) FinishLayers() {
 	}
 }
 
-// stats returns cumulative (prefetches, evictions) — both non-zero means streaming
+// Stats returns cumulative (prefetches, evictions) — both non-zero means streaming
 // actually ran (prefetched ahead and released behind).
 func (p *LayerPager) Stats() (prefetches, evictions int64) {
 	p.mu.Lock()
@@ -151,7 +151,7 @@ func (p *LayerPager) Stats() (prefetches, evictions int64) {
 	return p.prefetches, p.evictions
 }
 
-// layerPagerSummary describes a built pager for the load banner.
+// SummarizeLayerPager describes a built pager for the load banner.
 func SummarizeLayerPager(p *LayerPager) string {
 	if p == nil {
 		return ""

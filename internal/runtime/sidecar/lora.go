@@ -47,14 +47,14 @@ func LoraSidecarBytes(adapterDir string) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// TranscodeGIWLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
+// TranscodeLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
 // records the adapter beside the bundle. A GGUF base is refused: an adapter names HF tensors, which a GGUF does not use.
 func TranscodeLoRA(ops Ops, ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target giwcodec.Target) error {
 	_, err := TranscodeLoRATimed(ops, ctx, dir, adapter, out, quant, embedInt4, target)
 	return err
 }
 
-// TranscodeGIWLoRATimed is TranscodeGIWLoRA, and reports where the time went (TranscodePhases).
+// TranscodeLoRATimed is TranscodeGIWLoRA, and reports where the time went (TranscodePhases).
 func TranscodeLoRATimed(ops Ops, ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target giwcodec.Target) (TranscodePhases, error) {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return TranscodePhases{}, fmt.Errorf("-lora needs a safetensors model directory as the input, not %s: a PEFT adapter names HF tensors", dir)
@@ -62,7 +62,7 @@ func TranscodeLoRATimed(ops Ops, ctx context.Context, dir, adapter, out, quant s
 	return TranscodeDir(ops, ctx, dir, adapter, out, quant, embedInt4, target)
 }
 
-// GIWAdapterLoRA is the LoRA a load of modelPath must merge for an adapter a decision head brings: adapterDir itself for
+// AdapterLoRA is the LoRA a load of modelPath must merge for an adapter a decision head brings: adapterDir itself for
 // a safetensors or GGUF model (Load merges it, or refuses a GGUF), and "" for a .giw whose sidecar records this exact
 // adapter (it is merged in already). A .giw without the sidecar, or with another adapter's, is refused: loading it
 // would answer with a backbone the head was not trained on, and nothing downstream could tell.

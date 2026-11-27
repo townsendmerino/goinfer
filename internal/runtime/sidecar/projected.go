@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
+// ProjectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
 // GGUF's tensor shapes (a header read: no weights are paged in). The source's own size is not a
 // usable proxy: the sources are already quantized, so a sidecar can be larger than its source and a
 // check on the source's size could pass while the transcode still ran out of disk.
@@ -74,7 +74,7 @@ func ProjectedSidecarBytes(ops Ops, ggufPath, quant string) (int64, bool) {
 	return int64(total * 1.03), true
 }
 
-// projectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory: the sizes of its .safetensors
+// ProjectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory: the sizes of its .safetensors
 // files, scaled from a 16-bit source to the quant's bytes per element with its group scales (int4 0.5 + 4/32, int8 1 +
 // 4/32, f32 4), plus the same 3% margin. A bundled vision tower is in the files and not in the sidecar, and an f32 source
 // is twice the elements' bytes, so both over-count, which is the safe direction for a disk check. ok is false when the

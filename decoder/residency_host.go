@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
-	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 )
 
@@ -16,10 +15,6 @@ type (
 	residentImageBlock = residency.ImageBlock
 	residentImageClaim = residency.ImageClaim
 	prefillMark        = residency.PrefillMark
-)
-
-const (
-	kvSnapMinShared = kvsnap.MinShared
 )
 
 var (

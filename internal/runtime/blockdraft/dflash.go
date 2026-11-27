@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
-// DFlashDrafter is an imported z-lab DFlash block drafter (docs/spec/08): a small non-causal transformer trunk that
+// DFlash is an imported z-lab DFlash block drafter (docs/spec/08): a small non-causal transformer trunk that
 // reads the target's hidden states (the ForwardCapture seam) and proposes a whole block of tokens in one pass.
 //
 // The z-lab checkpoint ships only the trunk (decoder layers, fc, two norms), with no embedding, LM head, Markov head
@@ -381,12 +381,12 @@ type dflashConfig struct {
 	SpeculatorsModelType   string          `json:"speculators_model_type"`
 }
 
-// LoadDFlashDrafter loads a DFlash drafter from dir (config.json + model.safetensors, the
+// LoadDFlash loads a DFlash drafter from dir (config.json + model.safetensors, the
 // z-lab layout). The drafter's hidden size must equal the target's — it consumes the
 // target's hidden states and embeddings directly, with no projection between them.
 func LoadDFlash(dir string) (*DFlash, error) { return loadDFlashDrafter(dir, false) }
 
-// OpenDFlashDrafter is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
+// OpenDFlash is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
 // header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix and no mapping. Each matrix
 // is a row reader over the file (stRows, StreamedDrafterWeights), which the backend's attach streams to the device, so the host
 // never holds the drafter, however its file is aligned. Only a resident that streams drafter rows takes it
@@ -654,7 +654,7 @@ func (d *BlockTrunk) FuseContext(be cpuengine.Backend, ctxCat [][]float32) ([][]
 	return fused, nil
 }
 
-// DFlashContext caches the committed context's projected K/V per layer: K already RoPE'd at its absolute position, V
+// Context caches the committed context's projected K/V per layer: K already RoPE'd at its absolute position, V
 // neither roped nor normed. The context is projected once per position and read by every later round; without the
 // cache each round re-projects the whole context in every layer, O(ctx x layers) of repeat work
 // (BenchmarkDFlashTrunk).

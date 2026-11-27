@@ -65,7 +65,7 @@ SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder", "internal/runtime/cpuengine")),
     Scan("decoder", "TestKVRowPad_keysReadersAreDeclinedFamilies", NT("decoder")),
-    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
+    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder", "internal/runtime/residency")),
     # reads every .go file under each backend module, subdirectories included (fnmatch's * crosses /)
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertionsInBackends", F("backend/cuda/*.go", "backend/metal/*.go", "backend/webgpu/*.go")),
     # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
@@ -98,8 +98,8 @@ SCANS = [
     Scan("decoder", "TestParityManifest_loadersClosed", NT("decoder", "decoder/quant", "decoder/config", "internal/runtime/families", "internal/runtime/wbuild") + F("testdata/parity/*.json")),
     # A record that hashes a test file running through textParity hashes the helper too.
     Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
-    Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
-    Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
+    Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go", "internal/runtime/sidecar/sidecar.go")),
+    Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go", "internal/runtime/sidecar/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
     Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go", "internal/runtime/wbuild/gguf.go", "internal/runtime/wbuild/gguf_build*.go")),
     Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder", "internal/runtime/wbuild")),

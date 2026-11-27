@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// metadataPrefixLen returns the byte length of a GGUF's header — magic, version,
+// MetadataPrefixLen returns the byte length of a GGUF's header — magic, version,
 // counts, all metadata key-values, and all tensor INFOS — up to the aligned
 // start of the tensor DATA section. raw[:n] is therefore a self-contained GGUF
 // with the same metadata + tensor directory but zero weight bytes; aikit's

@@ -33,7 +33,7 @@ import (
 // a step when it fires, and it fires only for a straggler.
 const BatchStragglerWait = 4 * time.Millisecond
 
-// tokenCoalescer is the token-joining core shared by the resident's residentBatcher and the CPU's cpuBatcher
+// TokenCoalescer is the token-joining core shared by the resident's residentBatcher and the CPU's cpuBatcher
 // (cpu_batch.go): generations submit one decode token each, and a run serves the tokens pending once every decoding
 // generation has submitted or the straggler window has expired — in one batched step (step) when it has at least lo
 // tokens, else each through its own production call. What it does not know is what a run holds: the resident batcher
@@ -61,7 +61,7 @@ type TokenCoalescer struct {
 
 func (c *TokenCoalescer) Init() { c.cond = sync.NewCond(&c.mu) }
 
-// residentBatcher is a Model's batched-decode coordinator (Model.EnableResidentConcurrency): the shared coalescing core plus the
+// Batcher is a Model's batched-decode coordinator (Model.EnableResidentConcurrency): the shared coalescing core plus the
 // resident's slot holders. A resident is one command queue, so its runs and exclusive sections are one at a time.
 type Batcher struct {
 	TokenCoalescer
@@ -101,7 +101,7 @@ type BatchStats struct {
 
 const batchStatsSizes = 17
 
-// batchReq is one generation's decode token: a resident one (seq) or a CPU one (id on cache).
+// BatchReq is one generation's decode token: a resident one (seq) or a CPU one (id on cache).
 type BatchReq struct {
 	Seq   resident.BatchSeq
 	ID    int                // CPU (cpuBatcher): the token to decode
@@ -113,7 +113,7 @@ type BatchReq struct {
 	at    time.Time
 }
 
-// chunkReq is one prefill chunk waiting to ride a run: its ragged sequence (a Prefill one) and the step's verdict on it.
+// ChunkReq is one prefill chunk waiting to ride a run: its ragged sequence (a Prefill one) and the step's verdict on it.
 type ChunkReq struct {
 	Seq  resident.RaggedSeq
 	Err  error
@@ -121,7 +121,7 @@ type ChunkReq struct {
 	at   time.Time
 }
 
-// claim takes one of the batcher's holder places. It fails while an exclusive resident claim (tryClaimResident: the
+// Claim takes one of the batcher's holder places. It fails while an exclusive resident claim (tryClaimResident: the
 // paths the batcher does not batch — speculation, vision, adapters) is held, and when every place is taken.
 func (b *Batcher) Claim(resBusy *int32) bool {
 	b.mu.Lock()
@@ -133,7 +133,7 @@ func (b *Batcher) Claim(resBusy *int32) bool {
 	return true
 }
 
-// release gives a holder place back.
+// Release gives a holder place back.
 func (b *Batcher) Release() {
 	b.mu.Lock()
 	b.holders--
@@ -141,7 +141,7 @@ func (b *Batcher) Release() {
 	b.mu.Unlock()
 }
 
-// holdSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
+// HoldSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
 // the resident: one holder, decoding, nothing pending and no exclusive section waiting. That is how a chained decode
 // runs under the batcher: the chain keeps the next token's forward queued on the device between tokens, and nothing else may
 // touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a hold was kept
@@ -173,7 +173,7 @@ func (b *Batcher) HoldSolo(fn func() error, release func()) (ok bool, err error)
 	return true, err
 }
 
-// releaseHold ends a hold holdSolo kept: release (the chain's Stop) runs first, with the resident still held, then the
+// ReleaseHold ends a hold holdSolo kept: release (the chain's Stop) runs first, with the resident still held, then the
 // resident is free again. A no-op when no hold is kept. Every exit from a decode loop that may hold calls it before
 // anything else on the batcher (the commit's exclusive section waits for the resident, so a kept hold would deadlock it).
 func (b *Batcher) ReleaseHold(release func()) {
@@ -198,14 +198,14 @@ func (b *Batcher) ReleaseHold(release func()) {
 // clients read at once, so the grace is short and the hold is kept across them.
 const MC3HoldSendGrace = 2 * time.Millisecond
 
-// isHolding reports whether a hold is kept (the decode loop asks before a token send that might block).
+// IsHolding reports whether a hold is kept (the decode loop asks before a token send that might block).
 func (b *Batcher) IsHolding() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.holding
 }
 
-// claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder or adaptive
+// ClaimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder or adaptive
 // generation is active and no batch/exclusive run is in progress.
 func (b *Batcher) ClaimExclusive(resBusy *int32) bool {
 	b.mu.Lock()
@@ -213,7 +213,7 @@ func (b *Batcher) ClaimExclusive(resBusy *int32) bool {
 	return b.holders == 0 && b.adaptive == 0 && !b.busy && atomic.CompareAndSwapInt32(resBusy, 0, 1)
 }
 
-// claimAdaptive registers an adaptive speculative generation on the batcher. It fails when a whole-generation
+// ClaimAdaptive registers an adaptive speculative generation on the batcher. It fails when a whole-generation
 // exclusive caller (tryClaimResident: adaptive == 0 with resBusy set) currently owns the resident.
 func (b *Batcher) ClaimAdaptive(resBusy *int32) bool {
 	b.mu.Lock()
@@ -225,7 +225,7 @@ func (b *Batcher) ClaimAdaptive(resBusy *int32) bool {
 	return true
 }
 
-// releaseAdaptive unregisters an adaptive speculative generation from the batcher.
+// ReleaseAdaptive unregisters an adaptive speculative generation from the batcher.
 func (b *Batcher) ReleaseAdaptive() {
 	b.mu.Lock()
 	b.adaptive--
@@ -233,7 +233,7 @@ func (b *Batcher) ReleaseAdaptive() {
 	b.mu.Unlock()
 }
 
-// claimAdaptiveRound is an adaptive speculative generation's per-round probe for whether it is the sole
+// ClaimAdaptiveRound is an adaptive speculative generation's per-round probe for whether it is the sole
 // resident user: it succeeds only with no batched holders and no other adaptive generation active, setting
 // resBusy so no batched holder joins mid-round while preserving exclusive()'s own serialization.
 func (b *Batcher) ClaimAdaptiveRound(resBusy *int32) bool {
@@ -242,10 +242,10 @@ func (b *Batcher) ClaimAdaptiveRound(resBusy *int32) bool {
 	return b.holders == 0 && b.adaptive == 1 && atomic.CompareAndSwapInt32(resBusy, 0, 1)
 }
 
-// exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
+// Exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
 func (b *TokenCoalescer) Exclusive(fn func()) { b.exclusiveKind(false, fn) }
 
-// prefillExclusive is exclusive for a prefill pass, counted in PrefillPasses and PrefillNs as well.
+// PrefillExclusive is exclusive for a prefill pass, counted in PrefillPasses and PrefillNs as well.
 func (b *TokenCoalescer) PrefillExclusive(fn func()) { b.exclusiveKind(true, fn) }
 
 func (b *TokenCoalescer) exclusiveKind(prefill bool, fn func()) {
@@ -280,14 +280,14 @@ func (b *TokenCoalescer) exclusiveKind(prefill bool, fn func()) {
 // on whether others were decoding.
 const PrefillTailMin = 8
 
-// decoding reports how many holders are inside their decode loop.
+// Decoding reports how many holders are inside their decode loop.
 func (b *TokenCoalescer) Decoding() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.decoders
 }
 
-// yieldToDecode lets the decoding generations run one step before a prefilling generation takes the resident for its
+// YieldToDecode lets the decoding generations run one step before a prefilling generation takes the resident for its
 // next chunk: it returns once a run has started (or when nobody is decoding, or after a bounded wait — a decoder whose
 // consumer has stalled must not hold the prefill up indefinitely).
 func (b *TokenCoalescer) YieldToDecode() {
@@ -301,7 +301,7 @@ func (b *TokenCoalescer) YieldToDecode() {
 	}
 }
 
-// enterDecode / exitDecode bracket a holder's decode loop: a run waits for tokens from exactly the holders inside one.
+// EnterDecode / exitDecode bracket a holder's decode loop: a run waits for tokens from exactly the holders inside one.
 func (b *TokenCoalescer) EnterDecode() {
 	b.mu.Lock()
 	b.decoders++
@@ -315,7 +315,7 @@ func (b *TokenCoalescer) ExitDecode() {
 	b.mu.Unlock()
 }
 
-// markSlot records a holder's slot as in use (true) or free (false).
+// MarkSlot records a holder's slot as in use (true) or free (false).
 func (b *Batcher) MarkSlot(slot int, busy bool) {
 	b.mu.Lock()
 	if slot >= 0 && slot < len(b.slotBusy) {
@@ -327,14 +327,14 @@ func (b *Batcher) MarkSlot(slot int, busy bool) {
 	}
 }
 
-// busySlots is a snapshot of the slots holders are using, for residentAcquire (called inside exclusive).
+// BusySlots is a snapshot of the slots holders are using, for residentAcquire (called inside exclusive).
 func (b *Batcher) BusySlots() []bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return slices.Clone(b.slotBusy)
 }
 
-// forward submits one decode token and returns once a run has served it: q.Out is set when a batched step did, and
+// Forward submits one decode token and returns once a run has served it: q.Out is set when a batched step did, and
 // otherwise q.Solo ran (production's own call, with its own results).
 func (b *TokenCoalescer) Forward(q *BatchReq) error {
 	b.mu.Lock()
@@ -346,7 +346,7 @@ func (b *TokenCoalescer) Forward(q *BatchReq) error {
 	return q.Err
 }
 
-// rideChunk submits one prefill chunk and returns once a run has carried it in one step with the decode tokens pending
+// RideChunk submits one prefill chunk and returns once a run has carried it in one step with the decode tokens pending
 // then. It joins a run as a token does: once every decoding generation has submitted, or the straggler window has expired,
 // or nobody is decoding. A non-nil error means the step did not take the chunk; the run's tokens were served without it
 // and the caller prefills from the chunk's start another way.
@@ -445,7 +445,7 @@ func (b *TokenCoalescer) armLocked(deadline time.Time) {
 	})
 }
 
-// execRun runs a batched step or prefill ride, converting a panic into an error for every waiting caller in the run so
+// ExecRun runs a batched step or prefill ride, converting a panic into an error for every waiting caller in the run so
 // serveLocked always releases b.busy and wakes waiters instead of deadlocking. A runtime.Error (a programming bug) is also
 // returned, for serveLocked to re-panic once the batcher is consistent again.
 func (b *TokenCoalescer) ExecRun(c *ChunkReq, run []*BatchReq) (bug any) {

@@ -206,7 +206,7 @@ func (NoopRuntime) FoldVerified(int) error { return errSubsystemUnavailable }
 func (NoopRuntime) FlushFold() error       { return errSubsystemUnavailable }
 func (NoopRuntime) DropFold()              {}
 
-// SubsystemsOf resolves r's four resident subsystems: a resident.SubsystemProvider returns its own pre-built wrappers
+// ResolveSubsystems resolves r's four resident subsystems: a resident.SubsystemProvider returns its own pre-built wrappers
 // (zero allocation); nil, and any value that is not a provider, has no capability and gets the no-op subsystems. r is a resident:
 // a subsystem is not a provider, so passing one is that silent no-capability answer, and under goinfer_testhooks it panics.
 func ResolveSubsystems(r any) resident.Subsystems {
@@ -216,7 +216,7 @@ func ResolveSubsystems(r any) resident.Subsystems {
 	return NoopSubsystems
 }
 
-// drafterHostOf is the resident r itself as a drafter host. A BlockSpec keeps the resident, not its Runtime subsystem, because step and
+// ResolveDrafterHost is the resident r itself as a drafter host. A BlockSpec keeps the resident, not its Runtime subsystem, because step and
 // SubsystemsOf resolve a resident; ok is false where r does not implement it.
 func ResolveDrafterHost(r resident.Forward) (host resident.DrafterHost, ok bool) {
 	host, ok = r.(resident.DrafterHost)

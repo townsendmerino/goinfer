@@ -16,19 +16,11 @@ func (m *Model) kvRootIn(lora *loraRuntime, ns string) kvmgr.Root {
 	h := m.resHost()
 	return h.KVRootIn(kvAdapterID(lora), ns)
 }
-func (m *Model) kvLeadClassMap() kvmgr.ClassMap   { h := m.resHost(); return h.KVLeadClassMap() }
-func (m *Model) kvClassMap() kvmgr.ClassMap       { h := m.resHost(); return h.KVClassMap() }
-func (m *Model) kvRollbackAllowance() int         { h := m.resHost(); return h.KVRollbackAllowance() }
-func (m *Model) residentSlotCount() int           { h := m.resHost(); return h.SlotCount() }
-func (m *Model) residentReuseDisabled() bool      { h := m.resHost(); return h.ReuseDisabled }
-func (m *Model) residentReuseFloor(reuse int) int { h := m.resHost(); return h.ReuseFloorFor(reuse) }
+func (m *Model) kvClassMap() kvmgr.ClassMap { h := m.resHost(); return h.KVClassMap() }
+func (m *Model) residentSlotCount() int     { h := m.resHost(); return h.SlotCount() }
 func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
 	h := m.resHost()
 	return h.ReuseLen(prompt, imgs, kvAdapterID(lora))
-}
-func (m *Model) residentReuseLenIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope) int {
-	h := m.resHost()
-	return h.ReuseLenIn(prompt, imgs, kvAdapterID(lora), sc)
 }
 func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
 	h := m.resHost()
@@ -47,44 +39,20 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentI
 	h := m.resHost()
 	h.CommitIDs(prompt, generated, newBlocks, kvAdapterID(lora))
 }
-func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime) {
-	h := m.resHost()
-	h.PublishPrompt(slot, prompt, kvAdapterID(lora))
-}
-func (m *Model) residentForgetIDs()             { h := m.resHost(); h.ForgetIDs() }
-func (m *Model) residentForgetScratch()         { h := m.resHost(); h.ForgetScratch() }
-func (m *Model) residentWritesFromZero()        { h := m.resHost(); h.WritesFromZero() }
-func (m *Model) residentForgetIDsIn(sc KVScope) { h := m.resHost(); h.ForgetIDsIn(sc) }
-func (m *Model) checkpointHeld(slot int) bool   { h := m.resHost(); return h.CheckpointHeld(slot) }
+func (m *Model) residentForgetIDs()           { h := m.resHost(); h.ForgetIDs() }
+func (m *Model) checkpointHeld(slot int) bool { h := m.resHost(); return h.CheckpointHeld(slot) }
 func (m *Model) recurrentCheckpointer() ResidentKVSubsystem {
 	h := m.resHost()
 	return h.RecurrentCheckpointer()
-}
-func (m *Model) residentCheckpointRestore(prompt []int, acq *kvAcquired) {
-	h := m.resHost()
-	h.CheckpointRestore(prompt, acq)
 }
 func (m *Model) residentCheckpointSave(prompt []int) (time.Duration, bool) {
 	h := m.resHost()
 	return h.CheckpointSave(prompt)
 }
-func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired) *prefillMark {
-	h := m.resHost()
-	return h.KVPrefillMark(slot, prompt, from, kvAdapterID(lora), sc, acq)
-}
-func (m *Model) residentSnapshotPrompt(slot int, prompt []int, lora *loraRuntime, sc KVScope, acq kvAcquired) {
-	h := m.resHost()
-	h.SnapshotPrompt(slot, prompt, kvAdapterID(lora), sc, acq)
-}
-func (m *Model) snapshotter() ResidentKVSubsystem { h := m.resHost(); return h.Snapshotter() }
 
 func kvSpansOfBlocks(blocks []residentImageBlock) []kvmgr.ImageSpan {
 	return residency.KVSpansOfBlocks(blocks)
 }
-func kvSpansOfClaims(claims []residentImageClaim) []kvmgr.ImageSpan {
-	return residency.KVSpansOfClaims(claims)
-}
-func fastClassMap(floor int) kvmgr.ClassMap { return residency.FastClassMap(floor) }
 
 func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, reuse int) (int, int, string) {
 	return residency.KVChooseDonor(res, hits, cm, n, dst, reuse)

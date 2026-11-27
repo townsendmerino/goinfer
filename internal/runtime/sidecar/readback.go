@@ -37,7 +37,7 @@ func TestHooksOf(ctx context.Context) TestHooks {
 // ErrReadBack is the read-back's verdict that the file does not hold what its CRC says.
 var ErrReadBack = errors.New("read-back: the weights read from the file do not match their CRC")
 
-// readBack checks a weights blob while it is being written to f: a goroutine reads the file behind the writer and
+// ReadBack checks a weights blob while it is being written to f: a goroutine reads the file behind the writer and
 // keeps a CRC-32 of what it reads, and finish compares it with the blob's trailing CRC word, as a load does. The bytes
 // it reads are the system's copy of what was just written, usually still in the page cache, so it checks the file as
 // the system holds it and not the disk (markWritten).
@@ -58,7 +58,7 @@ func StartReadBack(f *os.File, base int64) *ReadBack {
 	return rb
 }
 
-// writer returns the writer the blob is streamed through: w, with every write counted.
+// Writer returns the writer the blob is streamed through: w, with every write counted.
 func (rb *ReadBack) Writer(w io.Writer) io.Writer { return readBackWriter{rb, w} }
 
 type readBackWriter struct {
@@ -115,7 +115,7 @@ func (rb *ReadBack) run() error {
 	}
 }
 
-// finish is called once the blob's last byte is written: it waits for the read to reach the end and returns the verdict.
+// Finish is called once the blob's last byte is written: it waits for the read to reach the end and returns the verdict.
 func (rb *ReadBack) Finish() error {
 	close(rb.done)
 	return <-rb.res
@@ -143,7 +143,7 @@ func writeSidecarBundle(ctx context.Context, f *os.File, tok []byte, body func(i
 	})
 }
 
-// markWritten records the verified-marker for a bundle the transcode has written and read back, when the bundle and the
+// MarkWritten records the verified-marker for a bundle the transcode has written and read back, when the bundle and the
 // source it was built from are together no larger than the host's memory. Then the self-check's load and the first real
 // load skip the whole-file CRC (MarkGIWWritten).
 //
@@ -163,7 +163,7 @@ func MarkWritten(tmp, source string, hostRAM func() int64, markGIWWritten func(s
 	}
 }
 
-// sourceBytes is the size of the weights a transcode of source maps: the file itself, or a directory's .safetensors
+// SourceBytes is the size of the weights a transcode of source maps: the file itself, or a directory's .safetensors
 // files. It is -1 when source cannot be read.
 func SourceBytes(source string) int64 {
 	fi, err := os.Stat(source)

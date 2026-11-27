@@ -6,11 +6,10 @@ import (
 )
 
 type (
-	expertPager      = paging.ExpertPager
-	expertBufferPool = paging.ExpertBufferPool
-	layerPager       = paging.LayerPager
-	poolMember       = paging.PoolMember
-	expertField      = paging.ExpertField
+	expertPager = paging.ExpertPager
+	layerPager  = paging.LayerPager
+	poolMember  = paging.PoolMember
+	expertField = paging.ExpertField
 )
 
 // MoEPagerDefault is the registered default pager mode for goos ("pool" on darwin, "mmap" elsewhere).

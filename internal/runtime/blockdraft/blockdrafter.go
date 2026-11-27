@@ -96,7 +96,7 @@ var (
 	_ resident.BlockDrafterWeights = (*DSpark)(nil) // not releasable: its own heads' host drafting has no release guard
 )
 
-// DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
+// EstimateResidentBytes approximates the VRAM a resident backend will claim uploading dw. It is computed rather
 // than quoted so a caller (a fit guard pricing a --drafter attach before the target's own residency is built) gets a
 // number that tracks the pairing actually loaded.
 //
@@ -142,7 +142,7 @@ func EstimateResidentBytes(dw resident.BlockDrafterWeights) int64 {
 	return total
 }
 
-// DrafterKVBytesPerPosition returns the drafter's device K/V bytes per context position: layers x kvDim x 2 (K and V) x
+// KVBytesPerPosition returns the drafter's device K/V bytes per context position: layers x kvDim x 2 (K and V) x
 // 4 (f32), matching cuda/drafter.go's d.kc/d.vc sizing. That K/V scales with the target's own resident context
 // (ExtendContext sizes it at capRows = max(need+512, r.ctxCap)), so a multi-layer trunk at a large context is hundreds
 // of MB, and DrafterResidentBytesEstimate cannot price it: it runs before the target's residency, and so its chosen

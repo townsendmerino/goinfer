@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
-// DSparkDrafter is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
+// DSpark is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
 // uses, plus what DFlash does not have: its own embedding and LM head, a rank-256 Markov chain, and a confidence head.
 //
 // It reuses BlockTrunk rather than reimplementing the forward: DeepSpec's `_forward_backbone` and z-lab's
@@ -95,7 +95,7 @@ type dsparkConfig struct {
 	ConfidenceHeadWithMkv bool            `json:"confidence_head_with_markov"`
 }
 
-// LoadDSparkDrafter loads a DSpark drafter from dir (config.json + model.safetensors, the
+// LoadDSpark loads a DSpark drafter from dir (config.json + model.safetensors, the
 // deepseek-ai layout). Its hidden size must equal the target's — it consumes the target's
 // hidden states directly.
 func LoadDSpark(dir string) (*DSpark, error) {
