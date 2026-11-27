@@ -19,9 +19,11 @@ import (
 var guardThresholds = map[string]string{
 	"WeightsFraction": "WeightsFraction", "WarnRatio": "WarnRatio", "CtxFloor": "CtxFloor", "GIWMargin": "GIWMargin",
 	"PlanCtxFloor": "PlanCtxFloor", "MetalFitMargin": "MetalFitMargin", "RequestFraction": "RequestFraction",
+	"KVHostFraction": "KVHostFraction", "KVHostCap": "KVHostCap",
 	"WeightsMemFraction": "WeightsFraction", "fitMemFraction": "WeightsFraction", "prefillAvailFraction": "WeightsFraction",
 	"residentMemFraction": "WeightsFraction", "giwMemMargin": "GIWMargin", "MetalFitMarginBytes": "MetalFitMargin",
 	"ctxPlanFloor": "PlanCtxFloor", "fitWarnRatio": "WarnRatio", "ctxFloor": "CtxFloor",
+	"kvHostFraction": "KVHostFraction", "kvHostCap": "KVHostCap",
 }
 
 // thresholdRatchet is each file outside mem that still applies a guard threshold itself, and how many references it makes.
@@ -32,12 +34,13 @@ var thresholdRatchet = map[string]int{}
 // WeightsFraction of any byte count, HostBudget the Policy's share of any Machine's reading), so calling one is applying
 // the threshold. ruleCallers is every file outside mem
 // allowed to, with its exact number of calls: a file not listed, or a count above or below its entry, is red.
-var thresholdRules = map[string]bool{"RAMShare": true, "WeightsPercent": true, "HostBudget": true}
+var thresholdRules = map[string]bool{"RAMShare": true, "WeightsPercent": true, "HostBudget": true, "SnapshotHostBudget": true}
 
 var ruleCallers = map[string]int{
-	"backend/metal/backend.go":   3, // metalStaticCeiling and the two refusal messages
-	"backend/webgpu/kv_slots.go": 3, // darwinKVSlots, darwinSlotsFit and buildKVSlots' clamp log line
-	"decoder/prefill_budget.go":  1, // the per-request prefill budget
+	"backend/metal/backend.go":        3, // metalStaticCeiling and the two refusal messages
+	"backend/webgpu/kv_slots.go":      3, // darwinKVSlots, darwinSlotsFit and buildKVSlots' clamp log line
+	"decoder/prefill_budget.go":       1, // the per-request prefill budget
+	"internal/app/serveapp/kvhost.go": 1, // -kv-host-bytes auto resolution
 }
 
 // ruleUses counts f's references to a threshold rule through a package selector (mem.RAMShare), calls and function

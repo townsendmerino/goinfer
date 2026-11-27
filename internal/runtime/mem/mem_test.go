@@ -368,3 +368,26 @@ func TestWeightsPercent(t *testing.T) {
 		t.Errorf("WeightsPercent prints %q, the backends printed %q", got, want)
 	}
 }
+
+// TestSnapshotHostBudget pins the default prefix-snapshot host budget (-kv-host-bytes auto): 1/KVHostFraction of physical
+// RAM up to KVHostCap, 0 when physical RAM is unknown, and formatted with GiB.
+func TestSnapshotHostBudget(t *testing.T) {
+	const g = int64(1) << 30
+	p := DefaultPolicy()
+	for _, tc := range []struct {
+		ram  int64
+		want int64
+		how  string
+	}{
+		{0, 0, "unknown"},
+		{-1, 0, "unknown"},
+		{16 * g, 16 * g / 10, "auto: 1/10 of 16.00 GiB of RAM, at most 8.00 GiB"},
+		{64 * g, 64 * g / 10, "auto: 1/10 of 64.00 GiB of RAM, at most 8.00 GiB"},
+		{128 * g, 8 * g, "auto: 1/10 of 128.00 GiB of RAM, at most 8.00 GiB"},
+	} {
+		got, how := SnapshotHostBudget(tc.ram, p)
+		if got != tc.want || !strings.Contains(how, tc.how) {
+			t.Errorf("SnapshotHostBudget(%d) = (%d, %q); want (%d, containing %q)", tc.ram, got, how, tc.want, tc.how)
+		}
+	}
+}

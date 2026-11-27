@@ -69,3 +69,14 @@ func WeightCacheBudget(requested int64, m Machine) int64 {
 	}
 	return 0
 }
+
+// SnapshotHostBudget is the prefix-snapshot store's default host budget (-kv-host-bytes auto) for a machine with ram bytes
+// of physical RAM under p, and the startup-banner phrase explaining how it was reached. Calling it applies KVHostFraction
+// and KVHostCap, so its callers outside mem are listed in TestNoGuardThresholdOutsideMem's ruleCallers.
+func SnapshotHostBudget(ram int64, p Policy) (int64, string) {
+	if ram <= 0 || p.KVHostFraction <= 0 {
+		return 0, "auto needs the machine's physical RAM, which is unknown here"
+	}
+	b := min(ram/int64(p.KVHostFraction), p.KVHostCap)
+	return b, fmt.Sprintf("auto: 1/%d of %s of RAM, at most %s", p.KVHostFraction, GiB(ram), GiB(p.KVHostCap))
+}
