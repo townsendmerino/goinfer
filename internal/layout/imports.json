@@ -666,6 +666,26 @@
       "why": "internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath)."
     },
     {
+      "name": "gateidentity-leaf",
+      "from": [
+        "internal/guard/gateidentity"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gateidentity": [
+          "internal/guard/gatecore",
+          "internal/guard/paritykey",
+          "internal/testgate",
+          "internal/testpath",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/guard/gateidentity holds gate identity's cross-revision worktree builder, logit dumper, .giw byte/logit transcode comparator, asset planner, and pure identity graders below cmd/gate (GT4), isolating cmd/gate's sole tokenizer dependency."
+    },
+    {
       "name": "gatequick-leaf",
       "from": [
         "internal/guard/gatequick"
@@ -803,9 +823,9 @@
     "cmd/gate": [
       "internal/guard/gatecore",
       "internal/guard/gatehygiene",
+      "internal/guard/gateidentity",
       "internal/guard/gatequick",
-      "internal/guard/paritykey",
-      "tokenizer"
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -1065,6 +1085,11 @@
     "internal/guard/gatehygiene": [
       "internal/guard/gatecore",
       "internal/guard/paritykey"
+    ],
+    "internal/guard/gateidentity": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey",
+      "tokenizer"
     ],
     "internal/guard/gatequick": [
       "internal/guard/gatecore",
@@ -1346,6 +1371,7 @@
     ],
     "cmd/gate": [
       "internal/guard/gatecore",
+      "internal/guard/gateidentity",
       "internal/guard/gatequick",
       "internal/guard/paritykey"
     ],
@@ -1532,6 +1558,11 @@
     ],
     "internal/guard/gatehygiene": [
       "internal/guard/gatecore",
+      "internal/testpath"
+    ],
+    "internal/guard/gateidentity": [
+      "internal/guard/gatecore",
+      "internal/testgate",
       "internal/testpath"
     ],
     "internal/guard/gatequick": [

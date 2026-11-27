@@ -1,4 +1,4 @@
-package main
+package gateidentity
 
 import (
 	"bytes"
@@ -220,10 +220,10 @@ type cellOutcome struct {
 // noise can each sit at its maximum, in opposite directions.
 const identityTolFactor = 2.0
 
-// judgeCell decides one cell from its three runs (new#1, new#2, old). backend is what was asked for:
+// JudgeCell decides one cell from its three runs (new#1, new#2, old). backend is what was asked for:
 // a GPU cell whose NEW build fell back to the CPU is NOT RUN on that backend when the old build fell back too — a CPU identity
 // reported under "metal" would vouch for a device path nothing executed — and DIFFERENT when the old build ran it on the backend.
-func judgeCell(c *identityCell, backend string, n1, n2, old *dump) cellOutcome {
+func JudgeCell(c *identityCell, backend string, n1, n2, old *dump) cellOutcome {
 	out := cellOutcome{Cell: c}
 	if c.NotRun != "" {
 		out.Verdict, out.Detail = vNotRun, c.NotRun
@@ -446,10 +446,10 @@ type identityGradeInputs struct {
 	Date      string        `json:"date"`
 }
 
-// gradeIdentity is identity's report and verdict on judged cells, live or replayed: determinism, the per-family
+// GradeIdentity is identity's report and verdict on judged cells, live or replayed: determinism, the per-family
 // verdicts, what would be recorded, the -record inheritance rows (handed to writeRows, which a replay answers from the
 // record), and the verdict.
-func gradeIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest map[string]manifestFamily, selected []string,
+func GradeIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest map[string]manifestFamily, selected []string,
 	outs []cellOutcome, in identityGradeInputs, writeRows func(rows []string) error) int {
 	t0, buildWall, runWall, logs := in.T0, in.BuildWall, in.RunWall, in.Logs
 	fams := summarizeFamilies(selected, outs)
@@ -703,4 +703,28 @@ func dumpBinSize(m *dumpMeta) int {
 		n += p.Steps
 	}
 	return n * m.Vocab * 4
+}
+
+// JudgeGiwBytes decides one cell from its three transcodes (new#1, new#2, old).
+func JudgeGiwBytes(n1, n2, old GiwResult) (verdict, detail string) {
+	switch {
+	case !n1.OK && !old.OK:
+		detail = "neither build transcodes it — new: " + n1.Err
+		if old.Err != n1.Err {
+			detail += " | old: " + old.Err
+		}
+		return vNotRun, detail
+	case !n1.OK:
+		return vDifferent, "the new build fails where the old transcodes: " + n1.Err
+	case !old.OK:
+		return vDifferent, "the old build fails where the new transcodes: " + old.Err
+	case !n2.OK:
+		return vDifferent, "the new build's second transcode failed: " + n2.Err
+	case n1.SHA != n2.SHA:
+		return vDifferent, fmt.Sprintf("NONDETERMINISTIC: the new build wrote %s… (%d B) then %s… (%d B) from the same source",
+			n1.SHA[:16], n1.Size, n2.SHA[:16], n2.Size)
+	case n1.SHA != old.SHA:
+		return vDifferent, fmt.Sprintf("sha256 old %s… (%d B), new %s… (%d B)", old.SHA[:16], old.Size, n1.SHA[:16], n1.Size)
+	}
+	return vIdentical, ""
 }

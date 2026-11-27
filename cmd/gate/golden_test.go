@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gateidentity"
 	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
@@ -535,8 +536,8 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 			if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 				t.Fatalf("%s: %v", f, err)
 			}
-			old := giwResult{OK: r.OldSHA != "", SHA: r.OldSHA, Size: r.OldBytes, Line: r.OldLine, Err: errIfNoSHA(r.OldSHA, r.Why)}
-			nw := giwResult{OK: r.NewSHA != "", SHA: r.NewSHA, Size: r.NewBytes, Line: r.NewLine, Err: errIfNoSHA(r.NewSHA, r.Why)}
+			old := gateidentity.GiwResult{OK: r.OldSHA != "", SHA: r.OldSHA, Size: r.OldBytes, Line: r.OldLine, Err: errIfNoSHA(r.OldSHA, r.Why)}
+			nw := gateidentity.GiwResult{OK: r.NewSHA != "", SHA: r.NewSHA, Size: r.NewBytes, Line: r.NewLine, Err: errIfNoSHA(r.NewSHA, r.Why)}
 			if r.NewErr != "" {
 				nw.Err = r.NewErr
 			}
@@ -544,7 +545,7 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 			if r.New2SHA != "" {
 				n2.SHA = r.New2SHA
 			}
-			v, detail := judgeGiwBytes(nw, n2, old)
+			v, detail := gateidentity.JudgeGiwBytes(nw, n2, old)
 			counts[v]++
 			rows++
 			if v != r.Verdict {
