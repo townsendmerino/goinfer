@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/townsendmerino/goinfer/internal/chat/harmony"
 )
 
 // Each constructor returns the family's renderer, written to match HuggingFace apply_chat_template byte for byte
@@ -167,7 +169,7 @@ func Harmony() *Template { return harmonyTemplate("medium") }
 // own template takes as its reasoning_effort).
 func harmonyTemplate(effort string) *Template {
 	return &Template{name: "harmony", effort: effort, stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
-		return harmonySegments(effort, system, turns, nil)
+		return harmony.Segments(timeNow(), effort, system, toCoreTurns(turns), nil)
 	}}
 }
 

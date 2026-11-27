@@ -1,6 +1,10 @@
 package chat
 
-import "unicode/utf8"
+import (
+	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/internal/chat/harmony"
+)
 
 // ReplySplitter is what a decode loop holds to separate a streamed reply into reasoning and answer: a ThinkSplitter (a delimited
 // <think>…</think> span — Qwen, Gemma 4) or the Harmony parser (gpt-oss's channel messages), plus the one thing a loop that
@@ -26,7 +30,7 @@ type replyCore interface {
 // caller then passes every fragment through as answer, exactly as before thinking was modelled).
 func (t *Template) NewReplySplitter(turns []Turn) *ReplySplitter {
 	if t != nil && t.name == "harmony" {
-		return &ReplySplitter{sp: newHarmonySplitter()}
+		return &ReplySplitter{sp: harmony.NewSplitter()}
 	}
 	if t != nil && t.name == "inkling2" {
 		return &ReplySplitter{sp: &inklingSplitter{}}
@@ -63,8 +67,8 @@ func (r *ReplySplitter) ToolCalls() []ToolCall {
 	if r == nil {
 		return nil
 	}
-	if h, ok := r.sp.(*harmonySplitter); ok {
-		return harmonyToolCalls(h.calls)
+	if h, ok := r.sp.(*harmony.Splitter); ok {
+		return fromCoreCalls(h.ToolCalls())
 	}
 	if s, ok := r.sp.(*inklingSplitter); ok {
 		return inklingToolCalls(s.calls)

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
+	"github.com/townsendmerino/goinfer/internal/chat/harmony"
 )
 
 // Tool calling. Each family declares tools in the prompt, emits a call, and feeds a result back in its own syntax, so goinfer renders
@@ -68,7 +69,7 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 		}
 		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4, t.reason.offScaffold())
 	case "harmony": // already segment-built: the markers are special, everything a user or tool wrote is hardened content
-		return harmonySegments(t.harmonyEffort(), system, turns, tools)
+		return harmony.Segments(timeNow(), t.harmonyEffort(), system, toCoreTurns(turns), toCoreTools(tools))
 	case "flint":
 		return t.renderFlintTools(system, turns, tools)
 	case "inkling2":
@@ -180,10 +181,24 @@ func callObjectJSON(c ToolCall, argsKey string) string {
 	return chatcore.CallObjectJSON(chatcore.ToolCall{ID: c.ID, Name: c.Name, Arguments: c.Arguments}, argsKey)
 }
 
+const (
+	jStr = chatcore.JStr
+	jObj = chatcore.JObj
+)
+
 var (
 	jsonStr          = chatcore.JSONStr
 	apostropheEscape = chatcore.ApostropheEscape
+	parseJV          = chatcore.ParseJV
+	pyDumps          = chatcore.PyDumps
+	pyQuote          = chatcore.PyQuote
+	pyArgs           = chatcore.PyArgs
 )
+
+func parseHarmonyTools(out string) ([]ToolCall, string) {
+	calls, lead := harmony.ParseTools(out)
+	return fromCoreCalls(calls), lead
+}
 
 // --- ChatML / Qwen (Hermes) ---
 

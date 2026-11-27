@@ -740,6 +740,22 @@
         ]
       },
       "why": "internal/chat/chatcore holds shared conversation structs, segment builders, history rules, order-preserving JSON helpers, and JSON Schema parameter typing below chat and its dialect leaves (CH1). It imports only tokenizer and the standard library."
+    },
+    {
+      "name": "chat-harmony-leaf",
+      "from": [
+        "internal/chat/harmony"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/harmony": [
+          "internal/chat/chatcore"
+        ]
+      },
+      "why": "internal/chat/harmony holds gpt-oss Harmony prompt rendering, TypeScript namespace tool declarations, channel-message stream splitting, and recipient tool-call extraction below chat (CH2). It imports only internal/chat/chatcore and the standard library."
     }
   ],
   "arrows": {
@@ -855,6 +871,7 @@
     "chat": [
       "constrain",
       "internal/chat/chatcore",
+      "internal/chat/harmony",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -1091,6 +1108,9 @@
     ],
     "internal/chat/chatcore": [
       "tokenizer"
+    ],
+    "internal/chat/harmony": [
+      "internal/chat/chatcore"
     ],
     "internal/clef": [
       "decoder",

@@ -1,45 +1,27 @@
-package chat
+package harmony
 
 import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
 )
 
-type jv = chatcore.JV
-
-const (
-	jNull = chatcore.JNull
-	jBool = chatcore.JBool
-	jNum  = chatcore.JNum
-	jStr  = chatcore.JStr
-	jArr  = chatcore.JArr
-	jObj  = chatcore.JObj
-)
-
-var (
-	parseJV = chatcore.ParseJV
-	pyDumps = chatcore.PyDumps
-	pyQuote = chatcore.PyQuote
-	pyArgs  = chatcore.PyArgs
-)
-
-// tsType is the template's render_typescript_type macro, branch for branch and in the macro's order.
-func tsType(p jv) string {
+func tsType(p chatcore.JV) string {
 	typ, hasType := p.Get("type")
-	if hasType && typ.Kind == jStr && typ.S == "array" {
+	if hasType && typ.Kind == chatcore.JStr && typ.S == "array" {
 		var out string
 		if items, ok := p.Get("items"); ok && items.Truthy() {
 			it, _ := items.Get("type")
 			switch {
-			case it.Kind == jStr && it.S == "string":
+			case it.Kind == chatcore.JStr && it.S == "string":
 				out = "string[]"
-			case it.Kind == jStr && (it.S == "number" || it.S == "integer"):
+			case it.Kind == chatcore.JStr && (it.S == "number" || it.S == "integer"):
 				out = "number[]"
-			case it.Kind == jStr && it.S == "boolean":
+			case it.Kind == chatcore.JStr && it.S == "boolean":
 				out = "boolean[]"
 			default:
 				inner := tsType(items)
@@ -57,7 +39,7 @@ func tsType(p jv) string {
 		}
 		return out
 	}
-	if hasType && typ.Kind == jArr && len(typ.Arr) > 0 {
+	if hasType && typ.Kind == chatcore.JArr && len(typ.Arr) > 0 {
 		if len(typ.Arr) > 1 {
 			parts := make([]string, len(typ.Arr))
 			for i, t := range typ.Arr {
@@ -70,7 +52,7 @@ func tsType(p jv) string {
 	if one, ok := p.Get("oneOf"); ok && one.Truthy() {
 		hasObject := false
 		for _, v := range one.Arr {
-			if t, _ := v.Get("type"); t.Kind == jStr && t.S == "object" {
+			if t, _ := v.Get("type"); t.Kind == chatcore.JStr && t.S == "object" {
 				hasObject = true
 			}
 		}
@@ -84,7 +66,7 @@ func tsType(p jv) string {
 				b.WriteString("// " + d.Text())
 			}
 			if d, ok := v.Get("default"); ok {
-				b.WriteString(strings.Repeat(" ", 20) + "// default: " + pyDumps(d))
+				b.WriteString(strings.Repeat(" ", 20) + "// default: " + chatcore.PyDumps(d))
 			}
 			if i < len(one.Arr)-1 {
 				b.WriteString(" | \n")
@@ -93,7 +75,7 @@ func tsType(p jv) string {
 		return b.String()
 	}
 	switch {
-	case hasType && typ.Kind == jStr && typ.S == "string":
+	case hasType && typ.Kind == chatcore.JStr && typ.S == "string":
 		if e, ok := p.Get("enum"); ok && e.Truthy() {
 			parts := make([]string, len(e.Arr))
 			for i, v := range e.Arr {
@@ -105,11 +87,11 @@ func tsType(p jv) string {
 			return "string | null"
 		}
 		return "string"
-	case hasType && typ.Kind == jStr && (typ.S == "number" || typ.S == "integer"):
+	case hasType && typ.Kind == chatcore.JStr && (typ.S == "number" || typ.S == "integer"):
 		return "number"
-	case hasType && typ.Kind == jStr && typ.S == "boolean":
+	case hasType && typ.Kind == chatcore.JStr && typ.S == "boolean":
 		return "boolean"
-	case hasType && typ.Kind == jStr && typ.S == "object":
+	case hasType && typ.Kind == chatcore.JStr && typ.S == "object":
 		props, ok := p.Get("properties")
 		if !ok || !props.Truthy() {
 			return "object"
@@ -133,9 +115,9 @@ func tsType(p jv) string {
 	return "any"
 }
 
-func requiredSet(schema jv) map[string]bool {
+func requiredSet(schema chatcore.JV) map[string]bool {
 	set := map[string]bool{}
-	if r, ok := schema.Get("required"); ok && r.Kind == jArr {
+	if r, ok := schema.Get("required"); ok && r.Kind == chatcore.JArr {
 		for _, v := range r.Arr {
 			set[v.Text()] = true
 		}
@@ -143,8 +125,8 @@ func requiredSet(schema jv) map[string]bool {
 	return set
 }
 
-// harmonyNamespace is the template's render_tool_namespace("functions", tools).
-func harmonyNamespace(tools []Tool) string {
+// Namespace formats tool declarations as Harmony's TypeScript `namespace functions` block.
+func Namespace(tools []chatcore.Tool) string {
 	var b strings.Builder
 	b.WriteString("## functions\n\nnamespace functions {\n\n")
 	for _, t := range tools {
@@ -152,7 +134,7 @@ func harmonyNamespace(tools []Tool) string {
 			b.WriteString("// " + t.Description + "\n")
 		}
 		b.WriteString("type " + t.Name + " = ")
-		schema, err := parseJV(t.Parameters)
+		schema, err := chatcore.ParseJV(t.Parameters)
 		props, _ := schema.Get("properties")
 		if err != nil || !props.Truthy() {
 			b.WriteString("() => any;\n\n")
@@ -179,7 +161,7 @@ func harmonyNamespace(tools []Tool) string {
 				case oneOf.Truthy():
 					b.WriteString("// default: " + def.Text())
 				default:
-					b.WriteString(", // default: " + pyDumps(def))
+					b.WriteString(", // default: " + chatcore.PyDumps(def))
 				}
 			}
 			b.WriteString(",\n")
@@ -190,35 +172,35 @@ func harmonyNamespace(tools []Tool) string {
 	return b.String()
 }
 
-// harmonySegments renders system + turns (+ tool declarations when tools is non-empty) in Harmony, ending with the generation prompt.
-func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segment {
-	var b segBuf
-	b.sp("<|start|>")
-	b.ct("system")
-	b.sp("<|message|>")
+// Segments renders system + turns (+ optional tool declarations) in Harmony format, ending with the generation prompt.
+func Segments(now time.Time, effort, system string, turns []chatcore.Turn, tools []chatcore.Tool) []chatcore.Segment {
+	var b chatcore.SegBuf
+	b.Sp("<|start|>")
+	b.Ct("system")
+	b.Sp("<|message|>")
 	preamble := "You are ChatGPT, a large language model trained by OpenAI.\n" +
 		"Knowledge cutoff: 2024-06\n" +
-		"Current date: " + timeNow().Format("2006-01-02") + "\n\n" +
+		"Current date: " + now.Format("2006-01-02") + "\n\n" +
 		"Reasoning: " + effort + "\n\n" +
 		"# Valid channels: analysis, commentary, final. Channel must be included for every message."
 	if len(tools) > 0 {
 		preamble += "\nCalls to these tools must go to the commentary channel: 'functions'."
 	}
-	b.ct(preamble)
-	b.sp("<|end|>")
+	b.Ct(preamble)
+	b.Sp("<|end|>")
 	if system != "" || len(tools) > 0 {
-		b.sp("<|start|>")
-		b.ct("developer")
-		b.sp("<|message|>")
+		b.Sp("<|start|>")
+		b.Ct("developer")
+		b.Sp("<|message|>")
 		var dev strings.Builder
 		if system != "" {
 			dev.WriteString("# Instructions\n\n" + system + "\n\n")
 		}
 		if len(tools) > 0 {
-			dev.WriteString("# Tools\n\n" + harmonyNamespace(tools))
+			dev.WriteString("# Tools\n\n" + Namespace(tools))
 		}
-		b.ct(dev.String())
-		b.sp("<|end|>")
+		b.Ct(dev.String())
+		b.Sp("<|end|>")
 	}
 
 	callNames := map[string]string{}
@@ -238,45 +220,45 @@ func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segmen
 					text = t.Reasoning
 				}
 				if text != "" {
-					b.sp("<|start|>")
-					b.ct("assistant")
-					b.sp("<|channel|>")
-					b.ct("analysis")
-					b.sp("<|message|>")
-					b.ct(text)
-					b.sp("<|end|>")
+					b.Sp("<|start|>")
+					b.Ct("assistant")
+					b.Sp("<|channel|>")
+					b.Ct("analysis")
+					b.Sp("<|message|>")
+					b.Ct(text)
+					b.Sp("<|end|>")
 				}
 				if t.Reasoning != "" && t.Content != "" {
-					b.sp("<|start|>")
-					b.ct("assistant")
-					b.sp("<|channel|>")
-					b.ct("commentary")
-					b.sp("<|message|>")
-					b.ct(t.Content)
-					b.sp("<|end|>")
+					b.Sp("<|start|>")
+					b.Ct("assistant")
+					b.Sp("<|channel|>")
+					b.Ct("commentary")
+					b.Sp("<|message|>")
+					b.Ct(t.Content)
+					b.Sp("<|end|>")
 				}
 			}
 			for _, c := range t.ToolCalls {
-				b.sp("<|start|>")
-				b.ct("assistant to=functions." + c.Name)
-				b.sp("<|channel|>")
-				b.ct("commentary json")
-				b.sp("<|message|>")
-				b.ct(pyArgs(c.Arguments))
-				b.sp("<|call|>")
+				b.Sp("<|start|>")
+				b.Ct("assistant to=functions." + c.Name)
+				b.Sp("<|channel|>")
+				b.Ct("commentary json")
+				b.Sp("<|message|>")
+				b.Ct(chatcore.PyArgs(c.Arguments))
+				b.Sp("<|call|>")
 				lastCall = c.Name
 				if c.ID != "" {
 					callNames[c.ID] = c.Name
 				}
 			}
 		case t.Role == "assistant":
-			b.sp("<|start|>")
-			b.ct("assistant")
-			b.sp("<|channel|>")
-			b.ct("final")
-			b.sp("<|message|>")
-			b.ct(t.Content)
-			b.sp("<|end|>")
+			b.Sp("<|start|>")
+			b.Ct("assistant")
+			b.Sp("<|channel|>")
+			b.Ct("final")
+			b.Sp("<|message|>")
+			b.Ct(t.Content)
+			b.Sp("<|end|>")
 			lastCall = ""
 		case t.Role == "tool":
 			name := lastCall
@@ -286,28 +268,29 @@ func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segmen
 			if name == "" {
 				name = t.ToolName
 			}
-			b.sp("<|start|>")
-			b.ct("functions." + name + " to=assistant")
-			b.sp("<|channel|>")
-			b.ct("commentary")
-			b.sp("<|message|>")
-			b.ct(pyQuote(t.Content))
-			b.sp("<|end|>")
+			b.Sp("<|start|>")
+			b.Ct("functions." + name + " to=assistant")
+			b.Sp("<|channel|>")
+			b.Ct("commentary")
+			b.Sp("<|message|>")
+			b.Ct(chatcore.PyQuote(t.Content))
+			b.Sp("<|end|>")
 		default:
-			b.sp("<|start|>")
-			b.ct("user")
-			b.sp("<|message|>")
-			b.ct(t.Content)
-			b.sp("<|end|>")
+			b.Sp("<|start|>")
+			b.Ct("user")
+			b.Sp("<|message|>")
+			b.Ct(t.Content)
+			b.Sp("<|end|>")
 		}
 	}
-	b.sp("<|start|>")
-	b.ct("assistant")
-	return b.segs
+	b.Sp("<|start|>")
+	b.Ct("assistant")
+	return b.Segs
 }
 
-func harmonyToolCalls(calls []harmonyCall) []ToolCall {
-	var out []ToolCall
+// ToolCalls converts parsed recipient messages into structured ToolCalls for functions.* recipients.
+func ToolCalls(calls []Call) []chatcore.ToolCall {
+	var out []chatcore.ToolCall
 	for _, c := range calls {
 		name, ok := strings.CutPrefix(c.Recipient, "functions.")
 		if !ok || name == "" {
@@ -325,17 +308,18 @@ func harmonyToolCalls(calls []harmonyCall) []ToolCall {
 		if json.Compact(&compact, args) != nil {
 			continue
 		}
-		out = append(out, ToolCall{Name: name, Arguments: json.RawMessage(compact.Bytes())})
+		out = append(out, chatcore.ToolCall{Name: name, Arguments: json.RawMessage(compact.Bytes())})
 	}
 	return out
 }
 
-func parseHarmonyTools(out string) ([]ToolCall, string) {
-	sp := newHarmonySplitter()
+// ParseTools parses a complete Harmony reply into structured tool calls and leading prose.
+func ParseTools(out string) ([]chatcore.ToolCall, string) {
+	sp := NewSplitter()
 	_, c1 := sp.Push(out)
 	_, c2 := sp.Flush()
 	content := c1 + c2
-	calls := harmonyToolCalls(sp.calls)
+	calls := sp.ToolCalls()
 	if len(calls) == 0 {
 		return nil, out
 	}

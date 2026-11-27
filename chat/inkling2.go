@@ -194,6 +194,14 @@ func inklingCallJSON(c ToolCall) string {
 // inklingCall is a tool call the model wrote: the name after <|message_model|> and the JSON body.
 type inklingCall struct{ name, body string }
 
+type hmRoute uint8
+
+const (
+	hmToContent hmRoute = iota
+	hmToReasoning
+	hmToCall
+)
+
 // inklingSplitter reads an Inkling 2 reply, a sequence of model messages: <|content_thinking|> to the reasoning,
 // <|content_text|> to the answer, and an invoke message to the calls, shown in neither. Text outside any message is answer,
 // so a reply that does not speak the format degrades to plain text. The end-of-sequence marker is a stop id and never in the
