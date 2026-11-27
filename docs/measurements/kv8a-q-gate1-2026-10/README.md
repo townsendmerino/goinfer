@@ -70,7 +70,7 @@ done
 
 ## What main already does with this (code reading, not run)
 
-- **The snapshot:** for a recurrent model, `decoder/kvsnap.go:Model.kvBoundaryPlan` plans the prefill's snapshot at
+- **The snapshot:** for a recurrent model, `internal/runtime/residency/kvsnap.go:Host.KVBoundaryPlan` plans the prefill's snapshot at
   `KVScope.Keep`, rounded down to the resident's pass grid, and never at `KVScope.Boundary`. `Model.kvPrefillMark` takes it
   during r1's cold prefill.
 - **The tool loop leaves it alone:** r2 and r3 continue from the live state past it, so they take no new snapshot, and r1's

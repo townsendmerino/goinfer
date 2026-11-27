@@ -1,6 +1,8 @@
-package decoder
+package blockdraft
 
 import (
+	"github.com/townsendmerino/goinfer/decoder/resident"
+	"github.com/townsendmerino/goinfer/internal/testassets"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -18,14 +20,17 @@ import (
 // So this cross-checks every field against the trunk's own state, and specifically requires that
 // DIFFERENT LAYERS RETURN DIFFERENT WEIGHTS, which is the assertion an index bug fails.
 func TestBlockDrafterWeights_matchesTrunk(t *testing.T) {
-	dir := assetPath(t, "GOINFER_DFLASH_F32")
-	d, err := LoadDFlashDrafter(dir)
+	dir, err := testassets.Lookup("GOINFER_DFLASH_F32")
 	if err != nil {
-		t.Fatalf("LoadDFlashDrafter: %v", err)
+		t.Skipf("asset GOINFER_DFLASH_F32 unavailable: %v", err)
+	}
+	d, err := LoadDFlash(dir)
+	if err != nil {
+		t.Fatalf("LoadDFlash: %v", err)
 	}
 	defer d.Close()
 
-	var w BlockDrafterWeights = d
+	var w resident.BlockDrafterWeights = d
 	g := w.DrafterGeometry()
 	for _, c := range []struct {
 		name     string
@@ -98,15 +103,15 @@ func TestBlockDrafterWeights_matchesTrunk(t *testing.T) {
 		w.BlockSize(), w.DrafterFC().Rows(), w.DrafterFC().Cols())
 }
 
-// syntheticDrafter builds a small, entirely fabricated DFlashDrafter with nLayers layers — no
-// checkpoint needed, so this exercises DrafterResidentBytesEstimate's arithmetic unconditionally
+// syntheticDrafter builds a small, entirely fabricated DFlash with nLayers layers — no
+// checkpoint needed, so this exercises EstimateResidentBytes's arithmetic unconditionally
 // in CI rather than only wherever GOINFER_DFLASH_F32 happens to be present. Values are zeroed;
 // only shapes matter for a byte count.
-func syntheticDrafter(t *testing.T, nLayers int) *DFlashDrafter {
+func syntheticDrafter(t *testing.T, nLayers int) *DFlash {
 	t.Helper()
 	const hidden, nH, nKV, hd, inter, nTaps = 8, 2, 1, 4, 16, 2
 	mat := func(n, k int) linalg.WeightMat { return linalg.WrapF32(make([]float32, n*k), n, k) }
-	d := &DFlashDrafter{
+	d := &DFlash{
 		hidden: hidden, nHeads: nH, nKV: nKV, headDim: hd, inter: inter,
 		fc:         mat(hidden, nTaps*hidden),
 		hiddenNorm: make([]float32, hidden),
@@ -121,16 +126,16 @@ func syntheticDrafter(t *testing.T, nLayers int) *DFlashDrafter {
 	return d
 }
 
-// wmInt8Bytes is DrafterResidentBytesEstimate's own per-matrix formula, reimplemented
+// wmInt8Bytes is EstimateResidentBytes's own per-matrix formula, reimplemented
 // independently here so the test is not just calling the function and checking it agrees with
 // itself — same discipline decoder/weightbytes_test.go's cross-checks use.
 func wmInt8Bytes(n, k int) int64 { return int64(n)*int64(k) + int64(n)*4 }
 
-// TestDrafterResidentBytesEstimate_matchesHandComputedTotal pins the arithmetic against an
+// TestEstimateResidentBytes_matchesHandComputedTotal pins the arithmetic against an
 // independently-summed total for a small synthetic geometry, so a future change to which
 // matrices are counted (or a copy-paste layer omission) shows up as a wrong number, not a
 // plausible-looking one.
-func TestDrafterResidentBytesEstimate_matchesHandComputedTotal(t *testing.T) {
+func TestEstimateResidentBytes_matchesHandComputedTotal(t *testing.T) {
 	const hidden, nH, nKV, hd, inter, nTaps, nLayers = 8, 2, 1, 4, 16, 2, 2
 	d := syntheticDrafter(t, nLayers)
 
@@ -138,43 +143,24 @@ func TestDrafterResidentBytesEstimate_matchesHandComputedTotal(t *testing.T) {
 		wmInt8Bytes(inter, hidden)*2 + wmInt8Bytes(hidden, inter)
 	want := wmInt8Bytes(hidden, nTaps*hidden) + int64(nLayers)*perLayer
 
-	if got := DrafterResidentBytesEstimate(d); got != want {
-		t.Errorf("DrafterResidentBytesEstimate = %d, want %d (hand-computed)", got, want)
+	if got := EstimateResidentBytes(d); got != want {
+		t.Errorf("EstimateResidentBytes = %d, want %d (hand-computed)", got, want)
 	}
 }
 
-// TestDrafterResidentBytesEstimate_growsWithLayers guards the shape of the estimate, not just one
+// TestEstimateResidentBytes_growsWithLayers guards the shape of the estimate, not just one
 // pinned number: more layers must cost strictly more, and a drafter with zero layers (fc/norms
 // only) must still return a positive figure rather than 0 — a caller pricing "nothing else is
 // attaching" as 0 (Options.ExtraResidentBytes' own doc comment) must never be confused with a
 // genuinely-loaded drafter that this function under-counted to zero.
-func TestDrafterResidentBytesEstimate_growsWithLayers(t *testing.T) {
-	zero := DrafterResidentBytesEstimate(syntheticDrafter(t, 0))
+func TestEstimateResidentBytes_growsWithLayers(t *testing.T) {
+	zero := EstimateResidentBytes(syntheticDrafter(t, 0))
 	if zero <= 0 {
 		t.Fatalf("a 0-layer drafter (fc + norms only) estimated %d bytes, want > 0", zero)
 	}
-	one := DrafterResidentBytesEstimate(syntheticDrafter(t, 1))
-	two := DrafterResidentBytesEstimate(syntheticDrafter(t, 2))
+	one := EstimateResidentBytes(syntheticDrafter(t, 1))
+	two := EstimateResidentBytes(syntheticDrafter(t, 2))
 	if !(zero < one && one < two) {
 		t.Errorf("estimate did not grow monotonically with layer count: 0L=%d 1L=%d 2L=%d", zero, one, two)
-	}
-}
-
-// TestExtraResidentBytes_reachesTheModel closes the loop the estimate feeds: internal/serveapp's
-// loadDecoder sets Options.ExtraResidentBytes before calling Load, and a backend
-// (cuda/resident.go's checkWeightsFit/checkKVFits/allocSlots) reads it back off *Model, not off
-// Options — so a struct-literal typo at either of Load's two &Model{...} sites would silently
-// zero it and no backend-level test could ever see why a --drafter attach still ran out of room.
-// Load()-based (a real tracked fixture) rather than constructing *Model directly, so this proves
-// the actual production path, matching TestFitDisabled/TestResolveCtxCapFit_shortcuts' own
-// "load a real model, don't pass nil" precedent (cuda/resident_cap_test.go).
-func TestExtraResidentBytes_reachesTheModel(t *testing.T) {
-	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32", ExtraResidentBytes: 123456789})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer m.Close()
-	if got := m.ExtraResidentBytes(); got != 123456789 {
-		t.Errorf("ExtraResidentBytes() = %d, want 123456789", got)
 	}
 }

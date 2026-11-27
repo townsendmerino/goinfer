@@ -1,6 +1,10 @@
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/specdecode"
+)
 
 // Theta's domain and the per-backend wiring.
 //
@@ -15,13 +19,13 @@ import "testing"
 func TestTheta_geOneIsLegalAndDisablesDrafting(t *testing.T) {
 	for _, theta := range []float64{1.0, 1.02, 1.048, 2.0} {
 		a := &AdaptiveDepth{Theta: theta}
-		a.ensure()
+		specdecode.EnsureAdaptive(a)
 		if a.Theta != theta {
 			t.Fatalf("Theta %v was rewritten to %v — the domain still rejects the measured value", theta, a.Theta)
 		}
 		// Every alpha, including one that would otherwise draft the maximum.
 		for _, alpha := range []float64{0.1, 0.5, 0.9, 0.99, 0.9999} {
-			a.alpha = alpha
+			specdecode.SetAlpha(a, alpha)
 			if d := a.Depth(8); d != 0 {
 				t.Fatalf("Theta=%v alpha=%v: drafted %d, want 0 (a node costs a whole step)", theta, alpha, d)
 			}
@@ -40,15 +44,15 @@ func TestTheta_geOneIsLegalAndDisablesDrafting(t *testing.T) {
 // comparison would leave this path drafting and the test above would still pass.
 func TestTheta_geOneSkipsTheProbe(t *testing.T) {
 	a := &AdaptiveDepth{Theta: 1.02, ProbeEvery: 4}
-	a.ensure()
+	specdecode.EnsureAdaptive(a)
 	for range 20 { // well past ProbeEvery
 		if d := a.Depth(8); d != 0 {
 			t.Fatalf("probe fired under Theta>=1 (drafted %d); it can never change the answer", d)
 		}
 		a.Observe(0, 0) // the D=0 round that advances idle
 	}
-	if a.idle < 4 {
-		t.Fatalf("idle=%d — the probe path was never actually reached, so this test proved nothing", a.idle)
+	if idle := specdecode.IdleCount(a); idle < 4 {
+		t.Fatalf("idle=%d — the probe path was never actually reached, so this test proved nothing", idle)
 	}
 }
 
@@ -56,8 +60,8 @@ func TestTheta_geOneSkipsTheProbe(t *testing.T) {
 // point is that Theta < 1 behaves exactly as before.
 func TestTheta_belowOneStillDrafts(t *testing.T) {
 	a := &AdaptiveDepth{Theta: 0.25}
-	a.ensure()
-	a.alpha = 0.9
+	specdecode.EnsureAdaptive(a)
+	specdecode.SetAlpha(a, 0.9)
 	d := a.Depth(8)
 	if d <= 0 {
 		t.Fatalf("Theta=0.25 alpha=0.9 drafted %d, want > 0 — the disable branch is too greedy", d)
@@ -65,11 +69,11 @@ func TestTheta_belowOneStillDrafts(t *testing.T) {
 	// And the CUDA constant must draft DEEPER than the CPU one at equal alpha,
 	// which is the entire reason for wiring it per backend.
 	shallow := &AdaptiveDepth{Theta: thetaFor("cpu")}
-	shallow.ensure()
-	shallow.alpha = 0.9
+	specdecode.EnsureAdaptive(shallow)
+	specdecode.SetAlpha(shallow, 0.9)
 	deep := &AdaptiveDepth{Theta: thetaFor("cuda")}
-	deep.ensure()
-	deep.alpha = 0.9
+	specdecode.EnsureAdaptive(deep)
+	specdecode.SetAlpha(deep, 0.9)
 	if !(deep.Depth(8) > shallow.Depth(8)) {
 		t.Fatalf("cuda depth %d not deeper than cpu depth %d at alpha=0.9 — the table is not doing anything",
 			deep.Depth(8), shallow.Depth(8))

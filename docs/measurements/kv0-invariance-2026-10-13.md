@@ -146,8 +146,8 @@ within 16 of it (`cuda-tiny-rerun-after-assertion-change.log`, pass). No invaria
 CUDA: the same as registered. A pass of m rows from s runs the fast kernels iff m ≥ 16 and max(promptLen, s + m) ≥ 512, with
 promptLen the whole prompt for a pass inside a multi-chunk prefill. **What decides the class is the pass's own length, not the
 prompt's**, for a prefill that arrives in two calls: `split@256` at n = 1000 wrote rows 0–255 with the exact class although the
-prompt is 1,000 tokens, because its first call was 256 tokens long; that is what `decoder/resident_reuse.go:Model.declineShortLeadReuse` guards. The
-second condition, m ≥ 16, is not part of `decoder/resident_reuse.go:Model.declineShortLeadReuse`'s rule (it compares the prompt's length with the floor): `split@985` and `chunk=496` show it makes a ≤ 15-row pass exact.
+prompt is 1,000 tokens, because its first call was 256 tokens long; that is what `internal/runtime/residency/reuse.go:Host.DeclineShortLeadReuse` guards. The
+second condition, m ≥ 16, is not part of `internal/runtime/residency/reuse.go:Host.DeclineShortLeadReuse`'s rule (it compares the prompt's length with the floor): `split@985` and `chunk=496` show it makes a ≤ 15-row pass exact.
 In the manager's terms it never reaches a *published* block as such: a published block is a full block and a 15-row tail pass
 makes a full block only when it ends one, in which case the block mixes two classes (§5.5's "records both and the row where they
 meet" is the right shape and is needed).

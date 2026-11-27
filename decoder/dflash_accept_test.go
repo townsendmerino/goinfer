@@ -135,8 +135,8 @@ func TestDFlashAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenizer.Load(%s): %v", tokDir, err)
 	}
-	if m.w.Arch.HiddenDim != d.hidden {
-		t.Fatalf("target hidden %d != drafter hidden %d — wrong pairing", m.w.Arch.HiddenDim, d.hidden)
+	if m.w.Arch.HiddenDim != d.DrafterGeometry().Hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d — wrong pairing", m.w.Arch.HiddenDim, d.DrafterGeometry().Hidden)
 	}
 	for _, l := range d.TargetLayerIDs() {
 		if l >= m.w.Arch.NumLayers {
@@ -144,7 +144,7 @@ func TestDFlashAcceptance(t *testing.T) {
 		}
 	}
 	t.Logf("pairing: drafter=%s target=%s (hidden %d, %d target layers, %d taps, block %d)",
-		ddir, tdir, d.hidden, m.w.Arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
+		ddir, tdir, d.DrafterGeometry().Hidden, m.w.Arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
 
 	type result struct{ rounds, accepted, generated int }
 	overall := map[string]*result{}
@@ -302,7 +302,7 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 		if err != nil {
 			t.Fatalf("ForwardCapture: %v", err)
 		}
-		row := make([]float32, 0, len(hidden)*d.hidden)
+		row := make([]float32, 0, len(hidden)*d.DrafterGeometry().Hidden)
 		for _, h := range hidden {
 			row = append(row, h...)
 		}
@@ -434,14 +434,14 @@ func BenchmarkDFlashTrunk(b *testing.B) {
 		b.Run(fmt.Sprintf("ctx%d", ctxLen), func(b *testing.B) {
 			fused := make([][]float32, ctxLen)
 			for i := range fused {
-				fused[i] = make([]float32, d.hidden)
+				fused[i] = make([]float32, d.DrafterGeometry().Hidden)
 				for j := range fused[i] {
 					fused[i][j] = float32((i*31+j*7)%97) / 97
 				}
 			}
 			blockIn := make([][]float32, d.BlockSize())
 			for i := range blockIn {
-				blockIn[i] = make([]float32, d.hidden)
+				blockIn[i] = make([]float32, d.DrafterGeometry().Hidden)
 				for j := range blockIn[i] {
 					blockIn[i][j] = float32((i*13+j*3)%89) / 89
 				}

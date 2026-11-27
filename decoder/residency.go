@@ -1013,7 +1013,8 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	}
 	if n > hidden {
 		tail := row[hidden:]
-		m.gemma4PLEInputsScratch(h, id, tail, pleScratch)
+		e := m.cpuEngine()
+		e.Gemma4PLEInputsScratch(h, id, tail, pleScratch)
 		if gemma4PLEDropTokenForTest {
 			// Planted defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
 			tok := make([]float32, len(tail))

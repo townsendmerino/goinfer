@@ -370,17 +370,17 @@ func TestMC3_aloneRunsProductionPath(t *testing.T) {
 func TestMC3_exclusiveClaimWaitsForNoHolder(t *testing.T) {
 	m, _ := loadWithMC3Fake(t, 2)
 	m.EnableResidentConcurrency(2)
-	if !m.batcher.claim(&m.resBusy) {
+	if !m.batcher.Claim(&m.resBusy) {
 		t.Fatal("first MC3 claim failed")
 	}
 	if m.tryClaimResident() {
 		t.Fatal("the exclusive claim succeeded while an MC3 generation held a place")
 	}
-	m.batcher.release()
+	m.batcher.Release()
 	if !m.tryClaimResident() {
 		t.Fatal("the exclusive claim failed with no MC3 place held")
 	}
-	if m.batcher.claim(&m.resBusy) {
+	if m.batcher.Claim(&m.resBusy) {
 		t.Fatal("an MC3 claim succeeded while the exclusive claim was held")
 	}
 	atomic.StoreInt32(&m.resBusy, 0)

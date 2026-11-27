@@ -1,0 +1,48 @@
+package residency
+
+import "context"
+
+// KVScope is the sharing scope of one request's KV. A request
+// takes rows another sequence computed only from a sequence in the same Namespace, and under Off only by continuing a
+// slot's whole sequence. The zero value is the single local namespace, sharing on.
+type KVScope struct {
+	Namespace string // "" is the single local namespace; serve sets one per API key
+	Off       bool   // no rows from another sequence: a continuation of a slot's sequence only
+	// Boundary is how many leading ids of the request's prompt are the stable system-and-tools section, the part before the first conversation turn
+	// (chat.Template.PrefixBoundary), 0 when the route does not know. A prefix snapshot is taken there during the cold prefill when the part of the
+	// prompt after it is longer than a windowed layer's rollback.
+	Boundary int
+	// Keep is how many leading ids of the prompt the next turn's prompt repeats: the end of the prompt less its generation tail, the part a
+	// chat template's history render rewrites (chat.NextTurns). A recurrent model's state is kept there, so the next turn continues from it.
+	// 0 when the route does not know.
+	Keep int
+	// MsgBoundary is how many leading ids of the prompt come before its last turn's content, so a next prompt that keeps every earlier turn and
+	// rewrites the last one leaves this one there or after it. A recurrent model's state is kept there too, beside Keep's, on the pass grid
+	// (docs/measurements/kv8-msgboundary-2026-11/README.md). 0 when the route does not know.
+	MsgBoundary int
+	// checkpoint: the caller restores a recurrent checkpoint when the acquire scores one (residentCheckpointRestore). Set only by
+	// a path that also saves one after its prefill (generateInto); every other path keeps today's strict-extension rule.
+	checkpoint bool
+}
+
+type kvScopeKey struct{}
+
+// ContextWithKVScope returns ctx carrying the request's KV sharing scope, which Generate and its variants read.
+func ContextWithKVScope(ctx context.Context, s KVScope) context.Context {
+	return context.WithValue(ctx, kvScopeKey{}, s)
+}
+
+// ScopeFromContext is the scope ctx carries, or the zero scope.
+func ScopeFromContext(ctx context.Context) KVScope {
+	if ctx == nil {
+		return KVScope{}
+	}
+	s, _ := ctx.Value(kvScopeKey{}).(KVScope)
+	return s
+}
+
+// ScopeWithCheckpoint returns a copy of s with recurrent checkpoint restore enabled.
+func ScopeWithCheckpoint(s KVScope, on bool) KVScope { s.checkpoint = on; return s }
+
+// CheckpointEnabled reports whether s permits recurrent checkpoint restore.
+func CheckpointEnabled(s KVScope) bool { return s.checkpoint }

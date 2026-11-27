@@ -50,7 +50,7 @@ Everything else is under 1%. Decode is a different mix: 54% `dequantI8AVX2` (wid
 
 Why it is slow: on amd64, `q8Span` is the column-at-a-time form. For each output column it widens one weight row, then dots it
 against every one of the M activation rows. So the whole activation block `a[M, Kin]` is re-read once per output column: four bytes
-of activation traffic per multiply-accumulate. At the reference's pass size (`decoder/forwardn.go:Model.prefillPassesN` cuts an
+of activation traffic per multiply-accumulate. At the reference's pass size (`internal/runtime/cpuengine/forwardn.go:Engine.PrefillPassesN` cuts an
 exact prefill into passes of `prefillChunkRows` = 2048 rows), that block is 32 MB for the Kin = 4096 projections and 117 MB for
 `down_proj` (Kin = 14336). Both are larger than a CCX's 16 MB L3. arm64 has an 8-column form (`linalg/q8span_arm64.go:q8Span`)
 that reuses each activation row across eight columns; amd64 does not.

@@ -108,10 +108,10 @@ type ogPagingCase struct {
 func ogPagingCases(autoBudget int64) []ogPagingCase {
 	evicts := func(t *testing.T, m *Model) {
 		t.Helper()
-		if b := m.pager.budget(); b >= autoBudget {
+		if b := m.pager.Budget(); b >= autoBudget {
 			t.Errorf("pager budget %d at WeightCacheBytes 1, %d at auto: WeightCacheBytes did not take hold", b, autoBudget)
 		}
-		if _, _, ev := m.pager.stats(); ev == 0 {
+		if _, _, ev := m.pager.Stats(); ev == 0 {
 			t.Errorf("the pager evicted nothing at a 1-byte budget")
 		}
 	}
@@ -121,7 +121,7 @@ func ogPagingCases(autoBudget int64) []ogPagingCase {
 		{"MoEPager mmap", Options{StreamWeights: true, WeightCacheBytes: 1, MoEPager: "mmap", AcceptSlowMoE: true},
 			func(t *testing.T, m *Model) {
 				t.Helper()
-				if m.pager.pool != nil {
+				if m.pager.PoolMode() {
 					t.Error("MoEPager mmap built a pread pool")
 				}
 				evicts(t, m)
@@ -129,7 +129,7 @@ func ogPagingCases(autoBudget int64) []ogPagingCase {
 		{"MoEPager pool", Options{StreamWeights: true, WeightCacheBytes: 1, MoEPager: "pool", AcceptSlowMoE: true},
 			func(t *testing.T, m *Model) {
 				t.Helper()
-				if m.pager.pool == nil {
+				if !m.pager.PoolMode() {
 					t.Error("MoEPager pool built no pread pool")
 				}
 				evicts(t, m)
@@ -141,7 +141,7 @@ func ogPagingCases(autoBudget int64) []ogPagingCase {
 func ogAutoBudget(t *testing.T, giwPath, pager string) int64 {
 	t.Helper()
 	m := ogLoadPaged(t, giwPath, ogPagingCase{opts: Options{StreamWeights: true, MoEPager: pager, AcceptSlowMoE: true}})
-	return m.pager.budget()
+	return m.pager.Budget()
 }
 
 // ogLoadPaged loads giwPath under c and fails unless an expert pager was built.

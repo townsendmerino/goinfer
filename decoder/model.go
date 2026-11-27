@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ type Model struct {
 	// commit one without touching a block drafter's context, so the token prefix can match while the drafter's state does not
 	// reflect it. Cleared by residentForgetIDs (every resident write invalidates it) and set only by BlockSpec.generate's
 	// fully-completed exit, the one path that keeps the sequence and the drafter's context advancing together.
-	resDrafterSynced *BlockSpec
+	resDrafterSynced any
 	// kv is the KV manager over the resident's slots (internal/kvmgr, resident_reuse.go): one sequence per slot, the
 	// slot a prompt takes, what it may reuse, and the index of published blocks; the one record of what each slot holds,
 	// the bound one included. nil until first used. Guarded by the same resBusy claim that serialises writes to the
@@ -307,7 +308,7 @@ func (m *Model) ResidentKVSlots() int {
 	if m.resident == nil {
 		return 0
 	}
-	return m.residentSlotCount()
+	return m.resHost().SlotCount()
 }
 
 // ExtraResidentBytes returns Options.ExtraResidentBytes: VRAM a companion allocation (a --drafter's weights; a vision tower
@@ -663,7 +664,7 @@ func (m *Model) Close() error {
 		return nil
 	}
 	if m.pager != nil {
-		_ = m.pager.close()
+		_ = m.pager.Close()
 		m.pager = nil
 	}
 	m.kvSnaps.ReleaseAll() // pinned host memory, freed before the device it was pinned for
@@ -878,10 +879,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			r.useGPU = false
 			r.g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(r.prompt), ctxCap)
 			m.warnResidentCap(r.g.ResidentDeclined)
-		} else if bt := m.batcher; bt != nil && r.lora == nil && bt.claim(&m.resBusy) {
+		} else if bt := m.batcher; bt != nil && r.lora == nil && bt.Claim(&m.resBusy) {
 			// Batched decode: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
 			r.mc3 = bt
-			defer bt.release()
+			defer bt.Release()
 		} else if m.tryClaimResident() {
 			if r.resAdapter != nil {
 				if err := r.resAdapter.SetAdapter(residentAdapterLayers(r.lora)); err != nil {
@@ -934,24 +935,24 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if r.mc3 != nil {
 			// Batched decode: choose a slot no other running generation holds, and prefill into it, with the resident to
 			// ourselves (between the other generations' steps).
-			r.mc3.exclusive(func() {
-				acq = m.residentAcquireIn(r.prompt, nil, r.lora, r.mc3.busySlots(), scope)
-				r.mc3Slot = acq.slot
+			r.mc3.Exclusive(func() {
+				acq = m.resHost().AcquireIn(r.prompt, nil, kvAdapterID(r.lora), r.mc3.BusySlots(), scope)
+				r.mc3Slot = acq.Slot
 				if r.mc3Slot < 0 {
 					r.err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
 					return
 				}
-				r.mc3.markSlot(r.mc3Slot, true)
-				m.residentForgetIDs()
-				if acq.reuse <= 0 {
-					m.residentWritesFromZero()
+				r.mc3.MarkSlot(r.mc3Slot, true)
+				m.resHost().ForgetIDs()
+				if acq.Reuse <= 0 {
+					m.resHost().WritesFromZero()
 				}
 			})
 			if r.mc3Slot >= 0 {
-				defer r.mc3.markSlot(r.mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
+				defer r.mc3.MarkSlot(r.mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
 			}
 			if r.err == nil {
-				r.logits, r.err = m.mc3Prefill(r.ctx, r.mc3, r.mc3Slot, r.prompt, acq.reuse)
+				r.logits, r.err = m.mc3Prefill(r.ctx, r.mc3, r.mc3Slot, r.prompt, acq.Reuse)
 			}
 			if kvPoolFullEnds(r.g, r.err, 0) {
 				return
@@ -962,25 +963,25 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 			// The prompt's rows are final: publish them for a request that arrives while this one decodes. A generation
 			// that ends without its commit forgets them, as it would anything it wrote (before markSlot frees the slot).
-			r.mc3.exclusive(func() {
-				m.residentPublishPrompt(r.mc3Slot, r.prompt, r.lora)
-				m.residentSnapshotPrompt(r.mc3Slot, r.prompt, r.lora, scope, acq)
+			r.mc3.Exclusive(func() {
+				m.resHost().PublishPrompt(r.mc3Slot, r.prompt, kvAdapterID(r.lora))
+				m.resHost().SnapshotPrompt(r.mc3Slot, r.prompt, kvAdapterID(r.lora), scope, acq)
 			})
 			defer func() {
 				if !r.mc3Committed {
-					r.mc3.exclusive(func() { m.kvSlots().Forget(r.mc3Slot) })
+					r.mc3.Exclusive(func() { m.resHost().KVSlots().Forget(r.mc3Slot) })
 				}
 			}()
 		} else {
-			scope.checkpoint = m.recurrentCheckpointer() != nil          // recurrent checkpoint: this path restores, and saves after its prefill
-			acq = m.residentAcquireIn(r.prompt, nil, r.lora, nil, scope) // binds the resident KV slot this prompt will use
-			m.residentForgetIDs()
-			mk := m.kvPrefillMark(acq.slot, r.prompt, acq.reuse, r.lora, scope, &acq) // the boundary snapshot, taken between two passes
+			scope = residency.ScopeWithCheckpoint(scope, m.resHost().RecurrentCheckpointer() != nil) // recurrent checkpoint: this path restores, and saves after its prefill
+			acq = m.resHost().AcquireIn(r.prompt, nil, kvAdapterID(r.lora), nil, scope)              // binds the resident KV slot this prompt will use
+			m.resHost().ForgetIDs()
+			mk := m.resHost().KVPrefillMark(acq.Slot, r.prompt, acq.Reuse, kvAdapterID(r.lora), scope, &acq) // the boundary snapshot, taken between two passes
 			r.resCost = m.residentCostFor(cost.FromContext(r.ctx), false)
 			r.err = costSpan(r.resCost, cost.FromContext(r.ctx), cost.Prefill, func() (int, error) {
 				var perr error
-				r.logits, perr = m.residentPrefillSeedMarked(r.ctx, r.prompt, acq.reuse, r.lora != nil, mk)
-				return prefillComputed(len(r.prompt), acq.reuse), perr
+				r.logits, perr = m.residentPrefillSeedMarked(r.ctx, r.prompt, acq.Reuse, r.lora != nil, mk)
+				return prefillComputed(len(r.prompt), acq.Reuse), perr
 			})
 			if r.err != nil {
 				if !kvPoolFullEnds(r.g, r.err, 0) {
@@ -988,14 +989,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 				return
 			}
-			m.residentSnapshotPrompt(acq.slot, r.prompt, r.lora, scope, acq)             // before the first decode step writes past the prompt
-			r.g.CheckpointSave, r.g.CheckpointSaved = m.residentCheckpointSave(r.prompt) // likewise: the state at the end of the prompt
+			m.resHost().SnapshotPrompt(acq.Slot, r.prompt, kvAdapterID(r.lora), scope, acq) // before the first decode step writes past the prompt
+			r.g.CheckpointSave, r.g.CheckpointSaved = m.resHost().CheckpointSave(r.prompt)  // likewise: the state at the end of the prompt
 		}
-		r.g.PrefillReused, r.g.PrefillSlot, r.g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
-		r.g.PrefillShared, r.g.KVCopy, r.g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
-		r.g.KVSnapRestored, r.g.KVSnapRestore = acq.snapRows, acq.snapDur
-		r.g.KVPromotedBlocks, r.g.KVPromotedRows = acq.promotedBlocks, acq.promotedRows
-		r.g.CheckpointRestored, r.g.CheckpointRestore, r.g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
+		r.g.PrefillReused, r.g.PrefillSlot, r.g.PrefillMatch = acq.Reuse, acq.SlotLen, acq.Match
+		r.g.PrefillShared, r.g.KVCopy, r.g.KVCopyDeclined = acq.Shared, acq.CopyDur, acq.Declined
+		r.g.KVSnapRestored, r.g.KVSnapRestore = acq.SnapRows, acq.SnapDur
+		r.g.KVPromotedBlocks, r.g.KVPromotedRows = acq.PromotedBlocks, acq.PromotedRows
+		r.g.CheckpointRestored, r.g.CheckpointRestore, r.g.CheckpointDeclined = acq.CkptRestored, acq.CkptDur, acq.CkptDeclined
 		r.gpuPos = len(r.prompt)
 	} else {
 		counted := false
@@ -1036,11 +1037,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 
 	r.bindDecodeExits()
 	if r.mc3 != nil {
-		r.mc3.enterDecode()
+		r.mc3.EnterDecode()
 		r.decoding = true
 		defer r.exitDecode()
 		// Runs before exitDecode (defers unwind last-first): any exit, an error's included, ends a kept hold.
-		defer r.mc3.releaseHold(r.stopChain)
+		defer r.mc3.ReleaseHold(r.stopChain)
 	}
 	if r.mc3 != nil {
 		r.holdGrace = time.NewTimer(mc3HoldSendGrace)
@@ -1053,8 +1054,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 
 	if !r.useGPU && m.cpuBatch != nil && cpuengine.CPUBatchCacheEligible(unwrapCache(r.cache)) == nil && r.cache.c.Cost == nil {
 		r.cb = m.cpuBatch
-		r.cb.enterDecode()
-		defer r.cb.exitDecode()
+		r.cb.EnterDecode()
+		defer r.cb.ExitDecode()
 	}
 
 	r.buildTarget()

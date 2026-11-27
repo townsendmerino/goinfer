@@ -30,13 +30,13 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 		}
 	}
 	defer func() {
-		a := m.kvSlots()
+		a := m.resHost().KVSlots()
 		if err == nil {
 			a.SetFloor(a.Bound(), floor)
 			return
 		}
 		// Some rows are written and the rest are what they were, so nothing the record says holds, and nothing the slot already lacked came back.
-		m.residentForgetIDs()
+		m.resHost().ForgetIDs()
 		a.RaiseFloor(a.Bound(), floor)
 	}()
 	if kv := m.resKV(); kv.KVUploadPassAvailable() {
@@ -155,8 +155,8 @@ func (m *Model) residentCausalImagePrefill(ctx context.Context, r any, ids []int
 	for i := range rows {
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
-	m.residentForgetIDsIn(kvScopeOf(ctx))
-	m.residentWritesFromZero()
+	m.resHost().ForgetIDsIn(kvScopeOf(ctx))
+	m.resHost().WritesFromZero()
 	sr, err := stepOn(r, stepBatch{Pass: passRows, Ctx: ctx, Emb: rows})
 	if err != nil {
 		return nil, 0, err

@@ -58,8 +58,8 @@ func (m *oldReuse) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks [
 			}
 		}
 		for _, blk := range resImgBlocks {
-			c, ok := findImageClaim(imgs, blk.start)
-			if !ok || blk.hash == 0 || c.Hash != blk.hash || c.Len != blk.end-blk.start {
+			c, ok := findImageClaim(imgs, blk.Start)
+			if !ok || blk.Hash == 0 || c.Hash != blk.Hash || c.Len != blk.End-blk.Start {
 				return 0
 			}
 		}
@@ -72,7 +72,7 @@ func (m *oldReuse) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks [
 			}
 			ok := false
 			for _, blk := range resImgBlocks {
-				if blk.start == c.Start && blk.end-blk.start == c.Len {
+				if blk.Start == c.Start && blk.End-blk.Start == c.Len {
 					ok = true
 					break
 				}
@@ -86,14 +86,14 @@ func (m *oldReuse) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks [
 	n := min(len(prompt)-1, len(resIDs))
 	i, bi := 0, 0
 	for i < n {
-		for bi < len(resImgBlocks) && resImgBlocks[bi].end <= i {
+		for bi < len(resImgBlocks) && resImgBlocks[bi].End <= i {
 			bi++
 		}
-		if bi < len(resImgBlocks) && resImgBlocks[bi].start == i {
+		if bi < len(resImgBlocks) && resImgBlocks[bi].Start == i {
 			blk := resImgBlocks[bi]
-			if claim, ok := findImageClaim(imgs, blk.start); ok &&
-				claim.Len == blk.end-blk.start && blk.hash != 0 && claim.Hash == blk.hash && blk.end <= n {
-				i = blk.end
+			if claim, ok := findImageClaim(imgs, blk.Start); ok &&
+				claim.Len == blk.End-blk.Start && blk.Hash != 0 && claim.Hash == blk.Hash && blk.End <= n {
+				i = blk.End
 				bi++
 				continue
 			}
@@ -227,7 +227,7 @@ func (m *oldReuse) residentCommitIDs(prompt, generated []int, newBlocks []reside
 	if len(newBlocks) > 0 {
 		kept := m.resImg[:0:0]
 		for _, b := range m.resImg {
-			if b.end <= newBlocks[0].start {
+			if b.End <= newBlocks[0].Start {
 				kept = append(kept, b)
 			}
 		}
@@ -360,7 +360,7 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				gen := tokens(rng.IntN(80))
 				var blocks []residentImageBlock
 				for _, c := range imgs {
-					blocks = append(blocks, residentImageBlock{start: c.Start, end: c.Start + c.Len, hash: c.Hash})
+					blocks = append(blocks, residentImageBlock{Start: c.Start, End: c.Start + c.Len, Hash: c.Hash})
 				}
 				m.residentCommitIDs(p, gen, blocks, lora)
 				o.residentCommitIDs(p, gen, blocks, lora)

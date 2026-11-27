@@ -29,7 +29,8 @@ func (f cpuForward) Prefill(ctx context.Context, ids []int) ([]float32, error) {
 }
 
 func (f cpuForward) Verify(ctx context.Context, ids []int) ([][]float32, error) {
-	return f.m.forwardN(ctx, ids, f.cache)
+	e := f.m.cpuEngine()
+	return e.ForwardN(ctx, ids, unwrapCache(f.cache))
 }
 
 func (f cpuForward) Step(_ context.Context, id int) ([]float32, error) {

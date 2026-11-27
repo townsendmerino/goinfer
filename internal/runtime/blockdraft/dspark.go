@@ -1,4 +1,4 @@
-package decoder
+package blockdraft
 
 import (
 	"encoding/json"
@@ -15,11 +15,11 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
-// DSparkDrafter is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
+// DSpark is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
 // uses, plus what DFlash does not have: its own embedding and LM head, a rank-256 Markov chain, and a confidence head.
 //
-// It reuses blockTrunk rather than reimplementing the forward: DeepSpec's `_forward_backbone` and z-lab's
-// `DFlashDraftModel.forward` compute the same thing, down to the split RoPE application (see blockTrunk's doc).
+// It reuses BlockTrunk rather than reimplementing the forward: DeepSpec's `_forward_backbone` and z-lab's
+// `DFlashDraftModel.forward` compute the same thing, down to the split RoPE application (see BlockTrunk's doc).
 //
 // The differences that matter, all of which a port gets wrong silently:
 //
@@ -37,8 +37,8 @@ import (
 //   - **The confidence head is adaptive block LENGTH, not a fire/don't-fire router.** Gating
 //     trims the proposal and barely moves acceptance, so what it buys is a cheaper verify
 //     (docs/spec/08).
-type DSparkDrafter struct {
-	blockTrunk
+type DSpark struct {
+	BlockTrunk
 	blockSize, maskTokenID int
 	vocab, markovRank      int
 	targetLayerIDs         []int
@@ -55,16 +55,16 @@ type DSparkDrafter struct {
 }
 
 // BlockSize is the trained block width; DSpark proposes all BlockSize positions.
-func (d *DSparkDrafter) BlockSize() int { return d.blockSize }
+func (d *DSpark) BlockSize() int { return d.blockSize }
 
 // MaskTokenID is the id the un-anchored block slots carry.
-func (d *DSparkDrafter) MaskTokenID() int { return d.maskTokenID }
+func (d *DSpark) MaskTokenID() int { return d.maskTokenID }
 
 // TargetLayerIDs are the target layer OUTPUTS feeding `fc` — the ForwardCapture convention.
-func (d *DSparkDrafter) TargetLayerIDs() []int { return slices.Clone(d.targetLayerIDs) }
+func (d *DSpark) TargetLayerIDs() []int { return slices.Clone(d.targetLayerIDs) }
 
 // Close releases the drafter's mmap'd weights.
-func (d *DSparkDrafter) Close() error {
+func (d *DSpark) Close() error {
 	if d.st != nil {
 		return d.st.Close()
 	}
@@ -95,10 +95,10 @@ type dsparkConfig struct {
 	ConfidenceHeadWithMkv bool            `json:"confidence_head_with_markov"`
 }
 
-// LoadDSparkDrafter loads a DSpark drafter from dir (config.json + model.safetensors, the
+// LoadDSpark loads a DSpark drafter from dir (config.json + model.safetensors, the
 // deepseek-ai layout). Its hidden size must equal the target's — it consumes the target's
 // hidden states directly.
-func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
+func LoadDSpark(dir string) (*DSpark, error) {
 	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		return nil, fmt.Errorf("dspark: read config: %w", err)
@@ -150,7 +150,7 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 
 	h, hd := c.HiddenSize, c.HeadDim
 	qDim, kvDim := c.NumAttentionHeads*hd, c.NumKeyValueHeads*hd
-	d := &DSparkDrafter{
+	d := &DSpark{
 		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
 		inter: c.IntermediateSize, normEps: c.RMSNormEps,
 		invFreq:   rope.ComputeInvFreq(theta, hd, nil),
@@ -259,7 +259,7 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 }
 
 // EmbedBlock embeds the block's token ids with DSpark's OWN embedding table.
-func (d *DSparkDrafter) EmbedBlock(ids []int) [][]float32 {
+func (d *DSpark) EmbedBlock(ids []int) [][]float32 {
 	rows := make([][]float32, len(ids))
 	for i, id := range ids {
 		rows[i] = make([]float32, d.hidden)
@@ -269,7 +269,7 @@ func (d *DSparkDrafter) EmbedBlock(ids []int) [][]float32 {
 }
 
 // BaseLogits applies DSpark's own LM head to one trunk row — the pre-Markov draft logits.
-func (d *DSparkDrafter) BaseLogits(be Backend, h []float32) []float32 {
+func (d *DSpark) BaseLogits(be cpuengine.Backend, h []float32) []float32 {
 	out := make([]float32, d.vocab)
 	cpuengine.Matmul(be, &d.lmHead, h, out, 1)
 	return out
@@ -281,7 +281,7 @@ func (d *DSparkDrafter) BaseLogits(be Backend, h []float32) []float32 {
 //
 // Sequential by construction — this is the chain that makes DSpark's draft latency-serial, and
 // it is why the block is only partly a "one pass" proposal.
-func (d *DSparkDrafter) SampleBlock(be Backend, trunk [][]float32, firstPrev int) (ids []int, corrected [][]float32) {
+func (d *DSpark) SampleBlock(be cpuengine.Backend, trunk [][]float32, firstPrev int) (ids []int, corrected [][]float32) {
 	ids = make([]int, 0, len(trunk))
 	corrected = make([][]float32, 0, len(trunk))
 	prev := firstPrev
@@ -310,7 +310,7 @@ func (d *DSparkDrafter) SampleBlock(be Backend, trunk [][]float32, firstPrev int
 //
 // This is DSpark's adaptive block length: the proposal is truncated at the first position whose
 // sigmoid falls below the caller's threshold.
-func (d *DSparkDrafter) Confidence(be Backend, trunk [][]float32, prevIDs []int) []float32 {
+func (d *DSpark) Confidence(be cpuengine.Backend, trunk [][]float32, prevIDs []int) []float32 {
 	if d.confW.Rows() == 0 {
 		return nil
 	}

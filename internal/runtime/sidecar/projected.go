@@ -1,11 +1,11 @@
-package decoder
+package sidecar
 
 import (
 	"os"
 	"strings"
 )
 
-// projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
+// ProjectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
 // GGUF's tensor shapes (a header read: no weights are paged in). The source's own size is not a
 // usable proxy: the sources are already quantized, so a sidecar can be larger than its source and a
 // check on the source's size could pass while the transcode still ran out of disk.
@@ -20,8 +20,8 @@ import (
 // A fixed allowance per tensor and per file covers the header, shapes and alignment, and a 3% margin the
 // rest (on a tiny model those fixed costs are most of the file; on a real one, noise). ok is false when the header does not
 // parse; the caller then falls back to the source's size.
-func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
-	g, err := OpenGGUFMmap(ggufPath)
+func ProjectedSidecarBytes(ops Ops, ggufPath, quant string) (int64, bool) {
+	g, err := ops.OpenGGUFMmap(ggufPath)
 	if err != nil {
 		return 0, false
 	}
@@ -74,12 +74,12 @@ func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
 	return int64(total * 1.03), true
 }
 
-// projectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory: the sizes of its .safetensors
+// ProjectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory: the sizes of its .safetensors
 // files, scaled from a 16-bit source to the quant's bytes per element with its group scales (int4 0.5 + 4/32, int8 1 +
 // 4/32, f32 4), plus the same 3% margin. A bundled vision tower is in the files and not in the sidecar, and an f32 source
 // is twice the elements' bytes, so both over-count, which is the safe direction for a disk check. ok is false when the
 // directory holds no .safetensors file.
-func projectedDirSidecarBytes(dir, quant string) (int64, bool) {
+func ProjectedDirSidecarBytes(dir, quant string) (int64, bool) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, false

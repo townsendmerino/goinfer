@@ -76,7 +76,7 @@ func imageSpanBlocks(spans []ImageSpan) [][2]int {
 func residentImageBlocksOf(spans []ImageSpan) []residentImageBlock {
 	b := make([]residentImageBlock, len(spans))
 	for i, s := range spans {
-		b[i] = residentImageBlock{start: s.Pos, end: s.Pos + s.Len, hash: s.Hash}
+		b[i] = residentImageBlock{Start: s.Pos, End: s.Pos + s.Len, Hash: s.Hash}
 	}
 	return b
 }

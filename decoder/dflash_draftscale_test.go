@@ -50,7 +50,7 @@ func TestDFlashDraftScaling(t *testing.T) {
 	B := d.BlockSize()
 	block := make([][]float32, B)
 	for i := range block {
-		block[i] = make([]float32, d.hidden)
+		block[i] = make([]float32, d.DrafterGeometry().Hidden)
 		for j := range block[i] {
 			block[i][j] = float32((i*3+j)%11) / 11
 		}
@@ -58,7 +58,7 @@ func TestDFlashDraftScaling(t *testing.T) {
 	mkctx := func(n int) [][]float32 {
 		rows := make([][]float32, n)
 		for i := range rows {
-			rows[i] = make([]float32, d.fc.Cols())
+			rows[i] = make([]float32, d.DrafterFC().Cols())
 			for j := range rows[i] {
 				rows[i][j] = float32((i*7+j)%13) / 13
 			}
@@ -69,7 +69,7 @@ func TestDFlashDraftScaling(t *testing.T) {
 	// matter, so it is the realistic number of new context rows per round.
 	const newPerRound = 5
 
-	t.Logf("drafter: %d layers, hidden %d, block %d, fc in %d", len(d.layers), d.hidden, B, d.fc.Cols())
+	t.Logf("drafter: %d layers, hidden %d, block %d, fc in %d", d.DrafterGeometry().Layers, d.DrafterGeometry().Hidden, B, d.DrafterFC().Cols())
 	// Warm-up, discarded: the first draft pays allocator and cache costs that would otherwise land entirely on the first
 	// row and make it read slower than a LARGER context.
 	if wf, err := d.FuseContext(be, mkctx(64)); err == nil {

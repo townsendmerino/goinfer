@@ -28,7 +28,7 @@ does not differ early, and the cache is not evicted.**
 2. **The window cannot roll back that far, most of the time.** Mellum2.1 has 21 sliding-window layers (window 1,024), and with CUDA windowed
    KV (on by default) each held `window + 512` positions. `backend/cuda/kvwindow.go:cudaResident.kvEnsureSlot` compacted when a write passed
    `base + 1536` and moved the base to the new row's window start (`p0 - 1023`). `backend/cuda/kvwindow.go:cudaResident.ReusableKV` (called through
-   `decoder/resident_reuse.go:Model.residentReuseFloor`) returns 0, a cold prefill, when the reused prefix's window starts below the base. So
+   `internal/runtime/residency/reuse.go:Host.ReuseFloorFor`) returns 0, a cold prefill, when the reused prefix's window starts below the base. So
    how far back a follow-up could reuse **cycled between 0 and 512 positions**, a sawtooth set by where in the compaction cycle the last
    reply's final token landed. A rollback of 248 tokens could miss and one of 258 hit. This is why it was 35 of 59, not all of them.
 

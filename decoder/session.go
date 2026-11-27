@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/specdecode"
 )
 
 // Session couples a KVCache with the token sequence currently materialized in
@@ -189,7 +190,7 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 	if ad.Theta <= 0 { // unset by the caller: take this model's measured verify cost
 		ad.Theta = s.m.verifyTheta()
 	}
-	ad.ensure()
+	specdecode.EnsureAdaptive(ad)
 	if ad.Theta >= 1 {
 		// Theta >= 1 means Depth() would always return 0 (see Model.GenerateNgramSpeculativeAdaptive), so every round would pay
 		// to draft and verify nothing: run plain Session.Generate, which reuses the warm prefix the same way.
