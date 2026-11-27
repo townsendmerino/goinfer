@@ -7,6 +7,8 @@ import (
 	"math"
 	"runtime"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/batchplan"
 )
 
 // forwardMultiOut is forwardMultiInto with an explicit output mode (multiOut).
@@ -59,30 +61,11 @@ func (r *resident) checkStepRows(seqs []batchSeq) error {
 	if r.loraLayers != nil {
 		return fmt.Errorf("metal: batched step with an adapter bound")
 	}
-	// A slot may carry several rows only as ONE sequence's consecutive positions, in row order (a speculative verify:
-	// every row's K/V is stored before its attention runs, layer by layer, so each row sees the rows below it as
-	// sequential decode would). Two sequences on one slot would overwrite each other.
-	last := map[int]int{}
-	for _, q := range seqs {
-		if q.slot < 0 || q.slot >= len(r.kvSlotBufs) {
-			return fmt.Errorf("metal: batched step: slot %d out of range", q.slot)
-		}
-		if p, ok := last[q.slot]; ok && q.pos != p+1 {
-			return fmt.Errorf("metal: batched step: slot %d repeated at position %d after %d (rows on one slot must be consecutive positions of one sequence)", q.slot, q.pos, p)
-		}
-		last[q.slot] = q.pos
-		if q.pos < 0 || q.pos >= r.ctxCap {
-			return fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
-		}
-		if len(q.emb) != r.H+r.nL*r.pleP { // hidden, and on a Gemma 4 E-model the L·P per-layer inputs (metalResident.embLen)
-			return fmt.Errorf("metal: batched step: embedding length %d, want %d (hidden %d, and %d per-layer inputs on a Gemma 4 E-model)",
-				len(q.emb), r.H+r.nL*r.pleP, r.H, r.nL*r.pleP)
-		}
-		if q.draw != nil && !r.SampleAvailable() {
-			return fmt.Errorf("metal: batched step: a device draw on a resident that cannot sample on-device")
-		}
-	}
-	return nil
+	return batchplan.CheckStepRows("metal: batched step", len(r.kvSlotBufs), r.ctxCap, r.H, r.nL*r.pleP, r.SampleAvailable(), B,
+		func(i int) batchplan.StepRow {
+			q := seqs[i]
+			return batchplan.StepRow{Slot: q.slot, Pos: q.pos, EmbLen: len(q.emb), HasDraw: q.draw != nil}
+		})
 }
 
 // bindStepRows writes each row's inputs into the step's buffers: a new sequence's recurrent state zeroed, then its
@@ -107,10 +90,7 @@ func (r *resident) bindStepRows(seqs []batchSeq) {
 		r.addLearnedPosTo(b.xB.Floats()[m*r.H:(m+1)*r.H], q.pos)
 		b.uPos[m].SetU32(uint32(q.pos))
 		b.uNKeys[m].SetU32(uint32(q.pos + 1))
-		scale := float32(1)
-		if r.attnTempBeta != 0 {
-			scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(q.pos)/r.attnTempOrigMaxPos)))
-		}
+		scale := batchplan.AttnTempScale(q.pos, r.attnTempBeta, r.attnTempOrigMaxPos)
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)

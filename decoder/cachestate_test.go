@@ -5,6 +5,7 @@ import (
 	"errors"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/giwkv"
 	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"reflect"
 	"slices"
@@ -418,7 +419,7 @@ func TestSession_snapshotRecordsAdapter(t *testing.T) {
 	})
 	t.Run("a v2 blob is refused", func(t *testing.T) {
 		blob := built(nil)
-		binary.LittleEndian.PutUint32(blob[len(kvSnapMagic):], 2)
+		binary.LittleEndian.PutUint32(blob[len(giwkv.Magic):], 2)
 		if _, err := m.LoadSession(blob, "id"); err == nil {
 			t.Fatal("a v2 blob, which does not record the adapter, loaded")
 		}

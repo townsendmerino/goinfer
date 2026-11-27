@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/loraload"
 	"github.com/townsendmerino/goinfer/internal/runtime/residency"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"os"
@@ -505,11 +506,11 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: LoRA merge needs a safetensors base, not a .gguf")
 		}
-		if lora, err = loadLoRA(opts.LoRA); err != nil {
+		if lora, err = loraload.Load(opts.LoRA); err != nil {
 			closeBackend(be)
 			return nil, err
 		}
-		defer lora.close()
+		defer lora.Close()
 	}
 
 	// The fit guard runs here: after the quant is resolved (it moves the weight term more than anything else) and before

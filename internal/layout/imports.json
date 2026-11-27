@@ -966,12 +966,78 @@
       "allow_goinfer": {
         "internal/runtime/vlprep": [
           "decoder/arch",
+          "decoder/resident",
           "internal/runtime/archparts",
           "internal/runtime/cpuengine",
-          "internal/runtime/residency"
+          "internal/runtime/kvmgr",
+          "internal/runtime/residency",
+          "internal/runtime/rope"
         ]
       },
-      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, and Gemma 4 row builders (VL1). It never imports decoder."
+      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, Gemma 4 row builders, CPU multimodal prefill walkers, and prefill KV upload (VL1-VL3). It never imports decoder."
+    },
+    {
+      "name": "moecache-leaf",
+      "from": [
+        "internal/runtime/moecache"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/runtime/moecache holds host-side MoE expert slot LRU residency, provisional admission rollback, stage demand accounting, and expert-major (row, rank) batch grouping shared across GPU backends (GPU1). It imports no goinfer package."
+    },
+    {
+      "name": "batchplan-leaf",
+      "from": [
+        "internal/runtime/batchplan"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/batchplan": [
+          "decoder/resident"
+        ]
+      },
+      "why": "internal/runtime/batchplan holds multi-sequence ragged sequence ordering, consecutive-slot row validation, post-RoPE query temperature scaling, and step-width piece slicing shared across GPU backends (GPU2). It imports only decoder/resident and the standard library."
+    },
+    {
+      "name": "giwkv-leaf",
+      "from": [
+        "internal/runtime/giwkv"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/giwkv": [
+          "internal/runtime/cpuengine",
+          "internal/runtime/giwcodec"
+        ]
+      },
+      "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
+    },
+    {
+      "name": "loraload-leaf",
+      "from": [
+        "internal/runtime/loraload"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/loraload": [
+          "decoder/arch",
+          "internal/runtime/archparts",
+          "internal/runtime/cpuengine",
+          "internal/runtime/wbuild"
+        ]
+      },
+      "why": "internal/runtime/loraload reads PEFT LoRA adapters below decoder: adapter_config.json rank and scale, safetensors lora_A/lora_B pairing, target and shape validation, the in-place f32 merge, and per-layer compute-time delta indexing. It never imports decoder."
     }
   ],
   "arrows": {
@@ -1011,9 +1077,11 @@
       "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/batchplan",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
       "internal/runtime/mem",
+      "internal/runtime/moecache",
       "internal/runtime/program",
       "internal/runtime/sampling",
       "internal/vision",
@@ -1037,11 +1105,13 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/batchplan",
       "internal/runtime/f16",
       "internal/runtime/kvmgr",
       "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
+      "internal/runtime/moecache",
       "internal/runtime/program",
       "internal/vision",
       "multimodal"
@@ -1132,10 +1202,12 @@
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
+      "internal/runtime/giwkv",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/kvsnap",
       "internal/runtime/logs",
+      "internal/runtime/loraload",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
@@ -1473,6 +1545,9 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2"
     ],
+    "internal/runtime/batchplan": [
+      "decoder/resident"
+    ],
     "internal/runtime/blockdraft": [
       "decoder/resident",
       "internal/runtime/cpuengine",
@@ -1513,6 +1588,10 @@
       "internal/runtime/families",
       "internal/runtime/program"
     ],
+    "internal/runtime/giwkv": [
+      "internal/runtime/cpuengine",
+      "internal/runtime/giwcodec"
+    ],
     "internal/runtime/inkling2": [
       "decoder/arch",
       "internal/runtime/normact",
@@ -1521,6 +1600,12 @@
     "internal/runtime/kvsnap": [
       "decoder/resident",
       "internal/runtime/kvmgr"
+    ],
+    "internal/runtime/loraload": [
+      "decoder/arch",
+      "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
+      "internal/runtime/wbuild"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
@@ -1577,8 +1662,11 @@
     ],
     "internal/runtime/vlprep": [
       "decoder/arch",
+      "decoder/resident",
       "internal/runtime/cpuengine",
-      "internal/runtime/residency"
+      "internal/runtime/kvmgr",
+      "internal/runtime/residency",
+      "internal/runtime/rope"
     ],
     "internal/runtime/wbuild": [
       "decoder/arch",
@@ -1766,10 +1854,12 @@
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
+      "internal/runtime/giwkv",
       "internal/runtime/hybridattn",
       "internal/runtime/inkling2",
       "internal/runtime/kvmgr",
       "internal/runtime/kvsnap",
+      "internal/runtime/loraload",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/memprice",
@@ -1963,6 +2053,9 @@
       "decoder",
       "internal/runtime/mem/probe"
     ],
+    "internal/runtime/batchplan": [
+      "decoder/resident"
+    ],
     "internal/runtime/blockdraft": [
       "decoder/resident",
       "internal/testassets"
@@ -1999,7 +2092,9 @@
     ],
     "internal/runtime/vlprep": [
       "decoder/arch",
-      "internal/runtime/archparts"
+      "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
+      "internal/runtime/kvmgr"
     ],
     "internal/runtime/whisper": [
       "internal/audio",

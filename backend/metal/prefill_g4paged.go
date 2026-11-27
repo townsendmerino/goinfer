@@ -4,10 +4,11 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"runtime"
-	"slices"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/moecache"
 )
 
 // g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged
@@ -186,24 +187,7 @@ func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids
 	group func(e *Encoder, i, j int)) bool {
 	nSlots := len(pool.slotExpert)
 	for i := 0; i < n; {
-		var union []int
-		in := map[int]bool{}
-		j := i
-		for ; j < n; j++ {
-			var add []int
-			for _, id := range ids(j)[:topK] {
-				if !in[int(id)] && !slices.Contains(add, int(id)) {
-					add = append(add, int(id))
-				}
-			}
-			if len(union)+len(add) > nSlots {
-				break
-			}
-			for _, id := range add {
-				in[id] = true
-			}
-			union = append(union, add...)
-		}
+		j, union := moecache.PoolFittedRun(i, n, nSlots, topK, ids)
 		ws := time.Now()
 		staged := pool.ensureResidentBatch(union)
 		r.prof.stageWallNanos += time.Since(ws).Nanoseconds()
