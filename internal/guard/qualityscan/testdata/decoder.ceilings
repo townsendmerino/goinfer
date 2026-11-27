@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 36736 -- lowered by KV14 (host snapshot store, budget and cut planning moved to internal/runtime/kvsnap)
+lines 36625 -- lowered by MM14 (pure MoE working-set prior, predictor and refusal moved to internal/runtime/mem)
 model_methods 448 -- lowered by KV14 (unexported snapshot planning helpers moved to internal/runtime/kvsnap)
-model_knot_lines 12336 -- lowered by KV14 (Model snapshot wiring slimmed over internal/runtime/kvsnap)
+model_knot_lines 12304 -- lowered by MM14 (predictMoEWorkingSet slimmed over internal/runtime/mem)
