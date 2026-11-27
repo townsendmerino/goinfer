@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"math"
@@ -15,7 +15,7 @@ import (
 // table or a norm given the wrong weight is invisible.
 func g4vTinyTower(t *testing.T) *vision.Gemma4Encoder {
 	t.Helper()
-	enc, err := vision.LoadGemma4Encoder("../../testdata/gemma4-vision-tiny", false)
+	enc, err := vision.LoadGemma4Encoder("../../../../testdata/gemma4-vision-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func g4vWorst(got, want []float32, d int) float64 {
 // share is checked by the seam that skips them: with it set, the same comparison must fail.
 func TestG4VMetal_matchesCPU(t *testing.T) {
 	enc := g4vTinyTower(t)
-	a, err := newG4VAccel(enc)
+	a, err := NewG4VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}

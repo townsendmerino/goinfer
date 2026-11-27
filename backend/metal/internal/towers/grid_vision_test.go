@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -79,7 +79,7 @@ type gvCase struct {
 }
 
 func gvQwen3(t *testing.T) gvCase {
-	enc, err := vision.LoadQwen3VisionEncoder("../../testdata/qwen35vl-tiny", false)
+	enc, err := vision.LoadQwen3VisionEncoder("../../../../testdata/qwen35vl-tiny", false)
 	if err != nil {
 		t.Skipf("no Qwen3.5 tiny tower: %v", err)
 	}
@@ -91,7 +91,7 @@ func gvQwen3(t *testing.T) gvCase {
 	for _, b := range w.Blocks {
 		gvRandomise(rng, b.Norm1W, b.Norm1B, b.Norm2W, b.Norm2B)
 	}
-	acc, err := newQwen3VAccel(enc)
+	acc, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func gvQwen3(t *testing.T) gvCase {
 }
 
 func gvGlm(t *testing.T) gvCase {
-	enc, err := vision.LoadGlmOcrVisionEncoder("../../testdata/glm-ocr-vision-tiny", false)
+	enc, err := vision.LoadGlmOcrVisionEncoder("../../../../testdata/glm-ocr-vision-tiny", false)
 	if err != nil {
 		t.Skipf("no GLM-OCR tiny tower: %v", err)
 	}
@@ -116,7 +116,7 @@ func gvGlm(t *testing.T) gvCase {
 	for _, b := range w.Blocks {
 		gvRandomise(rng, b.Norm1W, b.Norm2W, b.QNorm, b.KNorm)
 	}
-	acc, err := newGlmOcrVAccel(enc)
+	acc, err := NewGlmOcrVAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestGridVisionMetal_real(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				acc, err := newQwen3VAccel(enc)
+				acc, err := NewQwen3VAccel(enc)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -235,7 +235,7 @@ func TestGridVisionMetal_real(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				acc, err := newGlmOcrVAccel(enc)
+				acc, err := NewGlmOcrVAccel(enc)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -254,7 +254,7 @@ func TestGridVisionMetal_real(t *testing.T) {
 			}
 			pp, cpu, dev, out := f.run(t, f.dir)
 			for _, img := range append(slices.Clone(images), f.extra...) {
-				data, err := os.ReadFile(filepath.Join("../../testdata", img))
+				data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 				if err != nil {
 					t.Fatal(err)
 				}

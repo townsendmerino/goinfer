@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -38,7 +38,7 @@ func TestS17Profile(t *testing.T) {
 		return dir
 	}
 	image := func(name string) []byte {
-		b, err := os.ReadFile(filepath.Join("../../testdata", name))
+		b, err := os.ReadFile(filepath.Join("../../../../testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func TestS17Profile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := newSiglipVResident(enc)
+		r, err := NewSiglipVResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,7 +131,7 @@ func TestS17Profile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := newQwen25VResident(enc)
+		r, err := NewQwen25VResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,7 +154,7 @@ func TestS17Profile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, err := newQwen3VAccel(enc)
+		a, err := NewQwen3VAccel(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOl
 		return dir
 	}
 	image := func(name string) []byte {
-		b, err := os.ReadFile(filepath.Join("../../testdata", name))
+		b, err := os.ReadFile(filepath.Join("../../../../testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +269,7 @@ func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOl
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := newSiglipVResident(enc)
+		r, err := NewSiglipVResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -290,7 +290,7 @@ func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOl
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := newQwen25VResident(enc)
+		r, err := NewQwen25VResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOl
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, err := newQwen3VAccel(enc)
+		a, err := NewQwen3VAccel(enc)
 		if err != nil {
 			t.Fatal(err)
 		}

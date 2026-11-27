@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -101,7 +101,7 @@ func s3Scale(f float32, xs ...[]float32) {
 
 func TestS3Towers_tiny(t *testing.T) {
 	t.Run("siglip", func(t *testing.T) {
-		enc, err := vision.LoadEncoder("../../testdata/siglip-tiny", false)
+		enc, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +118,7 @@ func TestS3Towers_tiny(t *testing.T) {
 			s3Sharpen(rng, b.Q.B, b.K.B)
 			s3Scale(6, b.Q.W, b.K.W)
 		}
-		r, err := newSiglipVResident(enc)
+		r, err := NewSiglipVResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +159,7 @@ func TestS3Towers_tiny(t *testing.T) {
 		}
 	})
 	t.Run("qwen2.5-vl", func(t *testing.T) {
-		enc, err := vision.LoadQwenVisionEncoder("../../testdata/qwen25vl-tiny", false)
+		enc, err := vision.LoadQwenVisionEncoder("../../../../testdata/qwen25vl-tiny", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +173,7 @@ func TestS3Towers_tiny(t *testing.T) {
 			s3Scale(12, b.QKVw.F32[:2*H*H])             // the q and k rows
 			s3Scale(8, b.QKVw.F32[2*H*H:], b.Projw.F32) // v and the output projection: attention's share of the residual
 		}
-		r, err := newQwen25VResident(enc)
+		r, err := NewQwen25VResident(enc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -246,7 +246,7 @@ func TestS3Towers_real(t *testing.T) {
 		}
 		t.Cleanup(dev.Close)
 		for _, img := range s3Images {
-			data, err := os.ReadFile(filepath.Join("../../testdata", img))
+			data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -289,7 +289,7 @@ func TestS3Towers_real(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, img := range s3Images {
-			data, err := os.ReadFile(filepath.Join("../../testdata", img))
+			data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 			if err != nil {
 				t.Fatal(err)
 			}

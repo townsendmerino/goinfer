@@ -103,11 +103,11 @@ backend/metal/attn_fa_pipeline_race_test.go 1 -- raw reads before the ratchet; m
 backend/metal/fitctx_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/forwardmrope_parity_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/gemma3_prefill_overflow_real_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/metal/gemma4_audio_e2b_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
+backend/metal/internal/towers/gemma4_audio_e2b_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/gemma4_emodel_real_test.go 7 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/gptoss_real20b_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/metal/grid_vision_deepstack_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/metal/grid_vision_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
+backend/metal/internal/towers/grid_vision_deepstack_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
+backend/metal/internal/towers/grid_vision_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/gumbel_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/image_prefill_resident_real_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/ksc2_down_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
@@ -132,8 +132,8 @@ backend/metal/r2_ctx_diff_test.go 1 -- raw reads before the ratchet; move to tes
 backend/metal/r2_gate_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/r3_startpos_speed_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/s16_mrope_prefill_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/metal/s17_profile_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/metal/s3_towers_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
+backend/metal/internal/towers/s17_profile_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
+backend/metal/internal/towers/s3_towers_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/s9_emodel_batched_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/sampled_gumbel_identity_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/metal/sampled_gumbel_speed_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched

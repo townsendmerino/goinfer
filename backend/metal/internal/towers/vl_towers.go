@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ type siglipVResident struct {
 	np  int
 }
 
-func newSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
+func NewSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
 	// The blocks are read from the checkpoint one at a time (ForEachSiglipBlock) and uploaded, so the host never
 	// holds the whole tower beside the Metal copy (2.17 GB of f32 on Gemma 3's so400m). The encoder may be head-only
 	// (vision.LoadEncoderHead); its CPU path, serve's fallback, loads its own blocks only if it ever runs. An encoder
@@ -119,7 +119,7 @@ type qwen25VResident struct {
 	merge int
 }
 
-func newQwen25VResident(enc *vision.QwenVisionEncoder) (*qwen25VResident, error) {
+func NewQwen25VResident(enc *vision.QwenVisionEncoder) (*qwen25VResident, error) {
 	w := enc.GPUWeights()
 	f32 := func(name string, m vision.QwenGPUMat) ([]float32, error) {
 		if m.Quantized || len(m.F32) != m.Rows*m.Cols {

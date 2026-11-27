@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"fmt"
@@ -55,11 +55,11 @@ func gvDeepstackGrade(t *testing.T, what string, w float64) {
 }
 
 func TestGridVisionMetal_deepstackTiny(t *testing.T) {
-	enc, err := vision.LoadQwen3VisionEncoder("../../testdata/qwen3vl-vision-tiny", false)
+	enc, err := vision.LoadQwen3VisionEncoder("../../../../testdata/qwen3vl-vision-tiny", false)
 	if err != nil {
 		t.Skipf("no tiny DeepStack tower: %v", err)
 	}
-	acc, err := newQwen3VAccel(enc)
+	acc, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,12 +114,12 @@ func TestGridVisionMetal_deepstackReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	acc, err := newQwen3VAccel(enc)
+	acc, err := NewQwen3VAccel(enc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, img := range []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"} {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}

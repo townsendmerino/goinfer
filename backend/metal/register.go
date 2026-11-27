@@ -4,6 +4,7 @@ package metal
 
 import (
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/internal/towers"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
@@ -31,25 +32,25 @@ func init() {
 	gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} }
 
 	embeddinggemma2.RegisterAccelerator("metal", func(m *embeddinggemma2.Model) (embeddinggemma2.Accelerator, error) {
-		return newEG2Accel(m)
+		return towers.NewEG2Accel(m)
 	})
 	embeddinggemma2.RegisterAudioAccelerator("metal", func(enc *audio.Gemma4AudioEncoder) (embeddinggemma2.AudioAccelerator, error) {
-		return newG4AAccel(enc)
+		return towers.NewG4AAccel(enc)
 	})
 	multimodal.RegisterGemma4Tower("metal", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
-		return newG4VAccel(enc)
+		return towers.NewG4VAccel(enc)
 	})
 	multimodal.RegisterQwen3Tower("metal", func(enc *vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newQwen3VAccel(enc)
+		return towers.NewQwen3VAccel(enc)
 	})
 	multimodal.RegisterGlmOcrTower("metal", func(enc *vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newGlmOcrVAccel(enc)
+		return towers.NewGlmOcrVAccel(enc)
 	})
 	vision.RegisterResident(func(enc *vision.Encoder) (vision.ResidentEncoder, error) {
-		return newSiglipVResident(enc)
+		return towers.NewSiglipVResident(enc)
 	})
 	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
-		return newQwen25VResident(enc)
+		return towers.NewQwen25VResident(enc)
 	})
 	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "metal")
 	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "metal")

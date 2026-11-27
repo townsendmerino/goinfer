@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package towers
 
 import (
 	"encoding/json"
@@ -38,7 +38,7 @@ func TestG4AMetal_realParity(t *testing.T) {
 	if strings.HasPrefix(dir, "/Volumes/") || strings.HasPrefix(dir, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", dir)
 	}
-	raw, err := os.ReadFile("../../testdata/embeddinggemma2-audio/golden.json")
+	raw, err := os.ReadFile("../../../../testdata/embeddinggemma2-audio/golden.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestG4AMetal_realParity(t *testing.T) {
 	H := e.Model().Config().Hidden
 	feats := map[string][]float32{}
 	for _, c := range g.Clips {
-		wav, err := os.ReadFile(filepath.Join("../../testdata/embeddinggemma2-audio", c.Name+".wav"))
+		wav, err := os.ReadFile(filepath.Join("../../../../testdata/embeddinggemma2-audio", c.Name+".wav"))
 		if err != nil {
 			t.Fatal(err)
 		}
