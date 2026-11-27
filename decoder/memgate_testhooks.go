@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // CPUHoldsForTest leases on l what the CPU backend holds for this model and cache c: it has no allocator to account, so a row reads the
@@ -47,7 +48,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			continue
 		}
 		h.root(func(path string) mem.LineID {
-			if strings.Contains(path, ".HQ") || strings.Contains(path, ".dn.") || strings.HasSuffix(path, ".dn") ||
+			if (strings.Contains(path, ".HQ") || strings.Contains(path, ".hq")) || strings.Contains(path, ".dn.") || strings.HasSuffix(path, ".dn") ||
 				path == "Mamba.conv" || path == "Mamba.y" ||
 				strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
 				return mem.LineScratch // rewritten every step
@@ -254,12 +255,15 @@ var cpuCacheIgnored = map[string]bool{"Cost": true, "CostPhase": true, "LoRALaye
 // PricedDenseVectorBytesForTest is what the plan's dense figure now holds of what a backend's gap table once bounded as vectors, so a table can
 // bound only what is left.
 func (m *Model) PricedDenseVectorBytesForTest(backend string) int64 {
-	n := m.denseVectorBytes()
+	if m == nil {
+		return 0
+	}
+	n := memprice.DenseVectorBytes(m.w)
 	if backend == "cuda" || backend == "webgpu" {
-		n += m.expertBiasBytes()
+		n += memprice.ExpertBiasBytes(m.w)
 	}
 	if backend == "cuda" {
-		n += m.cudaDerivedTableBytes()
+		n += memprice.CUDADerivedTableBytes(m.w, m.Program())
 	}
 	return n
 }

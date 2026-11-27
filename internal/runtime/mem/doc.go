@@ -6,7 +6,8 @@
 // is told; nothing reads it to decide.
 //
 // Contract. SolveHost is the resident load guard, SolveGIW the guard for a .giw load (file-backed weights), AdmitRequest the
-// per-request check, HostBudget and WeightCacheBudget the budgets the banner and the expert pager size by. SolvePlacement
+// per-request check, HostBudget, WeightCacheBudget and SnapshotHostBudget the budgets the banner, the expert pager and the
+// prefix-snapshot store size by. SolvePlacement
 // places a model on one backend's memory (context first, then an expert cache), and SolveMetalCtx picks an unpinned Metal
 // load's context with it. ResolveKV is the KV precision a backend's cache holds. In the guards (SolveHost, SolveGIW,
 // AdmitRequest) every unknown proceeds: a Machine whose reading is 0, or a load whose weights could not be priced, gets no

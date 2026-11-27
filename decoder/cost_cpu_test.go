@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 const costFixture = "../testdata/llama-tiny"
@@ -47,7 +48,7 @@ func decodeCounted(t *testing.T, m *Model, warm []int, id int, counter *cost.Cou
 // layerMatrixBytes is every per-layer matrix's bytes, from the dense enumeration less the model-level tables: an independent sum.
 func layerMatrixBytes(m *Model) int64 {
 	w := m.w
-	return m.ResidentDenseWeightBytes() - m.denseVectorBytes() - wmBytes(&w.Embed) - wmBytes(&w.LMHead) - wmBytes(&w.PosEmbed) -
+	return m.ResidentDenseWeightBytes() - memprice.DenseVectorBytes(w) - wmBytes(&w.Embed) - wmBytes(&w.LMHead) - wmBytes(&w.PosEmbed) -
 		wmBytes(&w.PerLayerTokenEmbed) - wmBytes(&w.PerLayerModelProj)
 }
 

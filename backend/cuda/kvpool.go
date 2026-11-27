@@ -5,10 +5,10 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -37,55 +37,17 @@ const (
 	kvGroups
 )
 
-// kvPool is one group's block allocator. Block 0, the null block, is never free.
-type kvPool struct {
-	blocks int     // blocks in the pool, the null block included
-	free   []int32 // free block ids; take pops the last
-	refs   []int32 // the tables that name each block
-}
-
 // kvPoolOrderForTest, when set, gives the order a pool of n blocks hands its blocks out in (ids 1..n-1, each once).
 // TestKV4_scrambledTables uses it; nil hands out ascending ids.
 var kvPoolOrderForTest func(n int) []int32
 
-func newKVPool(blocks int) kvPool {
-	p := kvPool{blocks: blocks, free: make([]int32, 0, max(0, blocks-1)), refs: make([]int32, max(0, blocks))}
+func newKVPool(blocks int) kvmgr.BlockPool {
+	var order []int32
 	if kvPoolOrderForTest != nil && blocks > 1 {
-		order := kvPoolOrderForTest(blocks)
-		for _, o := range slices.Backward(order) {
-			p.free = append(p.free, o)
-		}
-		return p
+		order = kvPoolOrderForTest(blocks)
 	}
-	for b := blocks - 1; b >= 1; b-- {
-		p.free = append(p.free, int32(b))
-	}
-	return p
+	return kvmgr.NewBlockPool(blocks, order)
 }
-
-// take hands out a free block with one reference.
-func (p *kvPool) take() (int32, bool) {
-	if len(p.free) == 0 {
-		return 0, false
-	}
-	b := p.free[len(p.free)-1]
-	p.free = p.free[:len(p.free)-1]
-	p.refs[b] = 1
-	return b, true
-}
-
-func (p *kvPool) ref(b int32) { p.refs[b]++ }
-
-// unref drops one reference to b; the last one frees it.
-func (p *kvPool) unref(b int32) {
-	if p.refs[b]--; p.refs[b] <= 0 {
-		p.refs[b] = 0
-		p.free = append(p.free, b)
-	}
-}
-
-// inUse is how many blocks some table names, the null block not counted.
-func (p *kvPool) inUse() int { return p.blocks - 1 - len(p.free) }
 
 // kvSlotTabs is one slot's tables: ids[g][i] is the block holding positions [i*kvBlock, (i+1)*kvBlock) in group g, 0 for none.
 type kvSlotTabs struct {
@@ -96,7 +58,7 @@ type kvSlotTabs struct {
 // kvMaxBlocks is the table length: the blocks of a ctxCap-position sequence.
 func (r *cudaResident) kvMaxBlocks() int { return kvBlocksFor(r.ctxCap) }
 
-func kvBlocksFor(positions int) int { return (positions + kvBlock - 1) / kvBlock }
+func kvBlocksFor(positions int) int { return kvmgr.BlocksFor(positions) }
 
 // kvGroupOf is layer l's group (meaningless for a layer with no K/V). A KV-shared layer takes its source's, which its kvWin copies.
 func (r *cudaResident) kvGroupOf(l int) int {
@@ -145,8 +107,7 @@ func (r *cudaResident) kvHeld(s int) int {
 // kvWithinShare reports whether slot s is within its guaranteed share of the full group for one more block: below it, or at it for a copy
 // on write (which holds no more blocks after it).
 func (r *cudaResident) kvWithinShare(s int, cow bool) bool {
-	held := r.kvHeld(s)
-	return held < r.kvShareBlocks || (cow && held <= r.kvShareBlocks)
+	return kvmgr.WithinShare(r.kvHeld(s), r.kvShareBlocks, cow)
 }
 
 // kvTake hands slot s a block of group g. When none is free it releases idle slots' blocks, least recently used first; a
@@ -158,7 +119,7 @@ func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 		return 0, fmt.Errorf("cuda: KV pool: test seam: %w", decoder.ErrKVPoolFull)
 	}
 	for {
-		if id, ok := r.kvPools[g].take(); ok {
+		if id, ok := r.kvPools[g].Take(); ok {
 			return id, nil
 		}
 		if r.kvEvictIdle(s) {
@@ -168,7 +129,7 @@ func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 			continue
 		}
 		return 0, fmt.Errorf("cuda: KV pool: slot %d holds %d blocks, its share is %d, and no block is free for it (%d slots, %d blocks): %w",
-			s, r.kvHeld(s), r.kvShareBlocks, len(r.kvTabs), r.kvPools[g].blocks-1, decoder.ErrKVPoolFull)
+			s, r.kvHeld(s), r.kvShareBlocks, len(r.kvTabs), r.kvPools[g].Blocks()-1, decoder.ErrKVPoolFull)
 	}
 }
 
@@ -176,22 +137,16 @@ func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 // it is marked stopped, so its next write returns decoder.ErrKVPoolFull, and a batched step in progress is told to abort before it
 // launches anything (kvStepAbort), since a row of it may be that borrower. False when no other slot holds more than its share.
 func (r *cudaResident) kvReclaim(s int) bool {
-	best, most := -1, 0
-	for t := range r.kvTabs {
-		if t == s || r.kvStopped[t] || t == r.kvCopySrc {
-			continue
-		}
-		if ex := r.kvHeld(t) - r.kvShareBlocks; ex > most {
-			best, most = t, ex
-		}
-	}
+	best, most := kvmgr.PickBorrowerVictim(len(r.kvTabs), s,
+		func(t int) bool { return !r.kvStopped[t] && t != r.kvCopySrc },
+		func(t int) int { return r.kvHeld(t) - r.kvShareBlocks })
 	if best < 0 {
 		return false
 	}
 	ids := r.kvTabs[best].ids[kvGroupFull]
 	for b := r.kvShareBlocks; b < len(ids); b++ {
 		if ids[b] != 0 {
-			r.kvPools[kvGroupFull].unref(ids[b])
+			r.kvPools[kvGroupFull].Unref(ids[b])
 			ids[b] = 0
 		}
 	}
@@ -207,15 +162,9 @@ func (r *cudaResident) kvReclaim(s int) bool {
 // (kvSlotBusy) and holds any, and marks it released, so it answers 0 to every reuse question until it starts a new sequence. False
 // when there is none.
 func (r *cudaResident) kvEvictIdle(s int) bool {
-	best := -1
-	for t := range r.kvTabs {
-		if t == s || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
-			continue
-		}
-		if best < 0 || r.kvSlotUse[t] < r.kvSlotUse[best] {
-			best = t
-		}
-	}
+	best := kvmgr.PickIdleVictim(len(r.kvTabs), s,
+		func(t int) bool { return !r.kvSlotBusy[t] && (r.kvHeld(t) > 0 || r.kvHoldsWindow(t)) },
+		func(t int) uint64 { return r.kvSlotUse[t] }, false)
 	if best < 0 {
 		return false
 	}
@@ -282,13 +231,13 @@ func (r *cudaResident) kvTabBuf(s, g int) Buffer {
 // caller has run checkKVFits and kvWindowSetup.
 func (r *cudaResident) kvAllocPools(slots int) error {
 	defer r.onLine(mem.LineKV)()
-	r.kvPools = [kvGroups]kvPool{newKVPool(r.kvPoolBlocks(kvGroupFull, slots)), newKVPool(r.kvPoolBlocks(kvGroupWin, slots))}
+	r.kvPools = [kvGroups]kvmgr.BlockPool{newKVPool(r.kvPoolBlocks(kvGroupFull, slots)), newKVPool(r.kvPoolBlocks(kvGroupWin, slots))}
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		if Ly.noKV() || Ly.kvShared {
 			continue
 		}
-		rows := r.kvPools[r.kvGroupOf(l)].blocks * kvBlock
+		rows := r.kvPools[r.kvGroupOf(l)].Blocks() * kvBlock
 		if Ly.isMLA() {
 			r.kc[l] = r.akv(l, rows*Ly.kvDim) // one latent row per position, no V
 			continue
@@ -447,7 +396,7 @@ func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 	if g == kvGroupWin {
 		for b, id := range ids {
 			if id != 0 && (b < b0 || b >= b1) {
-				r.kvPools[g].unref(id)
+				r.kvPools[g].Unref(id)
 				ids[b] = 0
 				t.dirty[g] = true
 			}
@@ -455,7 +404,7 @@ func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 	}
 	for b := b0; b < b1; b++ {
 		old := ids[b]
-		if old != 0 && r.kvPools[g].refs[old] <= 1 {
+		if old != 0 && r.kvPools[g].Refs(old) <= 1 {
 			continue
 		}
 		id, e := r.kvTake(s, g, old != 0)
@@ -465,11 +414,11 @@ func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 		if old != 0 {
 			if keep := lo - b*kvBlock; keep > 0 {
 				if e := r.kvCopyBlockRows(g, old, id, keep); e != nil {
-					r.kvPools[g].unref(id)
+					r.kvPools[g].Unref(id)
 					return e
 				}
 			}
-			r.kvPools[g].unref(old)
+			r.kvPools[g].Unref(old)
 		}
 		ids[b] = id
 		t.dirty[g] = true
@@ -527,9 +476,9 @@ func (r *cudaResident) kvShare(src, dst, start, end int) error {
 			continue
 		}
 		if dIDs[b] != 0 {
-			p.unref(dIDs[b])
+			p.Unref(dIDs[b])
 		}
-		p.ref(id)
+		p.Ref(id)
 		dIDs[b] = id
 		r.kvTabs[dst].dirty[kvGroupFull] = true
 	}
@@ -541,7 +490,7 @@ func (r *cudaResident) kvReleaseAll(s, g int) {
 	t := &r.kvTabs[s]
 	for b, id := range t.ids[g] {
 		if id != 0 {
-			r.kvPools[g].unref(id)
+			r.kvPools[g].Unref(id)
 			t.ids[g][b] = 0
 			t.dirty[g] = true
 		}
@@ -585,23 +534,11 @@ func (r *cudaResident) kvFlushTabs(s int) error {
 // physical row of p: blocks of slot s's group g that follow each other in the pool too are one run, so a slot whose blocks were handed out
 // in order is copied in one piece. Every block in the range must be mapped.
 func (r *cudaResident) kvRowRuns(s, g, lo, hi int, fn func(p, n, row int) error) error {
-	ids := r.kvTabs[s].ids[g]
-	for p := lo; p < hi; {
-		b := p / kvBlock
-		if ids[b] == 0 {
-			return fmt.Errorf("cuda: slot %d holds no block for KV position %d", s, p)
-		}
-		row := int(ids[b])*kvBlock + p%kvBlock
-		end := min(hi, (b+1)*kvBlock)
-		for end < hi && ids[end/kvBlock] == ids[end/kvBlock-1]+1 {
-			end = min(hi, end+kvBlock)
-		}
-		if e := fn(p, end-p, row); e != nil {
-			return e
-		}
-		p = end
+	unmapped, err := kvmgr.RowRuns(r.kvTabs[s].ids[g], lo, hi, fn)
+	if unmapped >= 0 {
+		return fmt.Errorf("cuda: slot %d holds no block for KV position %d", s, unmapped)
 	}
-	return nil
+	return err
 }
 
 // kvMapWrite maps what a write of n rows at p0 into slot s needs in every group, given the window group's base after the write (kvwindow.go),
@@ -805,7 +742,7 @@ type kvState struct {
 	kvSlotsN   int  // what checkKVFits granted (>= 1)
 	kvSlot     int
 	kvTabSlot  int
-	kvPools    [kvGroups]kvPool
+	kvPools    [kvGroups]kvmgr.BlockPool
 	kvTabs     []kvSlotTabs
 	kvTabDev   Buffer
 	kvTabStage *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables

@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming the numbers and the flag that fixes it (an
@@ -478,7 +479,7 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 	// hybrid (DeltaNet/conv/Mamba), sliding-window and MLA models. Fall back to the flat formula only when the architecture cannot be
 	// resolved at all: not a real load, but a synthetic Config with no registered model_type, which several unit tests construct.
 	if arch, _, err := resolveArchitecture(cfg); err == nil && arch != nil {
-		return kvBytesForCtx(arch, ctx, kvF16, kvI8)
+		return memprice.CPUKVBytesForCtx(arch, ctx, kvF16, kvI8)
 	}
 	return kvBytesPerPosition(cfg, kvF16, kvI8) * int64(ctx)
 }
@@ -604,7 +605,7 @@ type kvPrice struct {
 func (p kvPrice) bytes(cfg *Config, ctx int) int64 {
 	if p.metalKV != "" {
 		if arch, _, err := resolveArchitecture(cfg); err == nil && arch != nil {
-			return metalKVBytesFor(arch, ctx, p.metalKV)
+			return memprice.MetalKVBytesFor(arch, ctx, p.metalKV)
 		}
 	}
 	return estimateKVBytes(cfg, ctx, p.kvF16, p.kvI8)

@@ -4,16 +4,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // -kv-host-bytes: the host memory prefix snapshots may hold (decoder.Options.KVHostBytes).
-// The default is a tenth of the machine's physical RAM, at most 8 GiB; host memory is allocated when a snapshot is taken and
-// released when it is dropped, so a server that never takes one holds nothing.
-
-const (
-	kvHostFraction = 10      // the default budget is 1/kvHostFraction of physical RAM
-	kvHostCap      = 8 << 30 // and at most this
-)
+// The default ("auto") is decided by internal/runtime/mem.SnapshotHostBudget; host memory is allocated when a snapshot is
+// taken and released when it is dropped, so a server that never takes one holds nothing.
 
 // parseKVHostBytes reads the flag: "auto" (or empty) for the default, "0" for off, else a byte count with an optional K, M or G
 // suffix (powers of 1024, an optional trailing "iB" or "B" accepted).
@@ -53,11 +50,10 @@ func resolveKVHostBytes(flag string, ram int64) (int64, string, error) {
 		return 0, "-kv-host-bytes 0", nil
 	case !auto:
 		return n, "-kv-host-bytes " + strings.TrimSpace(flag), nil
-	case ram <= 0:
-		return 0, "auto needs the machine's physical RAM, which is unknown here", nil
+	default:
+		b, how := mem.SnapshotHostBudget(ram, mem.DefaultPolicy())
+		return b, how, nil
 	}
-	b := min(ram/kvHostFraction, kvHostCap)
-	return b, fmt.Sprintf("auto: 1/%d of %s of RAM, at most %s", kvHostFraction, gib(ram), gib(kvHostCap)), nil
 }
 
 // kvDemoteAsked reports whether the flag names a budget. auto leaves a released conversation's rows out of host memory: the copy waits on the
@@ -65,12 +61,4 @@ func resolveKVHostBytes(flag string, ram int64) (int64, string, error) {
 func kvDemoteAsked(flag string) bool {
 	n, auto, err := parseKVHostBytes(flag)
 	return err == nil && !auto && n > 0
-}
-
-// gib is n bytes as GiB with one decimal ("62.7 GiB"), or MiB below a GiB.
-func gib(n int64) string {
-	if n >= 1<<30 {
-		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
-	}
-	return fmt.Sprintf("%.0f MiB", float64(n)/(1<<20))
 }

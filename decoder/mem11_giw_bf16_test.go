@@ -13,6 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // gbWriteGIW writes m's weights to path as a weights-only .giw, with islands as f32 arrays when f32Form (the form before kind 9).
@@ -70,6 +71,10 @@ func gbRoundIslands(t *testing.T, m *Model) int64 {
 
 // gbIslands reports the kind every island of m holds ("" if they differ) and how many of their bytes alias the mapping.
 func gbIslands(m *Model) (kind string, aliased int64) {
+	var in func([]byte) bool
+	if len(m.mmap) > 0 {
+		in = func(b []byte) bool { _, ok := m.MmapByteOffset(b); return ok }
+	}
 	for i, sc := range gbConvs(m) {
 		for _, w := range []*linalg.WeightMat{&sc.InProj, &sc.OutProj} {
 			if i == 0 && kind == "" {
@@ -77,7 +82,7 @@ func gbIslands(m *Model) (kind string, aliased int64) {
 			} else if w.Kind().String() != kind {
 				kind = "mixed"
 			}
-			aliased += mmapAliasedBytes(m, w)
+			aliased += memprice.MmapAliasedBytes(w, in)
 		}
 	}
 	return kind, aliased
