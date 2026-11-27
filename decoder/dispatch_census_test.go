@@ -120,9 +120,10 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 			if strings.HasPrefix(trimmed, "//") || (strings.HasPrefix(trimmed, "func is") || strings.HasPrefix(trimmed, "func Is")) {
 				continue
 			}
-			rel := "decoder/" + f
-			if strings.HasPrefix(f, "../") {
-				rel = strings.TrimPrefix(filepath.ToSlash(f), "../")
+			sf := filepath.ToSlash(f)
+			rel := "decoder/" + sf
+			if strings.HasPrefix(sf, "../") {
+				rel = strings.TrimPrefix(sf, "../")
 			}
 			loc := fmt.Sprintf("%s|%s", rel, trimmed)
 			if identityCall.MatchString(line) {
