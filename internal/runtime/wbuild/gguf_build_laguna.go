@@ -23,6 +23,7 @@ func (b *ggufBuild) loadLaguna() (*darch.Weights, error) {
 	// exp_probs_b is 1-D; the shared `mat` helper wants 2-D, so read it as a flat
 	// vector the same way the other MoE GGUF loaders do.
 	flat := func(name string, n int) ([]float32, error) { // 1-D or [1,n]/[n,1] → n floats
+		defer b.release(name)
 		_, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr

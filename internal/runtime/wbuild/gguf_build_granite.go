@@ -20,6 +20,7 @@ func (b *ggufBuild) loadGranite(gp *archparts.GraniteParams) (*darch.Weights, er
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	f32mat := func(name string, out, in int) ([]float32, error) {
+		defer b.release(name)
 		dims, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr
@@ -30,6 +31,7 @@ func (b *ggufBuild) loadGranite(gp *archparts.GraniteParams) (*darch.Weights, er
 		return data, nil
 	}
 	flat := func(name string, n int) ([]float32, error) { // 1-D or [1,n]/[n,1] tensor → n floats
+		defer b.release(name)
 		_, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr

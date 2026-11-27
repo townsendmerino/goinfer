@@ -28,6 +28,7 @@ func (b *ggufBuild) loadQwen35(q *archparts.Qwen35Params) (*darch.Weights, error
 	// layout transform (untileVHeads) before they can be used, so the f32 form is still the
 	// working intermediate; wmQ below wraps the result and applies Options.Quant.
 	f32mat := func(name string, out, in int) ([]float32, error) {
+		defer b.release(name)
 		dims, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr

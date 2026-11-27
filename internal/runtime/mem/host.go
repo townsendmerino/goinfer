@@ -153,9 +153,9 @@ func (c HostCheck) Arithmetic() string {
 		fmt.Fprintf(&b, " + %s KV", GiB(c.KVBytes))
 	}
 	if c.SourceBytes > 0 {
-		// The source stays mapped resident for the whole load beside the weights built from it, named so this does not read as
-		// a doubled weight estimate.
-		fmt.Fprintf(&b, " + %s reading the checkpoint (the .gguf stays mapped resident for the whole load) + %s heap beside it",
+		// The source pages the build holds mapped beside the weights it builds (the whole file, or one tensor per worker where
+		// the build releases them), named so this does not read as a doubled weight estimate.
+		fmt.Fprintf(&b, " + %s reading the checkpoint (the .gguf pages the build holds mapped at once) + %s heap beside it",
 			GiB(c.SourceBytes), GiB(HeapSlackBytes(c.WeightBytes, c.SourceBytes)))
 	}
 	if c.KVBytes > 0 || c.SourceBytes > 0 {

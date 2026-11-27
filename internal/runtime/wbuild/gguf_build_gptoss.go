@@ -21,6 +21,7 @@ func (b *ggufBuild) loadGptOss() (*darch.Weights, error) {
 	// stackedExpertBias slices a 2-D [out, nExpert] (fastest-first) f32 bias
 	// tensor into one [out] slice per expert (expert e occupies [e*out, e*out+out)).
 	stackedExpertBias := func(name string, out int) ([][]float32, error) {
+		defer b.release(name)
 		dims, data, derr := g.Tensor(name)
 		if derr != nil {
 			return nil, derr

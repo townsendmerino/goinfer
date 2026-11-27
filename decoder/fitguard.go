@@ -3,6 +3,7 @@ package decoder
 import (
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -39,6 +41,10 @@ const fitWarnRatio = mem.WarnRatio
 
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
+
+// buildWorkers and reclaimsReleasedPages are the machine facts the source term reads (ggufInFlightSourceBytes), indirected like
+// hostRAM so the census and the tests price one machine rather than this one.
+var buildWorkers, reclaimsReleasedPages = probe.BuildWorkers, probe.ReclaimsReleasedPages
 
 // hostRAMAvailable is the same indirection for CURRENTLY AVAILABLE memory (prefill_budget.go): a live figure, never cached, unlike
 // hostRAM's total-RAM snapshot.
@@ -69,6 +75,11 @@ type fitCheck struct {
 	// fitCheckFor (model.go's .giw branch: its pages are file-backed and droppable under pressure, so there is no allocation peak to price),
 	// and a safetensors directory's loader has its own accounting. Zero when not applicable, so a fitCheck literal built elsewhere is
 	// unaffected. The measurement: docs/code-notes/decoder.md#fitCheck.srcFileBytes.
+	//
+	// Where released pages are reclaimed (reclaimsReleasedPages: Linux), the build releases each tensor's pages once it is
+	// converted (wbuild's releaseTensor, held for every builder by TestWbuild_everyTensorReadReleases), so the mapping holds one
+	// tensor per layer worker at once: srcFileBytes is the smaller of the file and that bound (ggufInFlightSourceBytes).
+	// Elsewhere, or with the worker count unknown, the whole file is priced.
 	srcFileBytes int64
 
 	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf: the
@@ -522,12 +533,15 @@ func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read f
 		// contradict the never-from-on-disk-size rule for weightBytes, which is about the final size shrinking on quantize. Only priced for a plain
 		// resident load: StreamWeights means this path is transcoded to a .giw and re-loaded by a different Load call that never reaches
 		// fitCheckFor.
+		g, err := OpenGGUFMmap(path)
 		if !opts.StreamWeights {
 			if n, ok := GGUFFileBytes(path); ok { // a split set's whole size, not its first shard's
 				f.srcFileBytes = n
+				if w := buildWorkers(); err == nil && w > 0 && reclaimsReleasedPages() {
+					f.srcFileBytes = min(n, ggufInFlightSourceBytes(g, w))
+				}
 			}
 		}
-		g, err := OpenGGUFMmap(path)
 		if err != nil {
 			return f // unknown ⇒ proceed, same as always
 		}
@@ -699,3 +713,18 @@ var weightAllocs atomic.Int64
 // loadCalls counts entries into Load, of any source: a .giw load maps and walks its weights without entering loadWeights,
 // so "nothing was loaded" is this count, not weightAllocs alone.
 var loadCalls atomic.Int64
+
+// ggufInFlightSourceBytes is what a direct build of g holds of its source at once: the build's layer workers convert one
+// tensor each and release it before the next (wbuild's release), so at most workers of the largest tensors. A tensor whose
+// stored size is unknown makes it unbounded (math.MaxInt64), which leaves the whole file priced.
+func ggufInFlightSourceBytes(g *embed.GGUFFile, workers int) int64 {
+	var largest int64
+	for _, name := range g.Names() {
+		n, ok := g.TensorBytes(name)
+		if !ok {
+			return math.MaxInt64
+		}
+		largest = max(largest, int64(n))
+	}
+	return int64(max(workers, 1)) * largest
+}
