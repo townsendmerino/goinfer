@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"runtime"
 	"strings"
@@ -191,11 +192,11 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 		return out
 	}
 	off := run("0")
-	before := atomic.LoadInt64(&moeExpertMajorRuns)
+	before := atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns)
 	on := run("1")
 	// NON-VACUITY: moeMLPBatchWith refuses for several legitimate reasons, and a refusal makes both arms take the
 	// identical per-row path, so the test would pass while proving nothing about the batched path.
-	if ran := atomic.LoadInt64(&moeExpertMajorRuns) - before; ran == 0 {
+	if ran := atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns) - before; ran == 0 {
 		t.Fatal("expert-major path never ran (moeMLPBatchWith refused) — this comparison proves nothing")
 	} else {
 		t.Logf("expert-major chunks executed: %d", ran)
@@ -274,13 +275,13 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 		t.Helper()
 		// This times per-row vs expert-major only; the scratch-reuse attribution arm is retired.
 		setKnob(t, m, knobMoEExpertMajor, on)
-		before := atomic.LoadInt64(&moeExpertMajorRuns)
+		before := atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns)
 		t0 := time.Now()
 		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
 			t.Fatalf("forward: %v", err)
 		}
 		d := time.Since(t0)
-		ran := atomic.LoadInt64(&moeExpertMajorRuns) - before
+		ran := atomic.LoadInt64(&cpuengine.MoEExpertMajorRuns) - before
 		if on == "1" && ran == 0 {
 			t.Fatal("expert-major never ran — this timing measures nothing")
 		}

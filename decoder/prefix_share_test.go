@@ -110,8 +110,8 @@ func TestPrefixCheckpoint_isNotMutatedByResuming(t *testing.T) {
 			t.Fatalf("resuming the checkpoint again changed the result at %d: the checkpoint was mutated", i)
 		}
 	}
-	if cp.cache.pos != 24 {
-		t.Errorf("the checkpoint's position moved to %d", cp.cache.pos)
+	if cp.cache.c.PosN != 24 {
+		t.Errorf("the checkpoint's position moved to %d", cp.cache.c.PosN)
 	}
 }
 

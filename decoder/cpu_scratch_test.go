@@ -52,11 +52,11 @@ func TestCPUDecodeScratch_equalsTheBuild(t *testing.T) {
 			continue
 		}
 		c := m.NewCache(0)
-		if c.scr == nil {
+		if c.c.Scr == nil {
 			m.Close()
 			continue
 		}
-		if err := cpuScratchHolds(c.scr, m.CPUDecodeScratch()); err != nil {
+		if err := cpuScratchHolds(c.c.Scr, m.CPUDecodeScratch()); err != nil {
 			t.Errorf("%s: %v", f.name, err)
 		}
 		if n := m.CPUDecodeScratchBytes(); n <= 0 {
@@ -78,16 +78,16 @@ func TestCPUDecodeScratch_plantsGoRed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	scr := m.NewCache(0).scr
+	scr := m.NewCache(0).c.Scr
 	terms := m.CPUDecodeScratch()
 	if err := cpuScratchHolds(scr, terms); err != nil {
 		t.Fatalf("unplanted: %v", err)
 	}
-	scr.scores = make([]float32, 8)
-	if err := cpuScratchHolds(scr, terms); err == nil || !strings.Contains(err.Error(), "scores: the stream holds 32 B the plan names no term for") {
+	scr.Scores = make([]float32, 8)
+	if err := cpuScratchHolds(scr, terms); err == nil || !strings.Contains(err.Error(), "Scores: the stream holds 32 B the plan names no term for") {
 		t.Errorf("a row beside the list: err = %v, want one naming scores and 32 B", err)
 	}
-	scr.scores = nil
+	scr.Scores = nil
 	short := slices.Clone(terms)
 	for i := range short {
 		if short[i].Role == "norm" {

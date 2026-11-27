@@ -23,9 +23,9 @@ func TestLayerPager_concurrentNoRace(t *testing.T) {
 		wg.Go(func() {
 			for range 3 {
 				for l := range n {
-					p.enterLayer(l)
+					p.EnterLayer(l)
 				}
-				p.finishLayers()
+				p.FinishLayers()
 				_, _ = p.stats()
 			}
 		})
@@ -46,7 +46,7 @@ func TestExpertPager_concurrentNoRace(t *testing.T) {
 	for g := range 6 {
 		wg.Go(func() {
 			for iter := range 50 {
-				p.touch(keys[(iter+g)%nExp])
+				p.Touch(keys[(iter+g)%nExp])
 				_, _, _ = p.stats()
 			}
 		})

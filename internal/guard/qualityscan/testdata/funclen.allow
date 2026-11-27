@@ -4,7 +4,7 @@ decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratch
 internal/runtime/wbuild/gguf_build.go:ggufBuild.loadLayers 207 -- over the ceiling before the ratchet; split it when next changed
 internal/runtime/wbuild/gguf.go:BuildWeightsFromGGUF 274 -- over the ceiling before the ratchet; the family dispatch moved to ggufBuild.loadFamily; split it further when next changed
 decoder/model.go:Model.generateInto 245 -- over the ceiling before the ratchet; split it when next changed
-decoder/program_cpu_n.go:Model.walkBatch 273 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/cpuengine/program_cpu_n.go:Engine.WalkBatch 273 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:ngramSpecLoop 344 -- over the ceiling before the ratchet; split it when next changed
 internal/runtime/wbuild/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed

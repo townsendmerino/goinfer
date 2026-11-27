@@ -120,9 +120,9 @@ func TestLFM2_multiTokenPrefillMatchesSequential(t *testing.T) {
 				"documents itself as bit-identical)", i, got[i], want[i])
 		}
 	}
-	if batchCache.pos != seqCache.pos {
+	if batchCache.c.PosN != seqCache.c.PosN {
 		t.Errorf("cache position %d after prefill, %d after sequential — the whole prompt must be "+
-			"in the cache either way", batchCache.pos, seqCache.pos)
+			"in the cache either way", batchCache.c.PosN, seqCache.c.PosN)
 	}
 }
 

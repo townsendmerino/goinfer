@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"slices"
 	"testing"
 )
@@ -25,9 +26,9 @@ func TestCPURing_directDecodeAB(t *testing.T) {
 	} {
 		t.Run(mc.name, func(t *testing.T) {
 			h := newCPUDecodeAB(t, mc.env, mc.def, mc.depth)
-			orig := ringDirectDecode
-			t.Cleanup(func() { ringDirectDecode = orig })
-			h.run("ring direct decode ("+mc.name+")", mc.pairs, func(on bool) { ringDirectDecode = on })
+			orig := cpuengine.RingDirectDecode
+			t.Cleanup(func() { cpuengine.RingDirectDecode = orig })
+			h.run("ring direct decode ("+mc.name+")", mc.pairs, func(on bool) { cpuengine.RingDirectDecode = on })
 		})
 	}
 }
@@ -38,10 +39,10 @@ func TestCPURing_directDecodeAB(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURing_directDecodeLogitsBitIdentical -v -count=1 -timeout 30m
 func TestCPURing_directDecodeLogitsBitIdentical(t *testing.T) {
 	h := newCPUDecodeAB(t, "GOINFER_CPU_MODEL_G3", "$HOME/models/gemma3-1b-q4_k_m.gguf", 900)
-	orig := ringDirectDecode
-	t.Cleanup(func() { ringDirectDecode = orig })
+	orig := cpuengine.RingDirectDecode
+	t.Cleanup(func() { cpuengine.RingDirectDecode = orig })
 	capture := func(on bool) [][]float32 {
-		ringDirectDecode = on
+		cpuengine.RingDirectDecode = on
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
 			steps = append(steps, slices.Clone(logits))
@@ -87,11 +88,11 @@ func TestCPUKVI8_parallelWidenAB(t *testing.T) {
 	} {
 		t.Run(mc.name, func(t *testing.T) {
 			h := newCPUDecodeABWith(t, mc.env, mc.def, mc.depth, Options{KVQuant: "i8"})
-			orig := kvDequantParallel
-			t.Cleanup(func() { kvDequantParallel = orig })
-			before := kvDequantFanouts.Load()
-			h.run("int8-KV parallel widen ("+mc.name+")", mc.pairs, func(on bool) { kvDequantParallel = on })
-			if kvDequantFanouts.Load() == before {
+			orig := cpuengine.KVDequantParallel
+			t.Cleanup(func() { cpuengine.KVDequantParallel = orig })
+			before := cpuengine.KVDequantFanouts.Load()
+			h.run("int8-KV parallel widen ("+mc.name+")", mc.pairs, func(on bool) { cpuengine.KVDequantParallel = on })
+			if cpuengine.KVDequantFanouts.Load() == before {
 				t.Fatal("the fan-out never forked: the ON arm was the OFF arm")
 			}
 		})
@@ -103,10 +104,10 @@ func TestCPUKVI8_parallelWidenAB(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPUKVI8_parallelWidenLogitsBitIdentical -v -count=1 -timeout 30m
 func TestCPUKVI8_parallelWidenLogitsBitIdentical(t *testing.T) {
 	h := newCPUDecodeABWith(t, "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 2000, Options{KVQuant: "i8"})
-	orig := kvDequantParallel
-	t.Cleanup(func() { kvDequantParallel = orig })
+	orig := cpuengine.KVDequantParallel
+	t.Cleanup(func() { cpuengine.KVDequantParallel = orig })
 	capture := func(on bool) [][]float32 {
-		kvDequantParallel = on
+		cpuengine.KVDequantParallel = on
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
 			steps = append(steps, slices.Clone(logits))
@@ -120,9 +121,9 @@ func TestCPUKVI8_parallelWidenLogitsBitIdentical(t *testing.T) {
 		return steps
 	}
 	off := capture(false)
-	before := kvDequantFanouts.Load()
+	before := cpuengine.KVDequantFanouts.Load()
 	on := capture(true)
-	if kvDequantFanouts.Load() == before {
+	if cpuengine.KVDequantFanouts.Load() == before {
 		t.Fatal("the fan-out never forked")
 	}
 	if len(on) != len(off) || len(on) == 0 {

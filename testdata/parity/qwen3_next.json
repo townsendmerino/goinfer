@@ -7,7 +7,7 @@
     "deltanet"
   ],
   "own": [
-    "decoder/forward_qwen35.go",
+    "internal/runtime/cpuengine/forward_qwen35.go",
     "internal/runtime/wbuild/qwen3next.go",
     "decoder/qwen3next_real_test.go",
     "decoder/qwen3next_slice_test.go",
@@ -21,7 +21,7 @@
   "programs": [
     "testdata/qwen3next-tiny"
   ],
-  "deps_hash": "sha256:e8cae969a9476f6d6acc1e5081fe2b5d077b038448d1b68e56af12d8af50a2df",
+  "deps_hash": "sha256:c1c91100adf86c77b64ffc54a591b5db3c59c4be596b562a6ddb79e52c97b29e",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

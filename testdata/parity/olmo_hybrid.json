@@ -6,7 +6,7 @@
     "deltanet"
   ],
   "own": [
-    "decoder/forward_qwen35.go",
+    "internal/runtime/cpuengine/forward_qwen35.go",
     "decoder/olmo_hybrid_real_test.go",
     "decoder/olmo_hybrid_test.go",
     "scripts/pin_olmo_hybrid_real.py",
@@ -17,7 +17,7 @@
   "programs": [
     "testdata/olmo_hybrid-tiny"
   ],
-  "deps_hash": "sha256:ac9374a4f11144e4551d39d0f58e21c466f9d65f4b95d3faed90e9a102fac6dd",
+  "deps_hash": "sha256:e6fc80cae84d98c15b8de4a3924d8d4457554da67955eae19c457793d4fe8703",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

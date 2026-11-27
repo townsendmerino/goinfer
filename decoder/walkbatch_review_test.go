@@ -33,7 +33,7 @@ func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 	}
 	want := run(false, nil)
 	// A scratch whose pool was last built fused, as a reused prefillPassScratch can be.
-	stale := &prefillPassScratch{poolWant: true}
+	stale := &prefillPassScratch{PoolWant: true}
 	for _, c := range []struct {
 		name string
 		ps   *prefillPassScratch
@@ -61,15 +61,15 @@ func TestWalkBatch_gemma4PassTakesNoGenericAttentionScratch(t *testing.T) {
 		ids[i] = (i*37 + 11) % m.w.Arch.VocabSize
 	}
 	ps := &prefillPassScratch{}
-	if _, err := m.walkBatch(context.Background(), m.program(), m.embedN(ids), m.NewCache(n), false, n, ps, &batchRows{ids: ids}); err != nil {
+	if _, err := m.walkBatch(context.Background(), m.program(), m.embedN(ids), m.NewCache(n), false, n, ps, &batchRows{IDs: ids}); err != nil {
 		t.Fatal(err)
 	}
-	for name, b := range map[string][]float32{"q": ps.q, "k": ps.k, "v": ps.v, "ctx": ps.ctx, "gate": ps.gate, "up": ps.up} {
+	for name, b := range map[string][]float32{"q": ps.Q, "k": ps.K, "v": ps.V, "ctx": ps.Ctx, "gate": ps.Gate, "up": ps.Up} {
 		if cap(b) != 0 {
 			t.Errorf("Gemma 4 pass allocated the generic %s buffer (%d floats)", name, cap(b))
 		}
 	}
-	if ps.pool != nil {
+	if ps.Pool != nil {
 		t.Errorf("Gemma 4 pass built the generic attention pool")
 	}
 }

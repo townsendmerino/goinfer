@@ -4,15 +4,15 @@
     "loaders"
   ],
   "own": [
-    "decoder/lfm2.go",
-    "decoder/forward_lfm2.go",
+    "internal/runtime/cpuengine/lfm2.go",
+    "internal/runtime/cpuengine/forward_lfm2.go",
     "internal/runtime/families/arch_lfm2.go",
     "internal/runtime/giwcodec/island.go"
   ],
   "programs": [
     "testdata/lfm2-tiny"
   ],
-  "deps_hash": "sha256:af32e78967fdf619c4b28ccb7a0de093fb0ce30bd3e6fccb31b4c15003e4d105",
+  "deps_hash": "sha256:2712af73929edd5ac76a0cb705094e03f03573ce9d7d4c18afefee66d2e03d61",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
@@ -21,7 +21,7 @@
   "method": "full-forward-oracle",
   "metrics": {
     "argmax_pct": 100.0,
-    "cosine_min": 1.00000,
-    "cosine_mean": 1.00000
+    "cosine_min": 1.0,
+    "cosine_mean": 1.0
   }
 }

@@ -248,7 +248,7 @@ func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 			for range itersEach {
 				i := rng.Intn(nExperts)
 				pager.Lock()
-				pager.touch(keys[i])
+				pager.Touch(keys[i])
 				live := (*linalg.WeightMat)(keys[i])
 				got := matmulOut(live, x)
 				pager.Unlock()

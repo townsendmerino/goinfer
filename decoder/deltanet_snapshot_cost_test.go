@@ -32,15 +32,15 @@ type snapshotBuf struct {
 
 func newSnapshotBuf(c *KVCache) *snapshotBuf {
 	b := &snapshotBuf{}
-	for l, d := range c.delta {
+	for l, d := range c.c.Delta {
 		if d == nil {
 			continue
 		}
 		b.layers = append(b.layers, l)
-		b.s = append(b.s, make([]float32, len(d.s)))
-		w := make([][]float32, len(d.convWin))
-		for i := range d.convWin {
-			w[i] = make([]float32, len(d.convWin[i]))
+		b.s = append(b.s, make([]float32, len(d.S)))
+		w := make([][]float32, len(d.ConvWin))
+		for i := range d.ConvWin {
+			w[i] = make([]float32, len(d.ConvWin[i]))
 		}
 		b.conv = append(b.conv, w)
 	}
@@ -50,20 +50,20 @@ func newSnapshotBuf(c *KVCache) *snapshotBuf {
 // take copies live state -> buffer. restore writes buffer -> live state.
 func (b *snapshotBuf) take(c *KVCache) {
 	for i, l := range b.layers {
-		d := c.delta[l]
-		copy(b.s[i], d.s)
-		for j := range d.convWin {
-			copy(b.conv[i][j], d.convWin[j])
+		d := c.c.Delta[l]
+		copy(b.s[i], d.S)
+		for j := range d.ConvWin {
+			copy(b.conv[i][j], d.ConvWin[j])
 		}
 	}
 }
 
 func (b *snapshotBuf) restore(c *KVCache) {
 	for i, l := range b.layers {
-		d := c.delta[l]
-		copy(d.s, b.s[i])
-		for j := range d.convWin {
-			copy(d.convWin[j], b.conv[i][j])
+		d := c.c.Delta[l]
+		copy(d.S, b.s[i])
+		for j := range d.ConvWin {
+			copy(d.ConvWin[j], b.conv[i][j])
 		}
 	}
 }
@@ -124,7 +124,7 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 	wantS := p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim
 	wantConvDim := 2*(p.KeyHeadDim*p.NumKeyHeads) + p.ValueHeadDim*p.NumValueHeads
 	nLinear := 0
-	for l, d := range cache.delta {
+	for l, d := range cache.c.Delta {
 		if d == nil {
 			if a.IsLinearLayer(l) {
 				t.Errorf("layer %d is linear but has no deltaState", l)
@@ -132,13 +132,13 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 			continue
 		}
 		nLinear++
-		if len(d.s) != wantS {
-			t.Errorf("layer %d: len(s)=%d want %d", l, len(d.s), wantS)
+		if len(d.S) != wantS {
+			t.Errorf("layer %d: len(s)=%d want %d", l, len(d.S), wantS)
 		}
-		if len(d.convWin) != p.ConvKernel-1 {
-			t.Errorf("layer %d: convWin has %d vectors, want K-1=%d", l, len(d.convWin), p.ConvKernel-1)
+		if len(d.ConvWin) != p.ConvKernel-1 {
+			t.Errorf("layer %d: convWin has %d vectors, want K-1=%d", l, len(d.ConvWin), p.ConvKernel-1)
 		}
-		for j, w := range d.convWin {
+		for j, w := range d.ConvWin {
 			if len(w) != wantConvDim {
 				t.Errorf("layer %d convWin[%d]: %d want %d", l, j, len(w), wantConvDim)
 			}

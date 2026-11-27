@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"hash/crc32"
 	"os"
 	"slices"
@@ -56,9 +57,9 @@ func TestParseQuantConfig_gptqCheckpointFormat(t *testing.T) {
 // can be in a forward at once, so the appends raced on a slice header — a crash, not a wrong
 // number — and on a long-running serve process the buffers grew without limit.
 func TestRouterCapture_isBoundedAndRaceFree(t *testing.T) {
-	prev := routerCapture
-	routerCapture = true
-	defer func() { routerCapture = prev; routerCaptureReset() }()
+	prev := cpuengine.RouterCapture
+	cpuengine.RouterCapture = true
+	defer func() { cpuengine.RouterCapture = prev; routerCaptureReset() }()
 	routerCaptureReset()
 
 	// Concurrent appends: under -race this is the assertion. Without the mutex it is a racing
@@ -68,13 +69,13 @@ func TestRouterCapture_isBoundedAndRaceFree(t *testing.T) {
 		wg.Go(func() {
 			for range 256 {
 				routerCaptureDo(func() {
-					routerCaptureBuf = append(routerCaptureBuf, []int{1, 2})
+					cpuengine.RouterCaptureBuf = append(cpuengine.RouterCaptureBuf, []int{1, 2})
 				})
 			}
 		})
 	}
 	wg.Wait()
-	if got := len(routerCaptureBuf); got != 8*256 {
+	if got := len(cpuengine.RouterCaptureBuf); got != 8*256 {
 		t.Errorf("captured %d entries, want %d — appends were lost", got, 8*256)
 	}
 
@@ -82,18 +83,18 @@ func TestRouterCapture_isBoundedAndRaceFree(t *testing.T) {
 	// serving process costs bounded memory rather than the process.
 	routerCaptureReset()
 	for range routerCaptureMax + 100 {
-		routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, []int{1}) })
+		routerCaptureDo(func() { cpuengine.RouterCaptureBuf = append(cpuengine.RouterCaptureBuf, []int{1}) })
 	}
-	if got := len(routerCaptureBuf); got != routerCaptureMax {
+	if got := len(cpuengine.RouterCaptureBuf); got != routerCaptureMax {
 		t.Errorf("buffer holds %d entries, cap is %d — the bound does not hold (N-27)",
 			got, routerCaptureMax)
 	}
 
 	// And capture OFF must stay a no-op, or the diagnostic costs something when unused.
-	routerCapture = false
+	cpuengine.RouterCapture = false
 	routerCaptureReset()
-	routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, []int{9}) })
-	if len(routerCaptureBuf) != 0 {
+	routerCaptureDo(func() { cpuengine.RouterCaptureBuf = append(cpuengine.RouterCaptureBuf, []int{9}) })
+	if len(cpuengine.RouterCaptureBuf) != 0 {
 		t.Error("captured with the env unset")
 	}
 }

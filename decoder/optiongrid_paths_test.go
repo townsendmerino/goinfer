@@ -80,28 +80,28 @@ func ogMaxDiff(a, b []float32) float64 {
 // stores: f32 rows, or int8 rows with their per-head scales.
 func ogKV(c *KVCache, n int) []float32 {
 	var out []float32
-	for l := 0; l < c.numLayers; l++ {
-		if c.quant == kvI8 {
-			nKV := c.kvDim / c.headDim
-			for _, q := range [][]int8{c.keysQ[l][:n*c.kvDim], c.valsQ[l][:n*c.kvDim]} {
+	for l := 0; l < c.c.NumLayers; l++ {
+		if c.c.Quant == kvI8 {
+			nKV := c.c.KVDim / c.c.HeadDim
+			for _, q := range [][]int8{c.c.KeysQ[l][:n*c.c.KVDim], c.c.ValsQ[l][:n*c.c.KVDim]} {
 				for _, v := range q {
 					out = append(out, float32(v))
 				}
 			}
-			out = append(out, c.keyScale[l][:n*nKV]...)
-			out = append(out, c.valScale[l][:n*nKV]...)
+			out = append(out, c.c.KeyScale[l][:n*nKV]...)
+			out = append(out, c.c.ValScale[l][:n*nKV]...)
 			continue
 		}
-		if c.quant == kvqF16 {
-			for _, h := range [][]uint16{c.keysH[l][:n*c.kvDim], c.valsH[l][:n*c.kvDim]} {
+		if c.c.Quant == kvqF16 {
+			for _, h := range [][]uint16{c.c.KeysH[l][:n*c.c.KVDim], c.c.ValsH[l][:n*c.c.KVDim]} {
 				for _, v := range h {
 					out = append(out, float32(v))
 				}
 			}
 			continue
 		}
-		out = append(out, c.keys[l][:n*c.kvDim]...)
-		out = append(out, c.vals[l][:n*c.kvDim]...)
+		out = append(out, c.c.KeysBuf[l][:n*c.c.KVDim]...)
+		out = append(out, c.c.ValsBuf[l][:n*c.c.KVDim]...)
 	}
 	return out
 }
@@ -116,7 +116,7 @@ func TestOptionPath_cpuBatchedPrefill(t *testing.T) {
 		{name: "Quant int8int8", opts: Options{Quant: "int8int8"}, effect: ogDiffersFromPlain},
 		{name: "Quant int4", opts: Options{Quant: "int4"}, effect: ogDiffersFromPlain},
 		{name: "KVQuant i8", opts: Options{KVQuant: "i8"}, effect: func(t *testing.T, m *Model) {
-			if m.NewCache(1).quant != kvI8 {
+			if m.NewCache(1).c.Quant != kvI8 {
 				t.Fatal("KVQuant i8 did not give an int8 cache")
 			}
 		}},
@@ -240,7 +240,7 @@ func TestOptionPath_specVerify(t *testing.T) {
 			}
 		}},
 		{name: "KVQuant i8", opts: Options{KVQuant: "i8"}, effect: func(t *testing.T, m *Model) {
-			if m.NewCache(1).quant != kvI8 {
+			if m.NewCache(1).c.Quant != kvI8 {
 				t.Fatal("KVQuant i8 did not give an int8 cache")
 			}
 		}},

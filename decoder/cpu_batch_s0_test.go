@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -109,8 +110,8 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 	if err := m.cpuBatchModelEligible(); err != nil {
 		t.Skipf("%v", err)
 	}
-	orig := cpuBatchFusedW4A8
-	t.Cleanup(func() { cpuBatchFusedW4A8 = orig })
+	orig := cpuengine.CPUBatchFusedW4A8
+	t.Cleanup(func() { cpuengine.CPUBatchFusedW4A8 = orig })
 	vocab := m.w.Arch.VocabSize
 	start := time.Now()
 	caches := make([]*KVCache, maxB)
@@ -127,7 +128,7 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[s1 %6.1fs] %s depth %d: %d caches prefilled\n", time.Since(start).Seconds(), filepath.Base(path), depth, maxB)
 	// run steps B-wide from depth with fusion set to fused; returns tok/s and every step's logits.
 	run := func(B int, fused bool) (float64, [][][]float32) {
-		cpuBatchFusedW4A8 = fused
+		cpuengine.CPUBatchFusedW4A8 = fused
 		ids := make([]int, B)
 		for b := range B {
 			caches[b].TruncateTo(depth)

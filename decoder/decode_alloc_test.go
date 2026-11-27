@@ -34,7 +34,7 @@ func TestDecode_fusedScheduleCostsNothingPerToken(t *testing.T) {
 			if _, err := m.forward(785, cache); err != nil {
 				t.Fatalf("forward: %v", err)
 			}
-			cache.pos-- // hold the context length fixed
+			cache.c.PosN-- // hold the context length fixed
 		}
 		runtime.ReadMemStats(&b)
 		return (b.TotalAlloc - a.TotalAlloc) / uint64(n)

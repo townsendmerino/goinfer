@@ -85,7 +85,7 @@ func residentAdapterProj(d *loraDelta) *ResidentAdapterProj {
 	if d == nil {
 		return nil
 	}
-	return &ResidentAdapterProj{A: d.a, B: d.b, R: d.r, In: d.in, Out: d.out, Scale: float32(d.scale)}
+	return &ResidentAdapterProj{A: d.A, B: d.B, R: d.R, In: d.In, Out: d.Out, Scale: float32(d.Scale)}
 }
 
 // residentAdapterLayers converts a loaded loraRuntime into the exported per-layer shape a
@@ -94,9 +94,9 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 	out := make([]ResidentAdapterLayer, len(rt.layers))
 	for i, l := range rt.layers {
 		out[i] = ResidentAdapterLayer{
-			Q: residentAdapterProj(l.q), K: residentAdapterProj(l.k), V: residentAdapterProj(l.v),
-			O: residentAdapterProj(l.o), Gate: residentAdapterProj(l.gate), Up: residentAdapterProj(l.up),
-			Down: residentAdapterProj(l.down),
+			Q: residentAdapterProj(l.Q), K: residentAdapterProj(l.K), V: residentAdapterProj(l.V),
+			O: residentAdapterProj(l.O), Gate: residentAdapterProj(l.Gate), Up: residentAdapterProj(l.Up),
+			Down: residentAdapterProj(l.Down),
 		}
 	}
 	return out
@@ -579,7 +579,7 @@ func (m *Model) withResidency() *Model {
 		return m // FitQuery's open: plannedDecodePath asks the backend instead
 	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
-		return m // force the per-matmul staged path (decision-matrix measurement)
+		return m // force the per-cpuengine.Matmul staged path (decision-matrix measurement)
 	}
 	rb, why := m.residencyGate()
 	if why != "" {
@@ -797,7 +797,7 @@ func (m *Model) HeadTable() string {
 }
 
 // DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the
-// full-residency runner built, "<backend>-staged" when the backend runs per-matmul under the CPU
+// full-residency runner built, "<backend>-staged" when the backend runs per-cpuengine.Matmul under the CPU
 // forward, "cpu" otherwise — with the resident weight quant in parens. A staged GPU path also names
 // WHY residency declined, because that decline is the larger of the two silent regressions: the
 // whole forward is on CPU, not just the prefill. Display/diagnostic only.

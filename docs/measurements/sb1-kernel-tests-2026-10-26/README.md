@@ -201,7 +201,7 @@ shared), nothing timed. Branch `sb1-metal-batch7-2026-10-29`, off `rename-hybrid
 
 - **What moved out of `decoder`:** the Mamba-2 mixer between its projections (the causal conv, the selective scan, the gated
   RMSNorm) into `internal/mamba2` (`Params`, `Weights`, `State`, `NewState`, `Mix`, `GatedRMSNormGrouped`), importing only the
-  standard library and `internal/hybridattn`'s `Silu` and `Softplusf`. `decoder/mamba2.go:mamba2Step` keeps `in_proj` and
+  standard library and `internal/hybridattn`'s `Silu` and `Softplusf`. `internal/runtime/cpuengine/mamba2.go:mamba2Step` keeps `in_proj` and
   `out_proj`, the int8 seams and the capture hook, and calls `mamba2.Mix` with `ssmForceF32` as its `f32` argument;
   `mamba2State` is an alias of `mamba2.State`, so the cache reset in `decoder/kvcache.go` names the exported fields.
   `GatedRMSNormGroupedForTest`, `SetMambaCapHook` and `SetSSMForceF32` keep their signatures for `cuda` and `gpu`.

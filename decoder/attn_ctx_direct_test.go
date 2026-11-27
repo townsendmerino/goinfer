@@ -67,15 +67,15 @@ func runCtxCase(t *testing.T, c ctxCase) string {
 	pool := make([]headWorkerScratch, c.workers)
 	for i := range pool {
 		pool[i] = headWorkerScratch{
-			qh: make([]float32, hd), ch: make([]float32, hd),
-			scores:      make([]float32, c.nKeys),
-			avAcc:       make([]float64, hd),
-			groupScores: make([]float32, c.nKeys*group),
-			groupCtx:    make([]float32, hd*group),
-			groupAvAcc:  make([]float64, hd*group),
+			QH: make([]float32, hd), CH: make([]float32, hd),
+			Scores:      make([]float32, c.nKeys),
+			AvAcc:       make([]float64, hd),
+			GroupScores: make([]float32, c.nKeys*group),
+			GroupCtx:    make([]float32, hd*group),
+			GroupAvAcc:  make([]float64, hd*group),
 		}
 	}
-	pool[0].groupScoresCombined = make([]float32, c.nKeys*c.nKV*group)
+	pool[0].GroupScoresCombined = make([]float32, c.nKeys*c.nKV*group)
 	ctx := make([]float32, c.nH*hd)
 	for i := range ctx { // poison: every element must be written by the kernel, whichever path wrote it
 		ctx[i] = float32(math.NaN())

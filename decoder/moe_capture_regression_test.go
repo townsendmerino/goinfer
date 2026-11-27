@@ -31,17 +31,17 @@ func TestForwardN_capturesMoELayers(t *testing.T) {
 		layers[i] = i
 	}
 	cache := m.NewCache(len(ids) + 1)
-	cache.captureLayers = layers
-	cache.captured = make([][]float32, len(layers))
+	cache.c.CaptureLayers = layers
+	cache.c.Captured = make([][]float32, len(layers))
 	if _, err := m.forwardN(context.Background(), ids, cache); err != nil {
 		t.Fatalf("forwardN: %v", err)
 	}
 	hidden := m.w.Arch.HiddenDim
 	for ci, l := range layers {
-		if cache.captured[ci] == nil {
+		if cache.c.Captured[ci] == nil {
 			t.Fatalf("layer %d (MoE): captured hidden is nil — C-07 reintroduced (EAGLE fuseAt would panic)", l)
 		}
-		if got := len(cache.captured[ci]); got != len(ids)*hidden {
+		if got := len(cache.c.Captured[ci]); got != len(ids)*hidden {
 			t.Errorf("layer %d: captured len %d, want %d (rows×hidden)", l, got, len(ids)*hidden)
 		}
 	}

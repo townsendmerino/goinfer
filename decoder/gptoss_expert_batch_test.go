@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math/rand/v2"
 	"slices"
 	"sync/atomic"
@@ -24,7 +25,7 @@ func TestGptOssExpertBatch_tinyLogitsBitIdentical(t *testing.T) {
 	defer m.Close()
 	capture := func(on bool) ([][]float32, int64) {
 		testgate.SetForTest(t, &w4a8BatchEnabled, on)
-		c0 := gptOssExpertBatchCalls.Load()
+		c0 := cpuengine.GptOssExpertBatchCalls.Load()
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
 			steps = append(steps, slices.Clone(logits))
@@ -35,7 +36,7 @@ func TestGptOssExpertBatch_tinyLogitsBitIdentical(t *testing.T) {
 		if g.err != nil {
 			t.Fatalf("generate: %v", g.err)
 		}
-		return steps, gptOssExpertBatchCalls.Load() - c0
+		return steps, cpuengine.GptOssExpertBatchCalls.Load() - c0
 	}
 	off, offCalls := capture(false)
 	on, onCalls := capture(true)
@@ -90,12 +91,12 @@ func TestGptOssExpertBatch_fanOutBitIdentical(t *testing.T) {
 	linalg.SetParallelWidth(8)
 	run := func(on bool) ([]float32, int64) {
 		testgate.SetForTest(t, &w4a8BatchEnabled, on)
-		c0 := gptOssExpertBatchCalls.Load()
+		c0 := cpuengine.GptOssExpertBatchCalls.Load()
 		out, err := m.gptOssMoEWith(h, lw, p, hidden, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return out, gptOssExpertBatchCalls.Load() - c0
+		return out, cpuengine.GptOssExpertBatchCalls.Load() - c0
 	}
 	want, offCalls := run(false)
 	got, onCalls := run(true)
@@ -145,12 +146,12 @@ func TestGptOssMoEBatch_expertMajorEqualsPerRow(t *testing.T) {
 	rows := fill(n*hidden, 1)
 
 	got := make([]float32, n*hidden)
-	r0 := gptOssExpertMajorRuns.Load()
+	r0 := cpuengine.GptOssExpertMajorRuns.Load()
 	ok, err := m.gptOssMoEBatch(rows, n, lw, p, hidden, got, &moeBatchScratch{})
 	if err != nil || !ok {
 		t.Fatalf("gptOssMoEBatch: ok %v, err %v", ok, err)
 	}
-	if d := gptOssExpertMajorRuns.Load() - r0; d != 1 {
+	if d := cpuengine.GptOssExpertMajorRuns.Load() - r0; d != 1 {
 		t.Fatalf("expert-major ran %d times, want 1", d)
 	}
 	for _, batch := range []bool{false, true} {
@@ -208,15 +209,15 @@ func TestGptOssPrefill_batchedEqualsSequential(t *testing.T) {
 			}
 			want = slices.Clone(want)
 			bat := m.NewCache(n + steps)
-			p0, r0 := atomic.LoadInt64(&prefillPasses), gptOssExpertMajorRuns.Load()
+			p0, r0 := atomic.LoadInt64(&cpuengine.PrefillPasses), cpuengine.GptOssExpertMajorRuns.Load()
 			got, err := m.prefillLogits(context.Background(), prompt, bat)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if atomic.LoadInt64(&prefillPasses) == p0 {
+			if atomic.LoadInt64(&cpuengine.PrefillPasses) == p0 {
 				t.Fatal("prefillLogits ran no batched pass")
 			}
-			if d := gptOssExpertMajorRuns.Load() - r0; (em == "1") != (d > 0) {
+			if d := cpuengine.GptOssExpertMajorRuns.Load() - r0; (em == "1") != (d > 0) {
 				t.Fatalf("expert-major ran %d chunks with the knob at %s", d, em)
 			}
 			for step := 0; ; step++ {
@@ -275,12 +276,12 @@ func TestGptOssPrefill_defaultIsExact(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = slices.Clone(want)
-	p0 := atomic.LoadInt64(&prefillPasses)
+	p0 := atomic.LoadInt64(&cpuengine.PrefillPasses)
 	got, err := m.prefillLogits(context.Background(), prompt, m.NewCache(n+1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if atomic.LoadInt64(&prefillPasses) == p0 {
+	if atomic.LoadInt64(&cpuengine.PrefillPasses) == p0 {
 		t.Fatal("prefillLogits ran no batched pass")
 	}
 	for i := range want {

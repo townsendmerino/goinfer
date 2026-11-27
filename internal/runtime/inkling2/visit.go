@@ -208,7 +208,19 @@ func moe(host Host, lw *darch.LayerWeights, cfg *program.MoEConfig, ip *program.
 	return out
 }
 
+// NewToken starts a position on a, or returns nil when a is not an Inkling 2 model.
+func NewToken(a *darch.Architecture) *Token {
+	if a.Inkling2 == nil {
+		return nil
+	}
+	return new(Token)
+}
+
 // Final is the head stage's input: the final depth mix of the completed blocks and the last partial block, in place on h.
+// A nil t (not an Inkling 2 model) leaves h as it is.
 func Final(a *darch.Architecture, t *Token, h []float32) {
+	if t == nil {
+		return
+	}
 	Mix(h, a.Inkling2Head.OutputResQuery, 1, with(t.normed, h), a.HiddenDim)
 }

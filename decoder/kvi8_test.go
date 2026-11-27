@@ -40,13 +40,13 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 local ring, L1 global
 
 	f32 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	f32.enableRings(W, arch.IsGlobalLayer)
-	f32.scr = newDecodeScratch(arch, f32.knobs)
+	f32.c.EnableRings(W, arch.IsGlobalLayer)
+	f32.c.Scr = newDecodeScratch(arch, f32.c.Knobs)
 
 	i8 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
-	i8.setQuant(kvI8, N+1)
-	i8.enableRings(W, arch.IsGlobalLayer)
-	i8.scr = newDecodeScratch(arch, i8.knobs)
+	i8.c.SetQuant(kvI8, N+1)
+	i8.c.EnableRings(W, arch.IsGlobalLayer)
+	i8.c.Scr = newDecodeScratch(arch, i8.c.Knobs)
 
 	rng := rand.New(rand.NewSource(7))
 	worst := map[int]float64{0: 1, 1: 1}
@@ -57,11 +57,11 @@ func TestKVI8_decodeQuality(t *testing.T) {
 
 			f32.Append(l, slices.Clone(k), slices.Clone(v))
 			fCtx := make([]float32, qDim)
-			attendQuery(q, fCtx, f32.scr.scoresBuf(f32.storedRows(l, kvDim)), f32, l, pos, global, arch)
+			attendQuery(q, fCtx, f32.c.Scr.ScoresBuf(f32.c.StoredRows(l, kvDim)), f32, l, pos, global, arch)
 
 			i8.Append(l, slices.Clone(k), slices.Clone(v))
 			iCtx := make([]float32, qDim)
-			attendQuery(slices.Clone(q), iCtx, i8.scr.scoresBuf(i8.storedRows(l, kvDim)), i8, l, pos, global, arch)
+			attendQuery(slices.Clone(q), iCtx, i8.c.Scr.ScoresBuf(i8.c.StoredRows(l, kvDim)), i8, l, pos, global, arch)
 
 			if c := cosineV(iCtx, fCtx); c < worst[l] {
 				worst[l] = c
@@ -75,11 +75,11 @@ func TestKVI8_decodeQuality(t *testing.T) {
 		}
 	}
 	// Storage: int8 ring holds W rows of int8 (¼ the f32 ring bytes).
-	if r := i8.rings[0]; len(r.kq) != W*kvDim || len(r.k) != 0 {
-		t.Errorf("int8 ring: kq=%d (want %d), k=%d (want 0)", len(r.kq), W*kvDim, len(r.k))
+	if r := i8.c.Rings[0]; len(r.KQ) != W*kvDim || len(r.K) != 0 {
+		t.Errorf("int8 ring: kq=%d (want %d), k=%d (want 0)", len(r.KQ), W*kvDim, len(r.K))
 	}
-	if len(i8.keysQ[1]) != N*kvDim || len(i8.keys[1]) != 0 {
-		t.Errorf("int8 global: keysQ=%d (want %d), keys=%d (want 0)", len(i8.keysQ[1]), N*kvDim, len(i8.keys[1]))
+	if len(i8.c.KeysQ[1]) != N*kvDim || len(i8.c.KeysBuf[1]) != 0 {
+		t.Errorf("int8 global: keysQ=%d (want %d), keys=%d (want 0)", len(i8.c.KeysQ[1]), N*kvDim, len(i8.c.KeysBuf[1]))
 	}
 }
 
@@ -94,9 +94,9 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 ring, L1 global
 	mk := func() *KVCache {
 		c := NewKVCache(nLayers, nKV, hd, W, 16, nil)
-		c.setQuant(kvI8, 16)
-		c.enableRings(W, arch.IsGlobalLayer)
-		c.scr = newDecodeScratch(arch, c.knobs)
+		c.c.SetQuant(kvI8, 16)
+		c.c.EnableRings(W, arch.IsGlobalLayer)
+		c.c.Scr = newDecodeScratch(arch, c.c.Knobs)
 		return c
 	}
 	rng := rand.New(rand.NewSource(5))
@@ -133,15 +133,15 @@ func TestKVI8_truncateReappend(t *testing.T) {
 			ref.Append(l, slices.Clone(final[p][0]), slices.Clone(final[p][1]))
 		}
 	}
-	if got.pos != ref.pos {
-		t.Fatalf("pos %d != %d", got.pos, ref.pos)
+	if got.c.PosN != ref.c.PosN {
+		t.Fatalf("pos %d != %d", got.c.PosN, ref.c.PosN)
 	}
 	// global int8 layer 1: int8 rows + scales must match byte-for-byte.
-	if !slices.Equal(got.keysQ[1], ref.keysQ[1]) || !slices.Equal(got.keyScale[1], ref.keyScale[1]) {
+	if !slices.Equal(got.c.KeysQ[1], ref.c.KeysQ[1]) || !slices.Equal(got.c.KeyScale[1], ref.c.KeyScale[1]) {
 		t.Errorf("global int8: truncate+reappend keysQ/scale != fresh")
 	}
 	// ring int8 layer 0: count + live int8 slots must match.
-	if got.rings[0].count != ref.rings[0].count || !slices.Equal(got.rings[0].kq, ref.rings[0].kq) {
+	if got.c.Rings[0].Count != ref.c.Rings[0].Count || !slices.Equal(got.c.Rings[0].KQ, ref.c.Rings[0].KQ) {
 		t.Errorf("ring int8: truncate+reappend kq/count != fresh")
 	}
 }
@@ -353,8 +353,8 @@ func TestKVI8_moeFamiliesConsistent(t *testing.T) {
 			ids := f1IDs(32, vocab)
 			dec := f1Decode(t, m, ids)
 			pre, c := f1Prefill(t, m, ids, nil)
-			if c.quant != kvI8 {
-				t.Fatalf("the cache is %d, want int8", c.quant)
+			if c.c.Quant != kvI8 {
+				t.Fatalf("the cache is %d, want int8", c.c.Quant)
 			}
 			if d := f1Diff(pre, dec); d != 0 {
 				t.Errorf("the batched forward differs from token-by-token decode in %d values", d)

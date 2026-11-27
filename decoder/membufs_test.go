@@ -298,8 +298,8 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 				switch {
 				case b.Unit == program.PerPosition && (b.Name == "k" || b.Name == "v"):
 					win := 0
-					if l < len(cache.rings) && cache.rings[l] != nil {
-						win = cache.rings[l].w
+					if l < len(cache.c.Rings) && cache.c.Rings[l] != nil {
+						win = cache.c.Rings[l].W
 					}
 					if b.Prec != program.PrecKV || b.Heads != a.KVHeadsAt(l) || b.Window != win {
 						t.Errorf("%s layer %d: %q is at precision %d with %d heads and window %d; want the KV precision, %d heads and the ring's %d", dir, l,
@@ -316,24 +316,24 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 			if ck, cv, base := cache.LayerKV(l); len(ck) > 0 && n > base {
 				held["k"], held["v"] = len(ck)/(n-base), len(cv)/(n-base)
 			}
-			if l < len(cache.mlaLatent) && len(cache.mlaLatent[l]) > 0 {
-				held["latent"] = len(cache.mlaLatent[l]) / n
+			if l < len(cache.c.MLALatent) && len(cache.c.MLALatent[l]) > 0 {
+				held["latent"] = len(cache.c.MLALatent[l]) / n
 			}
-			if l < len(cache.delta) && cache.delta[l] != nil {
-				held["window"], held["state"] = rowsOf(cache.delta[l].convWin), len(cache.delta[l].s)
+			if l < len(cache.c.Delta) && cache.c.Delta[l] != nil {
+				held["window"], held["state"] = rowsOf(cache.c.Delta[l].ConvWin), len(cache.c.Delta[l].S)
 				kinds["DeltaNet"]++
 			}
-			if l < len(cache.mamba) && cache.mamba[l] != nil {
-				held["window"], held["state"] = rowsOf(cache.mamba[l].ConvWin), len(cache.mamba[l].SSM)
+			if l < len(cache.c.Mamba) && cache.c.Mamba[l] != nil {
+				held["window"], held["state"] = rowsOf(cache.c.Mamba[l].ConvWin), len(cache.c.Mamba[l].SSM)
 				kinds["Mamba-2"]++
 			}
-			if l < len(cache.conv) && cache.conv[l] != nil {
-				held["window"] = rowsOf(cache.conv[l].convWin)
+			if l < len(cache.c.Conv) && cache.c.Conv[l] != nil {
+				held["window"] = rowsOf(cache.c.Conv[l].ConvWin)
 				kinds["short conv"]++
 			}
-			if l < len(cache.kda) && cache.kda[l] != nil {
-				k := cache.kda[l]
-				held["window-q"], held["window-k"], held["window-v"], held["state"] = rowsOf(k.convWinQ), rowsOf(k.convWinK), rowsOf(k.convWinV), len(k.s)
+			if l < len(cache.c.KDA) && cache.c.KDA[l] != nil {
+				k := cache.c.KDA[l]
+				held["window-q"], held["window-k"], held["window-v"], held["state"] = rowsOf(k.ConvWinQ), rowsOf(k.ConvWinK), rowsOf(k.ConvWinV), len(k.S)
 				kinds["KDA"]++
 			}
 			if !reflect.DeepEqual(declared, held) {

@@ -6,14 +6,14 @@
     "moe"
   ],
   "own": [
-    "decoder/forward_gptoss.go",
+    "internal/runtime/cpuengine/forward_gptoss.go",
     "decoder/gptoss120_test.go",
     "internal/runtime/wbuild/gptoss_safetensors.go",
     "decoder/gptoss_safetensors_test.go",
     "internal/runtime/families/arch_gpt_oss.go",
     "internal/runtime/wbuild/gguf_build_gptoss.go"
   ],
-  "deps_hash": "sha256:be37717f6f27c83dc9e53e4e9c957fab17ce7021a2dcdfc6ed6ceb06213322d7",
+  "deps_hash": "sha256:787e609540f774cf4fda576cf6be0c840ea2cc67a171f886dc5de7b229c2b83c",
   "status": "validated",
   "validated_at": "960ef65a7",
   "date": "2026-10-26",

@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -179,8 +180,8 @@ func TestProgramFingerprint_realCheckpoints(t *testing.T) {
 // left out (so a family's own parameters do not move every other program), and a non-zero one is hashed.
 func TestProgramFingerprint_omitzeroFieldStillCounts(t *testing.T) {
 	plain := &layerProgram{Layers: [][]op{{{Kind: opNorm}}}}
-	a := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: inkling2Params{Phys: 6, Pass: 1}}}}}
-	b := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: inkling2Params{Phys: 6, Pass: 2}}}}}
+	a := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: program.Inkling2Params{Phys: 6, Pass: 1}}}}}
+	b := &layerProgram{Layers: [][]op{{{Kind: opInkling2, Ink: program.Inkling2Params{Phys: 6, Pass: 2}}}}}
 	zero := &layerProgram{Layers: [][]op{{{Kind: opInkling2}}}}
 	if programFingerprint(a) == programFingerprint(b) || programFingerprint(a) == programFingerprint(zero) {
 		t.Fatal("a non-zero Ink group does not reach the fingerprint")

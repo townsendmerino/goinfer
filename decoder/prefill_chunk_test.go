@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,16 +21,16 @@ import (
 // from the same cache), with prefillChunkRows set to chunk for the suffix.
 func prefillChunkArm(t *testing.T, m *Model, prefix, suffix []int, chunk int) ([]float32, *KVCache) {
 	t.Helper()
-	prev := prefillChunkRows
-	defer func() { prefillChunkRows = prev }()
+	prev := cpuengine.PrefillChunkRows
+	defer func() { cpuengine.PrefillChunkRows = prev }()
 	c := m.NewCache(0)
 	if len(prefix) > 0 {
-		prefillChunkRows = 1 << 30
+		cpuengine.PrefillChunkRows = 1 << 30
 		if _, err := m.prefillLogits(context.Background(), prefix, c); err != nil {
 			t.Fatalf("prefix: %v", err)
 		}
 	}
-	prefillChunkRows = chunk
+	cpuengine.PrefillChunkRows = chunk
 	lg, err := m.prefillLogits(context.Background(), suffix, c)
 	if err != nil {
 		t.Fatalf("prefill: %v", err)
@@ -56,19 +57,19 @@ func kvDiff(a, b *KVCache) (int, string) {
 			}
 		}
 	}
-	if a.pos != b.pos {
-		note(fmt.Sprintf("pos %d vs %d", a.pos, b.pos))
+	if a.c.PosN != b.c.PosN {
+		note(fmt.Sprintf("pos %d vs %d", a.c.PosN, b.c.PosN))
 	}
-	for l := range a.numLayers {
-		f32(a.keys[l], b.keys[l], fmt.Sprintf("layer %d keys", l))
-		f32(a.vals[l], b.vals[l], fmt.Sprintf("layer %d vals", l))
-		if ra, rb := a.rings[l], b.rings[l]; ra != nil || rb != nil {
-			if ra == nil || rb == nil || ra.count != rb.count {
+	for l := range a.c.NumLayers {
+		f32(a.c.KeysBuf[l], b.c.KeysBuf[l], fmt.Sprintf("layer %d keys", l))
+		f32(a.c.ValsBuf[l], b.c.ValsBuf[l], fmt.Sprintf("layer %d vals", l))
+		if ra, rb := a.c.Rings[l], b.c.Rings[l]; ra != nil || rb != nil {
+			if ra == nil || rb == nil || ra.Count != rb.Count {
 				note(fmt.Sprintf("layer %d ring", l))
 				continue
 			}
-			f32(ra.k, rb.k, fmt.Sprintf("layer %d ring k", l))
-			f32(ra.v, rb.v, fmt.Sprintf("layer %d ring v", l))
+			f32(ra.K, rb.K, fmt.Sprintf("layer %d ring k", l))
+			f32(ra.V, rb.V, fmt.Sprintf("layer %d ring v", l))
 		}
 	}
 	return n, first
@@ -119,14 +120,14 @@ func prefillChunkCell(t *testing.T, m *Model, C int) {
 			for _, n := range lengths {
 				suffix := chunkPrompt(n, vocab, n)
 				lw, cw := prefillChunkArm(t, m, prefix, suffix, 1<<30)
-				p0 := atomic.LoadInt64(&prefillPasses)
+				p0 := atomic.LoadInt64(&cpuengine.PrefillPasses)
 				lc, cc := prefillChunkArm(t, m, prefix, suffix, C)
-				passes := atomic.LoadInt64(&prefillPasses) - p0
+				passes := atomic.LoadInt64(&cpuengine.PrefillPasses) - p0
 				if warm {
 					passes-- // the prefix's own single pass
 				}
 				want := int64((n + C - 1) / C)
-				if cc.localAny && !exact && n >= fastAttnMinPrompt {
+				if cc.c.LocalAny && !exact && n >= fastAttnMinPrompt {
 					want = 1 // a windowed cache under fast attention keeps the single pass
 				}
 				if passes != want {
@@ -176,5 +177,5 @@ func TestPrefillChunked_bitIdenticalReal0p5B(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	prefillChunkCell(t, m, prefillChunkRows)
+	prefillChunkCell(t, m, cpuengine.PrefillChunkRows)
 }

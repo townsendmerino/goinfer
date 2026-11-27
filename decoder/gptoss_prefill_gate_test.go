@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math"
 	"os"
 	"path/filepath"
@@ -139,9 +140,9 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 				runE := func() { eL, teacher = gptossPFRun(t, m, p, true, nil) }
 				var em int64
 				runB := func() {
-					r0 := gptOssExpertMajorRuns.Load()
+					r0 := cpuengine.GptOssExpertMajorRuns.Load()
 					bL, _ = gptossPFRun(t, m, p, false, teacher)
-					em = gptOssExpertMajorRuns.Load() - r0
+					em = cpuengine.GptOssExpertMajorRuns.Load() - r0
 				}
 				runE() // B is forced on E's tokens, so E runs first
 				runB()

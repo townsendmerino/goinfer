@@ -2,167 +2,18 @@ package decoder
 
 import (
 	"os"
-	"sync/atomic"
-	"time"
 
-	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
-	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
-	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 )
 
-// deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant
-// projections, the delta-rule recurrence proper (section 3 below, plain scalar Go) and everything else (conv, gates, gated
-// RMSNorm). The accumulators are atomics, not Generate-loop locals, so concurrent decode streams do not race on them.
+// deltaNetTiming prints per-phase DeltaNet timing when GOINFER_DELTANET_TIMING is set.
 var deltaNetTiming = os.Getenv("GOINFER_DELTANET_TIMING") != ""
 
-var (
-	dnProjNs     atomic.Int64
-	dnRecurNs    atomic.Int64
-	dnOtherNs    atomic.Int64
-	dnStateElems atomic.Int64 // Σ (nv·hk·hv) over every step — the recurrence's own rate-check denominator
-	dnCalls      atomic.Int64
-)
+// convWinSliceForTest leaves the conv window as slices of the pass slab for the copy-vs-slice regression test.
+var convWinSliceForTest bool
 
-func deltaNetTimers() *hybridattn.DeltaNetTimers {
-	if !deltaNetTiming {
-		return nil
-	}
-	return &hybridattn.DeltaNetTimers{
-		ProjNs:     &dnProjNs,
-		RecurNs:    &dnRecurNs,
-		OtherNs:    &dnOtherNs,
-		StateElems: &dnStateElems,
-		Calls:      &dnCalls,
-	}
-}
-
-// PrintDeltaNetTiming reports the accumulated split (no-op, zero cost, if
-// GOINFER_DELTANET_TIMING was never set or gatedDeltaNetStep was never called).
-// Call after a real decode run.
+// PrintDeltaNetTiming prints the accumulated DeltaNet phase timings when enabled.
 func PrintDeltaNetTiming() {
-	if !deltaNetTiming {
-		return
-	}
-	n := dnCalls.Load()
-	if n == 0 {
-		return
-	}
-	proj := time.Duration(dnProjNs.Load())
-	recur := time.Duration(dnRecurNs.Load())
-	other := time.Duration(dnOtherNs.Load())
-	total := proj + recur + other
-	elems := dnStateElems.Load()
-	msPer := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(n) }
-	pct := func(d time.Duration) float64 {
-		if total == 0 {
-			return 0
-		}
-		return float64(d) / float64(total) * 100
-	}
-	var nsPerElem float64
-	if elems > 0 {
-		nsPerElem = float64(recur.Nanoseconds()) / float64(elems)
-	}
-	logs.Infof("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)",
-		n, msPer(proj), pct(proj), msPer(recur), pct(recur), msPer(other), pct(other), nsPerElem, elems)
-}
-
-// Gated DeltaNet, the linear-attention primitive of Qwen3.5/3.6-MoE (qwen3_5_moe). It replaces softmax attention on most layers
-// with a gated delta-rule recurrence over a fixed-size per-head matrix state, so memory is O(1) in sequence length rather than a
-// growing KV cache. The math mirrors HF's torch_recurrent_gated_delta_rule plus the surrounding conv, gates and gated RMSNorm,
-// validated op-for-op against a traced golden (deltanet_test.go);
-//
-// The CPU reference implementation lives in internal/hybridattn so backend kernel tests (metal/kernels) can exercise the single
-// production implementation without importing decoder.
-
-// matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
-// quantization-aware matmul so an int4/int8 weight uses the W4A8/W8A8 integer kernel instead of
-// being dequantized. f32 WeightMats land on the same MatmulBT path matvec uses, so the no-quant
-// numerics are unchanged — which is what keeps the tiny goldens exact.
-func matvecWM(be Backend, w *linalg.WeightMat, x []float32) []float32 {
-	y := make([]float32, w.Rows())
-	matmul(be, w, x, y, 1)
-	return y
-}
-
-// matvecWMPre is matvecWM using p's block when it was quantized for x and w (see w4a8Act).
-func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []float32 {
-	y := make([]float32, w.Rows())
-	matmulPre(be, w, p, x, y, 1)
-	return y
-}
-
-// deltaState is one Gated DeltaNet layer's streaming state in the KV cache: the
-// last K-1 conv inputs (so the causal conv has its left context at decode) and
-// the recurrent matrix state S (one [head_k_dim, head_v_dim] block per value
-// head). Fixed size — independent of sequence length, and NOT position-
-// truncatable (why qwen3_5_moe falls back from prefix reuse / speculative; see
-// ).
-type deltaState struct {
-	convWin [][]float32             // up to K-1 prior mixed_qkv vectors, oldest first
-	s       []float32               // [numV * head_k_dim * head_v_dim]
-	hq      w4a8Act                 // h quantized once for in_proj_qkv and in_proj_z; rewritten every step
-	dn      hybridattn.DeltaScratch // the step's working buffers; rewritten every step, never copied with the state
-}
-
-func newDeltaState(p archparts.Qwen35Params) *deltaState {
-	return &deltaState{s: make([]float32, p.NumValueHeads*p.KeyHeadDim*p.ValueHeadDim)}
-}
-
-// gatedDeltaNetStep advances one token through the Gated DeltaNet layer, reading
-// and updating st, and returns the layer output [hidden]. Driven per token by
-// both prefill and decode (the recurrence is inherently sequential). Its four
-// projections are here; everything between them is deltaNetCore, which the
-// batched forward (gatedDeltaNetN) shares so the two cannot drift.
-func gatedDeltaNetStep(be Backend, h []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
-	proj := func(wm *linalg.WeightMat, x []float32, pre bool) []float32 {
-		if pre {
-			if wm == &w.InProjQKV {
-				st.hq.prepare(be, wm, x, 1)
-			}
-			return matvecWMPre(be, wm, &st.hq, x)
-		}
-		return matvecWM(be, wm, x)
-	}
-	return st.dn.Step(
-		proj, h,
-		&w.InProjQKV, &w.InProjZ, &w.OutProj,
-		w.InProjB, w.InProjA, w.ConvW, w.DtBias, w.NegExpA, w.NormW,
-		p.DeltaNetParams(), hidden, eps,
-		st.s, &st.convWin, deltaNetTimers(),
-	)
-}
-
-// deltaNetCore is one token's sequential middle of the Gated DeltaNet layer, from the projections'
-// outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
-// delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)).
-func deltaNetCore(core, mixed, bt, at, z []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, eps float64, st *deltaState) {
-	st.dn.Core(
-		core, mixed, bt, at, z,
-		w.ConvW, w.DtBias, w.NegExpA, w.NormW,
-		p.DeltaNetParams(), eps,
-		st.s, &st.convWin, deltaNetTimers(),
-	)
-}
-
-func deltaNetRecurrence(core, conv, at, bt []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, st *deltaState) {
-	st.dn.Recurrence(
-		core, conv, at, bt,
-		w.DtBias, w.NegExpA,
-		p.DeltaNetParams(),
-		st.s, deltaNetTimers(),
-	)
-}
-
-// gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
-// loop over gatedDeltaNetStep, so the streaming path is what the parity test
-// exercises (the forward path uses the same step with a cached state).
-func gatedDeltaNet(be Backend, h [][]float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, hidden int, eps float64) [][]float32 {
-	st := newDeltaState(p)
-	out := make([][]float32, len(h))
-	for t := range h {
-		out[t] = gatedDeltaNetStep(be, h[t], w, p, hidden, eps, st)
-	}
-	return out
+	syncCPUHooks()
+	cpuengine.PrintDeltaNetTiming()
 }

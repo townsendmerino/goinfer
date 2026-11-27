@@ -188,7 +188,7 @@ func TestLayerPager_residentBytesWithinBudget(t *testing.T) {
 
 	var peak int64
 	for l := range p.spans {
-		p.enterLayer(l)
+		p.EnterLayer(l)
 		if b := residentBytes(); b > peak {
 			peak = b
 		}

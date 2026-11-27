@@ -150,7 +150,7 @@ func TestKVPrecisionDelivered(t *testing.T) {
 						t.Errorf("%s / %s / --kv %s: CPUKVPrecision %q, the table says %q", p.name, f.group, v, got, c.delivered)
 					}
 					if c.delivered != kvPrecNone {
-						if got := kvQuantName(m.NewCache(1).quant); got != c.delivered {
+						if got := kvQuantName(m.NewCache(1).c.Quant); got != c.delivered {
 							t.Errorf("%s / %s / --kv %s: the cache is built %s, the table says %s", p.name, f.group, v, got, c.delivered)
 						}
 					}

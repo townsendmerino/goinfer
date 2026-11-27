@@ -38,8 +38,8 @@ func TestQwen35VL_batchedPrefillMatchesPerToken(t *testing.T) {
 		}
 		prefill := func(batched bool) ([]float32, *KVCache) {
 			cache := m.NewCache(len(ids) + 8)
-			cache.mropePos = pos
-			cache.mropeDelta = rope.MRoPEDelta(pos, len(ids))
+			cache.c.MRopePos = pos
+			cache.c.MRopeDelta = rope.MRoPEDelta(pos, len(ids))
 			var lg []float32
 			var err error
 			if batched {

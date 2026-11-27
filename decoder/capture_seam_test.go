@@ -62,8 +62,8 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 
 			// --- capture first and last layer ---
 			cache := m.NewCache(8)
-			cache.captureLayers = []int{0, nL - 1}
-			cache.captured = make([][]float32, 2)
+			cache.c.CaptureLayers = []int{0, nL - 1}
+			cache.c.Captured = make([][]float32, 2)
 			gotLogits, err := m.forward(tok, cache)
 			if err != nil {
 				t.Fatalf("forward (capture): %v", err)
@@ -80,7 +80,7 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 				}
 			}
 
-			first, last := cache.captured[0], cache.captured[1]
+			first, last := cache.c.Captured[0], cache.c.Captured[1]
 			hidden := m.w.Arch.HiddenDim
 			for i, c := range [][]float32{first, last} {
 				if len(c) != hidden {
@@ -92,21 +92,21 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 			// its return value to equal the last capture bitwise. This is the assertion the
 			// whole test exists for.
 			ref := m.NewCache(8)
-			ref.captureLayers = []int{nL - 1}
-			ref.captured = make([][]float32, 1)
+			ref.c.CaptureLayers = []int{nL - 1}
+			ref.c.Captured = make([][]float32, 1)
 			h, err := m.runLayers(tok, ref)
 			if err != nil {
 				t.Fatalf("runLayers: %v", err)
 			}
-			if len(ref.captured[0]) != len(h) {
-				t.Fatalf("last capture len %d != runLayers return len %d", len(ref.captured[0]), len(h))
+			if len(ref.c.Captured[0]) != len(h) {
+				t.Fatalf("last capture len %d != runLayers return len %d", len(ref.c.Captured[0]), len(h))
 			}
 			for i := range h {
-				if ref.captured[0][i] != h[i] {
+				if ref.c.Captured[0][i] != h[i] {
 					t.Fatalf("capture of layer %d differs from runLayers' return at %d: %v != %v\n"+
 						"the copy is NOT taken after the full layer — check it sits after the LAST "+
 						"residual add in the loop body, not after attention",
-						nL-1, i, ref.captured[0][i], h[i])
+						nL-1, i, ref.c.Captured[0][i], h[i])
 				}
 			}
 

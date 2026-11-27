@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"math/rand"
 	"os"
 	"sync/atomic"
@@ -36,16 +37,16 @@ func TestMEM5VL_audioChunked(t *testing.T) {
 			}
 			ids, feats := v4Case(m, 60, 20)
 			run := func(chunk int) ([][]float32, int64) {
-				prev := prefillChunkRows
-				prefillChunkRows = chunk
-				defer func() { prefillChunkRows = prev }()
+				prev := cpuengine.PrefillChunkRows
+				cpuengine.PrefillChunkRows = chunk
+				defer func() { cpuengine.PrefillChunkRows = prev }()
 				cache := m.NewCache(68)
-				p0 := atomic.LoadInt64(&prefillPasses)
+				p0 := atomic.LoadInt64(&cpuengine.PrefillPasses)
 				lg, err := m.prefillLogitsAudio(context.Background(), ids, feats, 10, 20, cache)
 				if err != nil {
 					t.Fatal(err)
 				}
-				passes := atomic.LoadInt64(&prefillPasses) - p0
+				passes := atomic.LoadInt64(&cpuengine.PrefillPasses) - p0
 				return v1Decode(t, m, cache, lg), passes
 			}
 			want, p1 := run(1 << 20)
@@ -85,10 +86,10 @@ func TestMEM5VL_audioBytes(t *testing.T) {
 	const n, chunk = 200, 16
 	ids, feats := v4Case(m, n, 40)
 	run := func(C int) (rows, keys int64) {
-		prev, prevSeen := prefillChunkRows, prefillScratchSeen
-		defer func() { prefillChunkRows, prefillScratchSeen = prev, prevSeen }()
-		prefillChunkRows = C
-		prefillScratchSeen = func(ps *prefillPassScratch) { rows, keys = v1RowBytes(ps) }
+		prev, prevSeen := cpuengine.PrefillChunkRows, cpuengine.PrefillScratchSeen
+		defer func() { cpuengine.PrefillChunkRows, cpuengine.PrefillScratchSeen = prev, prevSeen }()
+		cpuengine.PrefillChunkRows = C
+		cpuengine.PrefillScratchSeen = func(ps *prefillPassScratch) { rows, keys = v1RowBytes(ps) }
 		if _, err := m.prefillLogitsAudio(context.Background(), ids, feats, 10, 40, m.NewCache(n+8)); err != nil {
 			t.Fatal(err)
 		}

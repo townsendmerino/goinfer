@@ -113,8 +113,8 @@ func qwen3vlmoeImage(t *testing.T, m *Model, g qwen3vlmoeGolden, mp [][3]int, de
 	}
 	spans := []ImageSpan{{Pos: pos, Len: n}}
 	cache := m.NewCache(len(ids))
-	cache.mropePos, cache.mropeDelta = mp, rope.MRoPEDelta(mp, len(ids))
-	cache.deepstack = &deepstackRows{spans: spans, rows: deep}
+	cache.c.MRopePos, cache.c.MRopeDelta = mp, rope.MRoPEDelta(mp, len(ids))
+	cache.c.Deepstack = &deepstackRows{Spans: spans, Rows: deep}
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, g.Image.Merged, hidden)
 	hN, err := m.runLayersFromEmbedN(context.Background(), h, cache, m.cpuFastAttention())
@@ -151,7 +151,7 @@ func TestQwen3VLMoe_tinyMatchesHF(t *testing.T) {
 	pc := m.NewCache(len(g.Image.IDs))
 	pos := slices.Index(g.Image.IDs, g.ImageToken)
 	spans := []ImageSpan{{Pos: pos, Len: len(g.Image.Merged) / g.Hidden}}
-	pc.deepstack = &deepstackRows{spans: spans, rows: g.Image.Deepstack}
+	pc.c.Deepstack = &deepstackRows{Spans: spans, Rows: g.Image.Deepstack}
 	prod, err := m.prefillLogitsQwenVLSpans(context.Background(), g.Image.IDs, spans, g.Image.Merged, mp, pc)
 	if err != nil {
 		t.Fatal(err)

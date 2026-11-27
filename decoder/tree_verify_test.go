@@ -62,9 +62,9 @@ func TestTreeMaskLinearParity(t *testing.T) {
 			mask[i][j] = true
 		}
 	}
-	cache.treeRowPos, cache.treeMask = pos, mask
+	cache.c.TreeRowPos, cache.c.TreeMask = pos, mask
 	lb, err := base.forwardN(context.Background(), draft, cache)
-	cache.treeRowPos, cache.treeMask = nil, nil
+	cache.c.TreeRowPos, cache.c.TreeMask = nil, nil
 	if err != nil {
 		t.Fatalf("forwardN B: %v", err)
 	}

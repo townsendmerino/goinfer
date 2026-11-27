@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 	"hash/crc32"
 )
@@ -75,13 +76,13 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 		return nil
 	}
 	// Gemma-4's global (append-forever) layers carry per-layer KV widths (E2B/E4B give some layers a different NumKVHeads·HeadDim
-	// than the cache's uniform c.kvDim). The format records no per-global-layer stride, so LoadSession restores every global layer to
+	// than the cache's uniform c.c.KVDim). The format records no per-global-layer stride, so LoadSession restores every global layer to
 	// kvDim and the first TruncateTo would mis-slice the odd-width ones, silently wrong on the serve session path. Refuse a
 	// non-uniform-width cache (caller cold-prefills), as for the families above. Ring-layer width mismatches are caught loudly by
 	// LoadSession (it rejects a ring stride != kvDim), so only globals leak.
-	for l := 0; l < c.numLayers; l++ {
-		isRing := c.rings[l] != nil
-		if !isRing && c.stride[l] != 0 && c.stride[l] != c.rowStride(c.kvDim) {
+	for l := 0; l < c.c.NumLayers; l++ {
+		isRing := c.c.Rings[l] != nil
+		if !isRing && c.c.Stride[l] != 0 && c.c.Stride[l] != c.c.RowStride(c.c.KVDim) {
 			return nil
 		}
 	}
@@ -99,60 +100,60 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 	wr.U32(kvSnapVersion)
 	wr.Str(id)
 	wr.Str(adapterName)
-	wr.U32(uint32(c.numLayers))
-	wr.U32(uint32(c.kvDim))
-	wr.U32(uint32(c.window))
-	wr.U32(uint32(c.headDim))
+	wr.U32(uint32(c.c.NumLayers))
+	wr.U32(uint32(c.c.KVDim))
+	wr.U32(uint32(c.c.Window))
+	wr.U32(uint32(c.c.HeadDim))
 	manualPos := byte(0)
-	if c.manualPos {
+	if c.c.ManualPos {
 		manualPos = 1
 	}
-	quantByte := byte(c.quant)
-	if f16ByteAsF32 && c.quant == kvqF16 {
+	quantByte := byte(c.c.Quant)
+	if f16ByteAsF32 && c.c.Quant == kvqF16 {
 		quantByte = byte(kvqF32) // planted defect: the storage byte left at f32's value
 	}
 	wr.Raw([]byte{manualPos, quantByte})
-	wr.U32(uint32(c.pos))
+	wr.U32(uint32(c.c.PosN))
 	wr.ints(s.tokens)
 	// Per layer, in cache-structure order (the loader reconstructs the same rings +
 	// quant from the model, so no per-layer tags are needed): ring layers store
 	// their W-slot window + logical count; global layers append-forever. Each
 	// payload is f32 or int8 (+ per-head scales) per the cache's quant mode. Empty
 	// fields (KV-shared / never-written rings) serialize as len 0.
-	for l := 0; l < c.numLayers; l++ {
-		if r := c.rings[l]; r != nil {
+	for l := 0; l < c.c.NumLayers; l++ {
+		if r := c.c.Rings[l]; r != nil {
 			// Compact: write only the live window [count-W, count) (min(count,W)
 			// rows), unwrapped into absolute order — not the full W physical slots
 			// (which over-store a short, un-wrapped session). Restore re-wraps.
-			lo := max(0, r.count-r.w)
-			nLive := r.count - lo
-			wr.U32(uint32(r.count))
+			lo := max(0, r.Count-r.W)
+			nLive := r.Count - lo
+			wr.U32(uint32(r.Count))
 			wr.U32(uint32(nLive))
-			wr.U32(uint32(r.stride))
-			if r.stride == 0 || nLive == 0 {
+			wr.U32(uint32(r.Stride))
+			if r.Stride == 0 || nLive == 0 {
 				continue // never-written ring: count/nLive/stride suffice
 			}
-			st := r.stride
-			if c.quant == kvqF16 {
+			st := r.Stride
+			if c.c.Quant == kvqF16 {
 				kb, vb := make([]uint16, nLive*st), make([]uint16, nLive*st)
-				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
-					so, do := (p%r.w)*st, i*st
-					copy(kb[do:do+st], r.kh[so:so+st])
-					copy(vb[do:do+st], r.vh[so:so+st])
+				for i, p := 0, lo; p < r.Count; i, p = i+1, p+1 {
+					so, do := (p%r.W)*st, i*st
+					copy(kb[do:do+st], r.KH[so:so+st])
+					copy(vb[do:do+st], r.VH[so:so+st])
 				}
 				wr.Scales16(kb)
 				wr.Scales16(vb)
-			} else if c.quant == kvI8 {
-				nKV := st / r.headDim
+			} else if c.c.Quant == kvI8 {
+				nKV := st / r.HeadDim
 				kb, vb := make([]int8, nLive*st), make([]int8, nLive*st)
 				ks, vs := make([]float32, nLive*nKV), make([]float32, nLive*nKV)
-				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
-					so, do := (p%r.w)*st, i*st
-					copy(kb[do:do+st], r.kq[so:so+st])
-					copy(vb[do:do+st], r.vq[so:so+st])
-					sso, sdo := (p%r.w)*nKV, i*nKV
-					copy(ks[sdo:sdo+nKV], r.ksc[sso:sso+nKV])
-					copy(vs[sdo:sdo+nKV], r.vsc[sso:sso+nKV])
+				for i, p := 0, lo; p < r.Count; i, p = i+1, p+1 {
+					so, do := (p%r.W)*st, i*st
+					copy(kb[do:do+st], r.KQ[so:so+st])
+					copy(vb[do:do+st], r.VQ[so:so+st])
+					sso, sdo := (p%r.W)*nKV, i*nKV
+					copy(ks[sdo:sdo+nKV], r.KSC[sso:sso+nKV])
+					copy(vs[sdo:sdo+nKV], r.VSC[sso:sso+nKV])
 				}
 				wr.I8(kb)
 				wr.I8(vb)
@@ -160,27 +161,27 @@ func (s *Session) snapshot(id string, f16ByteAsF32 bool) []byte {
 				wr.F32Body(vs)
 			} else {
 				kb, vb := make([]float32, nLive*st), make([]float32, nLive*st)
-				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
-					so, do := (p%r.w)*st, i*st
-					copy(kb[do:do+st], r.k[so:so+st])
-					copy(vb[do:do+st], r.v[so:so+st])
+				for i, p := 0, lo; p < r.Count; i, p = i+1, p+1 {
+					so, do := (p%r.W)*st, i*st
+					copy(kb[do:do+st], r.K[so:so+st])
+					copy(vb[do:do+st], r.V[so:so+st])
 				}
 				wr.F32Body(kb)
 				wr.F32Body(vb)
 			}
-		} else if c.quant == kvqF16 { // compact rows: the format holds kvDim-wide rows whatever the cache's pad
-			n := c.storedRows(l, c.kvDim)
-			wr.Scales16(compactRows(c.keysH[l], n, c.kvDim, c.rowStride(c.kvDim)))
-			wr.Scales16(compactRows(c.valsH[l], n, c.kvDim, c.rowStride(c.kvDim)))
-		} else if c.quant == kvI8 {
-			wr.I8(c.keysQ[l])
-			wr.I8(c.valsQ[l])
-			wr.F32Body(c.keyScale[l])
-			wr.F32Body(c.valScale[l])
+		} else if c.c.Quant == kvqF16 { // compact rows: the format holds kvDim-wide rows whatever the cache's pad
+			n := c.c.StoredRows(l, c.c.KVDim)
+			wr.Scales16(cpuengine.CompactRows(c.c.KeysH[l], n, c.c.KVDim, c.c.RowStride(c.c.KVDim)))
+			wr.Scales16(cpuengine.CompactRows(c.c.ValsH[l], n, c.c.KVDim, c.c.RowStride(c.c.KVDim)))
+		} else if c.c.Quant == kvI8 {
+			wr.I8(c.c.KeysQ[l])
+			wr.I8(c.c.ValsQ[l])
+			wr.F32Body(c.c.KeyScale[l])
+			wr.F32Body(c.c.ValScale[l])
 		} else {
-			n := c.storedRows(l, c.kvDim)
-			wr.F32Body(compactRows(c.keys[l], n, c.kvDim, c.rowStride(c.kvDim)))
-			wr.F32Body(compactRows(c.vals[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			n := c.c.StoredRows(l, c.c.KVDim)
+			wr.F32Body(cpuengine.CompactRows(c.c.KeysBuf[l], n, c.c.KVDim, c.c.RowStride(c.c.KVDim)))
+			wr.F32Body(cpuengine.CompactRows(c.c.ValsBuf[l], n, c.c.KVDim, c.c.RowStride(c.c.KVDim)))
 		}
 	}
 	wr.U32(crc32.ChecksumIEEE(wr.Buf))
@@ -236,11 +237,11 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	// is in the units the allocation actually uses. Never allocate NewCache(pos) before this comparison: the out-of-memory would
 	// precede the check that rejects the blob.
 	ref := m.NewCache(0)
-	if numLayers != ref.numLayers || kvDim != ref.kvDim || window != ref.window ||
-		headDim != ref.headDim || manualPos != ref.manualPos || quant != ref.quant {
+	if numLayers != ref.c.NumLayers || kvDim != ref.c.KVDim || window != ref.c.Window ||
+		headDim != ref.c.HeadDim || manualPos != ref.c.ManualPos || quant != ref.c.Quant {
 		return nil, &SnapshotError{fmt.Sprintf(
 			"geometry mismatch: snapshot {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d} vs model {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d}",
-			numLayers, kvDim, window, headDim, manualPos, quant, ref.numLayers, ref.kvDim, ref.window, ref.headDim, ref.manualPos, ref.quant)}
+			numLayers, kvDim, window, headDim, manualPos, quant, ref.c.NumLayers, ref.c.KVDim, ref.c.Window, ref.c.HeadDim, ref.c.ManualPos, ref.c.Quant)}
 	}
 	// Tokens before the allocation, and a ceiling on the allocation itself. Do not bound pos by the payload size
 	// (len(data)/(numLayers·kvDim)): a well-formed body can carry zero KV bytes while pos > 0 (a never-written ring serialises as
@@ -253,7 +254,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	//   2. an explicit ceiling on the bytes the cache would occupy (below): bound the allocation itself, not a proxy that
 	//      legitimate blobs fail.
 	tokens := r.ints()
-	// len(tokens) is blob-controlled and must equal pos. Too many tokens is the quiet failure: rewindForReuse computes matched > c.pos,
+	// len(tokens) is blob-controlled and must equal pos. Too many tokens is the quiet failure: rewindForReuse computes matched > c.c.PosN,
 	// TruncateTo treats the out-of-range target as a no-op, and the reuse reports an exact match on a cache never rewound, a session
 	// silently continuing from the wrong KV.
 	if len(tokens) != pos {
@@ -263,131 +264,131 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	}
 	// K and V, f32 or int8 plus scales; 8 B per position per kvDim is the f32 upper bound and the
 	// one to budget against. Refused before makeslice ever sees it.
-	if want := int64(pos) * int64(ref.numLayers) * int64(ref.kvDim) * 8; want > maxSnapshotCacheBytes {
+	if want := int64(pos) * int64(ref.c.NumLayers) * int64(ref.c.KVDim) * 8; want > maxSnapshotCacheBytes {
 		return nil, &SnapshotError{fmt.Sprintf(
 			"snapshot would allocate %d B of KV cache (pos %d × %d layers × %d kvDim), past the "+
-				"%d B ceiling — corrupt or malicious", want, pos, ref.numLayers, ref.kvDim, maxSnapshotCacheBytes)}
+				"%d B ceiling — corrupt or malicious", want, pos, ref.c.NumLayers, ref.c.KVDim, maxSnapshotCacheBytes)}
 	}
 	ref = m.NewCache(pos)
 	// Same per-layer structure order as Snapshot; ref already has the right rings
 	// + quant from NewCache, so fill its fields in place.
 	for l := range numLayers {
-		if rr := ref.rings[l]; rr != nil {
-			rr.count = int(r.U32())
+		if rr := ref.c.Rings[l]; rr != nil {
+			rr.Count = int(r.U32())
 			nLive, st := int(r.U32()), int(r.U32())
-			rr.stride = st
+			rr.Stride = st
 			if st == 0 || nLive == 0 {
-				// A never-written ring must also have count 0: count>0 with stride/nLive 0 is a state the writer never emits (it leaves rr.count
+				// A never-written ring must also have count 0: count>0 with stride/nLive 0 is a state the writer never emits (it leaves rr.Count
 				// set but the k/v buffers unallocated, so the first decode reads a nil ring and panics). The continue skips the geometry check
 				// below, so guard it here.
-				if rr.count != 0 {
+				if rr.Count != 0 {
 					return nil, &SnapshotError{"inconsistent ring geometry: nonzero count on an unwritten ring"}
 				}
 				continue // never-written ring
 			}
-			// st/nLive/count are blob-controlled and drive make([]…, rr.w·st) and the slice copies below. A ring stores exactly kvDim per
+			// st/nLive/count are blob-controlled and drive make([]…, rr.W·st) and the slice copies below. A ring stores exactly kvDim per
 			// position; reject a mismatched stride, nLive past the window, or a count/nLive the payload cannot back, or the make OOMs or the
-			// copies slice-panic. rr.headDim is model-derived (>0), so nKV is safe.
-			if st != kvDim || rr.count < 0 || nLive > rr.w || rr.count < nLive {
+			// copies slice-panic. rr.HeadDim is model-derived (>0), so nKV is safe.
+			if st != kvDim || rr.Count < 0 || nLive > rr.W || rr.Count < nLive {
 				return nil, &SnapshotError{"inconsistent ring geometry"}
 			}
-			lo := max(0, rr.count-rr.w)
-			nRows := rr.count - lo // copy iterations = payload rows the writer emitted
+			lo := max(0, rr.Count-rr.W)
+			nRows := rr.Count - lo // copy iterations = payload rows the writer emitted
 			if quant == kvqF16 {
-				rr.kh, rr.vh = make([]uint16, rr.w*st), make([]uint16, rr.w*st)
+				rr.KH, rr.VH = make([]uint16, rr.W*st), make([]uint16, rr.W*st)
 				kb, vb := r.U16View(int(r.U32())), r.U16View(int(r.U32()))
 				if len(kb) < nRows*st || len(vb) < nRows*st {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
-				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
-					so, do := (p%rr.w)*st, i*st
-					copy(rr.kh[so:so+st], kb[do:do+st])
-					copy(rr.vh[so:so+st], vb[do:do+st])
+				for i, p := 0, lo; p < rr.Count; i, p = i+1, p+1 {
+					so, do := (p%rr.W)*st, i*st
+					copy(rr.KH[so:so+st], kb[do:do+st])
+					copy(rr.VH[so:so+st], vb[do:do+st])
 				}
 			} else if quant == kvI8 {
-				nKV := st / rr.headDim
-				rr.kq, rr.vq = make([]int8, rr.w*st), make([]int8, rr.w*st)
-				rr.ksc, rr.vsc = make([]float32, rr.w*nKV), make([]float32, rr.w*nKV)
+				nKV := st / rr.HeadDim
+				rr.KQ, rr.VQ = make([]int8, rr.W*st), make([]int8, rr.W*st)
+				rr.KSC, rr.VSC = make([]float32, rr.W*nKV), make([]float32, rr.W*nKV)
 				kb, vb, ks, vs := r.I8(), r.I8(), r.F32Body(), r.F32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st || len(ks) < nRows*nKV || len(vs) < nRows*nKV {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
-				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
-					so, do := (p%rr.w)*st, i*st
-					copy(rr.kq[so:so+st], kb[do:do+st])
-					copy(rr.vq[so:so+st], vb[do:do+st])
-					sso, sdo := (p%rr.w)*nKV, i*nKV
-					copy(rr.ksc[sso:sso+nKV], ks[sdo:sdo+nKV])
-					copy(rr.vsc[sso:sso+nKV], vs[sdo:sdo+nKV])
+				for i, p := 0, lo; p < rr.Count; i, p = i+1, p+1 {
+					so, do := (p%rr.W)*st, i*st
+					copy(rr.KQ[so:so+st], kb[do:do+st])
+					copy(rr.VQ[so:so+st], vb[do:do+st])
+					sso, sdo := (p%rr.W)*nKV, i*nKV
+					copy(rr.KSC[sso:sso+nKV], ks[sdo:sdo+nKV])
+					copy(rr.VSC[sso:sso+nKV], vs[sdo:sdo+nKV])
 				}
 			} else {
-				rr.k, rr.v = make([]float32, rr.w*st), make([]float32, rr.w*st)
+				rr.K, rr.V = make([]float32, rr.W*st), make([]float32, rr.W*st)
 				kb, vb := r.F32Body(), r.F32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
-				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
-					so, do := (p%rr.w)*st, i*st
-					copy(rr.k[so:so+st], kb[do:do+st])
-					copy(rr.v[so:so+st], vb[do:do+st])
+				for i, p := 0, lo; p < rr.Count; i, p = i+1, p+1 {
+					so, do := (p%rr.W)*st, i*st
+					copy(rr.K[so:so+st], kb[do:do+st])
+					copy(rr.V[so:so+st], vb[do:do+st])
 				}
 			}
 		} else if quant == kvqF16 {
 			// Copied, not aliased: the cache outlives the blob it was restored from.
-			ref.keysH[l] = append(ref.keysH[l][:0], r.U16View(int(r.U32()))...)
-			ref.valsH[l] = append(ref.valsH[l][:0], r.U16View(int(r.U32()))...)
-			if e := checkGlobalPair(l, "keysH", "valsH", len(ref.keysH[l]), len(ref.valsH[l]), pos*kvDim); e != nil {
+			ref.c.KeysH[l] = append(ref.c.KeysH[l][:0], r.U16View(int(r.U32()))...)
+			ref.c.ValsH[l] = append(ref.c.ValsH[l][:0], r.U16View(int(r.U32()))...)
+			if e := checkGlobalPair(l, "keysH", "valsH", len(ref.c.KeysH[l]), len(ref.c.ValsH[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
-			if len(ref.keysH[l]) > 0 {
-				ref.stride[l] = ref.rowStride(kvDim)
-				ref.keysH[l], ref.valsH[l] = padRows(ref.keysH[l], pos, kvDim, ref.stride[l]), padRows(ref.valsH[l], pos, kvDim, ref.stride[l])
+			if len(ref.c.KeysH[l]) > 0 {
+				ref.c.Stride[l] = ref.c.RowStride(kvDim)
+				ref.c.KeysH[l], ref.c.ValsH[l] = cpuengine.PadRows(ref.c.KeysH[l], pos, kvDim, ref.c.Stride[l]), cpuengine.PadRows(ref.c.ValsH[l], pos, kvDim, ref.c.Stride[l])
 			}
 		} else if quant == kvI8 {
-			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.I8(), r.I8(), r.F32Body(), r.F32Body()
+			ref.c.KeysQ[l], ref.c.ValsQ[l], ref.c.KeyScale[l], ref.c.ValScale[l] = r.I8(), r.I8(), r.F32Body(), r.F32Body()
 			// Blob-controlled lengths must be compared, as the ring branch above does for its stride, nLive and payload. The forward derives
 			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
 			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
 			// legal and means a KV-shared layer, which stores nothing of its own.
-			if e := checkGlobalPair(l, "keysQ", "valsQ", len(ref.keysQ[l]), len(ref.valsQ[l]), pos*kvDim); e != nil {
+			if e := checkGlobalPair(l, "keysQ", "valsQ", len(ref.c.KeysQ[l]), len(ref.c.ValsQ[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
 			nKV := kvDim / headDim
-			if e := checkGlobalPair(l, "keyScale", "valScale", len(ref.keyScale[l]), len(ref.valScale[l]), pos*nKV); e != nil {
+			if e := checkGlobalPair(l, "keyScale", "valScale", len(ref.c.KeyScale[l]), len(ref.c.ValScale[l]), pos*nKV); e != nil {
 				return nil, e
 			}
-			if (len(ref.keysQ[l]) == 0) != (len(ref.keyScale[l]) == 0) {
-				return nil, &SnapshotError{fmt.Sprintf("layer %d keysQ/keyScale presence mismatch (%d vs %d)", l, len(ref.keysQ[l]), len(ref.keyScale[l]))}
+			if (len(ref.c.KeysQ[l]) == 0) != (len(ref.c.KeyScale[l]) == 0) {
+				return nil, &SnapshotError{fmt.Sprintf("layer %d keysQ/keyScale presence mismatch (%d vs %d)", l, len(ref.c.KeysQ[l]), len(ref.c.KeyScale[l]))}
 			}
-			if len(ref.keysQ[l]) > 0 {
-				ref.stride[l] = kvDim // restore the per-layer KV width
+			if len(ref.c.KeysQ[l]) > 0 {
+				ref.c.Stride[l] = kvDim // restore the per-layer KV width
 			}
 		} else {
 			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
 			// empty-but-non-nil slice so Append/Keys stay well-formed.
 			if k := r.F32Body(); k != nil {
-				ref.keys[l] = k
+				ref.c.KeysBuf[l] = k
 			}
 			if v := r.F32Body(); v != nil {
-				ref.vals[l] = v
+				ref.c.ValsBuf[l] = v
 			}
 			// stride[] is set only by Append, which LoadSession bypasses; without the assignment below a restored global layer has stride 0,
 			// so the first TruncateTo slices it to [:0] (or attendBatchedHeads panics) while pos stays non-zero. A global layer's width is the
 			// cache's uniform kvDim (geometry-guarded above); KV-shared layers keep stride 0, which TruncateTo's min() already guards. The
 			// lengths are checked as in the int8 arm above.
-			if e := checkGlobalPair(l, "keys", "vals", len(ref.keys[l]), len(ref.vals[l]), pos*kvDim); e != nil {
+			if e := checkGlobalPair(l, "keys", "vals", len(ref.c.KeysBuf[l]), len(ref.c.ValsBuf[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
-			if len(ref.keys[l]) > 0 {
-				ref.stride[l] = ref.rowStride(kvDim)
-				ref.keys[l], ref.vals[l] = padRows(ref.keys[l], pos, kvDim, ref.stride[l]), padRows(ref.vals[l], pos, kvDim, ref.stride[l])
+			if len(ref.c.KeysBuf[l]) > 0 {
+				ref.c.Stride[l] = ref.c.RowStride(kvDim)
+				ref.c.KeysBuf[l], ref.c.ValsBuf[l] = cpuengine.PadRows(ref.c.KeysBuf[l], pos, kvDim, ref.c.Stride[l]), cpuengine.PadRows(ref.c.ValsBuf[l], pos, kvDim, ref.c.Stride[l])
 			}
 		}
 	}
 	if r.Err != nil {
 		return nil, &SnapshotError{"truncated body: " + r.Err.Error()}
 	}
-	ref.pos = pos
+	ref.c.PosN = pos
 	ref.lora = lora
 	return &Session{m: m, cache: ref, tokens: tokens, kvAdapter: lora}, nil
 }

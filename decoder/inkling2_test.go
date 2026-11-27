@@ -116,7 +116,7 @@ func TestInkling2_kvPricedAsStored(t *testing.T) {
 		}
 	}
 	for l := range a.NumLayers {
-		if got, want := c.storedRows(l, a.KVDimAt(l)), a.KVPositionsAt(l, n); got != want {
+		if got, want := c.c.StoredRows(l, a.KVDimAt(l)), a.KVPositionsAt(l, n); got != want {
 			t.Errorf("visit %d (global %v): the cache stores %d rows, the plan prices %d", l, a.IsGlobalLayer(l), got, want)
 		}
 	}

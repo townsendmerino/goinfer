@@ -167,13 +167,13 @@ func BenchmarkRing_BatchReadLocal_W1024(b *testing.B) {
 	const nKV, hd, W = 4, 128, 1024
 	kvDim := nKV * hd
 	cache := NewKVCache(1, nKV, hd, W, W*2, nil)
-	cache.enableRings(W, func(int) bool { return false })
+	cache.c.EnableRings(W, func(int) bool { return false })
 	kRow := make([]float32, kvDim)
 	vRow := make([]float32, kvDim)
 	for p := range W {
-		cache.rings[0].write(p, kRow, vRow)
+		cache.c.Rings[0].Write(p, kRow, vRow)
 	}
-	cache.rings[0].count = W
+	cache.c.Rings[0].Count = W
 	newK := make([]float32, kvDim)
 	newV := make([]float32, kvDim)
 	dstK := make([]float32, W*kvDim)
@@ -181,7 +181,7 @@ func BenchmarkRing_BatchReadLocal_W1024(b *testing.B) {
 	startPos := W + 500 // wrapped around
 	b.SetBytes(int64(W * kvDim * 4 * 2))
 	for b.Loop() {
-		cache.batchReadLocal(0, startPos, 1, newK, newV, dstK, dstV)
+		cache.c.BatchReadLocal(0, startPos, 1, newK, newV, dstK, dstV)
 	}
 }
 
@@ -189,16 +189,16 @@ func BenchmarkRing_CommitBatch_K64_W1024(b *testing.B) {
 	const nKV, hd, W, K = 4, 128, 1024, 64
 	kvDim := nKV * hd
 	cache := NewKVCache(1, nKV, hd, W, W*2, nil)
-	cache.enableRings(W, func(int) bool { return false })
+	cache.c.EnableRings(W, func(int) bool { return false })
 	kRow := make([]float32, kvDim)
 	vRow := make([]float32, kvDim)
-	cache.rings[0].write(0, kRow, vRow)
+	cache.c.Rings[0].Write(0, kRow, vRow)
 	newK := make([]float32, K*kvDim)
 	newV := make([]float32, K*kvDim)
 	startPos := 500
 	b.SetBytes(int64(K * kvDim * 4 * 2))
 	for b.Loop() {
-		cache.commitBatch(0, startPos, K, newK, newV)
+		cache.c.CommitBatch(0, startPos, K, newK, newV)
 	}
 }
 
@@ -206,7 +206,7 @@ func BenchmarkKV_DequantGlobalLayer_N512(b *testing.B) {
 	const nKV, hd, N = 4, 128, 512
 	kvDim := nKV * hd
 	cache := NewKVCache(1, nKV, hd, 0, N, nil)
-	cache.setQuant(kvI8, N)
+	cache.c.SetQuant(kvI8, N)
 	kRow := make([]float32, kvDim)
 	vRow := make([]float32, kvDim)
 	for range N {
@@ -216,7 +216,7 @@ func BenchmarkKV_DequantGlobalLayer_N512(b *testing.B) {
 	dstV := make([]float32, N*kvDim)
 	b.SetBytes(int64(N * kvDim * 4 * 2))
 	for b.Loop() {
-		cache.dequantGlobalLayer(0, kvDim, dstK, dstV)
+		cache.c.DequantGlobalLayer(0, kvDim, dstK, dstV)
 	}
 }
 
@@ -368,14 +368,14 @@ func BenchmarkDeltaNet_Recurrence_Heads16_Dim128(b *testing.B) {
 		ValueHeadDim:  hv,
 	}
 	st := &deltaState{
-		s: make([]float32, nv*hk*hv),
+		S: make([]float32, nv*hk*hv),
 	}
 	sOrig := benchFloatSlice(nv*hk*hv, 6)
 	core := make([]float32, valueDim)
 
 	b.SetBytes(int64(nv * hk * hv * 4 * 2))
 	for b.Loop() {
-		copy(st.s, sOrig)
+		copy(st.S, sOrig)
 		deltaNetRecurrence(core, conv, at, bt, w, p, st)
 	}
 }
@@ -400,14 +400,14 @@ func BenchmarkKDA_Recurrence_Heads16_Dim128(b *testing.B) {
 		LowerBound: -5.0,
 	}
 	st := &kdaState{
-		s: make([]float32, H*D*D),
+		S: make([]float32, H*D*D),
 	}
 	sOrig := benchFloatSlice(H*D*D, 8)
 	core := make([]float32, projSize)
 
 	b.SetBytes(int64(H * D * D * 4 * 2))
 	for b.Loop() {
-		copy(st.s, sOrig)
+		copy(st.S, sOrig)
 		kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits, w, p, st)
 	}
 }
