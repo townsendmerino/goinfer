@@ -26,7 +26,7 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 |---|---|
 | `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
 | `internal/runtime/ggufconfig/glm4moe.go:ggufGlm4MoeConfig` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
-| `decoder/weights.go:buildWeightsFromSafetensorsTo` | "MTP heads (`mtp.*`) are simply never requested" |
+| `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo` | "MTP heads (`mtp.*`) are simply never requested" |
 | `internal/runtime/families/arch_glm4_moe.go:glm4moeArchitecture` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)

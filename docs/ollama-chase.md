@@ -1109,7 +1109,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `internal/runtime/ggufconfig/glm4moe.go:ggufGlm4MoeConfig`, `internal/runtime/ggufconfig/qwen35.go:ggufQwen35Config`,
-> `decoder/weights.go:buildWeightsFromSafetensorsTo` and `internal/runtime/families/arch_glm4_moe.go:glm4moeArchitecture` detect these heads, name them, and skip
+> `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo` and `internal/runtime/families/arch_glm4_moe.go:glm4moeArchitecture` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the

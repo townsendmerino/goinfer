@@ -9,7 +9,7 @@
     "internal/runtime/families/arch_gemma4.go",
     "decoder/forward_gemma4_moe.go",
     "decoder/program_cpu_n_gemma4.go",
-    "decoder/gguf_build_gemma4.go"
+    "internal/runtime/wbuild/gguf_build_gemma4.go"
   ],
   "programs": [
     "testdata/gemma4-moe-kv-tiny",

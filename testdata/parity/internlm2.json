@@ -5,7 +5,7 @@
     "quant"
   ],
   "own": [
-    "decoder/internlm2.go",
+    "internal/runtime/wbuild/internlm2.go",
     "decoder/internlm2_test.go",
     "scripts/pin_internlm2_tiny.py",
     "internal/runtime/families/arch_internlm2.go"
@@ -19,7 +19,7 @@
   "method": "full-forward-oracle",
   "metrics": {
     "argmax_pct": 100.0,
-    "cosine_min": 1.00000,
-    "cosine_mean": 1.00000
+    "cosine_min": 1.0,
+    "cosine_mean": 1.0
   }
 }

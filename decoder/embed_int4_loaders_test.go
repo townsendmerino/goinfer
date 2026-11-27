@@ -79,11 +79,16 @@ func TestEmbedInt4_reachesEveryFamilyLoader(t *testing.T) {
 // is how the nine above went inert; spark2_5, gpt_oss and internlm2 have no fixture, so this is what covers them. It proves "no loader pins the head by itself",
 // not "every head is int4": the behavioural test above is the one that reads HeadTable().
 func TestEmbedInt4_noLoaderPinsTheHeadItself(t *testing.T) {
-	pinned := regexp.MustCompile(`quantizeWM\([^,()]+(?:\([^)]*\))?, [\w.]*\.embedding\(\)\)`)
+	pinned := regexp.MustCompile(`[qQ]uantizeWM\([^,()]+(?:\([^)]*\))?, [\w.]*\.[eE]mbedding\(\)\)`)
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
+	wbFiles, err := filepath.Glob("../internal/runtime/wbuild/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = append(files, wbFiles...)
 	scanned := 0
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {

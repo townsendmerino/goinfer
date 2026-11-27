@@ -11,7 +11,7 @@
     "scripts/pin_qwen3_5_forward.py",
     "internal/runtime/families/arch_qwen3_5.go",
     "decoder/generate_vl_qwen35.go",
-    "decoder/gguf_build_qwen35.go"
+    "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35vl-tiny"

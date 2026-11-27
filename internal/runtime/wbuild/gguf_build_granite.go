@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"errors"
@@ -101,7 +101,7 @@ func (b *ggufBuild) loadGranite(gp *archparts.GraniteParams) (*darch.Weights, er
 		// MoE on every layer: router + stacked routed experts + ungated shared.
 		expInter := arch.MoE.IntermediateDim
 		// Router stays f32; see the Laguna site above.
-		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+		if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, QuantNone, func(r int) int { return r * hidden }); e != nil {
 			return e
 		}
 		gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, arch.MoE.NumExperts)
@@ -130,12 +130,12 @@ func (b *ggufBuild) loadGranite(gp *archparts.GraniteParams) (*darch.Weights, er
 	// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 	// shape applies unchanged.
 	if sink != nil {
-		if err := streamLayers(w, arch, sink, loadGranite); err != nil {
+		if err := StreamLayers(w, arch, sink, loadGranite); err != nil {
 			return nil, err
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, abort, loadGranite); err != nil {
+	if err := ParallelLayers(arch.NumLayers, abort, loadGranite); err != nil {
 		return nil, err
 	}
 	return w, nil

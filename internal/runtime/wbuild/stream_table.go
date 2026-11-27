@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"encoding/binary"
@@ -9,33 +9,26 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giwcodec"
 )
 
-// streamedTable is an embedding-shaped table (the token embedding, the LM head, Gemma 4's per-layer token table) that a
+// StreamedTable is an embedding-shaped table (the token embedding, the LM head, Gemma 4's per-layer token table) that a
 // streaming transcode writes from its source rows instead of building it in the heap. The build registers it with the writer under the Weights field it stands for
 // (giwWriter.tables), and writeHeadGlobals writes it in two passes: every row's scales first (the format puts them before the
 // codes), then the rows quantized again and written a block at a time. Each row is quantized on its own and deterministically,
 // so the bytes are the ones a whole-table write of streamQuantizedEmbed's result produces.
-type streamedTable struct {
+type StreamedTable struct {
 	rows, cols int
-	mode       quantMode
-	newReader  func() rowReader
+	mode       QuantMode
+	newReader  func() RowReader
 }
 
-// streamTablesOn routes a streaming transcode's embedding-shaped tables through streamedTable. Tests turn it off to compare
-// against the whole-table write.
-var streamTablesOn = true
-
-// streamTableBlockBytes bounds pass two's code buffer.
-var streamTableBlockBytes = 32 << 20
-
-// streamTable writes t as weightMat writes the WeightMat streamQuantizedEmbed builds for a sink (canonical, no row4 copy):
+// StreamTable writes t as weightMat writes the WeightMat streamQuantizedEmbed builds for a sink (canonical, no row4 copy):
 // kind 2 for int8, kind 3 for int4 (kind 5 on a cpu-arm64 target when the shape allows), kind 10 for f32.
-func (w *giwWriter) streamTable(t *streamedTable) {
+func (w *StreamWriter) StreamTable(t *StreamedTable) {
 	mode := t.mode
-	if mode == quantQ4K {
-		mode = quantInt8I8 // as streamQuantizedEmbed: a logit table has no raw Q4_K form
+	if mode == QuantQ4K {
+		mode = QuantInt8I8 // as streamQuantizedEmbed: a logit table has no raw Q4_K form
 	}
-	if mode == quantInt4 && fakeQuantScheme != "" {
-		m, err := streamQuantizedEmbed(t.rows, t.cols, mode, true, true, 1, w.testHooks.embedWorkers, t.newReader)
+	if mode == QuantInt4 && w.Hooks.fakeQuantScheme() != "" {
+		m, err := w.Hooks.StreamQuantizedEmbed(t.rows, t.cols, mode, true, true, 1, w.TestHooks.EmbedWorkers, t.newReader)
 		if err != nil {
 			w.SetErr(err)
 			return
@@ -52,7 +45,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 		w.Raw([]byte{map[bool]byte{true: 1, false: 0}[w8a8]})
 	}
 	switch mode {
-	case quantInt8, quantInt8I8:
+	case QuantInt8, QuantInt8I8:
 		scales := make([]float32, rows)
 		if !w.tablePass(t, 0, rows, func() func(int, []float32) {
 			q := make([]int8, cols)
@@ -60,12 +53,12 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 		}) {
 			return
 		}
-		header(2, 0, mode == quantInt8I8)
+		header(2, 0, mode == QuantInt8I8)
 		w.AlignArray()
 		w.F32Body(scales)
 		w.AlignArray()
 		w.U32(uint32(rows * cols))
-		block := max(1, streamTableBlockBytes/cols)
+		block := max(1, w.Hooks.streamTableBlockBytes()/cols)
 		q8 := make([]int8, min(block, rows)*cols)
 		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
@@ -76,8 +69,8 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			}
 			w.Raw(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), (hi-lo)*cols))
 		}
-	case quantInt4:
-		const group = int4GroupSize
+	case QuantInt4:
+		const group = Int4GroupSize
 		nGroups := (cols + group - 1) / group
 		bpr := (cols + 1) / 2
 		q4s := make([]uint16, rows*nGroups)
@@ -91,7 +84,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			return
 		}
 		kind, scales := byte(3), q4s
-		row4 := w.Target == GIWTargetCPUArm64 && giwcodec.Row4EmitEligible(rows, cols, group)
+		row4 := w.Target == giwcodec.TargetCPUArm64 && giwcodec.Row4EmitEligible(rows, cols, group)
 		if row4 {
 			kind, scales = 5, giwcodec.RepackRow4ScalesForEmit(q4s, rows, cols, group)
 		}
@@ -100,7 +93,7 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 		w.Scales16(scales)
 		w.AlignArray()
 		w.U32(uint32(rows * bpr))
-		block := max(4, streamTableBlockBytes/bpr/4*4) // whole 4-row groups, the row4 layout's unit
+		block := max(4, w.Hooks.streamTableBlockBytes()/bpr/4*4) // whole 4-row groups, the row4 layout's unit
 		q4 := make([]byte, min(block, rows)*bpr)
 		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
@@ -119,14 +112,14 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			w.Raw(out)
 		}
 	default: // f32
-		if giwF32Kind1ForTest {
+		if w.Hooks.GIWF32Kind1 {
 			header(1, 0, false)
 		} else {
-			header(giwKindF32, 0, false)
+			header(giwcodec.KindF32, 0, false)
 			w.AlignArray()
 		}
 		w.U32(uint32(rows * cols))
-		block := max(1, streamTableBlockBytes/(4*cols))
+		block := max(1, w.Hooks.streamTableBlockBytes()/(4*cols))
 		buf := make([]byte, min(block, rows)*cols*4)
 		for lo := 0; lo < rows && w.Err == nil; lo += block {
 			hi := min(lo+block, rows)
@@ -148,11 +141,11 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 // tablePass reads source rows [lo, hi) on several goroutines (forRowRanges), each with its own do from newDo (its own
 // scratch), and hands each row to it; do must write only that row's own output. It records a read error on the writer and
 // reports whether the pass completed.
-func (w *giwWriter) tablePass(t *streamedTable, lo, hi int, newDo func() func(r int, row []float32)) bool {
+func (w *StreamWriter) tablePass(t *StreamedTable, lo, hi int, newDo func() func(r int, row []float32)) bool {
 	if w.Err != nil {
 		return false
 	}
-	err := forRowRanges(hi-lo, t.cols, 1, w.testHooks.embedWorkers, t.newReader, func(a, b int, read rowReader) error {
+	err := ForRowRanges(hi-lo, t.cols, 1, w.TestHooks.EmbedWorkers, t.newReader, func(a, b int, read RowReader) error {
 		row, do := make([]float32, t.cols), newDo()
 		for r := lo + a; r < lo+b; r++ {
 			if err := read(r, row); err != nil {

@@ -1,7 +1,8 @@
-package decoder
+package wbuild
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder/config"
 	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -21,14 +22,14 @@ import (
 // merged on the on-disk tensor, before qwen3_next's fused split or Olmo's q/k/v concatenation rearranges it.
 func loadQwen35Attn(i int, l *darch.LayerWeights, arch *darch.Architecture, hidden int,
 	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error),
-	f32 func(string, ...int) ([]float32, error), quant quantMode, needCanonical, skipRow4 bool) error {
+	f32 func(string, ...int) ([]float32, error), quant QuantMode, needCanonical, skipRow4 bool, h *Hooks) error {
 	g := arch.Qwen35
 	var err error
 	nm := func(suf string) string { return tn(i, suf) }
 	// qw is quantizeWM, or quantizeWMSkipRow4 when skipRow4, for the fused-tensor split cases below, which build their
 	// WeightMat directly rather than through mkQ.
 	qw := func(m linalg.WeightMat) linalg.WeightMat {
-		return quantizeLayerWM(m, quant, needCanonical, skipRow4)
+		return h.QuantizeLayerWM(m, quant, needCanonical, skipRow4)
 	}
 	if arch.IsLinearLayer(i) {
 		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
@@ -293,17 +294,13 @@ func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *darch.LayerWeights, a
 	return nil
 }
 
-// fusedExpertsTransposedForTest, when set, reads every fused expert tensor in the row layout whatever its shape: a
-// planted defect for the transposed (transformers 4.57) layout.
-var fusedExpertsTransposedForTest bool
-
-// fusedLayout decides how a fused expert tensor is laid out from its shape, as transformers' own conversion does
+// FusedLayout decides how a fused expert tensor is laid out from its shape, as transformers' own conversion does
 // (Transpose(1, 2, check_dims=True) for qwen3_vl_moe: transpose only when the stored shape is not the module's): rows is
 // the layout read as [E, a, b] (a rows of b), cols the transposed [E, b, a]. A shape matching rows (the square case
 // included, where HF does not transpose either) reads as rows; one matching only cols reads transposed; anything else
 // is refused. Element counts alone cannot tell the two apart, so a check on them loads the transposed layout as garbage
 // with no error.
-func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, err error) {
+func FusedLayout(name string, shape []int, nExpert, a, b int, h *Hooks) (transposed bool, err error) {
 	rows := slices.Equal(shape, []int{nExpert, a, b})
 	cols := slices.Equal(shape, []int{nExpert, b, a})
 	switch {
@@ -315,15 +312,15 @@ func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, 
 	return false, fmt.Errorf("experts %q: shape %v is neither [%d %d %d] nor [%d %d %d]", name, shape, nExpert, a, b, nExpert, b, a)
 }
 
-// loadFusedExperts reads a fused+stacked MoE expert set: gate_up_proj and down_proj, each [experts, ...], in either the
+// LoadFusedExperts reads a fused+stacked MoE expert set: gate_up_proj and down_proj, each [experts, ...], in either the
 // Qwen3.5-MoE row layout ([E, 2I, H] and [E, H, I]) or transformers 4.57's transposed one ([E, H, 2I] and [E, I, H],
-// Qwen3-VL-MoE's release), decided by shape as HF decides it (fusedLayout).
+// Qwen3-VL-MoE's release), decided by shape as HF decides it (FusedLayout).
 //
 // It streams one expert at a time, via Tensor.SubF32 or, for the transposed layout, Tensor.SubF32Transposed, as
 // streamExperts does for gemma4's fused experts: whole-tensor TensorF32 reads would materialize both stacks as f32, a
 // multi-GB transient per layer times every layer parallelLayers has in flight. The experts are built through
 // forExperts.
-func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]archparts.ExpertWeights, error) {
+func LoadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant QuantMode, needCanonical, skipRow4 bool, sink *StreamWriter, h *Hooks) ([]archparts.ExpertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
@@ -339,15 +336,15 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	if dnT.Elements() != nExpert*downStride {
 		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", downName, dnT.Elements(), nExpert*downStride, nExpert, hidden, inter)
 	}
-	guTrans, err := fusedLayout(gateUpName, guT.Shape, nExpert, 2*inter, hidden)
+	guTrans, err := FusedLayout(gateUpName, guT.Shape, nExpert, 2*inter, hidden, h)
 	if err != nil {
 		return nil, err
 	}
-	dnTrans, err := fusedLayout(downName, dnT.Shape, nExpert, hidden, inter)
+	dnTrans, err := FusedLayout(downName, dnT.Shape, nExpert, hidden, inter, h)
 	if err != nil {
 		return nil, err
 	}
-	if fusedExpertsTransposedForTest {
+	if h.fusedExpertsTransposed() {
 		guTrans, dnTrans = false, false
 	}
 	// A slice read in place from an F32 tensor is a view of the mapping; every other read is a slice of its own.
@@ -355,14 +352,14 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	// q quantizes one expert matrix. A matrix that stays f32 and was a view of the mapping gets a slice of its own.
 	q := func(data []float32, rows, cols int, view bool) linalg.WeightMat {
 		var m linalg.WeightMat
-		m = quantizeLayerWM(linalg.WrapF32(data, rows, cols), quant, needCanonical, skipRow4)
+		m = h.QuantizeLayerWM(linalg.WrapF32(data, rows, cols), quant, needCanonical, skipRow4)
 		if f, ok := m.F32(); ok && view {
 			m = linalg.WrapF32(slices.Clone(f), rows, cols)
 		}
 		return m
 	}
 	experts := make([]archparts.ExpertWeights, nExpert)
-	err = forExperts(nExpert, sink, func(e int) error {
+	err = ForExperts(nExpert, sink, func(e int) error {
 		var guE, dnE []float32
 		var err error
 		if guTrans { // [H, 2I] -> [2I, H]: gate rows first, then up
@@ -403,7 +400,7 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 // Router weights stay f32 (loadMat, no quant: the router is logit-critical); the experts quantize at load through the
 // layer's quant mode. The experts stream one at a time via Tensor.SubF32, so a bf16 checkpoint never materializes the
 // whole [nExperts, 2*inter, hidden] gate_up, only one expert's f32 at a time.
-func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *darch.Architecture, hidden int, l *darch.LayerWeights, quant quantMode, tn func(int, string) string, needCanonical, skipRow4 bool, sink *giwWriter) (*archparts.Gemma4MoEWeights, error) {
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *config.Config, arch *darch.Architecture, hidden int, l *darch.LayerWeights, quant QuantMode, tn func(int, string) string, needCanonical, skipRow4 bool, sink *StreamWriter, h *Hooks) (*archparts.Gemma4MoEWeights, error) {
 	m := arch.MoE
 	nm := func(s string) string { return tn(i, s) }
 	w := &archparts.Gemma4MoEWeights{
@@ -428,7 +425,7 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *darch.Ar
 	if w.PostFFNNorm2, err = st.TensorF32(nm("post_feedforward_layernorm_2.weight"), hidden); err != nil {
 		return nil, err
 	}
-	if w.RouterProj, err = loadMat(st, nm("router.proj.weight"), m.NumExperts, hidden); err != nil {
+	if w.RouterProj, err = LoadMat(st, nm("router.proj.weight"), m.NumExperts, hidden); err != nil {
 		return nil, err
 	}
 	if w.RouterScale, err = st.TensorF32(nm("router.scale"), hidden); err != nil {
@@ -447,10 +444,10 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *darch.Ar
 	if err != nil {
 		return nil, err
 	}
-	if w.ExpertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, needCanonical, skipRow4, sink); err != nil {
+	if w.ExpertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, needCanonical, skipRow4, sink, h); err != nil {
 		return nil, err
 	}
-	if w.ExpertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, needCanonical, skipRow4, sink); err != nil {
+	if w.ExpertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, needCanonical, skipRow4, sink, h); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -460,24 +457,24 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *darch.Ar
 // expert WeightMats, widening + quantizing ONE expert at a time via Tensor.SubF32
 // so the whole 3-D f32 is never materialized (the bf16-26B transient win). Each
 // expert passes through quantizeWM: int8/int4 produces owned quantized data and the
-// f32 slice is dropped; f32/quantNone leaves an f32 WeightMat aliasing the mapping
+// f32 slice is dropped; f32/QuantNone leaves an f32 WeightMat aliasing the mapping
 // (pageable, valid while w.st is retained) — no heap copy. The experts are built through forExperts.
-func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, needCanonical, skipRow4 bool, sink *giwWriter) ([]linalg.WeightMat, error) {
+func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant QuantMode, needCanonical, skipRow4 bool, sink *StreamWriter, h *Hooks) ([]linalg.WeightMat, error) {
 	stride := rows * cols
 	if t.Elements() != nExpert*stride {
 		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", t.Name, t.Elements(), nExpert*stride, nExpert, rows, cols)
 	}
 	out := make([]linalg.WeightMat, nExpert)
-	err := forExperts(nExpert, sink, func(e int) error {
+	err := ForExperts(nExpert, sink, func(e int) error {
 		f32, err := t.SubF32(e*stride, stride)
 		if err != nil {
 			return err
 		}
-		if fakeQuantScheme != "" && fakeQuantExpertsOnly { // DIAGNOSTIC (default-off): fake-4-bit the EXPERTS only; see fakequant.go
-			out[e] = fakeInt4WM(f32, rows, cols, fakeQuantScheme)
+		if h.fakeQuantScheme() != "" && h.fakeQuantExpertsOnly() { // DIAGNOSTIC (default-off): fake-4-bit the EXPERTS only; see fakequant.go
+			out[e] = h.FakeInt4WM(f32, rows, cols, h.fakeQuantScheme())
 			return nil
 		}
-		out[e] = quantizeLayerWM(linalg.WrapF32(f32, rows, cols), quant, needCanonical, skipRow4)
+		out[e] = h.QuantizeLayerWM(linalg.WrapF32(f32, rows, cols), quant, needCanonical, skipRow4)
 		return nil
 	})
 	if err != nil {

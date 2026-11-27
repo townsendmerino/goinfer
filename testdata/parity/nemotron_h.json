@@ -8,7 +8,7 @@
   "own": [
     "decoder/forward_nemotron.go",
     "internal/runtime/families/arch_nemotron_h.go",
-    "decoder/gguf_build_nemotron.go"
+    "internal/runtime/wbuild/gguf_build_nemotron.go"
   ],
   "programs": [
     "testdata/nemotron-tiny",

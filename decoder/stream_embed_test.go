@@ -194,7 +194,7 @@ func TestStreamTranscode_rowRangesWriteTheSameBytes(t *testing.T) {
 		} {
 			var ref []byte
 			for _, workers := range []int{1, 3, 7} {
-				ctx := withStreamTestHooks(context.Background(), streamTestHooks{embedWorkers: workers})
+				ctx := withStreamTestHooks(context.Background(), streamTestHooks{EmbedWorkers: workers})
 				var b bytes.Buffer
 				if err := c.stream(ctx, &b); err != nil {
 					t.Fatalf("%s, %d ranges: %v", c.src, workers, err)

@@ -9,7 +9,7 @@
   "own": [
     "decoder/forward_granite.go",
     "internal/runtime/families/arch_granitemoehybrid.go",
-    "decoder/gguf_build_granite.go"
+    "internal/runtime/wbuild/gguf_build_granite.go"
   ],
   "deps_hash": "sha256:be882bd5fc1e7f432932eb7b1cfc94fcb25e01970686bb588fd65536a2b23b5b",
   "status": "validated",

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"time"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
@@ -87,7 +88,7 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *darch.LayerWeights, l, K in
 		w, b := lw.NormWeights(o.Norm)
 		rw(costF32(len(w)+len(b)), costF32(H), costF32(H))
 	case opProjQKV:
-		wb := wmBytes(&lw.QProj) + wmBytes(&lw.KProj) + wmBytes(&lw.VProj)
+		wb := wbuild.WMBytes(&lw.QProj) + wbuild.WMBytes(&lw.KProj) + wbuild.WMBytes(&lw.VProj)
 		if o.Proj.Bias {
 			wb += costF32(len(lw.QBias) + len(lw.KBias) + len(lw.VBias))
 		}
@@ -108,9 +109,9 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *darch.LayerWeights, l, K in
 		row := cache.kvRowBytes()
 		rw(2*kvRows*row, costF32(nH*hd), costF32(nH*hd)+2*row)
 	case opOutGate:
-		rw(wmBytes(&lw.GProj), costF32(H+nH*hd), costF32(nH*hd))
+		rw(wbuild.WMBytes(&lw.GProj), costF32(H+nH*hd), costF32(nH*hd))
 	case opProjO:
-		wb := wmBytes(&lw.OProj)
+		wb := wbuild.WMBytes(&lw.OProj)
 		if o.Proj.Bias {
 			wb += costF32(len(lw.OBias))
 		}
@@ -120,9 +121,9 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *darch.LayerWeights, l, K in
 			d.Unmeasured = cpuNoBytes // routed experts: what a token reads depends on its routing
 			break
 		}
-		wb := wmBytes(&lw.UpProj) + wmBytes(&lw.DownProj)
+		wb := wbuild.WMBytes(&lw.UpProj) + wbuild.WMBytes(&lw.DownProj)
 		if o.FFN.Form == ffnGated {
-			wb += wmBytes(&lw.GateProj)
+			wb += wbuild.WMBytes(&lw.GateProj)
 		}
 		rw(wb, costF32(H), costF32(H))
 	case opResidual:
@@ -146,9 +147,9 @@ func countStage(cache *KVCache, name string, read, written int64, t0 time.Time) 
 // countEmbed records the embedding of n tokens since t0: n rows of the table (and of the learned positions when pos is set) read,
 // n hidden rows written.
 func (m *Model) countEmbed(cache *KVCache, n int, pos bool, t0 time.Time) {
-	read := wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
+	read := wbuild.WMBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
 	if pos {
-		read += wmBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
+		read += wbuild.WMBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
 	}
 	countStage(cache, costEmbed, int64(n)*read, int64(n)*costF32(m.w.Arch.HiddenDim), t0)
 }
@@ -166,7 +167,7 @@ func (m *Model) countHead(cache *KVCache, n int, t0 time.Time) {
 	if m.program().Head.Tied {
 		head = &m.w.Embed
 	}
-	countStage(cache, costLMHead, wmBytes(head)+int64(n)*costF32(m.w.Arch.HiddenDim), int64(n)*costF32(m.w.Arch.VocabSize), t0)
+	countStage(cache, costLMHead, wbuild.WMBytes(head)+int64(n)*costF32(m.w.Arch.HiddenDim), int64(n)*costF32(m.w.Arch.VocabSize), t0)
 }
 
 // causalRows is the stored K (or V) rows a prefill pass of K rows from startPos reads in layer l: Σ (startPos+i+1) for i < K. A

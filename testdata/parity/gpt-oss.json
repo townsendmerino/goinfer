@@ -8,10 +8,10 @@
   "own": [
     "decoder/forward_gptoss.go",
     "decoder/gptoss120_test.go",
-    "decoder/gptoss_safetensors.go",
+    "internal/runtime/wbuild/gptoss_safetensors.go",
     "decoder/gptoss_safetensors_test.go",
     "internal/runtime/families/arch_gpt_oss.go",
-    "decoder/gguf_build_gptoss.go"
+    "internal/runtime/wbuild/gguf_build_gptoss.go"
   ],
   "deps_hash": "sha256:9ad7f576c73cdde9aedd8ee57c1de5e9b653f79987e974299479ab18b25a96a2",
   "status": "validated",

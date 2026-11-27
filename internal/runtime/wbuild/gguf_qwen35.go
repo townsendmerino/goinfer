@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 // GGUF loading for the qwen3_5_moe (Qwen3.6-35B-A3B) architecture
 // (general.architecture = "qwen35moe"). This is a TRANSFORM REVERSER, not a
@@ -10,7 +10,7 @@ package decoder
 // lives in buildWeightsFromGGUF's qwen35 branch, the config map in
 // internal/runtime/ggufconfig; this file holds the reorder primitive.
 
-// reorderVHeads swaps the (outer, inner) factorization of the reordered axis of a
+// ReorderVHeads swaps the (outer, inner) factorization of the reordered axis of a
 // [lead, outer*inner*hd, trail] row-major buffer: the element at (outer=o,
 // inner=i, ...) moves to (outer=i, inner=o, ...). hd is the contiguous head block
 // that rides along untouched; trail is the product of all dims after the reordered
@@ -21,10 +21,10 @@ package decoder
 // This mirrors llama.cpp's _reorder_v_heads (gguf-py conversion/qwen.py): for
 // linear-attn (Gated DeltaNet) layers where num_v_heads > num_k_heads, the
 // converter takes HF's V heads stored GROUPED by K head and writes them TILED for
-// ggml's broadcast. The forward (HF→GGUF) is reorderVHeads(x, lead, numKHeads,
+// ggml's broadcast. The forward (HF→GGUF) is ReorderVHeads(x, lead, numKHeads,
 // numVPerK, hd, trail); the loader UN-tiles (GGUF→HF) with the two factors
 // swapped — see untileVHeads. reorderVHeads is its own inverse under that swap.
-func reorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
+func ReorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
 	mid := outer * inner * hd
 	dst := make([]float32, len(src))
 	for l := range lead {
@@ -44,10 +44,10 @@ func reorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
 	return dst
 }
 
-// untileVHeads undoes the GGUF converter's V-head tiling: it takes a GGUF tensor
+// UntileVHeads undoes the GGUF converter's V-head tiling: it takes a GGUF tensor
 // block whose V heads are in tiled order and returns it in HF's grouped-by-K
 // order. numVPerK = numVHeads / numKHeads. It is reorderVHeads with the converter's
 // (numKHeads, numVPerK) factors swapped.
-func untileVHeads(src []float32, lead, numKHeads, numVPerK, hd, trail int) []float32 {
-	return reorderVHeads(src, lead, numVPerK, numKHeads, hd, trail)
+func UntileVHeads(src []float32, lead, numKHeads, numVPerK, hd, trail int) []float32 {
+	return ReorderVHeads(src, lead, numVPerK, numKHeads, hd, trail)
 }

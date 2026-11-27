@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 	"math"
 	"os"
 	"path/filepath"
@@ -141,9 +142,9 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 //
 // name MUST build the same tensor names the corresponding apply path looks the delta up by, or the check lies: the
 // merge-at-load path in weights.go looks up prefixed names (tn, which adds language_model.* and model.language_model.*
-// on VL checkpoints), while the compute-time path (buildLoraRuntime) uses the bare tensorName. A wrong builder lets a
+// on VL checkpoints), while the compute-time path (buildLoraRuntime) uses the bare wbuild.TensorName. A wrong builder lets a
 // VL-prefixed base validate clean and then silently ignore the whole adapter. History: docs/code-notes/decoder.md#loraAdapter.validateTargets.
-func (a *loraAdapter) validateTargets(numLayers int, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
+func (a *loraAdapter) ValidateTargets(numLayers int, s *archparts.TensorSchema, name func(layer int, suffix string) string) error {
 	known := map[string]bool{}
 	for i := range numLayers {
 		for _, suf := range []string{s.QProj, s.KProj, s.VProj, s.OProj, s.GateProj, s.UpProj, s.DownProj} {
@@ -202,7 +203,7 @@ func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []darch.Laye
 
 // merge adds this tensor's LoRA delta into the f32 weight in place:
 // data[o,:] += scale·Σ_k B[o,k]·A[k,:]. No-op when the tensor isn't a target.
-func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
+func (a *loraAdapter) Merge(name string, data []float32, out, in int) error {
 	if a == nil {
 		return nil
 	}
@@ -241,7 +242,7 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 // before the load; this checks them against what the load actually did, so it also covers a family whose tensor names no
 // list holds, a loader that takes no adapter at all, and a name that is on the list but not loaded in that layer (a
 // self_attn projection on a linear-attention layer). nil-safe.
-func (a *loraAdapter) checkAllMerged() error {
+func (a *loraAdapter) CheckAllMerged() error {
 	if a == nil {
 		return nil
 	}
@@ -268,7 +269,7 @@ func (a *loraAdapter) checkAllMerged() error {
 }
 
 // has reports whether the adapter has a delta for this base tensor.
-func (a *loraAdapter) has(name string) bool {
+func (a *loraAdapter) Has(name string) bool {
 	if a == nil {
 		return false
 	}
@@ -319,7 +320,7 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *archparts.T
 		if suf == "" {
 			return nil
 		}
-		d, ok := a.deltas[tensorName(i, suf)]
+		d, ok := a.deltas[wbuild.TensorName(i, suf)]
 		if !ok {
 			return nil
 		}
@@ -370,15 +371,15 @@ func (m *Model) loadAdapter(name, dir string) error {
 	if err != nil {
 		return err
 	}
-	// Compute-time application (buildLoraRuntime) indexes deltas by the bare tensorName, so validate
+	// Compute-time application (buildLoraRuntime) indexes deltas by the bare wbuild.TensorName, so validate
 	// against that — this path is prefix-agnostic (it applies by layer/projection, not physical name).
-	if err := a.validateTargets(arch.NumLayers, m.w.Schema, tensorName); err != nil {
+	if err := a.ValidateTargets(arch.NumLayers, m.w.Schema, wbuild.TensorName); err != nil {
 		a.close()
 		return err
 	}
 	// validateTargets checks names only; every resident backend's SetAdapter trusts In/Out from the checkpoint, so a
 	// mismatched adapter is caught here, once, before it reaches any of them.
-	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.Schema, tensorName); err != nil {
+	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.Schema, wbuild.TensorName); err != nil {
 		a.close()
 		return err
 	}

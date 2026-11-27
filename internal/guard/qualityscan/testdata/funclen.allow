@@ -1,11 +1,11 @@
 # Functions over funcLenCeiling lines (TestQualityScan_functionLengthRatchet): `<file>:<func> <lines> -- <reason>`.
 # Each is held at its length on 2026-11-19 so it can only shrink; lower the ceiling when one does.
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
-decoder/gguf_build.go:ggufBuild.loadLayers 208 -- over the ceiling before the ratchet; split it when next changed
-decoder/gguf.go:buildWeightsFromGGUF 302 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/wbuild/gguf_build.go:ggufBuild.loadLayers 207 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/wbuild/gguf.go:BuildWeightsFromGGUF 302 -- over the ceiling before the ratchet; split it when next changed
 decoder/model.go:Model.generateInto 245 -- over the ceiling before the ratchet; split it when next changed
 decoder/program_cpu_n.go:Model.walkBatch 273 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:ngramSpecLoop 344 -- over the ceiling before the ratchet; split it when next changed
-decoder/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed
-decoder/weights.go:buildWeightsFromSafetensorsTo 256 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/wbuild/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo 251 -- over the ceiling before the ratchet; split it when next changed
