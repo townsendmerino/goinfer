@@ -2,7 +2,7 @@
 # Each is held at its length on 2026-11-19 so it can only shrink; lower the ceiling when one does.
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
 internal/runtime/wbuild/gguf_build.go:ggufBuild.loadLayers 207 -- over the ceiling before the ratchet; split it when next changed
-internal/runtime/wbuild/gguf.go:BuildWeightsFromGGUF 302 -- over the ceiling before the ratchet; split it when next changed
+internal/runtime/wbuild/gguf.go:BuildWeightsFromGGUF 281 -- raised by 7 for the source release: one deferred releaseTensor per shared tensor reader (streamMat, streamMatBatched, embMatAt, embInto, vec, stackedExperts, fusedSplit), so the fit guard can price one tensor per worker; moving those readers to ggufBuild methods is the split that lowers it
 decoder/model.go:Model.generateInto 245 -- over the ceiling before the ratchet; split it when next changed
 internal/runtime/cpuengine/program_cpu_n.go:Engine.WalkBatch 273 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratchet; split it when next changed

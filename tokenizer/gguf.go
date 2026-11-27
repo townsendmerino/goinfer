@@ -291,6 +291,10 @@ func byteLevelKnobs(pre string) (k byteLevel, known bool) {
 		// the family's own tokenizer.json. gpt-oss's HF tokenizer.json declares a Split regex byte-identical
 		// to the o200k pattern splitO200k implements. Digits cap at 3, no normalizer.
 		return byteLevel{maxDigits: 3, form: norm.NFC, shape: shapeO200k}, true
+	case "inkling2":
+		// Inkling 2 (llama.cpp LLAMA_VOCAB_PRE_TYPE_GPT4O with ignore_merges): the release's tokenizer.json declares the o200k
+		// Split regex byte for byte, a null normalizer, and ignore_merges true.
+		return byteLevel{maxDigits: 3, form: norm.NFC, ignoreMerges: true, shape: shapeO200k}, true
 	case "flint":
 		// RecursiveSI/flint (llama.cpp LLAMA_VOCAB_PRE_TYPE_FLINT): three-stage Split sequence
 		// (\p{N}{1,3}, Han/Hiragana/Katakana, then o200k-style case split + attached contractions with

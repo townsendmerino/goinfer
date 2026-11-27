@@ -70,6 +70,9 @@ func (t *Template) NewReasoningBudgetFor(tk TokenLookup, turns []Turn, limit int
 		return harmonyBudgetFor(tk, limit)
 	}
 	r := t.Reasoning()
+	if r == nil { // a family that thinks in messages, not a delimited block (Inkling 2): no budget yet
+		return nil
+	}
 	openID, ok1 := tk.TokenID(r.OpenToken())
 	closeID, ok2 := tk.TokenID(r.CloseToken())
 	if !ok1 || !ok2 {

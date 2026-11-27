@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	dconfig "github.com/townsendmerino/goinfer/decoder/config"
 	"os"
 	"slices"
 	"strings"
@@ -375,6 +376,17 @@ func representativeConfig(modelType string) *Config {
 			SlidingWindow:  16,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0}`),
 		}
+	case "inkling2_loop":
+		// Mirrors decoder/testdata/inkling2-loop-tiny: 6 physical layers, the core [2, 4) run three passes, blocks of 2,
+		// sliding and full layers in both the prelude and the core.
+		return &Config{
+			ModelType: "inkling2_loop", HiddenDim: 64, NumLayers: 6, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, VocabSize: 90, RMSNormEps: 1e-6, NumExperts: 8, NumExpertsPerTok: 2, MoeIntermediateSize: 16,
+			MoeRoutedScalingFactor: 8, SlidingWindow: 4, FinalLogitSoftcap: 5,
+			Inkling2: &dconfig.Inkling2Config{SWA: []bool{true, false, true, false, true, false}, DRel: 4, RelExtent: 8, ConvK: 4,
+				BlockSize: 2, QKClip: 6, RelClip: 3, LogFloor: 4, LogAlpha: 0.5, SituBeta: 2, SituLinearBeta: 3, PaddedVocab: 96,
+				LoopStart: 2, LoopEnd: 4, LoopPasses: 3, GateRank: 8},
+		}
 	case "spark2_5":
 		// Mirrors testdata/spark2-5-tiny (scripts/pin_spark2_5_tiny.py): decoupled head_dim
 		// (32, not hidden/heads=16), 1:3 sliding:full interleave with a window smaller than a
@@ -590,6 +602,7 @@ var familyDocs = map[string]familyDoc{
 	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
 	"flint":            {"Flint", "Cognichip Flint (36B-A3B): hybrid sliding-window + NoPE full attention with per-head attention sinks, dense prefix + sigmoid-routed MoE + ungated shared expert", "safetensors, GGUF", "text"},
+	"inkling2_loop":    {"Inkling 2 Mini", "thinkingmachines Inkling-2-Mini (26B-A1.8B): attention-residual blocks, relative-bias attention with per-token sinks and short convolutions, sigmoid-routed SITU MoE, a core of layers run three passes; CPU only", "GGUF", "text"},
 	"spark2_5":         {"Spark-X2.5", "XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP", "safetensors", "text"},
 	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
 	"granite":          {"Granite 4.2", "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers", "safetensors, GGUF", "text"},
@@ -642,6 +655,7 @@ var siteDocs = map[string]siteDoc{
 	"lfm2":             {"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention. LFM2.5-VL reads images (SigLIP2 tower).", []string{"chat", "vision"}},
 	"laguna":           {"poolside's Laguna coding models.", []string{"code"}},
 	"flint":            {"Cognichip's Flint 36B mixture-of-experts (about 3B active per token), built for chip design and RTL/Verilog.", []string{"chat", "code"}},
+	"inkling2_loop":    {"Thinking Machines' Inkling-2-Mini, a looped mixture-of-experts (24 layers, 48 layer visits a token), text only, on the CPU.", []string{"chat", "code"}},
 	"llama":            {"Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.", []string{"chat"}},
 	"llama4_text":      {"Meta's Llama 4 Scout and Maverick, text only.", []string{"chat"}},
 	"mellum":           {"JetBrains' Mellum2, built for code completion.", []string{"code"}},

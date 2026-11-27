@@ -1,6 +1,7 @@
 package cpuengine
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"slices"
 	"sync/atomic"
 
@@ -240,6 +241,9 @@ type Cache struct {
 	// [headDim,headDim]-per-head matrix state) for the linear layers (nil entry on the MLA
 	// layers, which use mlaLatent above instead; nil slice on every other family).
 	KDA []*KDAState
+
+	// Ink is each Inkling 2 visit's four short-convolution windows; nil for other families.
+	Ink []*inkling2.ConvState
 
 	Scr *DecodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
@@ -827,11 +831,11 @@ func (c *Cache) Pos() int { return c.PosN }
 
 // HasRecurrentState reports whether this cache carries state mutated in place per token with no per-position history: TruncateTo
 // cannot rewind it, Snapshot cannot persist it, and a rolled-back session must go cold rather than warm-reuse it. It is one
-// predicate over every kind (c.Mamba, c.Delta, c.Conv, c.KDA), read at every site: a kind missed at one site leaks one
+// predicate over every kind (c.Mamba, c.Delta, c.Conv, c.KDA, c.Ink), read at every site: a kind missed at one site leaks one
 // conversation's window into the next (TruncateTo(0) leaving it intact) and reports a partial rewind exact, so a rewound prefix
 // is warm-reused over stale windows. recurrent_census_test.go asks the struct, so a new kind cannot be missed.
 func (c *Cache) HasRecurrentState() bool {
-	return c.Mamba != nil || c.Delta != nil || c.Conv != nil || c.KDA != nil
+	return c.Mamba != nil || c.Delta != nil || c.Conv != nil || c.KDA != nil || c.Ink != nil
 }
 
 // ResetRecurrent re-zeroes the rolling state of every recurrent kind (Mamba-2, Gated DeltaNet, LFM2 conv, KDA: conv windows and
@@ -866,6 +870,11 @@ func (c *Cache) ResetRecurrent() {
 			for i := range st.S {
 				st.S[i] = 0
 			}
+		}
+	}
+	for _, st := range c.Ink {
+		if st != nil {
+			st.Reset()
 		}
 	}
 }
@@ -1277,6 +1286,11 @@ func NewCacheForArch(a *darch.Architecture, capHint int, kvI8, kvH bool, knobs K
 	if a.KDA != nil {
 		c.ManualPos = true
 		c.KDA = layerStates(a.NumLayers, a.IsLinearLayer, func() *KDAState { return NewKDAState(*a.KDA) })
+	}
+	if a.Inkling2 != nil {
+		// Every visit holds KV and four conv windows; manualPos because walkToken advances once per token after the visits.
+		c.ManualPos = true
+		c.Ink = layerStates(a.NumLayers, func(int) bool { return true }, func() *inkling2.ConvState { return new(inkling2.ConvState) })
 	}
 	return c
 }

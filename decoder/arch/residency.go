@@ -39,6 +39,11 @@ func (a *Architecture) RunnerShapeDeclineSSM(ssmResident bool) string {
 		// column is generated from this predicate, and without this case LFM2 would fall through to
 		// ropeResidentCompatible and read "yes".
 		return archparts.RunnerShapeOwnForward
+	case a.Inkling2 != nil:
+		// Inkling 2: every visit is one opInkling2 (attention-residual mixes, relative-bias attention with per-token sinks,
+		// short convolutions, loop controllers) that no resident implements. Declined here as an arch shape, like LFM2, so a
+		// backend admitting by feature set (webgpu) cannot read it as a plain attention+MoE model.
+		return archparts.RunnerShapeOwnForward
 	}
 	// Granite-4.0-H resident SSM hybrid: its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Admitted only

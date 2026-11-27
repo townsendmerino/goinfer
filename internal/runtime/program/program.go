@@ -43,6 +43,7 @@ type Op struct {
 	Gated  GatedAttnParams  `fp:"gated"`
 	G4     Gemma4AttnParams `fp:"g4"`
 	Norms  NormEpsParams    `fp:"norms"` // opGemma4MoE and opPLE
+	Ink    Inkling2Params   `fp:"ink,omitzero"`
 }
 
 // NormSlot selects which of a layer's norm weights an opNorm applies.
@@ -170,6 +171,21 @@ type Gemma4AttnParams struct {
 	Scale   float64
 	KVSrc   int
 	OwnsKV  bool
+}
+
+// Inkling2Params are an opInkling2's: the visit's physical layer (whose weights it reads) and pass through the loop core,
+// whether it starts an attention-residual block, and the numerics of the visit. The head counts, widths and the expert
+// geometry are shapes, read from the Architecture; the MoE routing is FFN.MoE on the same operation.
+type Inkling2Params struct {
+	Phys, Pass       int
+	Boundary, SWA    bool
+	Eps              float64
+	QKClip, RelClip  float64
+	LogFloor         int
+	LogAlpha         float64
+	ConvK            int
+	Window, Extent   int // the attention window (0 on a full layer) and the relative-bias extent
+	SituBeta, SituUp float64
 }
 
 // NormEpsParams are the norm epsilon and (1+w) of an operation with norms inside it (opGemma4MoE, opPLE).
