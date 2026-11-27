@@ -23,7 +23,7 @@ import (
 // batch the route's own bounds accept.
 func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 	// An embed-only server: no decoder loaded, so the derived TEXT cap falls to its 4 MiB floor.
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	textCap, visionCap, embedCap, fileCap := s.resolveBodyCaps(0)
 
 	if textCap != maxBodyBytes {
@@ -59,7 +59,7 @@ func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 // TestBodyCaps_explicitOverrideGovernsEveryRoute: -max-body-bytes is documented as "the" cap, so it
 // must not be silently ignored on the route with its own default.
 func TestBodyCaps_explicitOverrideGovernsEveryRoute(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	const override = int64(7 << 20)
 	textCap, _, embedCap, fileCap := s.resolveBodyCaps(override)
 	if textCap != override {

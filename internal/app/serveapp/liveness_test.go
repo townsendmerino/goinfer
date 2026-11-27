@@ -40,7 +40,7 @@ func TestLookupLockedOnlyViaResolve(t *testing.T) {
 // so Close is safe only when the LAST entry backed by it unloads. releaseLocked must report last only
 // then, and (delete-before-decide, tested via the sequence) two siblings can never both decline.
 func TestRetainRelease(t *testing.T) {
-	s := &server{liveness: map[io.Closer]*modelLiveness{}}
+	s := &server{modelRegistry: modelRegistry{liveness: map[io.Closer]*modelLiveness{}}}
 	m := &fakeCloser{} // sentinel; never Closed here
 
 	s.retainLocked(m) // base
@@ -71,11 +71,11 @@ func TestRetainRelease(t *testing.T) {
 // released, and an entry with neither a model nor a closer has a nil livenessKey.
 func TestLiveness_nilCloserIgnored(t *testing.T) {
 	var typedNil *fakeCloser
-	empty := &loadedModel{name: "embed-only"}
+	empty := &loadedModel{modelIdentity: modelIdentity{name: "embed-only"}}
 	if empty.livenessKey() != nil {
 		t.Fatal("empty entry livenessKey is not nil")
 	}
-	if (&loadedModel{closer: typedNil}).livenessKey() != nil {
+	if (&loadedModel{modelIdentity: modelIdentity{closer: typedNil}}).livenessKey() != nil {
 		t.Fatal("typed-nil closer livenessKey is not nil")
 	}
 	for _, c := range []io.Closer{nil, typedNil, empty.livenessKey()} {
@@ -104,7 +104,7 @@ func TestLiveness_nilCloserIgnored(t *testing.T) {
 // unloading a served Gemma 4 vision model leaves its encoder referenced from the closed entry, retaining that memory past
 // unload. Closing a zero encoder must also be safe.
 func TestCloseEntryNatives_dropsGemma4Enc(t *testing.T) {
-	lm := &loadedModel{vision: &gemma4Vision{enc: &vision.Gemma4Encoder{}}}
+	lm := &loadedModel{modelModalities: modelModalities{vision: &gemma4Vision{enc: &vision.Gemma4Encoder{}}}}
 	lm.closeEntryNatives()
 	if lm.vision != nil {
 		t.Error("gemma4Enc still referenced after closeEntryNatives — its weight memory is not " +
@@ -127,8 +127,8 @@ func TestCloseEntryNatives_sharedVisionTowerClosesOnLast(t *testing.T) {
 	tower := countingG4Tower{&closes}
 	share := &visionShare{n: 2}
 	enc := &vision.Gemma4Encoder{}
-	base := &loadedModel{vision: &gemma4Vision{enc: enc, tower: tower}, visionShare: share}
-	adapter := &loadedModel{vision: &gemma4Vision{enc: enc, tower: tower}, visionShare: share}
+	base := &loadedModel{modelModalities: modelModalities{vision: &gemma4Vision{enc: enc, tower: tower}, visionShare: share}}
+	adapter := &loadedModel{modelModalities: modelModalities{vision: &gemma4Vision{enc: enc, tower: tower}, visionShare: share}}
 
 	adapter.closeEntryNatives()
 	if closes != 0 {
@@ -147,7 +147,7 @@ func TestCloseEntryNatives_sharedVisionTowerClosesOnLast(t *testing.T) {
 	}
 
 	closes = 0
-	alone := &loadedModel{vision: &gemma4Vision{tower: tower}}
+	alone := &loadedModel{modelModalities: modelModalities{vision: &gemma4Vision{tower: tower}}}
 	alone.closeEntryNatives()
 	if closes != 1 {
 		t.Errorf("an unshared entry's unload closed its tower %d times, want 1", closes)

@@ -38,7 +38,7 @@ func TestSideRequests_ccDiag(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	ids := map[string][]int{}
 	for _, n := range []string{"read", "search", "edit"} {

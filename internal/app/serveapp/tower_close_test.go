@@ -28,17 +28,19 @@ func (f closeCountGrid) Hidden([]float32, [][3]int) ([]float32, error) { return 
 func TestUnload_closesTheDeviceTowers(t *testing.T) {
 	for _, built := range []bool{true, false} {
 		g4v, q3, glm, g4a := &fakeTower{}, &fakeTower{}, &fakeTower{}, &fakeTower{}
-		g4 := &loadedModel{name: "gemma4", vision: &gemma4Vision{}, audio: &gemma4Audio{}}
+		g4 := &loadedModel{modelIdentity: modelIdentity{name: "gemma4"}, modelModalities: modelModalities{vision: &gemma4Vision{}, audio: &gemma4Audio{}}}
 		qv := &qwen3Vision{qwen3Tower: &qwen3Tower{}}
 		gv := &glmVision{glmOcrTower: &glmOcrTower{}}
-		entries := []*loadedModel{g4, {name: "qwen3.5", vision: qv}, {name: "glm-ocr", vision: gv}}
+		entries := []*loadedModel{g4, {modelIdentity: modelIdentity{name: "qwen3.5"}, modelModalities: modelModalities{vision: qv}}, {modelIdentity: modelIdentity{name: "glm-ocr"}, modelModalities: modelModalities{vision: gv}}}
 		if built {
 			g4.vision.(*gemma4Vision).tower = g4v
 			g4.audio.(*gemma4Audio).acc = g4a
 			qv.acc, gv.acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
-		s := &server{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{},
-			draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
+		s := &server{
+			cfg:           config{allowAdmin: true, unloadDrainWait: 5 * time.Second},
+			modelRegistry: modelRegistry{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{}, draining: map[string]struct{}{}},
+		}
 		for _, lm := range entries {
 			m := &fakeCloser{}
 			lm.closer = m

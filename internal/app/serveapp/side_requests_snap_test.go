@@ -40,7 +40,7 @@ func TestSideRequests_snapshotPrefixes(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	re := regexp.MustCompile(`^request: POST (\S+) .*prompt_tokens=(\d+) .*ttft=(\d+)ms .*reused=(\S+) .*?(?: snap=(\d+))?$`)
 	logRaw, err := os.ReadFile(filepath.Join(out, "logs", "serve-"+name+".log"))
@@ -119,7 +119,7 @@ func TestSideRequests_sessionStartShare(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	type sess struct {
 		name  string

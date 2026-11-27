@@ -139,7 +139,7 @@ func TestTowerRelease_startupTowers(t *testing.T) {
 	})
 	t.Cleanup(func() { vision.RegisterQwenResident(nil) })
 
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	for _, c := range []struct {
 		backend string
 		want    int

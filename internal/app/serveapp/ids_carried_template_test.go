@@ -65,7 +65,7 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 	s := &server{cfg: sf.cfg}
 	key := newIDsKey([]byte("G-ids-3 template-format test key"))
 	s.idsKey = key
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(tm)
 	model := lm.idsIdentity()
 	render := func(body tmplBody, useIDs bool) ([]int, idsOutcome) {

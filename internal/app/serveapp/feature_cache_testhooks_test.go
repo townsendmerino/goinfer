@@ -72,7 +72,7 @@ func TestVisionFeatureCache_fitOffKeepsTheFullBudget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: load: %v", name, err)
 		}
-		lm := &loadedModel{name: "tiny", model: m}
+		lm := &loadedModel{modelIdentity: modelIdentity{name: "tiny", model: m}}
 		got, _, _, _ := cacheSizeAt(lm, 1)
 		_ = m.Close()
 		if got != stores.FeatureCacheBudget {

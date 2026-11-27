@@ -40,7 +40,7 @@ func TestKV8aQ_gate1Scopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: "m", scripted: reply, scriptedRecurrent: true}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: reply, scriptedRecurrent: true}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	var prompts [][]int

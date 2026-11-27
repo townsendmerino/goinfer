@@ -42,7 +42,7 @@ func TestScriptedServe_forHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: os.Getenv("SCRIPTED_MODEL"), scripted: append([]int{}, ids...)}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: os.Getenv("SCRIPTED_MODEL")}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	if lm.name == "" {
 		lm.name = "scripted"

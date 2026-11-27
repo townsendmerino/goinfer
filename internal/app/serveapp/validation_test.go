@@ -34,7 +34,7 @@ func TestPrepare_temperatureValidation(t *testing.T) {
 // multi-model server (a single-model server must not serve any name: confident wrong-model output), while an
 // omitted name still routes on a single-model server.
 func TestPick_modelValidation(t *testing.T) {
-	single := &server{models: map[string]*loadedModel{"m": {name: "m"}}}
+	single := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m"}}}}}
 	if single.pickTest("m") == nil {
 		t.Errorf("single-model: correct name did not resolve")
 	}
@@ -45,7 +45,7 @@ func TestPick_modelValidation(t *testing.T) {
 		t.Errorf("single-model: unknown name resolved (should be rejected → modelNotFound)")
 	}
 
-	multi := &server{models: map[string]*loadedModel{"a": {name: "a"}, "b": {name: "b"}}}
+	multi := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"a": {modelIdentity: modelIdentity{name: "a"}}, "b": {modelIdentity: modelIdentity{name: "b"}}}}}
 	if multi.pickTest("a") == nil {
 		t.Errorf("multi-model: correct name did not resolve")
 	}
@@ -61,7 +61,7 @@ func TestPick_modelValidation(t *testing.T) {
 // field, not a 200 generated from a BOS-only prompt. Reaches the guard at the top of handleChat
 // (before model routing), so an empty server suffices.
 func TestHandleChat_emptyMessages(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	for _, body := range []string{`{"model":"m"}`, `{"model":"m","messages":[]}`} {
 		r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
 		w := httptest.NewRecorder()
@@ -81,7 +81,7 @@ func TestHandleChat_emptyMessages(t *testing.T) {
 // the guard right after decodeJSON (before model routing), same shape as
 // TestHandleChat_emptyMessages, so an empty server suffices.
 func TestHandleChat_nRejected(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	cases := []struct {
 		body    string
 		wantErr bool
@@ -112,7 +112,7 @@ func TestHandleChat_nRejected(t *testing.T) {
 // TestEmbeddings_unconfigured gates G7: with no embedding model, /v1/embeddings returns a JSON
 // error naming -embed-model (not Go's text/plain 404, which SDKs read as a wrong URL).
 func TestEmbeddings_unconfigured(t *testing.T) {
-	s := &server{models: map[string]*loadedModel{}} // embed == nil
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}} // embed == nil
 	r := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(`{"input":"hi"}`))
 	w := httptest.NewRecorder()
 	s.handleEmbeddings(w, r)

@@ -31,8 +31,8 @@ func TestToolFormat_survivesRequestLayers(t *testing.T) {
 		return strings.Contains(tm.RenderTools("", turns, qwenToolsForTest), "<function=example_function_name>")
 	}
 
-	hermes := &loadedModel{tmpl: base.WithThinking(chat.ThinkTemplate).WithToolFormat(chat.ToolFormatHermes)}
-	native := &loadedModel{tmpl: base.WithThinking(chat.ThinkTemplate).WithToolFormat(chat.ToolFormatTemplate)}
+	hermes := &loadedModel{modelIdentity: modelIdentity{tmpl: base.WithThinking(chat.ThinkTemplate).WithToolFormat(chat.ToolFormatHermes)}}
+	native := &loadedModel{modelIdentity: modelIdentity{tmpl: base.WithThinking(chat.ThinkTemplate).WithToolFormat(chat.ToolFormatTemplate)}}
 	for name, ts := range map[string]thinkSettings{
 		"no request settings": {},
 		"thinking off":        {Explicit: true, Mode: chat.ThinkOff},
@@ -48,7 +48,7 @@ func TestToolFormat_survivesRequestLayers(t *testing.T) {
 		}
 	}
 	// A model with no native form is untouched by the default.
-	other := &loadedModel{tmpl: chat.ChatML().WithToolFormat(chat.ToolFormatTemplate)}
+	other := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML().WithToolFormat(chat.ToolFormatTemplate)}}
 	if isNative(other.templateFor(thinkSettings{})) {
 		t.Error("a ChatML template with no native form must keep the Hermes prompt")
 	}
@@ -60,7 +60,7 @@ func TestToolFormat_forcedToolUnderNative(t *testing.T) {
 	base := templateFromGolden(t, "qwen3.5-9b").WithThinking(chat.ThinkTemplate)
 	forced := &qwenToolsForTest[0]
 
-	native := &loadedModel{tmpl: base.WithToolFormat(chat.ToolFormatTemplate)}
+	native := &loadedModel{modelIdentity: modelIdentity{tmpl: base.WithToolFormat(chat.ToolFormatTemplate)}}
 	gr := genRequest{}
 	err := constrainForcedTool(native, &gr, forced, true, "", qwenToolsForTest)
 	if err == nil || !strings.Contains(err.Error(), "no constrainable tool-call form") {
@@ -116,7 +116,7 @@ func TestToolFormatNote_gemma4(t *testing.T) {
 		t.Errorf("the default must write the text after the result and close the turn:\n auto   %q\n hermes %q", auto[len(auto)-90:], hermes[len(hermes)-90:])
 	}
 	// The request's own layers (thinking mode, reasoning effort) must keep the adopted default.
-	lm := &loadedModel{tmpl: load(chat.ToolFormatAuto)}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: load(chat.ToolFormatAuto)}}
 	for name, ts := range map[string]thinkSettings{"none": {}, "thinking off": {Explicit: true, Mode: chat.ThinkOff}, "thinking on": {Explicit: true, Mode: chat.ThinkOn}, "effort": {Effort: "high"}} {
 		if !strings.Contains(lm.templateFor(ts).RenderTools("", turns, qwenToolsForTest), "<tool_response|>Checking.<turn|>\n") {
 			t.Errorf("%s: a request layer dropped the adopted default", name)

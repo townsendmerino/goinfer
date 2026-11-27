@@ -71,7 +71,7 @@ func TestSamplingLine(t *testing.T) {
 		}
 	}
 	rs := &decoder.RecommendedSampling{Source: "generation_config.json", TopK: new(20)}
-	if got := bannerLine(modelBannerFrom(bannerFacts{sampling: rs}, config{}), "sampling:"); got != samplingLine(rs) {
+	if got := bannerLine(modelBannerFrom(bannerFacts{Sampling: rs}, config{}), "sampling:"); got != samplingLine(rs) {
 		t.Errorf("banner sampling line %q, want %q", got, samplingLine(rs))
 	}
 }
