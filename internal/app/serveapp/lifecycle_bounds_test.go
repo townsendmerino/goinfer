@@ -364,7 +364,7 @@ func TestServeVisionResponses_checksAllMediaAndReasoning(t *testing.T) {
 	// 1. Multi-media [image, audio] must reject audio even when imgs[0] is an image.
 	recAudio := httptest.NewRecorder()
 	s.serveVisionResponses(recAudio, httptest.NewRequest(http.MethodPost, "/v1/responses", nil), lm,
-		responseReq{Model: "vlm"}, nil, []imageRef{{data: []byte("img")}, {data: []byte("wav"), audio: true}},
+		responseReq{Model: "vlm"}, nil, []imageRef{{Data: []byte("img")}, {Data: []byte("wav"), Audio: true}},
 		sampling{}, "resp_audio", 1, false)
 	if recAudio.Code != http.StatusBadRequest || !strings.Contains(recAudio.Body.String(), "audio tower") {
 		t.Fatalf("mixed [image, audio] status=%d body=%s, want 400 audio tower error", recAudio.Code, recAudio.Body.String())
@@ -374,7 +374,7 @@ func TestServeVisionResponses_checksAllMediaAndReasoning(t *testing.T) {
 	msgs := []chatMessage{{Role: "user", Content: json.RawMessage(`"describe"`)}}
 	rec := httptest.NewRecorder()
 	s.serveVisionResponses(rec, httptest.NewRequest(http.MethodPost, "/v1/responses", nil), lm,
-		responseReq{Model: "vlm"}, msgs, []imageRef{{data: []byte("img")}},
+		responseReq{Model: "vlm"}, msgs, []imageRef{{Data: []byte("img")}},
 		sampling{}, "resp_vis_1", 1, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("non-streaming vision Responses status=%d body=%s", rec.Code, rec.Body.String())
@@ -394,7 +394,7 @@ func TestServeVisionResponses_checksAllMediaAndReasoning(t *testing.T) {
 	// 3. Streaming vision Responses emits response.reasoning_text.delta events.
 	recStream := httptest.NewRecorder()
 	s.serveVisionResponses(recStream, httptest.NewRequest(http.MethodPost, "/v1/responses", nil), lm,
-		responseReq{Model: "vlm", Stream: true}, msgs, []imageRef{{data: []byte("img")}},
+		responseReq{Model: "vlm", Stream: true}, msgs, []imageRef{{Data: []byte("img")}},
 		sampling{}, "resp_vis_2", 1, false)
 	if !strings.Contains(recStream.Body.String(), "response.reasoning_text.delta") || !strings.Contains(recStream.Body.String(), "Look at pixels.") {
 		t.Fatalf("streaming vision Responses missing reasoning delta: %s", recStream.Body.String())

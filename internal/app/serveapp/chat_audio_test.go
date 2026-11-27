@@ -44,7 +44,7 @@ func TestContentPartsImages_inputAudio(t *testing.T) {
 		"data URI":    audioPart("data:audio/wav;base64,"+b64, ""),
 	} {
 		refs, err := contentPartsImages(json.RawMessage(`[` + part + `,{"type":"text","text":"hi"}]`))
-		if err != nil || len(refs) != 1 || !refs[0].audio || string(refs[0].data) != string(wav) {
+		if err != nil || len(refs) != 1 || !refs[0].Audio || string(refs[0].Data) != string(wav) {
 			t.Errorf("%s: %d refs, err %v", name, len(refs), err)
 		}
 	}
@@ -76,7 +76,7 @@ func TestOmitChatHistory_audio(t *testing.T) {
 		t.Fatalf("omitted %d, want 2 (the earlier clip and the image)", n)
 	}
 	media, err := chatImages(msgs)
-	if err != nil || len(media) != 1 || !media[0].audio || len(media[0].data) != len(wavBytes(320, 16000)) {
+	if err != nil || len(media) != 1 || !media[0].Audio || len(media[0].Data) != len(wavBytes(320, 16000)) {
 		t.Fatalf("after omission: %d media items, err %v; want the newest clip only", len(media), err)
 	}
 	if !strings.Contains(msgs[0].text(), olderAudioNote) || !strings.Contains(msgs[2].text(), olderImageNote) {
@@ -90,19 +90,19 @@ func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Transcribe this audio."}} }
 	tmpl := chat.Gemma4()
 	lm := &loadedModel{tmpl: tmpl}
-	clip := imageRef{data: wavBytes(16000, 16000), audio: true}
+	clip := imageRef{Data: wavBytes(16000, 16000), Audio: true}
 	if _, err := lm.visionPromptUncached(tmpl, "", turns(), clip); err == nil || !strings.Contains(err.Error(), "no audio tower") {
 		t.Errorf("no tower: %v", err)
 	}
 	at := &gemma4Audio{dir: "unused"}
 	lm.audio = at
-	long := imageRef{data: wavBytes(31*16000, 16000), audio: true}
+	long := imageRef{Data: wavBytes(31*16000, 16000), Audio: true}
 	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
 		t.Errorf("31 s clip: %v", err)
 	}
 	b24 := wavBytes(16000, 44100)
 	binary.LittleEndian.PutUint16(b24[34:], 24)
-	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, imageRef{data: b24, audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
+	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, imageRef{Data: b24, Audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
 		t.Errorf("24-bit clip: %v", err)
 	}
 }

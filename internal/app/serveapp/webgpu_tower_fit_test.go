@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -32,11 +33,13 @@ func webgpuCfg(t *testing.T, js, quant string) (config, string) {
 // stubWebGPU stands in for a gpu build's tower registrations and a machine: unified-memory or discrete, with avail bytes available.
 func stubWebGPU(t *testing.T, unified bool, avail int64) {
 	t.Helper()
-	oldR, oldU, oldA := webgpuTowerRegistered, webgpuTowerUnified, webgpuTowerAvailable
-	webgpuTowerRegistered = func(string) bool { return true }
-	webgpuTowerUnified = func() bool { return unified }
-	webgpuTowerAvailable = func() int64 { return avail }
-	t.Cleanup(func() { webgpuTowerRegistered, webgpuTowerUnified, webgpuTowerAvailable = oldR, oldU, oldA })
+	oldR, oldU, oldA := towerfit.WebGPUTowerRegistered, towerfit.WebGPUTowerUnified, towerfit.WebGPUTowerAvailable
+	towerfit.WebGPUTowerRegistered = func(string) bool { return true }
+	towerfit.WebGPUTowerUnified = func() bool { return unified }
+	towerfit.WebGPUTowerAvailable = func() int64 { return avail }
+	t.Cleanup(func() {
+		towerfit.WebGPUTowerRegistered, towerfit.WebGPUTowerUnified, towerfit.WebGPUTowerAvailable = oldR, oldU, oldA
+	})
 }
 
 func TestTowerReserve_webgpu(t *testing.T) {
@@ -58,11 +61,11 @@ func TestTowerReserve_webgpu(t *testing.T) {
 	if got := towerReserve(cpu, dir); got != 0 {
 		t.Errorf("-vision-device cpu reserves %d, want 0", got)
 	}
-	webgpuTowerRegistered = func(string) bool { return false }
+	towerfit.WebGPUTowerRegistered = func(string) bool { return false }
 	if got := towerReserve(c, dir); got != 0 {
 		t.Errorf("no WebGPU tower registered reserves %d, want 0", got)
 	}
-	webgpuTowerRegistered = func(string) bool { return true }
+	towerfit.WebGPUTowerRegistered = func(string) bool { return true }
 	q, qdir := webgpuCfg(t, `{"model_type":"qwen2_5_vl","vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, "int8")
 	if got := towerReserve(q, qdir); got != 0 {
 		t.Errorf("Qwen2.5-VL's int8 tower is the CPU's, reserves %d, want 0", got)
@@ -238,7 +241,7 @@ func TestRouteVisionTower(t *testing.T) {
 	}
 	for _, r := range rows {
 		stubWebGPU(t, r.unified, 1<<40)
-		webgpuTowerRegistered = func(string) bool { return r.registered }
+		towerfit.WebGPUTowerRegistered = func(string) bool { return r.registered }
 		cfg := config{visionDevice: r.device, visionQuant: r.quant}
 		cfg.load.Backend = r.backend
 		got := cfg.routeVisionTower(r.family, r.mmproj)
@@ -312,7 +315,7 @@ func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T
 		{"an mmproj file, -vision-device cpu", "gguf", "", "cpu", "", true, 0, 0},
 	} {
 		stubWebGPU(t, c.unified, 1<<40)
-		webgpuTowerRegistered = func(mt string) bool { return registered[mt] }
+		towerfit.WebGPUTowerRegistered = func(mt string) bool { return registered[mt] }
 		cfg := config{visionDevice: c.device, visionQuant: c.quant}
 		cfg.load.Backend = "webgpu"
 		switch c.kind {
@@ -335,7 +338,7 @@ func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T
 	}
 	// a text-only load (no -vision, no tower to find) prints nothing
 	stubWebGPU(t, false, 0)
-	webgpuTowerRegistered = func(mt string) bool { return registered[mt] }
+	towerfit.WebGPUTowerRegistered = func(mt string) bool { return registered[mt] }
 	cfg := config{}
 	cfg.load.Backend = "webgpu"
 	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Contains(out, "note:") {
@@ -372,7 +375,7 @@ func TestRouteVisionTower_requireBackendReachesTheFamilyPlanner(t *testing.T) {
 		{"unified, default: the device tower is planned", true, "", true, false},
 	} {
 		stubWebGPU(t, c.unified, 1<<40)
-		webgpuTowerRegistered = func(string) bool { return c.registered }
+		towerfit.WebGPUTowerRegistered = func(string) bool { return c.registered }
 		cfg := config{visionQuant: c.quant, requireBE: true}
 		cfg.load.Backend = "webgpu"
 		r := cfg.routeVisionTower("qwen3_vl", false)

@@ -7,20 +7,12 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towerfit"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Qwen3.5+ image serving (docs/multimodal.md, "Qwen3.x-VL image path + GGUF mmproj"). The route is the Qwen2.5-VL one (preprocess, tower,
-// GenerateQwenVL with m-RoPE) with two differences that live here: the tower is loaded on first use, and an image is
-// capped at qwen3MaxImageTokens.
-
-// qwen3MaxImageTokens is the serve-side ceiling on merged image tokens per image. The checkpoint's own
-// preprocessor_config allows up to 16384 (longest_edge 16777216 px), which is not a usable request where an image
-// turn prefills on the CPU, one token at a time for a Gated-DeltaNet hybrid (docs/multimodal.md says which backends
-// carry an image turn resident). 1024 tokens is a 1024x1024 image. Larger images are smart-resized down to fit, as
-// the processor would for its own max_pixels; a build-time constant, not an environment read.
-const qwen3MaxImageTokens = 1024
+const qwen3MaxImageTokens = towerfit.Qwen3MaxImageTokens
 
 // qwen3Tower is a Qwen3.5+ vision tower that loads on first use. encoder() is safe for concurrent
 // callers; a failed load is remembered rather than retried on every request.
@@ -72,7 +64,7 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 		return nil, err
 	}
 	if q.deep > 0 { // Qwen3-VL: the merged rows, then each DeepStack set, one flat vector (the feature cache stores it whole)
-		return q.fb.run("Qwen3-VL", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+		return q.fb.Run("Qwen3-VL", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 			merged, deep, err := multimodal.Qwen3TowerFeaturesDeepstack(enc, acc, pv, [][3]int{grid})
 			if err != nil {
 				return nil, err
@@ -83,7 +75,7 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 			return merged, nil
 		})
 	}
-	return q.fb.run("Qwen3.5", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+	return q.fb.Run("Qwen3.5", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
 	})
 }

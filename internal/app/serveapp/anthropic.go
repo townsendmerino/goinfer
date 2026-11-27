@@ -480,7 +480,7 @@ func anthropicImages(req *anthropicReq) ([]imageRef, error) {
 			if err != nil {
 				return nil, err
 			}
-			ref.at = at
+			ref.At = at
 			out = append(out, ref)
 		}
 	}

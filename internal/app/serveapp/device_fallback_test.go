@@ -28,7 +28,7 @@ func TestDeviceFallback(t *testing.T) {
 	acc := &fakeGridAcc{}
 	var a multimodal.GridTowerAccelerator = acc
 	calls := 0
-	out, err := f.run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
+	out, err := f.Run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
 		calls++
 		if x != nil {
 			return nil, oom
@@ -40,7 +40,7 @@ func TestDeviceFallback(t *testing.T) {
 	}
 	// from then on the accelerator is nil: one call, on the CPU
 	calls = 0
-	if out, err = f.run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
+	if out, err = f.Run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
 		calls++
 		if x != nil {
 			t.Error("a cleared accelerator must not be offered again")
@@ -54,7 +54,7 @@ func TestDeviceFallback(t *testing.T) {
 	acc2 := &fakeGridAcc{}
 	a = acc2
 	boom := errors.New("bad grid")
-	if _, err = f.run("X", false, &a, func(multimodal.GridTowerAccelerator) ([]float32, error) { return nil, boom }); !errors.Is(err, boom) || acc2.closed || a == nil {
+	if _, err = f.Run("X", false, &a, func(multimodal.GridTowerAccelerator) ([]float32, error) { return nil, boom }); !errors.Is(err, boom) || acc2.closed || a == nil {
 		t.Errorf("a non-memory error: err %v closed %v acc %v; want it passed through with the accelerator kept", err, acc2.closed, a)
 	}
 	if !mem.DeviceOutOfMemory(oom) || mem.DeviceOutOfMemory(boom) || mem.DeviceOutOfMemory(nil) {
@@ -70,7 +70,7 @@ func TestDeviceFallback_requireBackendRefuses(t *testing.T) {
 	acc := &fakeGridAcc{}
 	var a multimodal.GridTowerAccelerator = acc
 	cpuRan := false
-	out, err := f.run("X", true, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
+	out, err := f.Run("X", true, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
 		if x == nil {
 			cpuRan = true
 			return []float32{7}, nil
@@ -108,7 +108,7 @@ func TestDeviceFallback_recoversPanics(t *testing.T) {
 						err = fmt.Errorf("panic escaped run: %v", r)
 					}
 				}()
-				return f.run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
+				return f.Run("X", false, &a, func(x multimodal.GridTowerAccelerator) ([]float32, error) {
 					if x != nil {
 						panic(tc.val)
 					}

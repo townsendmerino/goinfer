@@ -14,6 +14,7 @@ import (
 
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/media"
 )
 
 // embedReq is the subset of the OpenAI /v1/embeddings request we honor, plus the
@@ -29,14 +30,12 @@ type embedReq struct {
 	User           string          `json:"user"`            // accepted, ignored
 }
 
-// taskEmbedder is the optional capability of an embedder whose quality depends on a named task prompt (EmbeddingGemma
-// 2's prompts, from its config_sentence_transformers.json). The handler then chooses the prompt (embedTask) instead
-// of the query/document flag, and echoes the one it applied.
-type taskEmbedder interface {
-	PromptNames() []string
-	PromptText(name string) (string, error)
-	EncodeTasks(texts []string, prompt string) ([][]float32, []int, error)
-}
+type (
+	taskEmbedder  = media.TaskEmbedder
+	audioEmbedder = media.AudioEmbedder
+	imageEmbedder = media.ImageEmbedder
+	embedItem     = media.EmbedItem
+)
 
 // embedTask picks the prompt a taskEmbedder applies: an explicit task names one
 // of the model's prompts ("none" for none); else input_type maps onto the model's own "query" and "document" prompts;
@@ -71,23 +70,21 @@ func embedTask(te taskEmbedder, task, inputType string) (string, error) {
 // vectors before writing a byte. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes bounds a
 // single input to text sizes (an embedding input is a query or passage, not a document dump).
 const (
-	maxEmbedInputs     = 2048
-	maxEmbedInputBytes = 1 << 20 // 1 MiB
+	maxEmbedInputs     = media.MaxEmbedInputs
+	maxEmbedInputBytes = media.MaxEmbedInputBytes
+	maxEmbedImages     = media.MaxEmbedImages
+	maxEmbedImageBytes = media.MaxEmbedImageBytes
+	maxEmbedAudio      = media.MaxEmbedAudio
 )
 
-// checkEmbedInputBounds rejects a request whose input count or any single input exceeds the caps above,
-// so the handler's allocation is bounded before EncodeBatch runs.
-func checkEmbedInputBounds(inputs []string) error {
-	if len(inputs) > maxEmbedInputs {
-		return fmt.Errorf("too many inputs: %d (max %d per request)", len(inputs), maxEmbedInputs)
-	}
-	for i, in := range inputs {
-		if len(in) > maxEmbedInputBytes {
-			return fmt.Errorf("input %d is %d bytes, exceeds the %d-byte per-input limit", i, len(in), maxEmbedInputBytes)
-		}
-	}
-	return nil
-}
+var (
+	checkEmbedInputBounds = media.CheckEmbedInputBounds
+	parseEmbedItems       = media.ParseEmbedItems
+	decodeEmbedImage      = media.DecodeEmbedImage
+	decodeEmbedAudio      = media.DecodeEmbedAudio
+	embedMedia            = media.EmbedMedia
+	encodeMediaItems      = media.EncodeMediaItems
+)
 
 // handleEmbeddings serves POST /v1/embeddings. Vectors are L2-normalized (so cosine
 // is a dot product, matching OpenAI's unit-length outputs); an optional dimensions
@@ -135,7 +132,7 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 		inputs = make([]string, len(items))
 		for i, it := range items {
-			inputs[i] = it.text
+			inputs[i] = it.Text
 		}
 	}
 	if len(inputs) == 0 {
