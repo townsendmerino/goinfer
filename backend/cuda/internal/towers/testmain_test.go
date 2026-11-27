@@ -33,7 +33,7 @@ func testPTX() PTX {
 			AttnImgPrefill: must("attn_img_prefill.ptx"),
 			AudioEncoder:   must("audio_encoder.ptx"),
 			GeluQuant:      must("gelu_quant.ptx"),
-			GemvW8Batched:  must("gemv_w8_batched.ptx"),
+			GemvW8Batched:  must("gemv_w8a8_batched.ptx"),
 			LayernormQuant: must("layernorm_quant.ptx"),
 			PrefillBatched: must("prefill_batched.ptx"),
 		}
