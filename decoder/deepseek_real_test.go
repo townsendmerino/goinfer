@@ -24,6 +24,7 @@ package decoder
 import (
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"strings"
 	"testing"
@@ -148,8 +149,8 @@ func TestMLAAbsorb_speed(t *testing.T) {
 			t.Fatalf("load: %v", err)
 		}
 		defer m.Close()
-		mlaForceNaive = naive
-		defer func() { mlaForceNaive = false }()
+		cpuengine.MLAForceNaive = naive
+		defer func() { cpuengine.MLAForceNaive = false }()
 		cache := m.NewCache(n + 1)
 		var logits []float32
 		t0 := time.Now()
