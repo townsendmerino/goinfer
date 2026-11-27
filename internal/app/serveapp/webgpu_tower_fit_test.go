@@ -166,7 +166,7 @@ func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 		stubWebGPU(t, true, c.avail)
 		cfg := config{visionPath: "../../../testdata/qwen25vl-tiny", models: []modelSpec{{name: "m", path: "../../../testdata/qwen25vl-tiny"}}}
 		cfg.load.Backend = "webgpu"
-		s := &server{models: map[string]*loadedModel{}}
+		s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 		before := got["Qwen2.5-VL"]
 		err := s.loadVisionTower(cfg)
 		if c.refuse != (err != nil) {

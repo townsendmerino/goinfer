@@ -67,7 +67,7 @@ func TestApplyBudget(t *testing.T) {
 	small := templateFromGolden(t, "qwen3.5-0.8b").WithThinking(chat.ThinkTemplate)
 	tk, vocab := thinkTokenizer(t, thinkAlphabet)
 	_ = vocab
-	lm := &loadedModel{tk: tk}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk}}
 	ts := thinkSettings{}
 
 	apply := func(lm *loadedModel, tm *chat.Template, gr *genRequest) { srv.applyBudget(lm, gr, tm, nil, ts) }
@@ -91,7 +91,7 @@ func TestApplyBudget(t *testing.T) {
 	}
 
 	gr = genRequest{maxTokens: 160}
-	apply(&loadedModel{tk: tk, spec: true}, nine, &gr)
+	apply(&loadedModel{modelIdentity: modelIdentity{tk: tk}, modelSpecConfig: modelSpecConfig{spec: true}}, nine, &gr)
 	if gr.sp.LogitProcessor != nil {
 		t.Error("speculative decoding on: a processor would silently disable the drafter, so the budget must not install")
 	}

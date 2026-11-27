@@ -72,9 +72,11 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			t.Cleanup(func() { closeAudioEncoder = prev })
 
 			m := &fakeCloser{}
-			lm := &loadedModel{name: "t", closer: m, audio: c.tower()}
-			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[io.Closer]*modelLiveness{m: {refs: 1}},
-				draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
+			lm := &loadedModel{modelIdentity: modelIdentity{name: "t", closer: m}, modelModalities: modelModalities{audio: c.tower()}}
+			s := &server{
+				cfg:           config{allowAdmin: true, unloadDrainWait: 5 * time.Second},
+				modelRegistry: modelRegistry{models: map[string]*loadedModel{"t": lm}, liveness: map[io.Closer]*modelLiveness{m: {refs: 1}}, draining: map[string]struct{}{}},
+			}
 			if c.clip != "" {
 				if err := firstClip[c.clip](lm); err != nil {
 					t.Fatalf("first clip: %v", err)
@@ -130,11 +132,13 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{}, draining: map[string]struct{}{},
-		cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
+	s := &server{
+		cfg:           config{allowAdmin: true, unloadDrainWait: 5 * time.Second},
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{}, liveness: map[io.Closer]*modelLiveness{}, draining: map[string]struct{}{}},
+	}
 	entry := func(name string) *loadedModel {
 		m := &fakeCloser{}
-		lm := &loadedModel{name: name, closer: m, audio: &voxtralAudio{dir: vox, backend: backend}}
+		lm := &loadedModel{modelIdentity: modelIdentity{name: name, closer: m}, modelModalities: modelModalities{audio: &voxtralAudio{dir: vox, backend: backend}}}
 		s.models[name], s.liveness[m] = lm, &modelLiveness{refs: 1}
 		enc, err := lm.audio.(*voxtralAudio).encoder(name)
 		if err != nil {

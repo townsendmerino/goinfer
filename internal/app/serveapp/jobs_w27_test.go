@@ -79,8 +79,8 @@ func TestNotAdmitted_queueFullIsAFailureNotACancellation(t *testing.T) {
 	live := context.Background()
 	done, cancel := context.WithCancel(context.Background())
 	cancel()
-	noQueue := &loadedModel{name: "m"}
-	boundedQueue := &loadedModel{name: "m", queue: make(chan struct{}, 4)} // cap-1 = 3, W28's "how busy" number
+	noQueue := &loadedModel{modelIdentity: modelIdentity{name: "m"}}
+	boundedQueue := &loadedModel{modelIdentity: modelIdentity{name: "m"}, modelConcurrency: modelConcurrency{queue: make(chan struct{}, 4)}} // cap-1 = 3, W28's "how busy" number
 	for _, c := range []struct {
 		name       string
 		ctx        context.Context

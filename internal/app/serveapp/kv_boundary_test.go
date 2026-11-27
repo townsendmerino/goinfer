@@ -22,7 +22,7 @@ func TestPrefixBoundary_endsWhereTheFirstTurnBegins(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	tm := lm.tmpl
 	system := "You are a coding agent. " + strings.Repeat("Follow the instructions in the tools. ", 40)

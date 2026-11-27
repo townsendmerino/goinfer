@@ -57,7 +57,7 @@ func TestIDsCarried_G0(t *testing.T) {
 	s := &server{}
 	key := newIDsKey([]byte("G-ids-0 test key, 32 bytes long."))
 	s.idsKey = key
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(tm)
 	model := lm.idsIdentity()
 

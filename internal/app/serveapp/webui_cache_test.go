@@ -21,7 +21,7 @@ func TestWebCache_listsWhatIsOnDiskAndWhatIsLoaded(t *testing.T) {
 	if err := os.Symlink(gguf, link); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{models: map[string]*loadedModel{"m": {name: "m", source: link}, "adapter": {name: "adapter"}}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m", source: link}}, "adapter": {modelIdentity: modelIdentity{name: "adapter"}}}}}
 	s.cfg.web = true
 	w := httptest.NewRecorder()
 	s.handleWebCache(w, httptest.NewRequest(http.MethodGet, "/web/models/cache", nil))

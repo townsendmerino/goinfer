@@ -180,7 +180,7 @@ func TestAnthropicOutputFormat(t *testing.T) {
 // TestAnthropicOutputFormat_prepareConstrains runs the mapped request through prepare, the path every /v1/messages
 // site takes, and checks the grammar is wired: without output_config.format no masker is set, with it one is.
 func TestAnthropicOutputFormat_prepareConstrains(t *testing.T) {
-	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
 	for _, c := range []struct {
 		body       string
 		wantMasker bool
@@ -211,7 +211,7 @@ func TestAnthropicOutputFormat_prepareConstrains(t *testing.T) {
 // encoded.
 func TestAnthropicOutputFormat_handlersRefuse(t *testing.T) {
 	s := &server{}
-	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
 	body := `{"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"}],"output_config":{"format":{"type":"json_object"}}}`
 	var req anthropicReq
 	if err := json.Unmarshal([]byte(body), &req); err != nil {

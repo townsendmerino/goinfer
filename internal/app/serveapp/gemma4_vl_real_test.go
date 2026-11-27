@@ -80,15 +80,14 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 	t.Cleanup(func() { _ = m.Close() })
 	mcfg := m.Config()
 	lm := &loadedModel{
-		tk: tk, model: m, tmpl: chat.Gemma4(),
-		vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: "gemma4-real-vl",
+		modelIdentity: modelIdentity{tk: tk, model: m, tmpl: chat.Gemma4(), vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: "gemma4-real-vl"},
 	}
 	for _, str := range lm.tmpl.Stops().Strings {
 		if id, ok := tk.TokenID(str); ok {
 			lm.stopIDs = append(lm.stopIDs, id)
 		}
 	}
-	s := &server{models: map[string]*loadedModel{lm.name: lm}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{lm.name: lm}}}
 	if err := s.loadGemma4VisionTower(visionDir, false, "", false); err != nil {
 		t.Fatalf("loadGemma4VisionTower(%s): %v", visionDir, err)
 	}

@@ -162,7 +162,7 @@ func TestSwapGuard_off(t *testing.T) {
 // s.gens.cancelAll; the swap guard's own trip path must never call it.
 func TestSwapGuard_neverCancelsInFlight(t *testing.T) {
 	t.Setenv("GOINFER_SWAP_GUARD", "100")
-	s := &server{gens: stores.NewGenerationRegistry()}
+	s := &server{serverStores: serverStores{gens: stores.NewGenerationRegistry()}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	g := s.gens.Register("in-flight-test", "test-model", cancel)
@@ -315,14 +315,14 @@ func TestSwapGuard_publishLoadedRebaselines(t *testing.T) {
 	const base = int64(1_000_000_000)
 	var cur, reads atomic.Int64
 	cur.Store(base)
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	s.armSwapGuard(func() (int64, bool) { reads.Add(1); return cur.Load(), true })
 	defer s.swapWatch.Stop()
 	waitUntil(t, 10*time.Second, func() bool { return reads.Load() >= 3 })
 	cur.Store(base + 900_000_000)
 	waitUntil(t, 10*time.Second, func() bool { return s.swapGuardTripped.Load() })
 
-	if !s.publishLoaded(&loadedModel{name: "m"}) {
+	if !s.publishLoaded(&loadedModel{modelIdentity: modelIdentity{name: "m"}}) {
 		t.Fatal("publishLoaded refused a fresh name")
 	}
 	waitUntil(t, 10*time.Second, func() bool { return !s.swapGuardTripped.Load() })

@@ -237,7 +237,7 @@ func TestDecoderEmbedder_concurrentEncode(t *testing.T) {
 // instruction prefix a query actually pays for.
 func TestDecoderEmbedder_usageTokens(t *testing.T) {
 	e := newTestDecoderEmbedder(t)
-	s := &server{embed: e, embedDim: e.HiddenDim(), embedID: "qwen3-embed"}
+	s := &server{embedService: embedService{embed: e, embedDim: e.HiddenDim(), embedID: "qwen3-embed"}}
 
 	got := s.countEmbedTokens([]string{"hello world"}, false)
 	if got <= 0 {
@@ -399,7 +399,7 @@ func tinyDecoderEmbedder(t *testing.T) *decoderEmbedder {
 // embedder, so a request whose client is gone returns without embedding and without writing a reply.
 func TestHandleEmbeddings_cancelledRequestRunsNoForward(t *testing.T) {
 	e := tinyDecoderEmbedder(t)
-	s := &server{embed: e, embedID: "tiny", embedDim: e.HiddenDim()}
+	s := &server{embedService: embedService{embed: e, embedID: "tiny", embedDim: e.HiddenDim()}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"tiny","input":["hello world","again"]}`)).WithContext(ctx)

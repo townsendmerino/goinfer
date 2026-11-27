@@ -14,7 +14,7 @@ import (
 func agentToolsModel(t *testing.T) *loadedModel {
 	t.Helper()
 	tk := scriptTokenizer(t)
-	lm := &loadedModel{tk: tk, vocab: tk.Size(), name: "m"} // vocab sizes the token-bytes table the masker reads
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, vocab: tk.Size(), name: "m"}} // vocab sizes the token-bytes table the masker reads
 	lm.tmpl = mellum21Template(t)
 	if _, _, _, _, ok := lm.tmpl.ToolCallWrapper(); !ok {
 		t.Fatal("the template has no constrainable call form: not the path under test")

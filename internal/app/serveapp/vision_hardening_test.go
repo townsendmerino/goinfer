@@ -66,7 +66,7 @@ func TestVision_userTextIsNotSpecialButTheImageBlockIs(t *testing.T) {
 // image block is ordinary text produces no image-token run at all, and the downstream imgLen check
 // would report it as a "template mismatch" — a misleading message for a segmentation bug.
 func TestVision_missingImageBlockIsAnErrorNotAPlainPrompt(t *testing.T) {
-	lm := &loadedModel{tmpl: chat.Gemma4(), tk: &tokenizer.Tokenizer{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.Gemma4(), tk: &tokenizer.Tokenizer{}}}
 	turns := []chat.Turn{{Role: "user", Content: "no image block here"}}
 	_, err := encodeVisionSegments(lm, lm.tmpl, "", turns, multimodal.Gemma3ImageBlock(4)+"\n")
 	if err == nil {

@@ -99,8 +99,8 @@ func TestWebUnload_freedTrueForARealModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load tiny fixture: %v", err)
 	}
-	lm := &loadedModel{name: "tiny", model: m}
-	s := &server{models: map[string]*loadedModel{"tiny": lm}}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "tiny", model: m}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"tiny": lm}}}
 	s.cfg.web = true
 	s.cfg.unloadDrainWait = 2 * time.Second // nothing is in flight; the drain should finish well inside this
 	s.regMu.Lock()

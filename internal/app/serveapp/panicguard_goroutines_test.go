@@ -33,7 +33,7 @@ func TestPanicGuard_webLoadPanicIsAnErrorEventAndTheServerKeepsServing(t *testin
 			var counts []int
 			counts[len(spec.name)]++ // a bug in the loader: index out of range
 		}
-		return &loadedModel{name: spec.name}, nil
+		return &loadedModel{modelIdentity: modelIdentity{name: spec.name}}, nil
 	}
 
 	evs := readLoadEvents(t, postLoad(s, context.Background(), p).Body)
@@ -62,7 +62,7 @@ func TestPanicGuard_sseHeartbeatPanicEndsTheHeartbeatOnly(t *testing.T) {
 // A drain whose checkpoint or free panics closes its done channel and leaves the model marked draining.
 func TestPanicGuard_startDrainPanicKeepsTheModelMarkedDraining(t *testing.T) {
 	s := &server{cfg: config{sessionDir: t.TempDir(), kvSessions: 1}}
-	lm := &loadedModel{name: "m"} // no session LRU: the checkpoint dereferences nil
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "m"}} // no session LRU: the checkpoint dereferences nil
 	select {
 	case <-s.startDrain(lm, nil, true):
 	case <-time.After(10 * time.Second):

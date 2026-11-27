@@ -98,7 +98,7 @@ func TestResolveDimensions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := &server{embedDim: 768, embedMRLMin: c.mrlMin, embedID: "m"}
+			s := &server{embedService: embedService{embedDim: 768, embedMRLMin: c.mrlMin, embedID: "m"}}
 			got, err := s.resolveDimensions(c.in)
 			if (err != nil) != c.err || (!c.err && got != c.want) {
 				t.Errorf("resolveDimensions(mrlMin=%d, %v) = (%d,%v), want (%d,err=%v)",
@@ -245,7 +245,7 @@ var _ embedBatchCounter = (*countingEncoder)(nil)
 // don't need it.
 func TestHandleEmbeddings_prefersEncodeBatchCounted(t *testing.T) {
 	enc := &countingEncoder{dim: 4}
-	s := &server{embed: enc, embedDim: 4, embedID: "counting-embed"}
+	s := &server{embedService: embedService{embed: enc, embedDim: 4, embedID: "counting-embed"}}
 	rr := postEmbed(t, s, `{"input":["abc","de"]}`)
 	if rr.Code != 200 {
 		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
@@ -277,13 +277,13 @@ func TestHandleEmbeddings_prefersEncodeBatchCounted(t *testing.T) {
 // newEmbedTestServer is a MATRYOSHKA-capable stub (floor 2 of 4), so the existing dimensions
 // tests keep exercising real truncation. Non-MRL behavior is covered by newNonMRLEmbedTestServer.
 func newEmbedTestServer() *server {
-	return &server{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-embed", embedMRLMin: 2}
+	return &server{embedService: embedService{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-embed", embedMRLMin: 2}}
 }
 
 // newNonMRLEmbedTestServer is the default shape: an embedder never certified for truncation, so
 // embedMRLMin is 0 and any dimensions request must be refused.
 func newNonMRLEmbedTestServer() *server {
-	return &server{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-nonmrl"}
+	return &server{embedService: embedService{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-nonmrl"}}
 }
 
 func postEmbed(t *testing.T, s *server, body string) *httptest.ResponseRecorder {
