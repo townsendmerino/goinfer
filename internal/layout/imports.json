@@ -1002,6 +1002,42 @@
         ]
       },
       "why": "internal/runtime/batchplan holds multi-sequence ragged sequence ordering, consecutive-slot row validation, post-RoPE query temperature scaling, and step-width piece slicing shared across GPU backends (GPU2). It imports only decoder/resident and the standard library."
+    },
+    {
+      "name": "giwkv-leaf",
+      "from": [
+        "internal/runtime/giwkv"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/giwkv": [
+          "internal/runtime/cpuengine",
+          "internal/runtime/giwcodec"
+        ]
+      },
+      "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
+    },
+    {
+      "name": "loraload-leaf",
+      "from": [
+        "internal/runtime/loraload"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/loraload": [
+          "decoder/arch",
+          "internal/runtime/archparts",
+          "internal/runtime/cpuengine",
+          "internal/runtime/wbuild"
+        ]
+      },
+      "why": "internal/runtime/loraload reads PEFT LoRA adapters below decoder: adapter_config.json rank and scale, safetensors lora_A/lora_B pairing, target and shape validation, the in-place f32 merge, and per-layer compute-time delta indexing. It never imports decoder."
     }
   ],
   "arrows": {
@@ -1166,10 +1202,12 @@
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
+      "internal/runtime/giwkv",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/kvsnap",
       "internal/runtime/logs",
+      "internal/runtime/loraload",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
@@ -1550,6 +1588,10 @@
       "internal/runtime/families",
       "internal/runtime/program"
     ],
+    "internal/runtime/giwkv": [
+      "internal/runtime/cpuengine",
+      "internal/runtime/giwcodec"
+    ],
     "internal/runtime/inkling2": [
       "decoder/arch",
       "internal/runtime/normact",
@@ -1558,6 +1600,12 @@
     "internal/runtime/kvsnap": [
       "decoder/resident",
       "internal/runtime/kvmgr"
+    ],
+    "internal/runtime/loraload": [
+      "decoder/arch",
+      "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
+      "internal/runtime/wbuild"
     ],
     "internal/runtime/mamba2": [
       "internal/runtime/hybridattn"
@@ -1806,10 +1854,12 @@
       "internal/runtime/ggufconfig",
       "internal/runtime/giw",
       "internal/runtime/giwcodec",
+      "internal/runtime/giwkv",
       "internal/runtime/hybridattn",
       "internal/runtime/inkling2",
       "internal/runtime/kvmgr",
       "internal/runtime/kvsnap",
+      "internal/runtime/loraload",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/memprice",

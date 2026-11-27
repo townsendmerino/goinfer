@@ -2,6 +2,6 @@
 # A change that lowers a count lowers its line. One that has to raise a count raises it and says why in the reason.
 # lines: non-test file lines in decoder/; model_methods: methods with a body on Model; model_knot_lines: the declaration
 # lines of the Model knot, methods folded into their types; censusOf states the terms.
-lines 20378 -- lowered by CPU multimodal prefill walkers and UploadPrefillKV moving into internal/runtime/vlprep
+lines 19703 -- lowered by .giw-kv session snapshot encode/decode moving into internal/runtime/giwkv and LoRA adapter loading into internal/runtime/loraload
 model_methods 338 -- lowered by CPU multimodal prefill helpers moving off Model into internal/runtime/vlprep
-model_knot_lines 7959 -- lowered by CPU multimodal prefill walkers and UploadPrefillKV moving off the Model knot
+model_knot_lines 7696 -- lowered by session snapshot and LoRA loading code moving off the Model knot into internal/runtime/giwkv and internal/runtime/loraload

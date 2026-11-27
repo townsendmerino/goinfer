@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/runtime/loraload"
 	"io/fs"
 	"math"
 	"os"
@@ -47,12 +48,12 @@ func TestLoRA_mergeAtLoad_qwen35MatchesPEFT(t *testing.T) {
 		t.Skipf("no checkpoint at %s", base)
 	}
 
-	lo, err := loadLoRA(adapter)
+	lo, err := loraload.Load(adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var dn, attn, mlp int
-	for name := range lo.deltas {
+	for name := range lo.Deltas {
 		switch {
 		case strings.Contains(name, ".linear_attn."):
 			dn++
@@ -62,9 +63,9 @@ func TestLoRA_mergeAtLoad_qwen35MatchesPEFT(t *testing.T) {
 			mlp++
 		}
 	}
-	lo.close()
-	if len(lo.deltas) != g.WrappedModules || dn != 9 || attn != 4 || mlp != 12 {
-		t.Fatalf("adapter has %d deltas (DeltaNet %d, attention %d, MLP %d), want %d (9, 4, 12)", len(lo.deltas), dn, attn, mlp, g.WrappedModules)
+	lo.Close()
+	if len(lo.Deltas) != g.WrappedModules || dn != 9 || attn != 4 || mlp != 12 {
+		t.Fatalf("adapter has %d deltas (DeltaNet %d, attention %d, MLP %d), want %d (9, 4, 12)", len(lo.Deltas), dn, attn, mlp, g.WrappedModules)
 	}
 
 	m, err := Load(base, Options{LoRA: adapter})

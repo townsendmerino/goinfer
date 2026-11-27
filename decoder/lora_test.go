@@ -6,6 +6,7 @@ import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"github.com/townsendmerino/goinfer/internal/runtime/families"
+	"github.com/townsendmerino/goinfer/internal/runtime/loraload"
 	"math"
 	"os"
 	"path/filepath"
@@ -14,69 +15,14 @@ import (
 	"testing"
 )
 
-// TestLoRAMerge checks the in-place merge computes W + scale·B·A exactly.
-func TestLoRAMerge(t *testing.T) {
-	const out, in, r = 3, 4, 2
-	a := []float32{ // [r, in]
-		1, 0, 2, 0,
-		0, 3, 0, 1,
-	}
-	b := []float32{ // [out, r]
-		1, 0,
-		0, 1,
-		1, 1,
-	}
-	const scale = 0.5
-	base := make([]float32, out*in) // zeros, so the result is purely the delta
-	adapter := &loraAdapter{deltas: map[string]loraDelta{
-		"w": {A: a, B: b, R: r, In: in, Out: out, Scale: scale},
-	}}
-	if err := adapter.Merge("w", base, out, in); err != nil {
-		t.Fatal(err)
-	}
-	// want[o,j] = scale · Σ_k B[o,k]·A[k,j]
-	want := make([]float32, out*in)
-	for o := range out {
-		for j := range in {
-			var s float64
-			for k := range r {
-				s += float64(b[o*r+k]) * float64(a[k*in+j])
-			}
-			want[o*in+j] = float32(scale * s)
-		}
-	}
-	for i := range want {
-		if math.Abs(float64(base[i]-want[i])) > 1e-6 {
-			t.Errorf("merge[%d] = %v, want %v", i, base[i], want[i])
-		}
-	}
-	// A non-target tensor is left untouched.
-	other := []float32{9, 9}
-	_ = adapter.Merge("missing", other, 1, 2)
-	if other[0] != 9 || other[1] != 9 {
-		t.Errorf("non-target tensor mutated: %v", other)
-	}
-	// Shape mismatch is an error.
-	if err := adapter.Merge("w", base, out+1, in); err == nil {
-		t.Error("expected shape-mismatch error")
-	}
-}
-
-func TestLoRABaseName(t *testing.T) {
-	got := loraBaseName("base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight", ".lora_A.weight")
-	if want := "model.layers.0.self_attn.q_proj.weight"; got != want {
-		t.Errorf("loraBaseName = %q, want %q", got, want)
-	}
-}
-
 func TestLoRAValidateTargets(t *testing.T) {
-	a := &loraAdapter{deltas: map[string]loraDelta{
+	a := &loraAdapter{Deltas: map[string]loraDelta{
 		"model.layers.0.self_attn.q_proj.weight": {},
 	}}
 	if err := a.ValidateTargets(1, &families.LlamaTensorSchema, tensorName); err != nil {
 		t.Errorf("q_proj should be a valid target: %v", err)
 	}
-	bad := &loraAdapter{deltas: map[string]loraDelta{
+	bad := &loraAdapter{Deltas: map[string]loraDelta{
 		"model.embed_tokens.weight": {},
 	}}
 	if err := bad.ValidateTargets(1, &families.LlamaTensorSchema, tensorName); err == nil {
@@ -85,13 +31,13 @@ func TestLoRAValidateTargets(t *testing.T) {
 }
 
 // TestLoRAValidateTargets_prefixMismatch is the M18 regression: an adapter's deltas are unprefixed
-// (loraBaseName strips base_model.model. → model.layers.N.*), but on a VL checkpoint the merge-at-load
+// (loraload.BaseName strips base_model.model. → model.layers.N.*), but on a VL checkpoint the merge-at-load
 // path looks each delta up by a PREFIXED name (language_model.model.layers.N.* etc.). validateTargets
 // must be handed that same prefixed builder so it FAILS LOUDLY, instead of validating clean against
 // bare names while merge silently no-ops every tensor.
 func TestLoRAValidateTargets_prefixMismatch(t *testing.T) {
-	a := &loraAdapter{deltas: map[string]loraDelta{
-		"model.layers.0.self_attn.q_proj.weight": {}, // as loraBaseName produces (unprefixed)
+	a := &loraAdapter{Deltas: map[string]loraDelta{
+		"model.layers.0.self_attn.q_proj.weight": {}, // as loraload.BaseName produces (unprefixed)
 	}}
 	// Plain base: merge looks up bare names → validation passes (and merge would find the delta).
 	if err := a.ValidateTargets(1, &families.LlamaTensorSchema, tensorName); err != nil {
@@ -120,14 +66,14 @@ func TestLoadLoRA(t *testing.T) {
 		"base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": {[]int{8, 4}, make([]float32, 8*4)},
 		"base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": {[]int{6, 8}, make([]float32, 6*8)},
 	})
-	a, err := loadLoRA(dir)
+	a, err := loraload.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
-	d, ok := a.deltas["model.layers.0.self_attn.q_proj.weight"]
+	defer a.Close()
+	d, ok := a.Deltas["model.layers.0.self_attn.q_proj.weight"]
 	if !ok {
-		t.Fatalf("delta not mapped to base name; have %v", keysOf(a.deltas))
+		t.Fatalf("delta not mapped to base name; have %v", keysOf(a.Deltas))
 	}
 	if d.Scale != 16.0/8.0 {
 		t.Errorf("scale = %v, want 2.0 (alpha/r)", d.Scale)
@@ -191,11 +137,11 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load base: %v", err)
 	}
-	lo, err := loadLoRA(adapter)
+	lo, err := loraload.Load(adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lo.close()
+	defer lo.Close()
 	w1, err := loadWeights(base, weightLoadOpts{needCanonical: true, lora: lo})
 	if err != nil {
 		t.Fatalf("load merged: %v", err)
@@ -270,11 +216,11 @@ func TestLoRA_mergeAtLoad_prefixedBaseRejects(t *testing.T) {
 	if _, err := loadWeights(base, weightLoadOpts{needCanonical: true}); err != nil {
 		t.Fatalf("prefixed base should load without an adapter: %v", err)
 	}
-	lo, err := loadLoRA(adapter)
+	lo, err := loraload.Load(adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lo.close()
+	defer lo.Close()
 	if _, err := loadWeights(base, weightLoadOpts{needCanonical: true, lora: lo}); err == nil {
 		t.Error("merging an unprefixed adapter into a language_model.*-prefixed base must fail loudly, not silently no-op (M18)")
 	}
@@ -337,7 +283,7 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 // nothing, since a short convolution takes no LoRA delta: the "one predicate, many consumers" bug class canBatchN
 // (decoder/forwardn.go) was also fixed for.
 //
-// The rejection happens before any file I/O (loadLoRA is only called after the switch), so a bogus dir is enough
+// The rejection happens before any file I/O (loraload.Load is only called after the switch), so a bogus dir is enough
 // to isolate the check.
 func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 	schema := &archparts.TensorSchema{}
@@ -370,7 +316,7 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 }
 
 // A generic dense family (no own forward, no MoE, no non-gated MLP) must NOT hit the
-// own-forward rejection — it should fall through to loadLoRA and fail there instead
+// own-forward rejection — it should fall through to loraload.Load and fail there instead
 // (a different error), or this test would be trivially satisfied by rejecting everything.
 func TestLoadAdapter_denseFamilyDoesNotHitOwnForwardRejection(t *testing.T) {
 	arch := &darch.Architecture{Name: "qwen2"}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/loraload"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
@@ -36,7 +37,7 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 
 	// Merge path: fold the delta into a copy of W, then matmul.
 	wm := slices.Clone(w)
-	ad := &loraAdapter{deltas: map[string]loraDelta{"w": *d}}
+	ad := &loraAdapter{Deltas: map[string]loraDelta{"w": *d}}
 	if err := ad.Merge("w", wm, out, in); err != nil {
 		t.Fatal(err)
 	}
@@ -148,11 +149,11 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 	}
 
 	// Merged reference.
-	lo, err := loadLoRA(adapter)
+	lo, err := loraload.Load(adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lo.close()
+	defer lo.Close()
 	mMerged := newModel(lo)
 	defer mMerged.Close()
 

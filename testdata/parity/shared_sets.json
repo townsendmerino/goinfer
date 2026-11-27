@@ -57,6 +57,7 @@
     "internal/runtime/paging/layerpaging.go",
     "decoder/lifecycle.go",
     "decoder/lora.go",
+    "internal/runtime/loraload/loraload.go",
     "internal/runtime/paging/moepaging.go",
     "internal/runtime/paging/moepool.go",
     "decoder/program.go",
