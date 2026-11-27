@@ -74,14 +74,12 @@ func recurrentModelTypes(t *testing.T) []string {
 // rewind (ring.truncate), reporting inexact only for a wrapped ring.
 func recurrentKinds(c *KVCache) (names []string, fields []reflect.Value) {
 	v := reflect.ValueOf(&c.c).Elem()
-	ty := v.Type()
-	for i := 0; i < ty.NumField(); i++ {
-		ft := ty.Field(i)
-		if ft.Type.Kind() != reflect.Slice || ft.Type.Elem().Kind() != reflect.Pointer ||
+	for _, ft := range reflect.VisibleFields(v.Type()) {
+		if ft.Anonymous || ft.Type.Kind() != reflect.Slice || ft.Type.Elem().Kind() != reflect.Pointer ||
 			ft.Type.Elem().Elem().Kind() != reflect.Struct || ft.Name == "Rings" {
 			continue
 		}
-		if f := v.Field(i); !f.IsNil() {
+		if f := v.FieldByIndex(ft.Index); !f.IsNil() {
 			names = append(names, ft.Name)
 			fields = append(fields, f)
 		}
