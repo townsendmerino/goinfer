@@ -7,7 +7,7 @@ hard, and a smooth gradient) over downscales, upscales, mixed and single-axis re
 torchvision's output, both as base64 HWC uint8, so aikit vision.ResizeBicubicAA is held to it bit for bit
 without the real checkpoint.
 
-Run: python3 scripts/oracle/pin_bicubic_resize.py --out testdata/bicubic-resize/golden.json
+Run: python3 internal/vision/testdata/oracle/pin_bicubic_resize.py --out internal/vision/imgproc/testdata/bicubic-resize/golden.json
 (torch and torchvision; recorded in the golden.)
 """
 import argparse

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/vision"
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
 )
 
 // LFM2-VL's image path: the
@@ -227,11 +227,11 @@ func lfm2VLLayoutRGB(src []uint8, h, w int, c Lfm2VLPreprocessConfig) Lfm2VLLayo
 	l := Lfm2VLLayout{Rows: rows, Cols: cols, Thumbnail: thumb}
 	if rows*cols == 1 {
 		th, tw := sizes[0][0], sizes[0][1]
-		l.Tiles = []Lfm2VLTile{lfm2VLNormalise(vision.ResizeBilinearAA(src, h, w, th, tw), th, tw, c)}
+		l.Tiles = []Lfm2VLTile{lfm2VLNormalise(imgproc.ResizeBilinearAA(src, h, w, th, tw), th, tw, c)}
 		return l
 	}
 	ts := c.TileSize
-	big := vision.ResizeBilinearAA(src, h, w, ts*rows, ts*cols)
+	big := imgproc.ResizeBilinearAA(src, h, w, ts*rows, ts*cols)
 	tile := make([]uint8, ts*ts*3)
 	for r := range rows {
 		for col := range cols {
@@ -243,7 +243,7 @@ func lfm2VLLayoutRGB(src []uint8, h, w int, c Lfm2VLPreprocessConfig) Lfm2VLLayo
 	}
 	if thumb {
 		th, tw := sizes[len(sizes)-1][0], sizes[len(sizes)-1][1]
-		l.Tiles = append(l.Tiles, lfm2VLNormalise(vision.ResizeBilinearAA(src, h, w, th, tw), th, tw, c))
+		l.Tiles = append(l.Tiles, lfm2VLNormalise(imgproc.ResizeBilinearAA(src, h, w, th, tw), th, tw, c))
 	}
 	return l
 }

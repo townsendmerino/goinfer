@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/vision/imgproc"
 )
 
 // SigLIP2's NaFlex tower (LFM2-VL's) against HF's Siglip2VisionModel (transformers 5.12.0, float32, eager), on a tiny
@@ -147,7 +149,7 @@ func TestResizeBilinearAA_matchesTorchvision(t *testing.T) {
 		src[i] = uint8(v)
 	}
 	for _, r := range g.Resizes {
-		got := ResizeBilinearAA(src, h, w, r.Size[0], r.Size[1])
+		got := imgproc.ResizeBilinearAA(src, h, w, r.Size[0], r.Size[1])
 		diff := 0
 		for i := range got {
 			if int(got[i]) != r.Out[i] {
@@ -161,7 +163,7 @@ func TestResizeBilinearAA_matchesTorchvision(t *testing.T) {
 	}
 	sh, sw, c := g.FloatSrcSize[0], g.FloatSrcSize[1], g.FloatSrcSize[2]
 	for _, r := range g.Floats {
-		got := ResizeBilinearAAFloat(g.FloatSrc, sh, sw, c, r.Size[0], r.Size[1])
+		got := imgproc.ResizeBilinearAAFloat(g.FloatSrc, sh, sw, c, r.Size[0], r.Size[1])
 		var maxAbs float64
 		for i := range got {
 			maxAbs = math.Max(maxAbs, math.Abs(float64(got[i]-r.Out[i])))
