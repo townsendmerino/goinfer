@@ -57,7 +57,7 @@ func familyOf(name string) string {
 
 // withHist is ChatML with a managed-thinking history rule, the branch renderChatMLTools writes <think> blocks in.
 func withHist(t *Template) *Template {
-	t.reason = &Reasoning{hist: histQwen3}
+	t.reason = newHistReasoning(histQwen3)
 	return t
 }
 

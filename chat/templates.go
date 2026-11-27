@@ -5,7 +5,10 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
 	"github.com/townsendmerino/goinfer/internal/chat/harmony"
+	"github.com/townsendmerino/goinfer/internal/chat/reasoning"
+	"github.com/townsendmerino/goinfer/internal/chat/toolwire"
 )
 
 // Each constructor returns the family's renderer, written to match HuggingFace apply_chat_template byte for byte
@@ -38,7 +41,7 @@ func (b *segBuf) ct(text string) {
 // (assistant→model); no system role, so the system is folded into the first user
 // turn ("{system}\n\n{content}"). Generation prompt: "<start_of_turn>model\n".
 func Gemma3() *Template {
-	return &Template{name: "gemma3", stops: []string{"<end_of_turn>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("gemma3", []string{"<end_of_turn>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<bos>")
 		firstUser := true
@@ -60,7 +63,7 @@ func Gemma3() *Template {
 		b.sp("<start_of_turn>")
 		b.ct("model\n")
 		return b.segs
-	}}
+	})
 }
 
 // Gemma4 — Gemma 3's successor with new markers: "<bos>", a real system turn
@@ -68,9 +71,9 @@ func Gemma3() *Template {
 // (assistant→model), ending with the generation prompt plus Gemma 4's thinking
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
-	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("gemma4", []string{"<turn|>"}, func(system string, turns []Turn) []Segment {
 		return gemma4Segments(system, turns, gemma4Opts{scaffold: true})
-	}}
+	})
 }
 
 // gemma4Segments renders the Gemma 4 conversation. think=false is the family's generic rendering (its generation prompt
@@ -168,9 +171,11 @@ func Harmony() *Template { return harmonyTemplate("medium") }
 // harmonyTemplate is Harmony with the system block's `Reasoning:` line set to effort ("low" | "medium" | "high" — the values gpt-oss's
 // own template takes as its reasoning_effort).
 func harmonyTemplate(effort string) *Template {
-	return &Template{name: "harmony", effort: effort, stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+	t := newTemplate("harmony", []string{"<|return|>", "<|call|>", "<|endoftext|>"}, func(system string, turns []Turn) []Segment {
 		return harmony.Segments(timeNow(), effort, system, toCoreTurns(turns), nil)
-	}}
+	})
+	t.effort = effort
+	return t
 }
 
 // NormalizeReasoningEffort reports whether s is a reasoning effort gpt-oss's template understands — low, medium or high, any case —
@@ -207,9 +212,9 @@ func (t *Template) WithReasoningEffort(effort string) *Template {
 // "<|im_start|>{role}\n{content}<|im_end|>\n", a leading system turn when given,
 // generation prompt "<|im_start|>assistant\n". No BOS in the template.
 func ChatML() *Template {
-	return &Template{name: "chatml", stops: []string{"<|im_end|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("chatml", []string{"<|im_end|>"}, func(system string, turns []Turn) []Segment {
 		return chatMLSegments(system, turns, histNone)
-	}}
+	})
 }
 
 // chatMLSegments renders the conversation as ChatML. hist is the family's history rule for assistant turns (history.go);
@@ -251,7 +256,7 @@ func chatMLSegments(system string, turns []Turn, hist histKind) []Segment {
 // Phi3 is microsoft/Phi-3-mini-4k-instruct's current template: per turn "<|{role}|>\n{content}<|end|>\n", a leading system turn when
 // given, generation prompt "<|assistant|>\n". No BOS in the template, and the HF tokenizer adds none (add_bos_token false).
 func Phi3() *Template {
-	return &Template{name: "phi3", stops: []string{"<|end|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("phi3", []string{"<|end|>", "<|endoftext|>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		if system != "" {
 			b.sp("<|system|>")
@@ -268,7 +273,7 @@ func Phi3() *Template {
 		b.sp("<|assistant|>")
 		b.ct("\n")
 		return b.segs
-	}}
+	})
 }
 
 // Phi3Orig — the template Phi-3-mini-4k-instruct shipped with in its first release, and the
@@ -278,7 +283,7 @@ func Phi3() *Template {
 // prompt is dropped, as it is by HF and llama.cpp rendering the same template. Emits the BOS
 // itself: encode with addBOS=false.
 func Phi3Orig() *Template {
-	return &Template{name: "phi3_orig", stops: []string{"<|end|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("phi3_orig", []string{"<|end|>", "<|endoftext|>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<s>")
 		for _, t := range turns {
@@ -296,7 +301,7 @@ func Phi3Orig() *Template {
 			b.ct("\n")
 		}
 		return b.segs
-	}}
+	})
 }
 
 // GlmOCR is zai-org/GLM-OCR's template (the GLM-4.1V family's `[gMASK]<sop>` shape): "[gMASK]<sop>", an optional
@@ -311,7 +316,7 @@ func Phi3Orig() *Template {
 // Detect matches only this checkpoint's template (the image markers are in the fingerprint), so GLM-4.5's text template, which
 // shares the `[gMASK]<sop>` opening and renders differently, is not captured by it.
 func GlmOCR() *Template {
-	return &Template{name: "glm_ocr", stops: []string{"<|endoftext|>", "<|user|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("glm_ocr", []string{"<|endoftext|>", "<|user|>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("[gMASK]")
 		b.sp("<sop>")
@@ -335,7 +340,7 @@ func GlmOCR() *Template {
 		b.sp("<|assistant|>")
 		b.ct("\n")
 		return b.segs
-	}}
+	})
 }
 
 // Mellum2 (JetBrains Mellum2) renders ChatML — its chat template is ChatML
@@ -356,7 +361,7 @@ func Mellum2() *Template {
 // "<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", and the
 // assistant generation header. The "Today Date" is the current date.
 func Llama3() *Template {
-	return &Template{name: "llama3", stops: []string{"<|eot_id|>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("llama3", []string{"<|eot_id|>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		date := timeNow().Format("02 Jan 2006")
 		b.sp("<|begin_of_text|>")
@@ -377,7 +382,7 @@ func Llama3() *Template {
 		b.sp("<|end_header_id|>")
 		b.ct("\n\n")
 		return b.segs
-	}}
+	})
 }
 
 // Mistral is "<s>" once, each user turn "[INST] {content}[/INST]", each assistant turn " {content}</s>". No system role: the system is
@@ -389,13 +394,12 @@ func Llama3() *Template {
 // as the whole-string encode tokenizes them. Measured on both versions' real vocabularies (TestMistralSegments_realVocabularies):
 // the segments encode to the same ids as the whole prompt, and a forged marker adds no token.
 func Mistral() *Template {
-	t := &Template{name: "mistral", stops: []string{"</s>"}}
+	t := newTemplate("mistral", []string{"</s>"}, nil)
 	t.render = func(system string, turns []Turn) []Segment { return t.renderMistral(system, turns) }
 	return t
 }
 
-// mistralMarks are the control-token strings of Mistral's prompts, tool dialect included.
-var mistralMarks = []string{"<s>", "</s>", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_CALLS]", "[TOOL_RESULTS]", "[/TOOL_RESULTS]", "[INST]", "[/INST]"}
+var mistralMarks = toolwire.MistralMarks
 
 func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 	lastUser := -1
@@ -404,7 +408,7 @@ func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 			lastUser = i
 		}
 	}
-	b := t.newToolBuf(mistralMarks...)
+	b := chatcore.NewToolBuf(t.has, mistralMarks...)
 	b.Lit("<s>")
 	for i, m := range turns {
 		if m.Role == "assistant" {
@@ -444,7 +448,7 @@ func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 // a user turn is a content gap the vision splice can find (as one Special segment the whole prompt would hide it, and every Pixtral
 // request would be refused).
 func Ministral() *Template {
-	return &Template{name: "ministral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("ministral", []string{"</s>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<s>")
 		if system != "" {
@@ -463,7 +467,7 @@ func Ministral() *Template {
 			b.sp("[/INST]")
 		}
 		return b.segs
-	}}
+	})
 }
 
 // NemotronH is Nemotron-H's template: "<SPECIAL_10>System", then "\n{system}" when there is one and "\n"; per user turn
@@ -474,7 +478,7 @@ func Ministral() *Template {
 // Byte-for-byte against HF's apply_chat_template (testdata/chat_goldens/nemotron_h.json). Detect keeps Nemotron-Nano-9B-v2's
 // template out of this renderer: it opens the same way and differs (TestDetect_declinesNemotronNano).
 func NemotronH() *Template {
-	return &Template{name: "nemotron_h", stops: []string{"<SPECIAL_11>"}, render: func(system string, turns []Turn) []Segment {
+	return newTemplate("nemotron_h", []string{"<SPECIAL_11>"}, func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<SPECIAL_10>")
 		gap := "System"
@@ -496,7 +500,7 @@ func NemotronH() *Template {
 		}
 		b.ct(gap)
 		return b.segs
-	}}
+	})
 }
 
 // pyStrip is Python's str.strip(), which a template's .strip() runs: unicode.IsSpace, and the \x1c-\x1f separators Go's
@@ -513,11 +517,8 @@ func pyStrip(s string) string {
 // historical turns. Stops are the checkpoint's four eos_token_id strings: <|end_of_text|>, <|user|>, <|observation|>,
 // <|developer|>.
 func Flint() *Template {
-	t := &Template{
-		name:   "flint",
-		stops:  []string{"<|end_of_text|>", "<|user|>", "<|observation|>", "<|developer|>"},
-		reason: &Reasoning{open: "<think>", close: "</think>", openTok: "<think>", closeTok: "</think>", def: defOn},
-	}
+	t := newTemplate("flint", []string{"<|end_of_text|>", "<|user|>", "<|observation|>", "<|developer|>"}, nil)
+	t.reason = wrapReasoning(reasoning.NewFlintSpec())
 	t.render = func(system string, turns []Turn) []Segment {
 		return t.renderFlintTools(system, turns, nil)
 	}
