@@ -10,6 +10,7 @@ import (
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // useProbe installs r behind every machine reading the decoder takes (the fit guard's, the prefill budget's, the cold
@@ -18,8 +19,8 @@ func useProbe(t *testing.T, r probe.Reader) {
 	t.Helper()
 	savedRAM, savedAvail, savedColdAvail, savedColdRAM, savedColdRes, savedSidecar, savedFaults :=
 		hostRAM, hostRAMAvailable, coldAvailBytes, coldRAMBytes, coldResidentFraction, sidecarHostRAM, processFaultCounts
-	savedWorkers, savedReclaims := buildWorkers, reclaimsReleasedPages
-	buildWorkers, reclaimsReleasedPages = r.BuildWorkers, r.ReclaimsReleasedPages
+	testgate.SetForTest(t, &buildWorkers, r.BuildWorkers)
+	testgate.SetForTest(t, &reclaimsReleasedPages, r.ReclaimsReleasedPages)
 	hostRAM, hostRAMAvailable = r.Physical, r.Available
 	coldAvailBytes, coldRAMBytes, coldResidentFraction = r.Available, r.Physical, r.ResidentFraction
 	sidecarHostRAM, processFaultCounts = r.Physical, r.FaultCounts
@@ -27,7 +28,6 @@ func useProbe(t *testing.T, r probe.Reader) {
 	t.Cleanup(func() {
 		hostRAM, hostRAMAvailable, coldAvailBytes, coldRAMBytes, coldResidentFraction, sidecarHostRAM, processFaultCounts =
 			savedRAM, savedAvail, savedColdAvail, savedColdRAM, savedColdRes, savedSidecar, savedFaults
-		buildWorkers, reclaimsReleasedPages = savedWorkers, savedReclaims
 		resetAvailProbeCache()
 	})
 }
