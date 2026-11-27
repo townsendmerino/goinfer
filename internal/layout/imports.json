@@ -178,6 +178,7 @@
           "internal/runtime/normact",
           "internal/runtime/program",
           "internal/runtime/rope",
+          "internal/runtime/thp",
           "internal/runtime/wbuild"
         ]
       },
@@ -1582,6 +1583,7 @@
       "internal/runtime/normact",
       "internal/runtime/program",
       "internal/runtime/rope",
+      "internal/runtime/thp",
       "internal/runtime/wbuild"
     ],
     "internal/runtime/families": [

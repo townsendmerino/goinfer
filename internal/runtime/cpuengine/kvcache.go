@@ -1,6 +1,9 @@
 package cpuengine
 
 import (
+	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/thp"
 	"slices"
 	"sync/atomic"
 
@@ -1049,14 +1052,21 @@ func NewCacheForArch(a *darch.Architecture, capHint int, kvI8, kvH bool, knobs K
 	if quant != KVQF32 {
 		kvCapHint = 0
 	}
-	c := NewCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
-		return a.HasNoAttentionKVAt(l) || a.RingLayerAt(l) || a.Gemma4KVSrcAt(l) != l
+	var c *Cache
+	// The KV reservation is taken on ordinary pages (thp.Small) while the weights keep their huge pages: on a THP "always"
+	// host a large reservation's burst of huge-page faults beside resident weights swaps the process, and ordinary pages
+	// for the KV measured no decode cost.
+	thp.Small(func() [][]byte {
+		c = NewCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
+			return a.HasNoAttentionKVAt(l) || a.RingLayerAt(l) || a.Gemma4KVSrcAt(l) != l
+		})
+		c.ReserveWidths(kvCapHint, a.KVDimAt)
+		if quant != KVQF32 {
+			c.SetQuant(quant, capHint)
+		}
+		return c.kvReservations()
 	})
-	c.ReserveWidths(kvCapHint, a.KVDimAt)
 	c.Knobs, c.Scr = knobs, NewDecodeScratch(a, knobs)
-	if quant != KVQF32 {
-		c.SetQuant(quant, capHint)
-	}
 	c.EnableRings(a.SlidingWindow, func(l int) bool { return !a.RingLayerAt(l) })
 	defer c.SetRowPad(a, kvCapHint)
 	if a.Gemma4 != nil {
@@ -1099,4 +1109,35 @@ func NewCacheForArch(a *darch.Architecture, capHint int, kvI8, kvH bool, knobs K
 		c.Ink = layerStates(a.NumLayers, func(int) bool { return true }, func() *inkling2.ConvState { return new(inkling2.ConvState) })
 	}
 	return c
+}
+
+// kvReservations is the cache's append-forever K/V buffers as byte views of their whole capacity, for thp.Small.
+func (c *Cache) kvReservations() [][]byte {
+	var out [][]byte
+	f32 := func(b []float32) {
+		if cap(b) > 0 {
+			out = append(out, unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(b))), cap(b)*4))
+		}
+	}
+	for l := range c.KeysBuf {
+		f32(c.KeysBuf[l])
+		f32(c.ValsBuf[l])
+	}
+	for l := range c.KeysH {
+		for _, b := range [][]uint16{c.KeysH[l], c.ValsH[l]} {
+			if cap(b) > 0 {
+				out = append(out, unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(b))), cap(b)*2))
+			}
+		}
+	}
+	for l := range c.KeysQ {
+		for _, b := range [][]int8{c.KeysQ[l], c.ValsQ[l]} {
+			if cap(b) > 0 {
+				out = append(out, unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(b))), cap(b)))
+			}
+		}
+		f32(c.KeyScale[l])
+		f32(c.ValScale[l])
+	}
+	return out
 }
