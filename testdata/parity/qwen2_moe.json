@@ -8,7 +8,7 @@
   "own": [
     "internal/runtime/families/arch_qwen2_moe.go"
   ],
-  "deps_hash": "sha256:393e5e9e048b9a77c9718090996a0bb68148a21fb628b7b95fcbdf783e05e687",
+  "deps_hash": "sha256:1132bbc1ef38fb7c0561689cb7860d2dd1aef7fa14d9bcce1946082c15c06dd5",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

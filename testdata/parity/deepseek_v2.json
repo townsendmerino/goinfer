@@ -11,7 +11,7 @@
     "decoder/mla_int8.go",
     "internal/runtime/cpuengine/mla_int8.go"
   ],
-  "deps_hash": "sha256:3f603a397f5a8280ae7b7840e1c54a028d372bcac6c65433c812c51614648dee",
+  "deps_hash": "sha256:ad9caba92cd9659e456538ecfff999f7cda0471df618efc6e6887f7b50f30a8d",
   "status": "validated",
   "validated_at": "d5c5a1d53",
   "date": "2026-10-23",
