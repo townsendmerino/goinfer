@@ -196,7 +196,7 @@ is.
     family by design.
 - **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:KVCache.TruncateTo`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
-  recurrent state (`decoder/kvsnapshot.go:Session.Snapshot`). So "prefill the shared state once, branch per
+  recurrent state (`decoder/session_giwkv.go:Session.Snapshot`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
   logprobs: true, top_logprobs: 20` (`internal/app/serveapp/openai_types.go:sampling`, cap `internal/app/serveapp/openai_generate.go:maxTopLogprobs`) gives a client
@@ -990,7 +990,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
 `internal/runtime/archparts/arch.go:Qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.ValidateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo`, `:744`
-(merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/kvsnapshot.go:Session.Snapshot` (snapshot
+(merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/session_giwkv.go:Session.Snapshot` (snapshot
 skips recurrent state) · `internal/app/serveapp/openai_generate.go:maxTopLogprobs`, `internal/app/serveapp/openai_types.go:sampling` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/app/serveapp/main.go:Main` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
