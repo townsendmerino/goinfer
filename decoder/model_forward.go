@@ -70,6 +70,7 @@ func syncCPUHooks() {
 		G4TraceQKV:        g4traceQKV,
 		ReleaseHostMemory: releaseHostMemory,
 		DecodeTimingStats: &decodeTimingSt,
+		DefaultKnobs:      (*knobSet)(nil),
 	}
 	cpuengine.SyncHooks(h)
 }
