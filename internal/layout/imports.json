@@ -724,6 +724,22 @@
         ]
       },
       "why": "internal/guard/gaterelease holds gate release's pre-flight runner, gpu-records, GPU/parity record codecs and qualification graders, and accepted-reds reader below cmd/gate (GT5). It imports only internal/guard/gatecore, internal/guard/gatehygiene, internal/guard/gatequick, and internal/guard/paritykey (its tests, internal/testpath)."
+    },
+    {
+      "name": "chatcore-leaf",
+      "from": [
+        "internal/chat/chatcore"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/chatcore": [
+          "tokenizer"
+        ]
+      },
+      "why": "internal/chat/chatcore holds shared conversation structs, segment builders, history rules, order-preserving JSON helpers, and JSON Schema parameter typing below chat and its dialect leaves (CH1). It imports only tokenizer and the standard library."
     }
   ],
   "arrows": {
@@ -838,6 +854,7 @@
     ],
     "chat": [
       "constrain",
+      "internal/chat/chatcore",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -1071,6 +1088,9 @@
     ],
     "internal/audio": [
       "internal/vision"
+    ],
+    "internal/chat/chatcore": [
+      "tokenizer"
     ],
     "internal/clef": [
       "decoder",
