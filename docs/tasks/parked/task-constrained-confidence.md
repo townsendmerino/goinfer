@@ -188,7 +188,7 @@ is.
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
-  - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:loraAdapter.ValidateTargets`, called at
+  - Merge-at-load (`--lora`): `validateTargets` (`internal/runtime/loraload/loraload.go:Adapter.ValidateTargets`, called at
     `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
     targets the GDN projections is refused whole. The merge itself runs inside the `loadProj`
     closure (`internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo`), and the GDN projections are loaded outside it.
@@ -988,7 +988,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 `constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model_forward.go:Model.ForwardCapture` (`ForwardCapture`) · `internal/runtime/cpuengine/program_cpu.go:Engine.WalkToken` (the capture
 contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
-`internal/runtime/archparts/arch.go:Qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.ValidateTargets` (`validateTargets`) ·
+`internal/runtime/archparts/arch.go:Qwen35Params` (`FusedDeltaNetProj`) · `internal/runtime/loraload/loraload.go:Adapter.ValidateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `internal/runtime/wbuild/weights.go:BuildWeightsFromSafetensorsTo`, `:744`
 (merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/session_giwkv.go:Session.Snapshot` (snapshot
 skips recurrent state) · `internal/app/serveapp/openai_generate.go:maxTopLogprobs`, `internal/app/serveapp/openai_types.go:sampling` (`top_logprobs` cap,
