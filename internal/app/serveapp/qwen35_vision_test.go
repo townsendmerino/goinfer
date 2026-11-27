@@ -73,13 +73,13 @@ func TestSetupQwen35Vision(t *testing.T) {
 	if pp.MinPixels != 65536 || pp.PatchSize != 16 || pp.MergeSize != 2 || !pp.FusedNormalize {
 		t.Errorf("checkpoint values not carried through: %+v", pp)
 	}
-	if tower.enc != nil || tower.err != nil {
+	if tower.Enc != nil || tower.Err != nil {
 		t.Fatal("setup touched the tower's weights: it must load lazily")
 	}
-	if _, err := tower.encoder(); err == nil {
+	if _, err := tower.Encoder(); err == nil {
 		t.Error("encoder() on a directory with no weights returned no error")
 	}
-	if _, err2 := tower.encoder(); err2 == nil || err2.Error() != tower.err.Error() {
+	if _, err2 := tower.Encoder(); err2 == nil || err2.Error() != tower.Err.Error() {
 		t.Error("a failed load must be remembered, not retried into a different answer")
 	}
 	// A cap must never RAISE a smaller checkpoint budget.
@@ -100,15 +100,15 @@ func TestSetupQwen3VL_deepstack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tower.deep != 3 {
-		t.Errorf("Qwen3-VL tower: %d DeepStack sets, want 3", tower.deep)
+	if tower.Deep != 3 {
+		t.Errorf("Qwen3-VL tower: %d DeepStack sets, want 3", tower.Deep)
 	}
 	q35, _, err := setupQwen35Vision(writeQwen35Dir(t, q35Conf, q35Pre), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q35.deep != 0 {
-		t.Errorf("Qwen3.5 tower: %d DeepStack sets, want 0", q35.deep)
+	if q35.Deep != 0 {
+		t.Errorf("Qwen3.5 tower: %d DeepStack sets, want 0", q35.Deep)
 	}
 }
 
@@ -132,13 +132,13 @@ func TestQwen3VLTower_needsTaps(t *testing.T) {
 	t.Cleanup(func() { multimodal.UnregisterQwen3Tower("fake-notap") })
 	for _, require := range []bool{false, true} {
 		fake.closed = false
-		q := &qwen3Tower{dir: dir, deep: 2, plan: gridTowerPlan{device: "fake-notap", where: "fake", require: require}}
-		_, err := q.encoder()
+		q := &qwen3Tower{Dir: dir, Deep: 2, Plan: gridTowerPlan{Device: "fake-notap", Where: "fake", Require: require}}
+		_, err := q.Encoder()
 		switch {
 		case require && err == nil:
 			t.Error("-require-backend: a non-tapping device tower was accepted for a DeepStack tower")
-		case !require && (err != nil || q.acc != nil || !strings.Contains(q.plan.where, "CPU")):
-			t.Errorf("without -require-backend: err %v, device tower kept %v, where %q; want the CPU", err, q.acc != nil, q.plan.where)
+		case !require && (err != nil || q.Acc != nil || !strings.Contains(q.Plan.Where, "CPU")):
+			t.Errorf("without -require-backend: err %v, device tower kept %v, where %q; want the CPU", err, q.Acc != nil, q.Plan.Where)
 		}
 		if !fake.closed {
 			t.Errorf("require %v: the refused device tower was not closed", require)

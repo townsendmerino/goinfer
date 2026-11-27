@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/towers"
 )
 
 type fakeAttach struct {
@@ -52,7 +54,7 @@ func TestAttachGemma3Tower(t *testing.T) {
 				return &fakeAttach{int8: i8, failAttach: (!i8 && tc.f32Fails) || (i8 && tc.int8Fails), closed: &closed}, nil
 			}
 			var warn bytes.Buffer
-			enc, i8, resident, err := attachGemma3Tower(load, tc.startInt8, tc.fallback, "cuda", tc.require, &warn)
+			enc, i8, resident, err := towers.AttachGemma3Tower(load, tc.startInt8, tc.fallback, "cuda", tc.require, &warn)
 			if (err != nil) != tc.wantEr {
 				t.Fatalf("error = %v, want error %v", err, tc.wantEr)
 			}
@@ -82,7 +84,7 @@ func TestAttachGemma3Tower(t *testing.T) {
 
 func TestAttachGemma3Tower_loadErrorPropagates(t *testing.T) {
 	closed := 0
-	_, _, _, err := attachGemma3Tower(func(bool) (*fakeAttach, error) { return nil, errors.New("no weights") }, false, true, "cuda", false, &bytes.Buffer{})
+	_, _, _, err := towers.AttachGemma3Tower(func(bool) (*fakeAttach, error) { return nil, errors.New("no weights") }, false, true, "cuda", false, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "no weights") {
 		t.Errorf("error = %v, want the load error", err)
 	}

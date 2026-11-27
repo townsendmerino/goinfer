@@ -688,18 +688,18 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	// The image paths take every image's span; a one-media builder (GLM-OCR, audio) sets only the first.
-	spans, grids := decoderSpans(vi.spans), vi.grids
+	spans, grids := decoderSpans(vi.Spans), vi.Grids
 	if len(spans) == 0 {
-		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
+		spans, grids = []decoder.ImageSpan{{Pos: vi.ImgPos, Len: vi.ImgLen, Hash: vi.ImgHash}}, [][3]int{vi.Grid}
 	}
 	gr.clock.Start()
 	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.CostCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp),
-		Media: vi.media(spans, grids, lm),
+		Media: viMedia(vi, spans, grids, lm),
 	})
 	defer st.Close()
-	if vi.replyPrefix != "" {
-		onText(vi.replyPrefix)
+	if vi.ReplyPrefix != "" {
+		onText(vi.ReplyPrefix)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
 	gr.clock.End()
@@ -708,9 +708,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		return turnResult{finish: finish, nComp: n, stopHit: stopHit, cancelReason: cancelledReason(g, parent, stopHit)}, nil
 	}
 	if len(spans) > 1 && rep.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
-		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), rep.ImgPrefillDecline)
+		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.Images, 1), len(spans), rep.ImgPrefillDecline)
 	}
-	if vi.gemma4 { // log where this image turn decoded
+	if vi.Gemma4 { // log where this image turn decoded
 		where := "cpu"
 		if rep.DecodeResident {
 			where = "resident"
@@ -729,19 +729,17 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	return turnResult{finish: finish, nComp: n, logprobs: rep.Logprobs, stopHit: stopHit, reused: reuseOf(rep), cancelReason: cr}, genErr(rep.Err)
 }
 
-// media is vi as the engine's Media over spans and grids (driveVL's, with the one-media fallback), the kind chosen by
-// vi's flags in this order: audio, Qwen, Gemma 4, causal, else bidirectional images.
-func (vi visionInput) media(spans []decoder.ImageSpan, grids [][3]int, lm *loadedModel) *engine.Media {
-	md := &engine.Media{Kind: engine.MediaImage, Spans: spans, Features: vi.features}
+func viMedia(vi visionInput, spans []decoder.ImageSpan, grids [][3]int, lm *loadedModel) *engine.Media {
+	md := &engine.Media{Kind: engine.MediaImage, Spans: spans, Features: vi.Features}
 	switch {
-	case vi.asr: // Qwen3-ASR, Voxtral: the encoder's embeddings replace the audio run, causal prefill, CPU decode
+	case vi.ASR:
 		md.Kind = engine.MediaAudio
-	case vi.qwen: // Qwen2.5-VL, Qwen3-VL (with DeepStack sets), GLM-OCR
+	case vi.Qwen:
 		g := lm.qwenGrid()
-		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, g.merge, g.imgTok, vi.deepSets
-	case vi.gemma4:
+		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, g.Merge, g.ImgTok, vi.DeepSets
+	case vi.Gemma4:
 		md.Kind = engine.MediaGemma4
-	case vi.causal: // causal image tokens (Ministral 3, LFM2-VL), one span per run
+	case vi.Causal:
 		md.Kind = engine.MediaImageCausal
 	}
 	return md

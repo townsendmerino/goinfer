@@ -46,9 +46,9 @@ func TestVisionFeatureCache_sizedByTheFitPlan(t *testing.T) {
 			t.Fatalf("1 byte available: cache %d, want 0", got)
 		}
 		runs := 0
-		vi := visionInput{features: func() ([]float32, error) { runs++; return fcFeats(16, 1), nil }}
+		vi := visionInput{Features: func() ([]float32, error) { runs++; return fcFeats(16, 1), nil }}
 		for range 2 {
-			if _, err := lm.withFeatureCache(vi, []byte("png bytes"), "test").features(); err != nil {
+			if _, err := lm.withFeatureCache(vi, []byte("png bytes"), "test").Features(); err != nil {
 				t.Fatal(err)
 			}
 		}

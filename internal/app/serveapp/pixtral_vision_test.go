@@ -13,7 +13,7 @@ func TestImageSpans_pixtralRows(t *testing.T) {
 	const img, brk, end = 10, 12, 13
 	// Text, a 2x3 image (two rows of three), text, a 1x4 image (one row, no break), text.
 	ids := []int{1, 2, img, img, img, brk, img, img, img, end, 5, img, img, img, img, end, 6}
-	preps := []imagePrep{{n: 6, runLens: []int{3, 3}, hash: 7}, {n: 4, runLens: []int{4}, hash: 8}}
+	preps := []imagePrep{{N: 6, RunLens: []int{3, 3}, Hash: 7}, {N: 4, RunLens: []int{4}, Hash: 8}}
 	spans, _, err := imageSpans(multimodal.FindImageRuns(ids, img), preps, "pixtral")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestImageSpans_pixtralRows(t *testing.T) {
 	if _, _, err := imageSpans(multimodal.FindImageRuns(short, img), preps, "pixtral"); err == nil {
 		t.Error("a short row was accepted")
 	}
-	oneRun := []imagePrep{{n: 6, hash: 7}, preps[1]}
+	oneRun := []imagePrep{{N: 6, Hash: 7}, preps[1]}
 	if _, _, err := imageSpans(multimodal.FindImageRuns(ids, img), oneRun, "pixtral"); err == nil {
 		t.Error("an image whose rows are broken by [IMG_BREAK] was accepted as one run")
 	}

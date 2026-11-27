@@ -227,7 +227,7 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 					got = append(got, render(assign.Rhs[0]))
 				}
 			case *ast.SelectorExpr:
-				if l.Sel.Name == "block" {
+				if strings.EqualFold(l.Sel.Name, "block") {
 					got = append(got, render(assign.Rhs[0]))
 				}
 			}
@@ -236,8 +236,9 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 		return got
 	}
 	// One prep per family.
-	for fn, w := range map[string]string{"qwenPrep": "multimodal.QwenImageBlock(n)", "gemma4Vision.prep": "multimodal.Gemma4ImageBlock(n)", "gemma3Vision.prep": "multimodal.Gemma3PromptBlock(n)"} {
-		if got := blockRHS(findFn("vision_tower.go", fn)); len(got) != 1 || got[0] != w {
+	towerSrc := filepath.Join("towers", "vision_tower.go")
+	for fn, w := range map[string]string{"qwenPrep": "multimodal.QwenImageBlock(n)", "Gemma4Vision.Prep": "multimodal.Gemma4ImageBlock(n)", "Gemma3Vision.Prep": "multimodal.Gemma3PromptBlock(n)"} {
+		if got := blockRHS(findFn(towerSrc, fn)); len(got) != 1 || got[0] != w {
 			t.Errorf("%s: block = %v, want exactly %s — a newline was concatenated onto (or "+
 				"dropped from) the real processor's shape (M-38)", fn, got, w)
 		}

@@ -630,6 +630,31 @@
       "why": "internal/app/serveapp/banner formats startup status lines for loaded generative models, KV pools, concurrency settings, and server route summaries from resolved Facts below serveapp (SA5). It never imports serveapp."
     },
     {
+      "name": "serveapp-towers-leaf",
+      "from": [
+        "internal/app/serveapp/towers"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/towers": [
+          "chat",
+          "embeddinggemma2",
+          "internal/app/serveapp/media",
+          "internal/app/serveapp/towerfit",
+          "internal/audio",
+          "internal/codec",
+          "internal/runtime/mem",
+          "internal/vision",
+          "multimodal",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/app/serveapp/towers holds per-family vision and audio tower implementations, device placement fallbacks, and multi-image block splicing and span assembly below serveapp (SA6). It never imports serveapp or decoder."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -1044,6 +1069,7 @@
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
       "internal/app/serveapp/towerfit",
+      "internal/app/serveapp/towers",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -1102,6 +1128,18 @@
       "internal/runtime/mem",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/app/serveapp/towers": [
+      "chat",
+      "embeddinggemma2",
+      "internal/app/serveapp/media",
+      "internal/app/serveapp/towerfit",
+      "internal/audio",
+      "internal/codec",
+      "internal/runtime/mem",
+      "internal/vision",
+      "multimodal",
+      "tokenizer"
     ],
     "internal/audio": [
       "internal/vision"
@@ -1548,6 +1586,7 @@
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
       "internal/app/serveapp/towerfit",
+      "internal/app/serveapp/towers",
       "internal/audio",
       "internal/clef",
       "internal/codec",
@@ -1592,6 +1631,9 @@
     ],
     "internal/app/serveapp/towerfit": [
       "multimodal"
+    ],
+    "internal/app/serveapp/towers": [
+      "internal/app/serveapp/media"
     ],
     "internal/audio": [
       "internal/vision"

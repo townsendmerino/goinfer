@@ -29,13 +29,13 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 	for _, built := range []bool{true, false} {
 		g4v, q3, glm, g4a := &fakeTower{}, &fakeTower{}, &fakeTower{}, &fakeTower{}
 		g4 := &loadedModel{modelIdentity: modelIdentity{name: "gemma4"}, modelModalities: modelModalities{vision: &gemma4Vision{}, audio: &gemma4Audio{}}}
-		qv := &qwen3Vision{qwen3Tower: &qwen3Tower{}}
-		gv := &glmVision{glmOcrTower: &glmOcrTower{}}
+		qv := &qwen3Vision{Qwen3Tower: &qwen3Tower{}}
+		gv := &glmVision{GlmOcrTower: &glmOcrTower{}}
 		entries := []*loadedModel{g4, {modelIdentity: modelIdentity{name: "qwen3.5"}, modelModalities: modelModalities{vision: qv}}, {modelIdentity: modelIdentity{name: "glm-ocr"}, modelModalities: modelModalities{vision: gv}}}
 		if built {
-			g4.vision.(*gemma4Vision).tower = g4v
-			g4.audio.(*gemma4Audio).acc = g4a
-			qv.acc, gv.acc = closeCountGrid{q3}, closeCountGrid{glm}
+			g4.vision.(*gemma4Vision).Tower = g4v
+			g4.audio.(*gemma4Audio).Acc = g4a
+			qv.Acc, gv.Acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
 		s := &server{
 			cfg:           config{allowAdmin: true, unloadDrainWait: 5 * time.Second},
@@ -63,7 +63,7 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 			}
 		}
 		for _, lm := range entries {
-			if g, ok := lm.audio.(*gemma4Audio); lm.vision != nil || (ok && g.acc != nil) {
+			if g, ok := lm.audio.(*gemma4Audio); lm.vision != nil || (ok && g.Acc != nil) {
 				t.Errorf("built %v: %s still holds a tower after its unload", built, lm.name)
 			}
 		}

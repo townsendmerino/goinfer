@@ -325,15 +325,15 @@ func TestSpeech_rejectsNaNTemperature(t *testing.T) {
 
 type fakeVisionTower struct{ tok int }
 
-func (f fakeVisionTower) family() string { return "gemma3" }
-func (f fakeVisionTower) kind() string   { return "gemma3" }
-func (f fakeVisionTower) imageTok() int  { return f.tok }
-func (f fakeVisionTower) close()         {}
-func (f fakeVisionTower) prep(_ *loadedModel, _ imageRef) (imagePrep, error) {
+func (f fakeVisionTower) Family() string { return "gemma3" }
+func (f fakeVisionTower) Kind() string   { return "gemma3" }
+func (f fakeVisionTower) ImageTok() int  { return f.tok }
+func (f fakeVisionTower) Close()         {}
+func (f fakeVisionTower) Prep(_ int, _ imageRef) (imagePrep, error) {
 	return imagePrep{
-		n:        1,
-		block:    "<IMG>",
-		features: func() ([]float32, error) { return []float32{1}, nil },
+		N:        1,
+		Block:    "<IMG>",
+		Features: func() ([]float32, error) { return []float32{1}, nil },
 	}, nil
 }
 

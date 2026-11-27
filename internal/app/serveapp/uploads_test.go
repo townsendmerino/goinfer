@@ -212,10 +212,12 @@ func TestAudio_longClipRefusedBeforeDecoding(t *testing.T) {
 		limit  int
 	}{
 		"gemma4": {func() (visionInput, error) {
-			return (&gemma4Audio{}).clipPrompt(lm, nil, "", nil, 0, imageRef{Data: wav})
+			return (&gemma4Audio{}).ClipPrompt(lm.audioModel(), nil, "", nil, 0, imageRef{Data: wav})
 		}, gemma4AudioMaxSeconds},
-		"qwen3-asr": {func() (visionInput, error) { return (&qwenASRAudio{}).clipPrompt(lm, "", imageRef{Data: wav}) }, qwenASRMaxSeconds},
-		"voxtral":   {func() (visionInput, error) { return (&voxtralAudio{}).clipPrompt(lm, imageRef{Data: wav}) }, voxtralMaxSeconds},
+		"qwen3-asr": {func() (visionInput, error) {
+			return (&qwenASRAudio{}).ClipPrompt(lm.audioModel(), "", imageRef{Data: wav})
+		}, qwenASRMaxSeconds},
+		"voxtral": {func() (visionInput, error) { return (&voxtralAudio{}).ClipPrompt(lm.audioModel(), imageRef{Data: wav}) }, voxtralMaxSeconds},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var err error
