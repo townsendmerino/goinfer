@@ -306,3 +306,8 @@ func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
 	e := m.cpuEngine()
 	return e.LogitsFromNormed(h, unwrapCache(cache))
 }
+
+func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
+	e := m.cpuEngine()
+	return e.ForwardCapture(id, unwrapCache(cache), layers)
+}
