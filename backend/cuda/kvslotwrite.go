@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // Every path that writes a slot's rows (a prefill or decode step, an upload, a copy, a restore or promotion) goes through kvWriteBegin and ends in
@@ -19,10 +20,8 @@ type kvSlotWrite struct {
 
 // kvUploadPass is the upload in progress between BeginKVUpload and EndKVUpload: one write of the bound slot, up to the end its layers have landed.
 type kvUploadPass struct {
-	w       kvSlotWrite
-	end     int
-	reached map[int]int // the end each layer has landed, by layer
-	floor   int         // the shortest prefix whose windows its rows cover
+	w    kvSlotWrite
+	pass *kvmgr.UploadPass
 }
 
 // BeginKVUpload implements decoder.ResidentKVSubsystem.
@@ -30,7 +29,7 @@ func (r *cudaResident) BeginKVUpload() error {
 	return r.do(func() error {
 		w := r.kvWriteBegin(r.kvSlot, 0)
 		r.kvWriteForget(w)
-		r.kvUpload = &kvUploadPass{w: w, reached: map[int]int{}}
+		r.kvUpload = &kvUploadPass{w: w, pass: kvmgr.NewUploadPass(r.kvSlot)}
 		return nil
 	})
 }
@@ -45,22 +44,16 @@ func (r *cudaResident) EndKVUpload(failed bool) error {
 		if p == nil {
 			return nil
 		}
-		if failed {
+		end, floor, err := p.pass.Finish("cuda", failed, len(r.layers), func(l int) bool {
+			Ly := &r.layers[l]
+			return !Ly.kvShared && !Ly.noKV() && Ly.kvDim > 0
+		})
+		if failed || err != nil {
 			r.kvWriteFailed(p.w, 0)
-			return nil
+			return err
 		}
-		if p.end == 0 {
-			r.kvWriteFailed(p.w, 0)
-			return fmt.Errorf("cuda: upload pass: no layer uploaded any rows")
-		}
-		for l := range r.layers {
-			if Ly := &r.layers[l]; !Ly.kvShared && !Ly.noKV() && Ly.kvDim > 0 && p.reached[l] != p.end {
-				r.kvWriteFailed(p.w, 0)
-				return fmt.Errorf("cuda: upload pass: layer %d reached %d of the pass's %d rows", l, p.reached[l], p.end)
-			}
-		}
-		r.kvWriteDone(p.w, p.end)
-		r.kvFloor[p.w.s] = p.floor
+		r.kvWriteDone(p.w, end)
+		r.kvFloor[p.w.s] = floor
 		return nil
 	})
 }
@@ -125,7 +118,7 @@ func (r *cudaResident) kvWriteFailed(w kvSlotWrite, lost int) {
 		ids := t.ids[g]
 		for b := kvBlocksFor(r.kvValid[w.s]); b < len(ids); b++ {
 			if ids[b] != 0 {
-				r.kvPools[g].unref(ids[b])
+				r.kvPools[g].Unref(ids[b])
 				ids[b] = 0
 				t.dirty[g] = true
 			}

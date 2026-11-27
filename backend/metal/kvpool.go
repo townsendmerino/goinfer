@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // The KV block pool's capacity. Each layer's pool
@@ -38,21 +39,13 @@ type kvPoolState struct {
 	kvUseTick   uint64
 	kvEvictions int
 	kvReclaimed []int
-	kvUpload    *kvUploadPass
+	kvUpload    *kvmgr.UploadPass
 	kvF32       bool
 	kvI8        bool
 	pKvI8       Pipeline
 	pAttnI8     Pipeline
 	pKvI8Rows   Pipeline
 	pAttnI8Rows Pipeline
-}
-
-// kvUploadPass is an upload in progress (decoder.ResidentKVSubsystem): one write of slot s from position 0, which its first layer maps
-// through end and every layer that owns K/V must land.
-type kvUploadPass struct {
-	s, end  int
-	reached map[int]int // the end each layer has landed, by layer
-	wrote   bool        // the first layer mapped the slot and wrote its rows: a failed pass has changed the slot
 }
 
 // BeginKVUpload (decoder.ResidentKVSubsystem) starts one write of the bound slot from position 0: the UploadKV calls until EndKVUpload
@@ -62,7 +55,7 @@ func (a *metalResident) BeginKVUpload() error {
 		return fmt.Errorf("metal: resident is nil")
 	}
 	a.r.stopExec()
-	a.r.kvUpload = &kvUploadPass{s: a.r.kvSlot, reached: map[int]int{}}
+	a.r.kvUpload = kvmgr.NewUploadPass(a.r.kvSlot)
 	return nil
 }
 
@@ -76,23 +69,16 @@ func (a *metalResident) EndKVUpload(failed bool) error {
 	}
 	p := r.kvUpload
 	r.kvUpload = nil
-	drop := func(err error) error {
-		if p.wrote && len(r.kvRefs) > 0 && p.s < len(r.kvSlotSt) {
-			r.kvReleaseAll(p.s)
-			r.kvSlotSt[p.s].valid = 0
+	_, _, err := p.Finish("metal", failed, len(r.layers), func(l int) bool {
+		L := &r.layers[l]
+		return L.geom != nil && !L.kvShared && r.kc[l] != (Buffer{})
+	})
+	if failed || err != nil {
+		if s := p.Slot(); p.Wrote() && len(r.kvRefs) > 0 && s < len(r.kvSlotSt) {
+			r.kvReleaseAll(s)
+			r.kvSlotSt[s].valid = 0
 		}
 		return err
-	}
-	switch {
-	case failed:
-		return drop(nil)
-	case p.end == 0:
-		return drop(fmt.Errorf("metal: upload pass: no layer uploaded any rows"))
-	}
-	for l := range r.layers {
-		if L := &r.layers[l]; L.geom != nil && !L.kvShared && r.kc[l] != (Buffer{}) && p.reached[l] != p.end {
-			return drop(fmt.Errorf("metal: upload pass: layer %d reached %d of the pass's %d rows", l, p.reached[l], p.end))
-		}
 	}
 	return nil
 }
@@ -111,25 +97,16 @@ func (r *resident) kvUploadMap(layer, base, end int) error {
 		return fmt.Errorf("metal: UploadKV of layer %d outside an upload pass (BeginKVUpload) on a paged KV pool", layer)
 	}
 	win := int(r.layers[layer].window)
-	switch _, again := p.reached[layer]; {
-	case r.kvSlot != p.s:
-		return fmt.Errorf("metal: upload pass: slot %d is bound, the pass writes slot %d", r.kvSlot, p.s)
-	case again:
-		return fmt.Errorf("metal: upload pass: layer %d uploaded twice", layer)
-	case base > 0 && win == 0:
-		return fmt.Errorf("metal: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
-	case base > 0 && end-(win-1) < base:
-		return fmt.Errorf("metal: upload pass: layer %d's rows [%d, %d) do not cover its %d-row window", layer, base, end, win)
-	case p.end != 0 && end != p.end:
-		return fmt.Errorf("metal: upload pass: layer %d ends at %d, the pass's first layer at %d", layer, end, p.end)
+	if err := p.CheckLayer("metal", r.kvSlot, layer, base, end, win, true); err != nil {
+		return err
 	}
-	if p.end == 0 {
-		if err := r.kvWriteUpload(p.s, end); err != nil {
+	if p.End() == 0 {
+		if err := r.kvWriteUpload(p.Slot(), end); err != nil {
 			return err
 		}
-		p.end, p.wrote = end, true
+		p.MarkWrote(end)
 	}
-	p.reached[layer] = end
+	p.RecordLayer(layer, base, end, win)
 	return nil
 }
 
@@ -151,24 +128,7 @@ func kvRaise(m *decoder.Model, slots, share int) int { return m.MetalKVCap(slots
 // kvBlockOrder is the order kvFreeBlock scans the pool's blocks: ascending, or with kvScrambleForTest, alternately from the two ends,
 // so a sequence's consecutive blocks are physically far apart and out of order.
 func kvBlockOrder(blocks int, window bool) []uint32 {
-	out := make([]uint32, 0, blocks)
-	if !kvScrambleForTest {
-		for i := 1; i <= blocks; i++ {
-			out = append(out, uint32(i))
-		}
-		return out
-	}
-	for i, j := 1, blocks; i <= j; i, j = i+1, j-1 {
-		first, second := uint32(j), uint32(i)
-		if window { // the window group starts from the other end, so the two groups' tables name different blocks for one position
-			first, second = second, first
-		}
-		out = append(out, first)
-		if i != j {
-			out = append(out, second)
-		}
-	}
-	return out
+	return kvmgr.BlockScanOrder(blocks, kvScrambleForTest, window)
 }
 
 // kvGroup is the table and the counts over one layer group's pools: the layers of
@@ -527,7 +487,7 @@ func (r *resident) kvTake(g *kvGroup, s, b int, cow bool) (uint32, error) {
 		if r.kvEvictIdle(s) {
 			continue
 		}
-		if held := g.kvHeld(s); (held < g.kvShareBlocks || cow && held <= g.kvShareBlocks) && r.kvReclaim(g, s) {
+		if kvmgr.WithinShare(g.kvHeld(s), g.kvShareBlocks, cow) && r.kvReclaim(g, s) {
 			continue
 		}
 		return 0, fmt.Errorf("metal: KV slot %d holds %d blocks and the pool has none free: %w", s, g.kvHeld(s), decoder.ErrKVPoolFull)
@@ -609,16 +569,10 @@ func (r *resident) kvReleaseAll(s int) {
 // was one. The bound slot is no exception: every writer but the batched step writes the bound slot (so it is s), and the step names its
 // rows' slots, which the decoder marks busy. The released slot answers no reuse until it starts a sequence again (kvReusable).
 func (r *resident) kvEvictIdle(s int) bool {
-	t := -1
-	for c := range r.kvSlotSt {
-		st := &r.kvSlotSt[c]
-		if c == s || st.busy.Load() || r.kvHeldAny(c) == 0 {
-			continue
-		}
-		if t < 0 || (st.use < r.kvSlotSt[t].use) != kvEvictOrderPlantForTest {
-			t = c
-		}
-	}
+	t := kvmgr.PickIdleVictim(len(r.kvSlotSt), s,
+		func(c int) bool { return !r.kvSlotSt[c].busy.Load() && r.kvHeldAny(c) > 0 },
+		func(c int) uint64 { return r.kvSlotSt[c].use },
+		kvEvictOrderPlantForTest)
 	if t < 0 {
 		return false
 	}
@@ -634,21 +588,17 @@ func (r *resident) kvEvictIdle(s int) bool {
 // whether there was one. Its next write past position 0 is decoder.ErrKVPoolFull (kvWrite), and it joins kvReclaimed, which a batched
 // step mapping its rows reads (kvMapStep).
 func (r *resident) kvReclaim(g *kvGroup, s int) bool {
-	t, most := -1, 0
-	for c := range r.kvSlotSt {
-		if c == s || r.kvSlotSt[c].stopped {
-			continue
-		}
-		past := 0
-		for b := g.kvShareBlocks; b < g.kvTabBlocks; b++ {
-			if *g.kvRow(c, b) != 0 {
-				past++
+	t, _ := kvmgr.PickBorrowerVictim(len(r.kvSlotSt), s,
+		func(c int) bool { return !r.kvSlotSt[c].stopped },
+		func(c int) int {
+			past := 0
+			for b := g.kvShareBlocks; b < g.kvTabBlocks; b++ {
+				if *g.kvRow(c, b) != 0 {
+					past++
+				}
 			}
-		}
-		if past > most {
-			t, most = c, past
-		}
-	}
+			return past
+		})
 	if t < 0 {
 		return false
 	}
