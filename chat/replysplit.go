@@ -4,6 +4,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/townsendmerino/goinfer/internal/chat/harmony"
+	"github.com/townsendmerino/goinfer/internal/chat/inkling2"
 )
 
 // ReplySplitter is what a decode loop holds to separate a streamed reply into reasoning and answer: a ThinkSplitter (a delimited
@@ -33,7 +34,7 @@ func (t *Template) NewReplySplitter(turns []Turn) *ReplySplitter {
 		return &ReplySplitter{sp: harmony.NewSplitter()}
 	}
 	if t != nil && t.name == "inkling2" {
-		return &ReplySplitter{sp: &inklingSplitter{}}
+		return &ReplySplitter{sp: inkling2.NewSplitter()}
 	}
 	sp := t.NewReasoningSplitter(turns)
 	if sp == nil {
@@ -70,8 +71,8 @@ func (r *ReplySplitter) ToolCalls() []ToolCall {
 	if h, ok := r.sp.(*harmony.Splitter); ok {
 		return fromCoreCalls(h.ToolCalls())
 	}
-	if s, ok := r.sp.(*inklingSplitter); ok {
-		return inklingToolCalls(s.calls)
+	if s, ok := r.sp.(*inkling2.Splitter); ok {
+		return fromCoreCalls(s.ToolCalls())
 	}
 	return nil
 }

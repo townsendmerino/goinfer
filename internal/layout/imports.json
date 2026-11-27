@@ -756,6 +756,38 @@
         ]
       },
       "why": "internal/chat/harmony holds gpt-oss Harmony prompt rendering, TypeScript namespace tool declarations, channel-message stream splitting, and recipient tool-call extraction below chat (CH2). It imports only internal/chat/chatcore and the standard library."
+    },
+    {
+      "name": "chat-gemma4tools-leaf",
+      "from": [
+        "internal/chat/gemma4tools"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/gemma4tools": [
+          "internal/chat/chatcore"
+        ]
+      },
+      "why": "internal/chat/gemma4tools holds Gemma 4's non-JSON tool-calling micro-language renderers, O(N) control-marker sanitizer, schema formatter, and call parser below chat (CH3). It imports only internal/chat/chatcore and the standard library."
+    },
+    {
+      "name": "chat-inkling2-leaf",
+      "from": [
+        "internal/chat/inkling2"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/chat/inkling2": [
+          "internal/chat/chatcore"
+        ]
+      },
+      "why": "internal/chat/inkling2 holds Inkling 2's <|message_*|>/<|content_*|> prompt and tool rendering, reasoning effort levels, reply stream splitter, and tool-call parser below chat (CH3). It imports only internal/chat/chatcore and the standard library."
     }
   ],
   "arrows": {
@@ -871,7 +903,9 @@
     "chat": [
       "constrain",
       "internal/chat/chatcore",
+      "internal/chat/gemma4tools",
       "internal/chat/harmony",
+      "internal/chat/inkling2",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -1109,7 +1143,13 @@
     "internal/chat/chatcore": [
       "tokenizer"
     ],
+    "internal/chat/gemma4tools": [
+      "internal/chat/chatcore"
+    ],
     "internal/chat/harmony": [
+      "internal/chat/chatcore"
+    ],
+    "internal/chat/inkling2": [
       "internal/chat/chatcore"
     ],
     "internal/clef": [
