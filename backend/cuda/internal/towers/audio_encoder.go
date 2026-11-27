@@ -58,12 +58,12 @@ func (t *AudioTower) Placement() string {
 	return "weights resident"
 }
 
-// newAudioTower holds every layer's weights on the device.
+// NewAudioTower holds every layer's weights on the device.
 func NewAudioTower(enc *audio.WhisperEncoder, ptx PTX) (*AudioTower, error) {
 	return NewAudioTowerMode(enc, false, ptx)
 }
 
-// newAudioTowerMode is newAudioTower, or with streamed true a tower that holds one layer's buffers and refills them from the host's
+// NewAudioTowerMode is NewAudioTower, or with streamed true a tower that holds one layer's buffers and refills them from the host's
 // copy before each layer of every window: the same kernels on the same bytes, so the result is bit-identical to the resident tower's,
 // for the price of the weights crossing the bus once per window.
 func NewAudioTowerMode(enc *audio.WhisperEncoder, streamed bool, ptx PTX) (*AudioTower, error) {
