@@ -207,7 +207,7 @@ func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(
 		var hbufs []*DeviceBuffer
 		hrel := func() {
 			for _, b := range hbufs {
-				b.Release()
+				_ = b.Close()
 			}
 		}
 		htrack := func(d *DeviceBuffer, e error) (*DeviceBuffer, error) {

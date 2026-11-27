@@ -96,7 +96,7 @@ func (ve *VisionEncoder) projF32(src, w, bias *DeviceBuffer, M, K, N int) (*Devi
 	}
 	if bias != nil {
 		if err := ve.c.AddRowsDevice(out.Raw(), bias.Raw(), M*N, N, 0); err != nil {
-			out.Release()
+			_ = out.Close()
 			return nil, err
 		}
 	}
@@ -154,7 +154,7 @@ func (ve *VisionEncoder) ln(src *DeviceBuffer, w, b *DeviceBuffer, rows, h int) 
 		return nil, err
 	}
 	if err := ve.c.LayerNormRowsDevice(src.Raw(), w.Raw(), b.Raw(), dst.Raw(), rows, h, ve.w.Eps); err != nil {
-		dst.Release()
+		_ = dst.Close()
 		return nil, err
 	}
 	return dst, nil
@@ -168,14 +168,14 @@ func (ve *VisionEncoder) proj(src *DeviceBuffer, rm *ResidentW8A8, bias *DeviceB
 	if err != nil {
 		return nil, err
 	}
-	defer aq.Release()
-	defer as.Release()
+	defer aq.Close()
+	defer as.Close()
 	out, err := c.MatmulW8A8Device(aq, as, rm, M)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.AddRowsDevice(out.Raw(), bias.Raw(), M*rm.Rows(), rm.Rows(), 0); err != nil {
-		out.Release()
+		_ = out.Close()
 		return nil, err
 	}
 	return out, nil
@@ -189,7 +189,7 @@ func (ve *VisionEncoder) gatherHead(src *DeviceBuffer, rows, hd, stride, off, di
 		return nil, err
 	}
 	if err := ve.c.CopyHeadDevice(src.Raw(), dst.Raw(), rows, hd, stride, off, dir); err != nil {
-		dst.Release()
+		_ = dst.Close()
 		return nil, err
 	}
 	return dst, nil
@@ -220,11 +220,11 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		return nil, err
 	}
 	h, err := c.MatmulF32Device(pd.Raw(), ve.patchW.Raw(), np, cpp, hidden)
-	pd.Release()
+	_ = pd.Close()
 	if err != nil {
 		return nil, err
 	}
-	defer h.Release()
+	defer h.Close()
 	if err := c.AddRowsDevice(h.Raw(), ve.patchB.Raw(), np*hidden, hidden, 0); err != nil {
 		return nil, err
 	}
@@ -256,7 +256,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			mark("mlp residual and the layer's sync")
 		}
 		for _, b := range keep {
-			b.Release()
+			_ = b.Close()
 		}
 		if err != nil {
 			return nil, fmt.Errorf("gpu: vision block %d: %w", li, err)
@@ -270,7 +270,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer out.Release()
+	defer out.Close()
 	return c.Readback(out)
 }
 
