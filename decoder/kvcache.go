@@ -65,6 +65,11 @@ func unwrapCache(c *KVCache) *cpuengine.Cache {
 	if c == nil {
 		return nil
 	}
+	if c.lora != nil {
+		c.c.LoRALayers = c.lora.layers
+	} else if c.c.LoRALayers != nil {
+		c.c.LoRALayers = nil
+	}
 	return c.c
 }
 
@@ -91,13 +96,6 @@ func (c *KVCache) TruncateTo(pos int) (exact bool)          { syncCPUHooks(); re
 func (c *KVCache) WindowStart(pos int, global bool) int     { return c.c.WindowStart(pos, global) }
 func (c *KVCache) SetImageBlocks(blocks [][2]int)           { c.c.SetImageBlocks(blocks) }
 
-func (c *KVCache) setLora(rt *loraRuntime) {
-	c.lora = rt
-	if rt != nil {
-		c.c.LoRALayers = rt.layers
-	} else {
-		c.c.LoRALayers = nil
-	}
-}
+func (c *KVCache) setLora(rt *loraRuntime) { c.lora = rt }
 
 func (c *KVCache) hasRecurrentState() bool { return c.c.HasRecurrentState() }
