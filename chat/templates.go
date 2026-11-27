@@ -403,22 +403,22 @@ func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 		}
 	}
 	b := t.newToolBuf(mistralMarks...)
-	b.lit("<s>")
+	b.Lit("<s>")
 	for i, m := range turns {
 		if m.Role == "assistant" {
-			b.txt(" " + m.Content)
-			b.lit("</s>")
+			b.Txt(" " + m.Content)
+			b.Lit("</s>")
 			continue
 		}
 		content := m.Content
 		if i == lastUser && system != "" {
 			content = system + "\n\n" + content
 		}
-		b.lit("[INST] ")
-		b.txt(content)
-		b.lit("[/INST]")
+		b.Lit("[INST] ")
+		b.Txt(content)
+		b.Lit("[/INST]")
 	}
-	return b.out()
+	return b.Out()
 }
 
 // Ministral is Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's chat_template.jinja): "<s>" once, an explicit system

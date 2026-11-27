@@ -1,9 +1,10 @@
 package chat
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
 )
 
 // WithLenientToolCalls returns a copy of the template that also reads ONE fenced JSON call at the end of a reply
@@ -51,7 +52,7 @@ func fencedToolCall(out string, tools []Tool) (ToolCall, string, bool) {
 	var raw map[string]json.RawMessage
 	dec := json.NewDecoder(strings.NewReader(content))
 	if dec.Decode(&raw) != nil || raw == nil || strings.TrimSpace(content[dec.InputOffset():]) != "" {
-		return ToolCall{}, "", false // not JSON, not an object, or anything but whitespace after the one object
+		return ToolCall{}, "", false
 	}
 	for k := range raw {
 		if k != "name" && k != "arguments" && k != "parameters" && k != "id" {
@@ -79,7 +80,7 @@ func fencedToolCall(out string, tools []Tool) (ToolCall, string, bool) {
 		}
 	}
 	var obj map[string]json.RawMessage
-	if json.Unmarshal(args, &obj) != nil || obj == nil || !argsMatchSchema(obj, tool.Parameters) {
+	if json.Unmarshal(args, &obj) != nil || obj == nil || !chatcore.ArgsMatchSchema(obj, tool.Parameters) {
 		return ToolCall{}, "", false
 	}
 	var id string
@@ -87,124 +88,4 @@ func fencedToolCall(out string, tools []Tool) (ToolCall, string, bool) {
 		_ = json.Unmarshal(v, &id)
 	}
 	return ToolCall{ID: id, Name: name, Arguments: args}, strings.TrimSpace(trimmed[:open]), true
-}
-
-// argsMatchSchema is the part of JSON Schema that a tool's `parameters` object uses in practice: every `required`
-// property is present, every present property named in `properties` has the declared `type` (string, number,
-// integer, boolean, array, object, null, or a list of them) and sits inside its `enum`, and a property `properties`
-// does not name is refused only when `additionalProperties` is false. A schema with none of these constrains nothing,
-// which is what an absent or empty `parameters` means. Nested objects are checked one level (type), not recursively.
-func argsMatchSchema(obj map[string]json.RawMessage, schema json.RawMessage) bool {
-	if len(bytes.TrimSpace(schema)) == 0 {
-		return true
-	}
-	var sc struct {
-		Properties           map[string]json.RawMessage `json:"properties"`
-		Required             []string                   `json:"required"`
-		AdditionalProperties json.RawMessage            `json:"additionalProperties"`
-	}
-	if json.Unmarshal(schema, &sc) != nil {
-		return true // not an object schema we can read: do not refuse on it
-	}
-	for _, r := range sc.Required {
-		if _, ok := obj[r]; !ok {
-			return false
-		}
-	}
-	forbidExtra := strings.TrimSpace(string(sc.AdditionalProperties)) == "false"
-	for k, v := range obj {
-		ps, declared := sc.Properties[k]
-		if !declared {
-			if forbidExtra {
-				return false
-			}
-			continue
-		}
-		var p struct {
-			Type json.RawMessage   `json:"type"`
-			Enum []json.RawMessage `json:"enum"`
-		}
-		if json.Unmarshal(ps, &p) != nil {
-			continue
-		}
-		if !valueHasType(v, p.Type) {
-			return false
-		}
-		if len(p.Enum) > 0 {
-			in := false
-			for _, e := range p.Enum {
-				if fencedJSONEqual(e, v) {
-					in = true
-					break
-				}
-			}
-			if !in {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func fencedJSONEqual(a, b json.RawMessage) bool {
-	var x, y any
-	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
-		return false
-	}
-	xb, _ := json.Marshal(x)
-	yb, _ := json.Marshal(y)
-	return bytes.Equal(xb, yb)
-}
-
-// valueHasType checks v against a schema `type`, which is a name or a list of names; an absent type matches anything.
-func valueHasType(v, typ json.RawMessage) bool {
-	if len(bytes.TrimSpace(typ)) == 0 {
-		return true
-	}
-	var names []string
-	var one string
-	if json.Unmarshal(typ, &one) == nil {
-		names = []string{one}
-	} else if json.Unmarshal(typ, &names) != nil {
-		return true
-	}
-	var x any
-	if json.Unmarshal(v, &x) != nil {
-		return false
-	}
-	for _, n := range names {
-		switch n {
-		case "string":
-			if _, ok := x.(string); ok {
-				return true
-			}
-		case "number":
-			if _, ok := x.(float64); ok {
-				return true
-			}
-		case "integer":
-			if f, ok := x.(float64); ok && f == float64(int64(f)) {
-				return true
-			}
-		case "boolean":
-			if _, ok := x.(bool); ok {
-				return true
-			}
-		case "array":
-			if _, ok := x.([]any); ok {
-				return true
-			}
-		case "object":
-			if _, ok := x.(map[string]any); ok {
-				return true
-			}
-		case "null":
-			if x == nil {
-				return true
-			}
-		default:
-			return true // a type name this checker does not know: do not refuse on it
-		}
-	}
-	return false
 }

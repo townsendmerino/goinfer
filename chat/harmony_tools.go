@@ -1,268 +1,45 @@
 package chat
 
-// gpt-oss (Harmony) tool calling: the prompt half (declarations, and how a call and its result replay) and the parse half (the model's
-// call message back into a ToolCall). The oracle for the prompt half is the model's own chat template, byte for byte
-// (testdata/chat_think_goldens/harmony_tools.json, scripts/pin_harmony_tools.py); the oracle for the parse half is what the model
-// actually writes (harmony_parse.go).
-//
-// What the template does, which this file reproduces including the parts that look like accidents:
-//
-//   - Tools are declared in the DEVELOPER message as a TypeScript-like `namespace functions { … }`, one `type NAME = (_: {…}) => any;` per
-//     tool, written by a macro (render_typescript_type) whose Jinja whitespace leaks into the prompt: a property of an object type is
-//     preceded by "\n" + 16 spaces, the variants of a oneOf are separated by " | \n". HuggingFace's environment strips only whitespace
-//     around block tags (trim_blocks, lstrip_blocks), so the bytes below are exactly what the model is shown. They differ from what
-//     OpenAI's own harmony library renders; the checkpoint's template is the contract goinfer follows everywhere else.
-//   - A call replays as `<|start|>assistant to=functions.NAME<|channel|>commentary json<|message|>ARGS<|call|>`, a result as
-//     `<|start|>functions.NAME to=assistant<|channel|>commentary<|message|>"RESULT"<|end|>` (the result a JSON string).
-//   - Text or reasoning beside a call is rendered as an ANALYSIS message — and only while no later assistant turn has answered
-//     ("we want to drop the tool call analysis message if the model has output a later <|final|> message").
-//   - JSON is Python's: `json.dumps(…, ensure_ascii=False)`, separators ", " and ": ", keys in the order given, no HTML escaping.
-//     That is not what goinfer's jsonStr produces (it escapes <, >, & and '), which is right for the families whose templates use
-//     Jinja's htmlsafe tojson; HuggingFace's own environment does not, and this checkpoint's golden shows it.
-
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
 )
 
-// ---- an order-preserving JSON value ---------------------------------------------------------------------------------------------
-//
-// A tool's schema is declared property by property in the prompt, in the order the client wrote them, so it cannot be decoded into a
-// Go map. jv keeps key order; numbers keep their source text.
-
-type jkind uint8
+type jv = chatcore.JV
 
 const (
-	jNull jkind = iota
-	jBool
-	jNum
-	jStr
-	jArr
-	jObj
+	jNull = chatcore.JNull
+	jBool = chatcore.JBool
+	jNum  = chatcore.JNum
+	jStr  = chatcore.JStr
+	jArr  = chatcore.JArr
+	jObj  = chatcore.JObj
 )
 
-type jv struct {
-	kind jkind
-	b    bool
-	s    string // a string's value, or a number's source text
-	arr  []jv
-	keys []string
-	vals map[string]jv
-}
-
-func parseJV(raw []byte) (jv, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	v, err := readJV(dec)
-	if err != nil {
-		return jv{}, err
-	}
-	if dec.More() {
-		return jv{}, fmt.Errorf("trailing data after JSON value")
-	}
-	return v, nil
-}
-
-func readJV(dec *json.Decoder) (jv, error) {
-	tok, err := dec.Token()
-	if err != nil {
-		return jv{}, err
-	}
-	switch t := tok.(type) {
-	case json.Delim:
-		if t == '{' {
-			v := jv{kind: jObj, vals: map[string]jv{}}
-			for dec.More() {
-				kt, err := dec.Token()
-				if err != nil {
-					return jv{}, err
-				}
-				key, _ := kt.(string)
-				val, err := readJV(dec)
-				if err != nil {
-					return jv{}, err
-				}
-				if _, dup := v.vals[key]; !dup { // Python: a repeated key keeps its first position and its last value
-					v.keys = append(v.keys, key)
-				}
-				v.vals[key] = val
-			}
-			if _, err := dec.Token(); err != nil { // the closing brace
-				return jv{}, err
-			}
-			return v, nil
-		}
-		v := jv{kind: jArr}
-		for dec.More() {
-			el, err := readJV(dec)
-			if err != nil {
-				return jv{}, err
-			}
-			v.arr = append(v.arr, el)
-		}
-		if _, err := dec.Token(); err != nil {
-			return jv{}, err
-		}
-		return v, nil
-	case string:
-		return jv{kind: jStr, s: t}, nil
-	case json.Number:
-		return jv{kind: jNum, s: t.String()}, nil
-	case bool:
-		return jv{kind: jBool, b: t}, nil
-	}
-	return jv{kind: jNull}, nil
-}
-
-func (v jv) get(k string) (jv, bool) {
-	if v.kind != jObj {
-		return jv{}, false
-	}
-	x, ok := v.vals[k]
-	return x, ok
-}
-
-// truthy is Python's truth value, which is what a Jinja `{% if x %}` tests: empty containers, "", 0, false and null are false.
-func (v jv) truthy() bool {
-	switch v.kind {
-	case jBool:
-		return v.b
-	case jNum:
-		return v.s != "0" && v.s != "0.0"
-	case jStr:
-		return v.s != ""
-	case jArr:
-		return len(v.arr) > 0
-	case jObj:
-		return len(v.keys) > 0
-	}
-	return false
-}
-
-// text is the value as Jinja's string concatenation and join would show it.
-func (v jv) text() string {
-	switch v.kind {
-	case jStr, jNum:
-		return v.s
-	case jBool:
-		if v.b {
-			return "True"
-		}
-		return "False"
-	case jNull:
-		return "None"
-	}
-	return pyDumps(v)
-}
-
-// pyDumps is json.dumps(v, ensure_ascii=False): separators ", " and ": ", keys in order, no HTML escaping.
-func pyDumps(v jv) string {
-	var b strings.Builder
-	writePy(&b, v)
-	return b.String()
-}
-
-func writePy(b *strings.Builder, v jv) {
-	switch v.kind {
-	case jNull:
-		b.WriteString("null")
-	case jBool:
-		if v.b {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case jNum:
-		b.WriteString(v.s)
-	case jStr:
-		b.WriteString(pyQuote(v.s))
-	case jArr:
-		b.WriteByte('[')
-		for i, el := range v.arr {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			writePy(b, el)
-		}
-		b.WriteByte(']')
-	case jObj:
-		b.WriteByte('{')
-		for i, k := range v.keys {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString(pyQuote(k))
-			b.WriteString(": ")
-			writePy(b, v.vals[k])
-		}
-		b.WriteByte('}')
-	}
-}
-
-// pyQuote is json.dumps(s, ensure_ascii=False) for a string: the short escapes Python uses, \u00XX for the other control characters,
-// and everything else — including <, >, &, ' and U+2028 — as it is.
-func pyQuote(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		default:
-			if r < 0x20 {
-				fmt.Fprintf(&b, `\u%04x`, r)
-			} else {
-				b.WriteRune(r)
-			}
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-// pyArgs renders a call's arguments the way the template's `arguments|tojson` does. Arguments that are not valid JSON (a client
-// replaying a malformed call) go in as they are: the prompt is better a faithful record than an error.
-func pyArgs(raw json.RawMessage) string {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return "{}"
-	}
-	v, err := parseJV(raw)
-	if err != nil {
-		return string(raw)
-	}
-	return pyDumps(v)
-}
-
-// ---- the declarations ------------------------------------------------------------------------------------------------------------
+var (
+	parseJV = chatcore.ParseJV
+	pyDumps = chatcore.PyDumps
+	pyQuote = chatcore.PyQuote
+	pyArgs  = chatcore.PyArgs
+)
 
 // tsType is the template's render_typescript_type macro, branch for branch and in the macro's order.
 func tsType(p jv) string {
-	typ, hasType := p.get("type")
-	if hasType && typ.kind == jStr && typ.s == "array" {
+	typ, hasType := p.Get("type")
+	if hasType && typ.Kind == jStr && typ.S == "array" {
 		var out string
-		if items, ok := p.get("items"); ok && items.truthy() {
-			it, _ := items.get("type")
+		if items, ok := p.Get("items"); ok && items.Truthy() {
+			it, _ := items.Get("type")
 			switch {
-			case it.kind == jStr && it.s == "string":
+			case it.Kind == jStr && it.S == "string":
 				out = "string[]"
-			case it.kind == jStr && (it.s == "number" || it.s == "integer"):
+			case it.Kind == jStr && (it.S == "number" || it.S == "integer"):
 				out = "number[]"
-			case it.kind == jStr && it.s == "boolean":
+			case it.Kind == jStr && it.S == "boolean":
 				out = "boolean[]"
 			default:
 				inner := tsType(items)
@@ -275,80 +52,78 @@ func tsType(p jv) string {
 		} else {
 			out = "any[]"
 		}
-		if n, _ := p.get("nullable"); n.truthy() {
+		if n, _ := p.Get("nullable"); n.Truthy() {
 			out += " | null"
 		}
 		return out
 	}
-	if hasType && typ.kind == jArr && len(typ.arr) > 0 { // "type": ["object", "object"] from a Union
-		if len(typ.arr) > 1 {
-			parts := make([]string, len(typ.arr))
-			for i, t := range typ.arr {
-				parts[i] = t.text()
+	if hasType && typ.Kind == jArr && len(typ.Arr) > 0 {
+		if len(typ.Arr) > 1 {
+			parts := make([]string, len(typ.Arr))
+			for i, t := range typ.Arr {
+				parts[i] = t.Text()
 			}
 			return strings.Join(parts, " | ")
 		}
-		return typ.arr[0].text()
+		return typ.Arr[0].Text()
 	}
-	if one, ok := p.get("oneOf"); ok && one.truthy() {
+	if one, ok := p.Get("oneOf"); ok && one.Truthy() {
 		hasObject := false
-		for _, v := range one.arr {
-			if t, _ := v.get("type"); t.kind == jStr && t.s == "object" {
+		for _, v := range one.Arr {
+			if t, _ := v.Get("type"); t.Kind == jStr && t.S == "object" {
 				hasObject = true
 			}
 		}
-		if hasObject && len(one.arr) > 1 {
+		if hasObject && len(one.Arr) > 1 {
 			return "any"
 		}
 		var b strings.Builder
-		for i, v := range one.arr {
+		for i, v := range one.Arr {
 			b.WriteString(tsType(v))
-			if d, _ := v.get("description"); d.truthy() {
-				b.WriteString("// " + d.text())
+			if d, _ := v.Get("description"); d.Truthy() {
+				b.WriteString("// " + d.Text())
 			}
-			if d, ok := v.get("default"); ok {
-				// `{{ "// default: " … }}` has no left trim, so the line's 20 spaces of indentation stay.
+			if d, ok := v.Get("default"); ok {
 				b.WriteString(strings.Repeat(" ", 20) + "// default: " + pyDumps(d))
 			}
-			if i < len(one.arr)-1 {
-				b.WriteString(" | \n") // " | " and the newline that lstrip_blocks leaves in front of {% endif %}
+			if i < len(one.Arr)-1 {
+				b.WriteString(" | \n")
 			}
 		}
 		return b.String()
 	}
 	switch {
-	case hasType && typ.kind == jStr && typ.s == "string":
-		if e, ok := p.get("enum"); ok && e.truthy() {
-			parts := make([]string, len(e.arr))
-			for i, v := range e.arr {
-				parts[i] = v.text()
+	case hasType && typ.Kind == jStr && typ.S == "string":
+		if e, ok := p.Get("enum"); ok && e.Truthy() {
+			parts := make([]string, len(e.Arr))
+			for i, v := range e.Arr {
+				parts[i] = v.Text()
 			}
 			return `"` + strings.Join(parts, `" | "`) + `"`
 		}
-		if n, _ := p.get("nullable"); n.truthy() {
+		if n, _ := p.Get("nullable"); n.Truthy() {
 			return "string | null"
 		}
 		return "string"
-	case hasType && typ.kind == jStr && (typ.s == "number" || typ.s == "integer"):
+	case hasType && typ.Kind == jStr && (typ.S == "number" || typ.S == "integer"):
 		return "number"
-	case hasType && typ.kind == jStr && typ.s == "boolean":
+	case hasType && typ.Kind == jStr && typ.S == "boolean":
 		return "boolean"
-	case hasType && typ.kind == jStr && typ.s == "object":
-		props, ok := p.get("properties")
-		if !ok || !props.truthy() {
+	case hasType && typ.Kind == jStr && typ.S == "object":
+		props, ok := p.Get("properties")
+		if !ok || !props.Truthy() {
 			return "object"
 		}
 		required := requiredSet(p)
 		var b strings.Builder
 		b.WriteString("{\n")
-		for i, name := range props.keys {
+		for i, name := range props.Keys {
 			b.WriteString(name)
 			if !required[name] {
 				b.WriteString("?")
 			}
-			// `{{ render_typescript_type(…) }}` is on its own line with no left trim: its newline and indentation are kept.
-			b.WriteString(": \n" + strings.Repeat(" ", 16) + tsType(props.vals[name]))
-			if i < len(props.keys)-1 {
+			b.WriteString(": \n" + strings.Repeat(" ", 16) + tsType(props.Vals[name]))
+			if i < len(props.Keys)-1 {
 				b.WriteString(", ")
 			}
 		}
@@ -360,9 +135,9 @@ func tsType(p jv) string {
 
 func requiredSet(schema jv) map[string]bool {
 	set := map[string]bool{}
-	if r, ok := schema.get("required"); ok && r.kind == jArr {
-		for _, v := range r.arr {
-			set[v.text()] = true
+	if r, ok := schema.Get("required"); ok && r.Kind == jArr {
+		for _, v := range r.Arr {
+			set[v.Text()] = true
 		}
 	}
 	return set
@@ -378,31 +153,31 @@ func harmonyNamespace(tools []Tool) string {
 		}
 		b.WriteString("type " + t.Name + " = ")
 		schema, err := parseJV(t.Parameters)
-		props, _ := schema.get("properties")
-		if err != nil || !props.truthy() {
+		props, _ := schema.Get("properties")
+		if err != nil || !props.Truthy() {
 			b.WriteString("() => any;\n\n")
 			continue
 		}
 		required := requiredSet(schema)
 		b.WriteString("(_: {\n")
-		for _, name := range props.keys {
-			spec := props.vals[name]
-			if d, _ := spec.get("description"); d.truthy() {
-				b.WriteString("// " + d.text() + "\n")
+		for _, name := range props.Keys {
+			spec := props.Vals[name]
+			if d, _ := spec.Get("description"); d.Truthy() {
+				b.WriteString("// " + d.Text() + "\n")
 			}
 			b.WriteString(name)
 			if !required[name] {
 				b.WriteString("?")
 			}
 			b.WriteString(": " + tsType(spec))
-			if def, ok := spec.get("default"); ok {
-				enum, _ := spec.get("enum")
-				oneOf, _ := spec.get("oneOf")
+			if def, ok := spec.Get("default"); ok {
+				enum, _ := spec.Get("enum")
+				oneOf, _ := spec.Get("oneOf")
 				switch {
-				case enum.truthy():
-					b.WriteString(", // default: " + def.text())
-				case oneOf.truthy():
-					b.WriteString("// default: " + def.text())
+				case enum.Truthy():
+					b.WriteString(", // default: " + def.Text())
+				case oneOf.Truthy():
+					b.WriteString("// default: " + def.Text())
 				default:
 					b.WriteString(", // default: " + pyDumps(def))
 				}
@@ -414,8 +189,6 @@ func harmonyNamespace(tools []Tool) string {
 	b.WriteString("} // namespace functions")
 	return b.String()
 }
-
-// ---- the conversation ------------------------------------------------------------------------------------------------------------
 
 // harmonySegments renders system + turns (+ tool declarations when tools is non-empty) in Harmony, ending with the generation prompt.
 func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segment {
@@ -448,14 +221,11 @@ func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segmen
 		b.sp("<|end|>")
 	}
 
-	// callNames maps a call id to its function, so a result is attributed to the call it answers; lastCall is the template's own
-	// fallback (the most recent call's name).
 	callNames := map[string]string{}
 	lastCall := ""
 	for i, t := range turns {
 		switch {
 		case t.Role == "assistant" && len(t.ToolCalls) > 0:
-			// The analysis a call carries is kept only while no later assistant turn has answered.
 			answered := false
 			for _, later := range turns[i+1:] {
 				if later.Role == "assistant" && len(later.ToolCalls) == 0 {
@@ -477,8 +247,6 @@ func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segmen
 					b.sp("<|end|>")
 				}
 				if t.Reasoning != "" && t.Content != "" {
-					// The template refuses reasoning AND text on one call turn. goinfer's own parser produces exactly that pair (an analysis
-					// message and a commentary preamble before the call), so it is replayed as the model wrote it.
 					b.sp("<|start|>")
 					b.ct("assistant")
 					b.sp("<|channel|>")
@@ -538,12 +306,6 @@ func harmonySegments(effort, system string, turns []Turn, tools []Tool) []Segmen
 	return b.segs
 }
 
-// ---- the reply -------------------------------------------------------------------------------------------------------------------
-
-// harmonyToolCalls turns the call messages the parser kept into ToolCalls: a recipient `functions.NAME` is a call to the client's
-// function NAME; any other recipient (gpt-oss's built-in browser and python, never declared here) is not something a client can run,
-// and a call whose arguments are not a JSON object is not a call either — both are left out, as the other families' parsers leave out
-// a call they cannot read.
 func harmonyToolCalls(calls []harmonyCall) []ToolCall {
 	var out []ToolCall
 	for _, c := range calls {
@@ -568,8 +330,6 @@ func harmonyToolCalls(calls []harmonyCall) []ToolCall {
 	return out
 }
 
-// parseHarmonyTools reads a whole raw gpt-oss reply — channel markers and all, as -reasoning-format none leaves it — into its calls and
-// the text the model said to the user.
 func parseHarmonyTools(out string) ([]ToolCall, string) {
 	sp := newHarmonySplitter()
 	_, c1 := sp.Push(out)
