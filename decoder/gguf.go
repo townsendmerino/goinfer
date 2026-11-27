@@ -651,39 +651,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFi
 	b := &ggufBuild{arch: arch, g: g, w: w, quant: quant, needCanonical: needCanonical, skipRow4: skipRow4, sink: sink, abort: abort,
 		hidden: hidden, streamMat: streamMat, mat: mat, vec: vec, vnorm: vnorm, stackedExperts: stackedExperts, hd: hd, permMat: permMat, cfg: cfg, embInto: embInto, id: id, fusedSplit: fusedSplit}
 
-	if q := arch.Qwen35; q != nil {
-		return b.loadQwen35(q)
-	}
-
-	if arch.GPTOSS != nil {
-		return b.loadGptOss()
-	}
-
-	if arch.Laguna != nil {
-		return b.loadLaguna()
-	}
-
-	if gp := arch.Granite; gp != nil {
-		return b.loadGranite(gp)
-	}
-
-	if npar := arch.Nemotron; npar != nil {
-		return b.loadNemotron(npar)
-	}
-
-	if g4 := arch.Gemma4; g4 != nil {
-		return b.loadGemma4(g4)
-	}
-
-	if lp := arch.Llama4; lp != nil {
-		return b.loadLlama4(lp)
-	}
-
-	if ip := arch.Inkling2; ip != nil {
-		return b.loadInkling2(ip)
-	}
-
-	return b.loadLayers()
+	return b.loadFamily()
 }
 
 // ggufScaledRowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale` tensor is present (llama.cpp

@@ -2,7 +2,7 @@
 # Each is held at its length on 2026-11-19 so it can only shrink; lower the ceiling when one does.
 decoder/blockspec.go:BlockSpec.generate 307 -- over the ceiling before the ratchet; split it when next changed
 decoder/gguf_build.go:ggufBuild.loadLayers 208 -- over the ceiling before the ratchet; split it when next changed
-decoder/gguf.go:buildWeightsFromGGUF 302 -- over the ceiling before the ratchet; split it when next changed
+decoder/gguf.go:buildWeightsFromGGUF 274 -- over the ceiling before the ratchet; the family dispatch moved to ggufBuild.loadFamily; split it further when next changed
 decoder/model.go:Model.generateInto 245 -- over the ceiling before the ratchet; split it when next changed
 decoder/program_cpu_n.go:Model.walkBatch 273 -- over the ceiling before the ratchet; split it when next changed
 decoder/spec_ngram.go:Model.genNgramInto 247 -- over the ceiling before the ratchet; split it when next changed

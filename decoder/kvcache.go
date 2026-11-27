@@ -8,6 +8,7 @@ import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
@@ -232,8 +233,8 @@ type KVCache struct {
 	// analogue of delta/mamba below, and the smallest of the three: a window of
 	// K-1 vectors per layer and no recurrent matrix at all.
 	conv []*shortConvState
-	// ink is an Inkling 2 visit's four short-convolution windows (inkling2ConvState), one per visit; nil for other families.
-	ink []*inkling2ConvState
+	// ink is each Inkling 2 visit's four short-convolution windows; nil for other families.
+	ink []*inkling2.ConvState
 
 	// mamba holds the Mamba-2 recurrent state ({conv window, SSM state}) for
 	// Granite-4.0-H's mamba layers (nil entry on attention layers, nil slice on
@@ -857,7 +858,7 @@ func (c *KVCache) resetRecurrent() {
 	}
 	for _, st := range c.ink {
 		if st != nil {
-			st.reset()
+			st.Reset()
 		}
 	}
 	for _, st := range c.mamba {

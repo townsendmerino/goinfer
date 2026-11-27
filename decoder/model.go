@@ -22,6 +22,7 @@ import (
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/decoder/config"
 	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -760,7 +761,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	if a.Inkling2 != nil {
 		// Every visit holds KV and four conv windows; manualPos because walkToken advances once per token after the visits.
 		c.manualPos = true
-		c.ink = layerStates(a.NumLayers, func(int) bool { return true }, newInkling2ConvState)
+		c.ink = layerStates(a.NumLayers, func(int) bool { return true }, func() *inkling2.ConvState { return new(inkling2.ConvState) })
 	}
 	if a.Granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for

@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/inkling2"
 	"github.com/townsendmerino/goinfer/internal/runtime/normact"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 )
@@ -57,9 +58,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 			g4traceHidden(-1, h)
 		}
 	}
-	var ink *inkling2Token // Inkling 2's per-token attention-residual blocks
+	var ink *inkling2.Token // Inkling 2's per-token attention-residual blocks
 	if arch.Inkling2 != nil {
-		ink = new(inkling2Token)
+		ink = new(inkling2.Token)
 	}
 	for l, ops := range prog.Layers {
 		if ssmStopLayer >= 0 && l > ssmStopLayer {
@@ -212,9 +213,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				if ink == nil {
 					return nil, fmt.Errorf("decoder: layer %d: an Inkling 2 visit on a model without Inkling 2 geometry", l)
 				}
-				if err := m.inkling2Visit(o, h, lw, cache, l, pos, ink); err != nil {
-					return nil, err
-				}
+				inkling2.Visit(inkling2Host{m.be, cache}, arch, lw, o, cache.ink[l], ink, l, pos, h)
 			case opKDA:
 				kp := *arch.KDA
 				kp.LowerBound = o.KDA.LowerBound
@@ -235,7 +234,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 		}
 	}
 	if ink != nil {
-		m.inkling2Final(h, ink)
+		inkling2.Final(arch, ink, h)
 	}
 	if cache.manualPos {
 		cache.Advance() // a layer that stores no K/V row (a latent, a recurrent state) does not step the position
