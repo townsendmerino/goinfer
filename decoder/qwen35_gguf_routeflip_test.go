@@ -7,7 +7,7 @@
 // flips borderline top-k router choices at a few positions" as an INFERENCE about the outlier steps. This test measures it.
 //
 // THE PREDICTION, stated before the run so it can fail. Both containers are teacher-forced through the same 80 steps; every
-// moeMLP call's top-k selection is recorded on each side (moeSelTrace, the existing seam). If routing flips are the
+// moeMLP call's top-k selection is recorded on each side (cpuengine.MoESelTrace, the existing seam). If routing flips are the
 // mechanism:
 //
 //  1. the steps with the LOWEST logit cosine carry the MOST flipped layers, and
@@ -24,6 +24,7 @@ package decoder
 import (
 	"cmp"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -90,10 +91,10 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 				// every layer of this family carries a routed FFN, so one token is nL calls in
 				// layer order. (Arming it across the prefill would make the index arithmetic
 				// depend on prompt length, which is the kind of bookkeeping that quietly slips.)
-				moeSelTrace = make([][]int, 0, nL)
+				cpuengine.MoESelTrace = make([][]int, 0, nL)
 				lg, ferr := m.forward(cur, cache)
-				step := moeSelTrace
-				moeSelTrace = nil
+				step := cpuengine.MoESelTrace
+				cpuengine.MoESelTrace = nil
 				if ferr != nil {
 					t.Fatalf("%s prompt %d step %d: %v", label, pi, s, ferr)
 				}
