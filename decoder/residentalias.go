@@ -11,6 +11,8 @@ type (
 	ExpertCacheStats          = resident.ExpertCacheStats
 	KVHostBudget              = resident.KVHostBudget
 	KVPoolDetail              = resident.KVPoolDetail
+	KVSnapshotInfo            = resident.KVSnapshotInfo
+	KVSnapshotStats           = resident.KVSnapshotStats
 	PrefillTailExact          = resident.PrefillTailExact
 	ResidentBatchDraw         = resident.BatchDraw
 	ResidentBatchOut          = resident.BatchOut

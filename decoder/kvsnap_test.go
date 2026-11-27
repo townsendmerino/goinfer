@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvsnap"
 )
 
 // The prefix snapshot's policy (kvsnap.go) on a hash fake: mc3Fake's rows are a hash of each position's input and its logits a hash
@@ -284,7 +285,7 @@ func TestKVSnapshot_budgetEvictionAndReplace(t *testing.T) {
 	if st.Held != 2 || st.Evicted != 1 || st.EvictedUnused != 1 || st.Used > st.Budget {
 		t.Errorf("after a third family: %+v", st)
 	}
-	if x, lcp := m.kvSnaps.best(m.kvRootIn(nil, ""), fam(10, 1024)); x != nil && lcp >= 1024 {
+	if x, lcp := m.kvSnaps.Best(m.kvRootIn(nil, ""), fam(10, 1024)); x != nil && lcp >= 1024 {
 		t.Errorf("the evicted family still holds a snapshot")
 	}
 	// the same prefix again, longer: it replaces
@@ -403,18 +404,16 @@ func TestKVSnapshot_aRestoreDoesNotHoldTheFamilyTwice(t *testing.T) {
 // TestKVSnapStore_reserveHoldsTheBudget: reservations racing for the last room never charge past the budget; room and charge are one step.
 func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
 	const n = 1 << 20
-	st := newKVSnapStore(n)
+	st := kvsnap.NewStore(n)
 	var over atomic.Int64
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
 			for range 200000 {
 				if st.Reserve(n, true) {
-					st.mu.Lock()
-					if st.used > st.budget {
+					if st.Stats().Used > n {
 						over.Add(1)
 					}
-					st.mu.Unlock()
 					st.Release(n)
 				}
 			}
@@ -424,8 +423,8 @@ func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
 	if c := over.Load(); c != 0 {
 		t.Errorf("%d reservations charged past the budget", c)
 	}
-	if st.used != 0 {
-		t.Errorf("%d bytes left charged", st.used)
+	if u := st.Stats().Used; u != 0 {
+		t.Errorf("%d bytes left charged", u)
 	}
 }
 
@@ -440,21 +439,21 @@ func (f fixedSizeSnap) Release()        {}
 // TestKVSnapStore_noEvictionForWhatCannotFit: bytes reserved outside the list cannot be dropped, so a reservation that would not fit even with
 // every snapshot gone drops none of them.
 func TestKVSnapStore_noEvictionForWhatCannotFit(t *testing.T) {
-	st := newKVSnapStore(100)
-	st.add(&kvSnap{h: fixedSizeSnap{40}}, nil, 0, 0)
+	st := kvsnap.NewStore(100)
+	st.Add(&kvsnap.Entry{Handle: fixedSizeSnap{40}}, nil, 0, 0)
 	if !st.Reserve(40, false) { // a copy another caller holds
 		t.Fatal("the first reservation")
 	}
 	if st.Reserve(70, true) {
 		t.Fatal("70 bytes fit beside 40 reserved under a budget of 100")
 	}
-	if len(st.list) != 1 || st.used != 80 {
-		t.Errorf("after the refusal: %d snapshots held, %d bytes used; want the one snapshot, 80", len(st.list), st.used)
+	if s := st.Stats(); s.Held != 1 || s.Used != 80 {
+		t.Errorf("after the refusal: %d snapshots held, %d bytes used; want the one snapshot, 80", s.Held, s.Used)
 	}
 	if !st.Reserve(60, true) {
 		t.Fatal("60 bytes fit beside 40 reserved once the snapshot goes")
 	}
-	if len(st.list) != 0 || st.used != 100 {
-		t.Errorf("after making room: %d snapshots held, %d bytes used", len(st.list), st.used)
+	if s := st.Stats(); s.Held != 0 || s.Used != 100 {
+		t.Errorf("after making room: %d snapshots held, %d bytes used", s.Held, s.Used)
 	}
 }
