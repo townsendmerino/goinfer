@@ -1,25 +1,13 @@
 package serveapp
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/batchapi"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
-	"github.com/townsendmerino/goinfer/internal/batchio"
 )
-
-// The two batch APIs (OpenAI /v1/batches, Anthropic /v1/messages/batches): thin translations onto the job store.
-// batches_run.go does the per-line execution and stores.BatchRecord.Finalize handles completion and output assembly.
-// This file is HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope.
-
-// --- OpenAI: POST /v1/files, GET /v1/files/{id}, GET /v1/files/{id}/content ---
-
-// fileNotFound answers an id the store does not hold. A client may hold one the server really gave it, so it says why that can happen.
-const fileNotFound = "file not found: an unknown id, or a file dropped to stay within the store's limits (256 files, -max-file-store-bytes)"
 
 func (s *server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 	form, ok := parseUpload(w, r, "invalid multipart/form-data body")
@@ -43,52 +31,25 @@ func (s *server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 		purpose = "batch"
 	}
 	f := s.files.Put(header.Filename, purpose, data)
-	writeJSON(w, http.StatusOK, fileObject(f))
-}
-
-func fileObject(f *stores.StoredFile) map[string]any {
-	return map[string]any{
-		"id": f.ID, "object": "file", "bytes": len(f.Bytes),
-		"created_at": f.CreatedAt.Unix(), "filename": f.Filename, "purpose": f.Purpose,
-	}
+	writeJSON(w, http.StatusOK, batchapi.FileObject(f))
 }
 
 func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	f := s.files.Get(r.PathValue("id"))
 	if f == nil {
-		writeErr(w, http.StatusNotFound, fileNotFound)
+		writeErr(w, http.StatusNotFound, batchapi.FileNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, fileObject(f))
+	writeJSON(w, http.StatusOK, batchapi.FileObject(f))
 }
 
 func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 	f := s.files.Get(r.PathValue("id"))
 	if f == nil {
-		writeErr(w, http.StatusNotFound, fileNotFound)
+		writeErr(w, http.StatusNotFound, batchapi.FileNotFound)
 		return
 	}
-	rc := http.NewResponseController(w)
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	// Renew the write deadline per chunk so a slow-but-live client reading a multi-megabyte file is not
-	// truncated by one fixed timeout while a stalled client still releases the handler within sseWriteTimeout.
-	const chunkBytes = 256 << 10
-	for off := 0; off < len(f.Bytes); off += chunkBytes {
-		end := min(off+chunkBytes, len(f.Bytes))
-		_ = rc.SetWriteDeadline(time.Now().Add(streamframe.WriteTimeout))
-		if _, err := w.Write(f.Bytes[off:end]); err != nil {
-			return
-		}
-	}
-}
-
-// --- OpenAI: POST /v1/batches, GET /v1/batches/{id}, POST /v1/batches/{id}/cancel ---
-
-// batchBudgetMsg is the refusal for a batch the server-wide line budget (stores.BatchStore.Create) cannot take now.
-func batchBudgetMsg(limit, n int) string {
-	return fmt.Sprintf("the server is running its limit of batch requests (%d across all batches); this batch of %d does not fit until earlier lines finish: retry later",
-		limit, n)
+	batchapi.WriteFileContent(w, f.Bytes)
 }
 
 func (s *server) finalizeBatch(id string) {
@@ -120,37 +81,17 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("input_file_id %q not found", req.InputFileID))
 		return
 	}
-
-	// The input format is internal/batchio's, shared with `goinfer-chat --batch`, so a file is one thing for both.
-	lines, err := batchio.ParseInput(f.Bytes)
+	customIDs, reqs, err := batchapi.ParseChatBatch(f.Bytes)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := batchio.CheckUnique(lines); err != nil {
-		writeErr(w, http.StatusBadRequest, "input file: "+err.Error())
+	if batchTooLarge(w, len(customIDs)) {
 		return
 	}
-	if batchTooLarge(w, len(lines)) {
-		return
-	}
-	var customIDs []string
-	var reqs []chatReq
-	for _, l := range lines {
-		var creq chatReq
-		if err := json.Unmarshal(l.Body, &creq); err != nil {
-			// A malformed per-line BODY is that line's own problem, not the whole batch's: record it as a request whose
-			// validation fails immediately in runBatchChatLine instead of rejecting the batch outright (one bad line
-			// never blocks the rest).
-			creq = chatReq{}
-		}
-		customIDs = append(customIDs, l.CustomID)
-		reqs = append(reqs, creq)
-	}
-
 	b := s.batches.Create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
 	if b == nil {
-		writeErr(w, http.StatusTooManyRequests, batchBudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
+		writeErr(w, http.StatusTooManyRequests, batchapi.BudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
 		return
 	}
 	runBatchPool(len(reqs), func(i int) { runBatchChatLine(s, b, i, reqs[i]) })
@@ -178,51 +119,21 @@ func (s *server) handleCancelBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, b.OpenAIObject())
 }
 
-// --- Anthropic: POST /v1/messages/batches, GET .../{id}, GET .../{id}/results, POST .../{id}/cancel ---
-
-type anthropicBatchLineReq struct {
-	CustomID string          `json:"custom_id"`
-	Params   json.RawMessage `json:"params"`
-}
-
 func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Requests []anthropicBatchLineReq `json:"requests"`
+		Requests []batchapi.AnthropicLineReq `json:"requests"`
 	}
 	if !decodeAnthropicJSON(w, r, &req) {
 		return
 	}
-	if len(req.Requests) == 0 {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "requests must not be empty")
+	customIDs, reqs, status, kind, msg := batchapi.ParseMessageBatch(req.Requests)
+	if status != 0 {
+		writeAnthropicErr(w, status, kind, msg)
 		return
 	}
-	if len(req.Requests) > stores.MaxBatchLines {
-		writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "request_too_large",
-			fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", stores.MaxBatchLines, len(req.Requests)))
-		return
-	}
-	customIDs := make([]string, len(req.Requests))
-	reqs := make([]anthropicReq, len(req.Requests))
-	for i, line := range req.Requests {
-		if line.CustomID == "" {
-			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error",
-				fmt.Sprintf("requests[%d]: custom_id is required", i))
-			return
-		}
-		customIDs[i] = line.CustomID
-		var areq anthropicReq
-		_ = json.Unmarshal(line.Params, &areq) // a malformed params object is THIS line's own error, see handleCreateBatch's identical comment
-		reqs[i] = areq
-	}
-
-	if err := batchio.CheckUniqueIDs(customIDs); err != nil {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "requests: "+err.Error())
-		return
-	}
-
 	b := s.batches.Create("anthropic_messages", "/v1/messages", "", "", customIDs)
 	if b == nil {
-		writeAnthropicErr(w, http.StatusTooManyRequests, "rate_limit_error", batchBudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
+		writeAnthropicErr(w, http.StatusTooManyRequests, "rate_limit_error", batchapi.BudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
 		return
 	}
 	runBatchPool(len(reqs), func(i int) { runBatchMessageLine(s, b, i, reqs[i]) })
@@ -251,32 +162,7 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 		writeAnthropicErr(w, http.StatusConflict, "invalid_request_error", "batch results are not ready yet")
 		return
 	}
-	rc := http.NewResponseController(w)
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	for _, res := range results {
-		line := map[string]any{"custom_id": res.CustomID}
-		switch {
-		case res.ErrType == "cancelled":
-			line["result"] = map[string]any{"type": "canceled"}
-		case res.ErrType != "" || res.Body == nil:
-			line["result"] = map[string]any{"type": "errored",
-				"error": map[string]any{"type": res.ErrType, "message": res.ErrMsg}}
-		default:
-			line["result"] = map[string]any{"type": "succeeded", "message": res.Body}
-		}
-		lineBytes, err := json.Marshal(line)
-		if err != nil {
-			continue
-		}
-		_ = rc.SetWriteDeadline(time.Now().Add(streamframe.WriteTimeout))
-		if _, err := w.Write(lineBytes); err != nil {
-			return
-		}
-		if _, err := w.Write([]byte("\n")); err != nil {
-			return
-		}
-	}
+	batchapi.WriteMessageBatchResults(w, results)
 }
 
 func (s *server) handleCancelMessageBatch(w http.ResponseWriter, r *http.Request) {
