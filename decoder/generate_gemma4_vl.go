@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/cpuengine"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 	"slices"
 	"sync/atomic"
 )
@@ -242,7 +243,10 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		return false
 	}
 	var prefill func(rows [][]float32) ([]float32, error)
-	build := m.gemma4EModelImageRowsSpans
+	build := func(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
+		e := m.cpuEngine()
+		return vlprep.Gemma4EModelImageRows(m.w.Arch, m.BackendView().EmbedLen(), e.Gemma4PLEInputs, m.embedResident, ids, feats, spans, gemma4VLRowsDefectForTest)
+	}
 	if m.w.Cfg.UseBidirectionalAttention != "" {
 		if !canStep(m.resident, stepBatch{Pass: passRows, In: inSpans, Emb: stepProbe}) || gemma4IsEModel(m.w.Arch) {
 			return false
@@ -252,7 +256,9 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 			sr, err := m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inSpans, Emb: rows, Spans: blocks})
 			return sr.Logits, err
 		}
-		build = m.gemma4BidirImageRowsSpans
+		build = func(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
+			return vlprep.Gemma4BidirImageRows(m.w.Arch, m.program().Embed.Scale, m.embedN, ids, feats, spans, gemma4VLRowsDefectForTest)
+		}
 	} else {
 		if !canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			return false
@@ -303,101 +309,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	return true
 }
 
-// gemma4ResidentMediaRow is the resident row for one image or audio position of a Gemma 4 E-model: the projected
-// feature, unscaled (as the CPU's prefillLogitsGemma4VL splices it), then for an E-model the PLE inputs from PAD's token
-// identity (as runLayersFromEmbedPLE computes them).
-func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
-	hidden := m.w.Arch.HiddenDim
-	row := make([]float32, m.BackendView().EmbedLen())
-	copy(row[:hidden], feature)
-	if len(row) > hidden {
-		e := m.cpuEngine()
-		e.Gemma4PLEInputs(row[:hidden], m.w.Arch.Gemma4.PadTokenID, row[hidden:])
-	}
-	return row
-}
-
-// gemma4EModelImageRowsSpans builds the resident rows of an E-model image prompt (any number of images): a text
-// position's row is embedResident's ([h || PLE]); an image position's is gemma4ResidentMediaRow of its projected
-// feature. It checks the image run against the prompt and the feature count, and returns an error (a decline) rather
-// than slice out of range. gemma4VLRowsDefectForTest plants defects here for the tests that prove the gate can fail.
-func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
-	arch := m.w.Arch
-	if arch.Gemma4 == nil {
-		return nil, fmt.Errorf("decoder: gemma4EModelImageRows on a non-gemma4 model")
-	}
-	hidden := arch.HiddenDim
-	if err := checkImageSpans(spans, len(ids), feats, hidden); err != nil {
-		return nil, err
-	}
-	rows := make([][]float32, len(ids))
-	for i, id := range ids {
-		r, in := imageSpanRow(spans, i)
-		if !in || gemma4VLRowsDefectForTest == 4 {
-			rows[i] = m.embedResident(id)
-			continue
-		}
-		f := feats[r*hidden : (r+1)*hidden]
-		switch gemma4VLRowsDefectForTest {
-		case 1: // planted: the placeholder's own id instead of the pad id
-			row := make([]float32, m.BackendView().EmbedLen())
-			copy(row[:hidden], f)
-			e := m.cpuEngine()
-			e.Gemma4PLEInputs(row[:hidden], id, row[hidden:])
-			rows[i] = row
-		case 2: // planted: the feature scaled like a token embedding
-			sc := float32(1)
-			if e := arch.EmbedScale; e != 0 && e != 1 {
-				sc = float32(e)
-			}
-			g := make([]float32, hidden)
-			for k := range g {
-				g[k] = f[k] * sc
-			}
-			rows[i] = m.gemma4ResidentMediaRow(g)
-		case 3: // planted: the PLE tail left zero
-			row := m.gemma4ResidentMediaRow(f)
-			clear(row[hidden:])
-			rows[i] = row
-		default:
-			rows[i] = m.gemma4ResidentMediaRow(f)
-		}
-	}
-	return rows, nil
-}
-
-// gemma4BidirImageRowsSpans builds the resident rows of a bidirectional (non-E) Gemma 4 image prompt, exactly as
-// prefillLogitsGemma4VLBidirectionalSpans embeds them: embedN of the ids (the program's embed scale applied), with each
-// span's projected features spliced in unscaled. gemma4VLRowsDefectForTest 2 scales the features by the embed scale.
-func (m *Model) gemma4BidirImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
-	arch := m.w.Arch
-	if arch.Gemma4 == nil {
-		return nil, fmt.Errorf("decoder: gemma4BidirImageRows on a non-gemma4 model")
-	}
-	hidden := arch.HiddenDim
-	if err := checkImageSpans(spans, len(ids), feats, hidden); err != nil {
-		return nil, err
-	}
-	h := m.embedN(ids)
-	spliceImageSpans(h, spans, feats, hidden)
-	if gemma4VLRowsDefectForTest == 2 {
-		if e := m.program().Embed.Scale; e != 0 && e != 1 {
-			for _, s := range spans {
-				for i := s.Pos * hidden; i < (s.Pos+s.Len)*hidden; i++ {
-					h[i] *= float32(e)
-				}
-			}
-		}
-	}
-	rows := make([][]float32, len(ids))
-	for i := range rows {
-		rows[i] = h[i*hidden : (i+1)*hidden : (i+1)*hidden]
-	}
-	return rows, nil
-}
-
-// gemma4VLRowsDefectForTest is a planted-defect selector for gemma4EModelImageRowsSpans (0 = none; 2 also in
-// gemma4BidirImageRowsSpans): 1 pad id replaced
-// by the placeholder's id, 2 the feature scaled by the embed scale, 3 the PLE tail zero, 4 image positions built as
-// text rows. Set only through SetGemma4VLRowsDefectForTest (goinfer_testhooks).
+// gemma4VLRowsDefectForTest is a planted-defect selector for Gemma 4 resident row builders (0 = none; 1: placeholder ID
+// for PLE, 2: feature scaled by embed scale, 3: zero PLE tail, 4: image positions built as text rows). Set only through
+// SetGemma4VLRowsDefectForTest (goinfer_testhooks).
 var gemma4VLRowsDefectForTest int

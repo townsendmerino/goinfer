@@ -11,12 +11,13 @@
     "internal/runtime/wbuild/gguf_qwen35.go",
     "internal/runtime/families/arch_qwen3_5_moe.go",
     "decoder/generate_vl_qwen35.go",
+    "internal/runtime/vlprep/guards.go",
     "internal/runtime/wbuild/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35-tiny"
   ],
-  "deps_hash": "sha256:d329685ae389e16f7c08f93ef861bfd753c67c5980a483d51e2da4c544bb206d",
+  "deps_hash": "sha256:b3a12bf620fcf353aa067c88adb73a7fcffa621c09e7fcabb91bf4993cdbaadb",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

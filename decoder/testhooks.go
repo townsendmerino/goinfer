@@ -28,6 +28,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -115,10 +116,10 @@ func (m *Model) FinalNormForTest(h []float32) []float32 {
 // resident parity gates.
 func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
 
-// Gemma4ResidentMediaRowForTest is gemma4ResidentMediaRow: the resident row GenerateGemma4VL's E-model resident prefill
-// builds for an image or audio position.
+// Gemma4ResidentMediaRowForTest exposes vlprep.Gemma4MediaRow for resident parity gates.
 func (m *Model) Gemma4ResidentMediaRowForTest(feature []float32) []float32 {
-	return m.gemma4ResidentMediaRow(feature)
+	e := m.cpuEngine()
+	return vlprep.Gemma4MediaRow(m.w.Arch, m.BackendView().EmbedLen(), e.Gemma4PLEInputs, feature)
 }
 
 // ForwardForTest is the CPU per-token logits: a reference seam for the gpu-package resident parity gates, which cannot live
@@ -566,7 +567,8 @@ func SetGemma4VLRowsDefectForTest(d int) { gemma4VLRowsDefectForTest = d }
 
 // Gemma4EModelImageRowsForTest exposes the E-model image-row builder; a gate builds the rows, then hands them to the resident's PrefillLast.
 func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
-	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
+	e := m.cpuEngine()
+	return vlprep.Gemma4EModelImageRows(m.w.Arch, m.BackendView().EmbedLen(), e.Gemma4PLEInputs, m.embedResident, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, gemma4VLRowsDefectForTest)
 }
 
 // SetInt4FloatActForTest turns int4FloatActForTest on or off; on, it also turns the fused W4A8 batches off, and off restores
@@ -594,7 +596,7 @@ func (m *Model) LogitsFromHiddenForTest(h []float32) []float32 {
 // Gemma4BidirImageRowsForTest exposes the bidirectional image-row builder; a gate builds the rows, then hands them to the
 // resident's PrefillSpansLast.
 func (m *Model) Gemma4BidirImageRowsForTest(ids []int, imageEmbeds []float32, spans []ImageSpan) ([][]float32, error) {
-	return m.gemma4BidirImageRowsSpans(ids, imageEmbeds, spans)
+	return vlprep.Gemma4BidirImageRows(m.w.Arch, m.program().Embed.Scale, m.embedN, ids, imageEmbeds, spans, gemma4VLRowsDefectForTest)
 }
 
 // SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual
@@ -638,7 +640,7 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 		return nil, err
 	}
 	delta := rope.MRoPEDelta(mropePos, len(ids))
-	if err := m.checkDeepstack(deep, imageSpansTotal(spans)); err != nil {
+	if err := vlprep.CheckDeepstack(m.w.Arch.NumLayers, m.w.Arch.HiddenDim, deep, imageSpansTotal(spans)); err != nil {
 		return nil, err
 	}
 	cache := m.NewCache(len(ids) + len(path))

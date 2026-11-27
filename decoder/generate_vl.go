@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/rope"
+	"github.com/townsendmerino/goinfer/internal/runtime/vlprep"
 )
 
 // vlDecodeLoop is the shared sampler/stream/stop decode loop behind GenerateVL and GenerateQwenVL, so the control-flow
@@ -103,7 +104,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			if causal {
 				break // no bidirectional block, so no window to outgrow
 			}
-			if err := m.checkImageBlockFitsWindow(s.Len); err != nil {
+			if err := vlprep.CheckImageBlockFitsWindow(m.w.Arch.SlidingWindow, s.Len); err != nil {
 				g.err = err
 				return
 			}
@@ -360,7 +361,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 
 		feats, deep, err := features()
 		if err == nil {
-			err = m.checkDeepstack(deep, imageSpansTotal(spans))
+			err = vlprep.CheckDeepstack(m.w.Arch.NumLayers, m.w.Arch.HiddenDim, deep, imageSpansTotal(spans))
 		}
 		if err != nil {
 			g.err = err
@@ -475,30 +476,4 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		}
 	})
 	return out, g
-}
-
-// checkImageBlockFitsWindow refuses an image block longer than the sliding window (docs/multimodal.md, the `attendHi` entry). The
-// bidirectional image-block mask this path uses (KVCache.attendHi, and the resident image prefill that mirrors it)
-// bounds a sliding layer's keys by the query's own window and never extends it back to the block's start, so a longer
-// block would under-attend its own image. Gemma 4's own path applies the correction and does not come here. A
-// refusal by name instead of a quietly wrong answer.
-func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
-	if w := m.w.Arch.SlidingWindow; w > 0 && imgLen > w {
-		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md)", imgLen, w)
-	}
-	return nil
-}
-
-// checkDeepstack validates GenerateQwenVLDeepstack's sets: at most one per decoder layer, each imgLen rows of hidden
-// (every image's rows, for several images).
-func (m *Model) checkDeepstack(deep [][]float32, imgLen int) error {
-	if len(deep) > m.w.Arch.NumLayers {
-		return fmt.Errorf("decoder: %d DeepStack sets for %d layers", len(deep), m.w.Arch.NumLayers)
-	}
-	for l, set := range deep {
-		if len(set) != imgLen*m.w.Arch.HiddenDim {
-			return fmt.Errorf("decoder: DeepStack set %d has %d values, want %d x %d", l, len(set), imgLen, m.w.Arch.HiddenDim)
-		}
-	}
-	return nil
 }
