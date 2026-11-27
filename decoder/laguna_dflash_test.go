@@ -59,7 +59,7 @@ func TestLagunaDFlash_load(t *testing.T) {
 	if !d.HasOwnHead() {
 		t.Fatal("HasOwnHead() = false — this drafter ships lm_head + d2t and must not borrow the target's")
 	}
-	draftVocab, lmHeadRows, embedRows, d2t := blockdraft.DFlashHeadDims(&d.DFlash)
+	draftVocab, lmHeadRows, embedRows, d2t := blockdraft.DFlashHeadDims(d.DFlash)
 	if draftVocab != 32000 {
 		t.Errorf("draftVocab = %d, want 32000", draftVocab)
 	}

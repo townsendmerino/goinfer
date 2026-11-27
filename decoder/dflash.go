@@ -23,7 +23,7 @@ var (
 
 // DFlashDrafter is an imported z-lab DFlash block drafter.
 type DFlashDrafter struct {
-	blockdraft.DFlash
+	*blockdraft.DFlash
 }
 
 func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
@@ -31,7 +31,7 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DFlashDrafter{DFlash: *d}, nil
+	return &DFlashDrafter{DFlash: d}, nil
 }
 
 func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) {
@@ -39,7 +39,7 @@ func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DFlashDrafter{DFlash: *d}, nil
+	return &DFlashDrafter{DFlash: d}, nil
 }
 
 func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
@@ -65,7 +65,7 @@ var (
 // the only symptom is acceptance landing below what the pairing is worth.
 func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
 	blockdraft.MustHoldWeights(&d.BlockTrunk) // a released embedding is zero-rowed, and would read as "borrows the target's"
-	if !blockdraft.HasOwnEmbed(&d.DFlash) {
+	if !blockdraft.HasOwnEmbed(d.DFlash) {
 		return m.DrafterEmbedBlock(ids)
 	}
 	rows := make([][]float32, len(ids))

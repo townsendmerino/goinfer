@@ -93,11 +93,11 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if d.HostWeightsReleased() || d.DrafterFC().Rows() == 0 || d.DrafterLayer(1).Down.Rows() == 0 || !blockdraft.STHandleOpen(&d.DFlash) {
+	if d.HostWeightsReleased() || d.DrafterFC().Rows() == 0 || d.DrafterLayer(1).Down.Rows() == 0 || !blockdraft.STHandleOpen(d.DFlash) {
 		t.Fatal("the fixture loaded without weights or without its mapping")
 	}
 	geo, bs, mask, taps := d.DrafterGeometry(), d.BlockSize(), d.MaskTokenID(), d.TargetLayerIDs()
-	st := blockdraft.STHandle(&d.DFlash)
+	st := blockdraft.STHandle(d.DFlash)
 
 	if err := d.ReleaseHostWeights(); err != nil {
 		t.Fatal(err)
@@ -143,17 +143,17 @@ func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if !blockdraft.OwnHeadLoaded(&d.DFlash) {
+	if !blockdraft.OwnHeadLoaded(d.DFlash) {
 		t.Fatal("the fixture loaded without its own head, embedding or d2t")
 	}
-	st := blockdraft.STHandle(&d.DFlash)
+	st := blockdraft.STHandle(d.DFlash)
 	if err := d.ReleaseHostWeights(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Tensor("lm_head.weight"); err == nil {
 		t.Error("the mapping is still open after the release of a drafter with its own head")
 	}
-	if !blockdraft.OwnHeadCleared(&d.DFlash) {
+	if !blockdraft.OwnHeadCleared(d.DFlash) {
 		t.Error("the own head, embedding or d2t survived the release")
 	}
 	if !d.HasOwnHead() {
