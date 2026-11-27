@@ -208,6 +208,8 @@ func detect(meta Meta) (*Template, error) {
 		// tested), Mellum2 before ChatML, and the three declines below before Mistral and ChatML.
 		case strings.Contains(t, "<|start|>") && strings.Contains(t, "<|message|>"):
 			return Harmony(), nil
+		case strings.Contains(t, ikModel) && strings.Contains(t, ikText) && strings.Contains(t, ikEnd):
+			return Inkling2(), nil
 		// Nemotron-H's markers. Nemotron-Nano-9B-v2 opens the same way, with thinking, tools and another stop: declined.
 		case strings.Contains(t, "<SPECIAL_10>System"):
 			if strings.Contains(t, "<SPECIAL_12>") {
@@ -281,6 +283,8 @@ func detect(meta Meta) (*Template, error) {
 			return Harmony(), nil
 		case has("<|im_start|>"):
 			return ChatML(), nil
+		case has(ikModel) && has(ikText) && has(ikEnd):
+			return Inkling2(), nil
 		case has("<start_of_turn>"):
 			return Gemma3(), nil
 		case has("<|turn>"):
