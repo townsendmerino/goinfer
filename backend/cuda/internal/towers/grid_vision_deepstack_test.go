@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -21,7 +21,7 @@ import (
 // cosine >= 0.9999 (0.999-0.9999 parked), on the tiny DeepStack tower (testdata/qwen3vl-vision-tiny, norms randomised) and on Qwen3-VL-2B's four F2a images (heavy). Two planted defects must go red, each alone: the
 // taps one block late, and the taps in reverse order.
 
-func dsCompare(t *testing.T, what string, enc *vision.Qwen3VisionEncoder, acc *gridTower, px []float32, grid [][3]int) (worst float64, err error) {
+func dsCompare(t *testing.T, what string, enc *vision.Qwen3VisionEncoder, acc *GridTower, px []float32, grid [][3]int) (worst float64, err error) {
 	t.Helper()
 	wantM, wantD, err := enc.ForwardDeepstack(px, grid)
 	if err != nil {
@@ -54,7 +54,7 @@ func dsGrade(t *testing.T, what string, w float64) {
 }
 
 func TestGridVisionCUDA_deepstackTiny(t *testing.T) {
-	enc, err := vision.LoadQwen3VisionEncoder("../../testdata/qwen3vl-vision-tiny", false)
+	enc, err := vision.LoadQwen3VisionEncoder("../../../../testdata/qwen3vl-vision-tiny", false)
 	if err != nil {
 		t.Skipf("no tiny DeepStack tower: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestGridVisionCUDA_deepstackReal(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = acc.Close() })
 	for _, img := range []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"} {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}

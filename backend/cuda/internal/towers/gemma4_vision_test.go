@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"math"
@@ -23,7 +23,7 @@ import (
 
 func g4TinyTower(t *testing.T) *vision.Gemma4Encoder {
 	t.Helper()
-	enc, err := vision.LoadGemma4Encoder("../../testdata/gemma4-vision-tiny", false)
+	enc, err := vision.LoadGemma4Encoder("../../../../testdata/gemma4-vision-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func g4TinyTower(t *testing.T) *vision.Gemma4Encoder {
 	return enc
 }
 
-func newG4TowerForTest(t *testing.T, enc *vision.Gemma4Encoder) *g4Tower {
+func newG4TowerForTest(t *testing.T, enc *vision.Gemma4Encoder) *G4Tower {
 	t.Helper()
 	a, err := newG4Tower(enc)
 	if err != nil {
@@ -111,7 +111,7 @@ func g4Worst(got, want []float32, d int) float64 {
 }
 
 // g4Run is the tower's result through aikit's tail for one grid, and the CPU reference.
-func g4Run(t *testing.T, enc *vision.Gemma4Encoder, a *g4Tower, p []float32, pos [][2]int) (got, want []float32) {
+func g4Run(t *testing.T, enc *vision.Gemma4Encoder, a *G4Tower, p []float32, pos [][2]int) (got, want []float32) {
 	t.Helper()
 	want, err := enc.Forward(p, pos)
 	if err != nil {
@@ -296,7 +296,7 @@ func TestG4VCUDA_gemma4E2B(t *testing.T) {
 	a := newG4TowerForTest(t, enc)
 	t.Logf("E2B tower: hidden %d, %d layers, clipped %v, standardize %v, text width %d", enc.Cfg.HiddenSize, enc.Cfg.NumHiddenLayers, enc.Cfg.UseClippedLinears, enc.Cfg.Standardize, enc.TextHiddenSize)
 	for _, img := range []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"} {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -332,7 +332,7 @@ func TestG4VCUDA_gemma4E2B(t *testing.T) {
 // kernel. The tower has no device, so an op that reached a dispatch would panic.
 func TestG4TowerWalkBlock_refusesMisroutedOps(t *testing.T) {
 	const hidden, inter = 8, 32
-	a := &g4Tower{cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: hidden / 2}}
+	a := &G4Tower{cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: hidden / 2}}
 	hp := g4Proj{out: hidden, in: hidden}
 	ly := &g4Layer{q: hp, k: hp, v: hp, o: hp, gate: g4Proj{out: inter, in: hidden}, up: g4Proj{out: inter, in: hidden}, down: g4Proj{out: hidden, in: inter}}
 	for _, c := range vision.MisroutedTowerOpsForTest() {

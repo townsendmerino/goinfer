@@ -2314,7 +2314,7 @@ Open rows moved from `docs/completed/task-code-comments-2026-10.md` §10 and `do
 - **Comment diet: open work with no owning doc.** Each item is still unowned: `backend/webgpu/kv_slots.go:slotsBeforeContext` (a discrete
   Vulkan measurement); `backend/webgpu/attention.go` (Metal's `float(pos)*invf[dd]` pattern at long context, unmeasured);
   `backend/metal/batch.go:promptStepAboveFloor` and `backend/metal/paged_fence.go:pagedFenceOn` (off, no queue entry);
-  `backend/cuda/vision_encoder.go:addInPlaceHost` (tower residual add round-trips through the host); `cmd/gate/grade_parity.go:whyNoResult`
+  `backend/cuda/internal/towers/vision_encoder.go:addInPlaceHost` (tower residual add round-trips through the host); `cmd/gate/grade_parity.go:whyNoResult`
   (build-tag reachability); `tokenizer` `byteLevelKnobs` (GGUF `pre="default"`); `Options.LoadAbort` in the decoder package (GGUF direct path only);
   `decoder/weights.go:LoadWeights` (bf16/f16 widen to f32 on load); `decoder/forwardn.go:Model.specRollbackSafe`;
   `internal/runtime/mem/probe/physical_linux.go:Physical` (cgroup `memory.max` not read); `chat/tools.go:Template.RenderToolsSegments`;

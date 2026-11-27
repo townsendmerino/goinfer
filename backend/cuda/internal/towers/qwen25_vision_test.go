@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ import (
 
 func TestQwen25CUDA_tiny(t *testing.T) {
 	newTestTower(t, 64)
-	enc, err := vision.LoadQwenVisionEncoder("../../testdata/qwen25vl-tiny", false)
+	enc, err := vision.LoadQwenVisionEncoder("../../../../testdata/qwen25vl-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestQwen25CUDA_tiny(t *testing.T) {
 // TestQwen25CUDA_int8Declines: an int8-loaded encoder does not get this tower (it runs float32); EnableResident reports it instead of attaching something wrong.
 func TestQwen25CUDA_int8Declines(t *testing.T) {
 	newTestTower(t, 64)
-	enc, err := vision.LoadQwenVisionEncoder("../../testdata/qwen25vl-tiny", true)
+	enc, err := vision.LoadQwenVisionEncoder("../../../../testdata/qwen25vl-tiny", true)
 	if err != nil {
 		t.Skipf("no int8 tiny Qwen2.5-VL tower: %v", err)
 	}
@@ -146,15 +146,15 @@ func TestQwen25CUDA_real(t *testing.T) {
 	}
 	t.Cleanup(dev.Close)
 	rv := reflect.ValueOf(dev).Elem().FieldByName("resident")
-	if _, ok := reflect.NewAt(rv.Type(), unsafe.Pointer(rv.UnsafeAddr())).Elem().Interface().(vision.QwenResidentEncoder).(*qwen25Tower); !ok {
-		t.Fatalf("the attached tower is %s, not goinfer's *cuda.qwen25Tower", rv.Elem().Type())
+	if _, ok := reflect.NewAt(rv.Type(), unsafe.Pointer(rv.UnsafeAddr())).Elem().Interface().(vision.QwenResidentEncoder).(*Qwen25Tower); !ok {
+		t.Fatalf("the attached tower is %s, not goinfer's *cuda.Qwen25Tower", rv.Elem().Type())
 	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, img := range sigImages {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}

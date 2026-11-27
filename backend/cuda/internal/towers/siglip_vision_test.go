@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -61,8 +60,8 @@ func sigGrade(t *testing.T, what string, got, want []float32, width int) float64
 	return w
 }
 
-// siglipAttachedTower returns the *siglipTower attached to enc, failing if another registration won.
-func siglipAttachedTower(t *testing.T, enc *vision.Encoder) *siglipTower {
+// siglipAttachedTower returns the *SiglipTower attached to enc, failing if another registration won.
+func siglipAttachedTower(t *testing.T, enc *vision.Encoder) *SiglipTower {
 	t.Helper()
 	rv := reflect.ValueOf(enc).Elem().FieldByName("resident")
 	if rv.IsNil() {
@@ -73,16 +72,16 @@ func siglipAttachedTower(t *testing.T, enc *vision.Encoder) *siglipTower {
 	if !ok {
 		t.Fatal("the attached value is not a ResidentEncoder")
 	}
-	st, ok := r.(*siglipTower)
+	st, ok := r.(*SiglipTower)
 	if !ok {
-		t.Fatalf("the attached tower is %T, not the float32 *cuda.siglipTower", r)
+		t.Fatalf("the attached tower is %T, not the float32 *cuda.SiglipTower", r)
 	}
 	return st
 }
 
 func TestSiglipCUDA_tiny(t *testing.T) {
 	newTestTower(t, 64) // skips without a CUDA device
-	enc, err := vision.LoadEncoder("../../testdata/siglip-tiny", false)
+	enc, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +109,7 @@ func TestSiglipCUDA_tiny(t *testing.T) {
 		px[i] = float32(rng.NormFloat64())
 	}
 	// The reference: aikit's CPU tower, on a second encoder with the SAME (sharpened, aliased) weights and no resident attached.
-	cpu, err := vision.LoadEncoder("../../testdata/siglip-tiny", false)
+	cpu, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +170,7 @@ func TestSiglipCUDA_tiny(t *testing.T) {
 // and closing the encoder releases the tower's device, not only its buffers.
 func TestSiglipCUDA_int8StaysTheInt8Tower(t *testing.T) {
 	newTestTower(t, 64)
-	enc, err := vision.LoadEncoder("../../testdata/siglip-tiny", true)
+	enc, err := vision.LoadEncoder("../../../../testdata/siglip-tiny", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +224,7 @@ func TestSiglipCUDA_real(t *testing.T) {
 	t.Cleanup(dev.Close)
 	siglipAttachedTower(t, dev)
 	for _, img := range sigImages {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -281,7 +280,7 @@ func TestSiglipCUDA_int8VsFloat32(t *testing.T) {
 	}
 	W := ref.Cfg.HiddenSize
 	for _, img := range sigImages {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -360,7 +359,7 @@ func TestSiglipCUDA_speed(t *testing.T) {
 	}
 	t.Cleanup(i8.Close)
 	for _, img := range []string{sigImages[0], sigImages[3]} {
-		data, err := os.ReadFile(filepath.Join("../../testdata", img))
+		data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -387,50 +386,6 @@ func TestSiglipCUDA_speed(t *testing.T) {
 	}
 }
 
-// TestSiglipCUDA_int8VRAM measures what the shipped default's int8 SigLIP tower claims on the device (S18's G-S18c needs the figure to price it): free VRAM before the encoder attaches, after it attaches, and after
-// one forward (the peak, since scratch may be allocated lazily). Heavy; a record.
-func TestSiglipCUDA_int8VRAM(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
-		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
-	}
-	newTestTower(t, 64)
-	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, "models", "gemma-3-4b-it")
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("no %s: %v", dir, err)
-	}
-	q, err := vision.LoadEncoder(dir, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	free := func() float64 {
-		b, ok := decoder.FreeBytesFor("cuda")
-		if !ok {
-			t.Skip("no free-VRAM reading")
-		}
-		return float64(b) / (1 << 20)
-	}
-	f0 := free()
-	if err := q.EnableResident(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(q.Close)
-	f1 := free()
-	data, err := os.ReadFile("../../testdata/" + sigImages[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	pv, err := vision.Preprocess(data, vision.Gemma3())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := q.Forward(pv.Data); err != nil {
-		t.Fatal(err)
-	}
-	f2 := free()
-	fmt.Fprintf(os.Stderr, "[S18 int8 tower VRAM] free before %.0f MiB, after attach %.0f MiB (tower holds %.0f MiB), after one forward %.0f MiB (%.0f MiB held in all)\n", f0, f1, f0-f1, f2, f0-f2)
-}
-
 // TestSiglipCUDA_fusedAttentionKernelDefectsReal: S17 lever A's kernel defects at real size, on the SigLIP tower (head dim 72, 4096 patches, 27 layers): defects 1 and 3 each alone drop the worst token cosine under the bar; defect 2 (one zero-score zero-value key, 1/4097 of the weight over 4096 keys) is invisible at real size, so it is logged, not asserted.
 func TestSiglipCUDA_fusedAttentionKernelDefectsReal(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
@@ -455,7 +410,7 @@ func TestSiglipCUDA_fusedAttentionKernelDefectsReal(t *testing.T) {
 	}
 	t.Cleanup(dev.Close)
 	siglipAttachedTower(t, dev)
-	data, err := os.ReadFile("../../testdata/" + sigImages[0])
+	data, err := os.ReadFile("../../../../testdata/" + sigImages[0])
 	if err != nil {
 		t.Fatal(err)
 	}

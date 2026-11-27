@@ -1,15 +1,16 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
-	"github.com/townsendmerino/aikit/linalg/elem"
-	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/audio"
 	"math"
 	"math/rand"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg/elem"
+	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // S14.6 lever B's kernels and encoder: the exact GELU against aikit's contract kernel BIT FOR BIT, the im2col
@@ -23,7 +24,7 @@ func TestAudioGeluErf_bitsMatchContract(t *testing.T) {
 	var pm Pipeline
 	ops.mustRun(t, func() {})
 	if err := ops.do(func() error {
-		lib, e := ops.dev.CompileLibrary(audioEncoderPTX)
+		lib, e := ops.dev.CompileLibrary(testPTX().AudioEncoder)
 		if e != nil {
 			return e
 		}
@@ -77,7 +78,7 @@ func TestAudioIm2col_bothStems(t *testing.T) {
 	ops := newTestTower(t, 16)
 	var pm Pipeline
 	if err := ops.do(func() error {
-		lib, e := ops.dev.CompileLibrary(audioEncoderPTX)
+		lib, e := ops.dev.CompileLibrary(testPTX().AudioEncoder)
 		if e != nil {
 			return e
 		}
@@ -164,7 +165,7 @@ func audioRandFeats(mels int, seed int64) []float32 {
 // TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed is G-S14t4 on the tiny fixture: the clean device encoder holds every position at cosine >= 0.99999 against the CPU encoder,
 // each defect injectable on the device drops it below that, and the device's output under each defect matches the CPU's under the same defect at that bar.
 func TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed(t *testing.T) {
-	enc, err := audio.LoadWhisperEncoder("../../testdata/whisper-tiny-rand")
+	enc, err := audio.LoadWhisperEncoder("../../../../testdata/whisper-tiny-rand")
 	if err != nil {
 		t.Skipf("no tiny Whisper fixture: %v", err)
 	}
@@ -222,7 +223,7 @@ func TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed(t *testing.T) {
 // The streamed tower (one layer slot refilled from the host before each layer) runs the same kernels on the same bytes as the resident one, so
 // its output is the resident output bit for bit; and it still holds the defect list, which share the code.
 func TestAudioEncoder_streamedIsBitIdenticalToResident(t *testing.T) {
-	enc, err := audio.LoadWhisperEncoder("../../testdata/whisper-tiny-rand")
+	enc, err := audio.LoadWhisperEncoder("../../../../testdata/whisper-tiny-rand")
 	if err != nil {
 		t.Skipf("no tiny Whisper fixture: %v", err)
 	}

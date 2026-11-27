@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -17,15 +17,15 @@ import (
 // Float32 weights from Encoder.Weights (LoadEncoder quant=false). Registered through cuda/vision_register.go's
 // dispatching factory, which keeps the int8 NewVisionEncoder for an int8 encoder.
 
-// siglipTower is the SigLIP tower on CUDA (vision.ResidentEncoder).
-type siglipTower struct {
-	g   *gridTower
+// SiglipTower is the SigLIP tower on CUDA (vision.ResidentEncoder).
+type SiglipTower struct {
+	g   *GridTower
 	enc *vision.Encoder
 	np  int
 	pos []float32 // aikit's fixed position table, [np, hidden]
 }
 
-func newSiglipTower(enc *vision.Encoder) (*siglipTower, error) {
+func NewSiglipTower(enc *vision.Encoder, ptx PTX) (*SiglipTower, error) {
 	w, err := enc.Weights()
 	if err != nil {
 		return nil, fmt.Errorf("cuda: the SigLIP tower runs float32 (load it with quant=false): %w", err)
@@ -34,7 +34,7 @@ func newSiglipTower(enc *vision.Encoder) (*siglipTower, error) {
 	if len(w.PosEmb) != w.NumPatches*c.HiddenSize {
 		return nil, fmt.Errorf("cuda: SigLIP position table %d values for %d patches of %d", len(w.PosEmb), w.NumPatches, c.HiddenSize)
 	}
-	g, err := newGridTower(gridSiglip, c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.NumChannels*c.PatchSize*c.PatchSize, float64(c.LayerNormEps))
+	g, err := newGridTower(gridSiglip, c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.NumChannels*c.PatchSize*c.PatchSize, float64(c.LayerNormEps), ptx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +48,11 @@ func newSiglipTower(enc *vision.Encoder) (*siglipTower, error) {
 	}); err != nil {
 		return nil, err
 	}
-	return &siglipTower{g: g, enc: enc, np: w.NumPatches, pos: w.PosEmb}, nil
+	return &SiglipTower{g: g, enc: enc, np: w.NumPatches, pos: w.PosEmb}, nil
 }
 
 // hidden is the last block's output for GridPatches' rows, [np, hidden] (the stage FinishHidden takes).
-func (r *siglipTower) hidden(patches []float32) ([]float32, error) {
+func (r *SiglipTower) hidden(patches []float32) ([]float32, error) {
 	a, np := r.g, r.np
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -106,7 +106,7 @@ func (r *siglipTower) hidden(patches []float32) ([]float32, error) {
 }
 
 // ForwardPatches is last_hidden_state for GridPatches' rows (vision.ResidentEncoder).
-func (r *siglipTower) ForwardPatches(patches []float32) ([]float32, error) {
+func (r *SiglipTower) ForwardPatches(patches []float32) ([]float32, error) {
 	h, err := r.hidden(patches)
 	if err != nil {
 		return nil, err
@@ -114,4 +114,4 @@ func (r *siglipTower) ForwardPatches(patches []float32) ([]float32, error) {
 	return r.enc.FinishHidden(h)
 }
 
-func (r *siglipTower) Close() { _ = r.g.Close() }
+func (r *SiglipTower) Close() { _ = r.g.Close() }

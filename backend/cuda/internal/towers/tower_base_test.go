@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ import (
 
 func newTestTower(t *testing.T, maxN int) *towerOps {
 	t.Helper()
-	ops, err := newTowerOps(maxN)
+	ops, err := newTowerOps(maxN, testPTX())
 	if err != nil {
 		t.Skipf("no CUDA device for the tower base: %v", err)
 	}

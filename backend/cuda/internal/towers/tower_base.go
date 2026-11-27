@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -40,7 +40,7 @@ type towerOps struct {
 }
 
 // newTowerOps creates the device and loads the kernels on a pinned executor goroutine. maxN is the widest output of any projection run without a bias.
-func newTowerOps(maxN int) (t *towerOps, err error) {
+func newTowerOps(maxN int, ptx PTX) (t *towerOps, err error) {
 	t = &towerOps{reqCh: make(chan func() error), ackCh: make(chan error)}
 	go func() {
 		runtime.LockOSThread()
@@ -51,14 +51,14 @@ func newTowerOps(maxN int) (t *towerOps, err error) {
 	}()
 	err = t.do(func() error {
 		var e error
-		if t.dev, e = CreateSystemDefaultDevice(); e != nil {
+		if t.dev, e = gpu.CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
 		t.q = t.dev.NewCommandQueue()
 		if t.vit, e = t.dev.NewViT(); e != nil {
 			return fmt.Errorf("cuda tower: aikit's ViT kernels: %w", e)
 		}
-		lib, e := t.dev.CompileLibrary(towerBasePTX)
+		lib, e := t.dev.CompileLibrary(ptx.TowerBase)
 		if e != nil {
 			return fmt.Errorf("cuda tower: compile tower_base: %w", e)
 		}

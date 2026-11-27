@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -19,14 +19,14 @@ import (
 // Block: RMSNorm (eps 1e-6, aikit's rmsNorm), biased q/k/v from the fused qkv split at upload, NeoX rotate-half RoPE, attention at scale 1/sqrt(head_dim) through the fused kernel (tower_base.cu), biased proj and residual,
 // RMSNorm, the SiLU-gated biased MLP, residual. Float32 only: an int8-loaded encoder declines, as Metal's does.
 
-type qwen25Tower struct {
-	g     *gridTower
+type Qwen25Tower struct {
+	g     *GridTower
 	enc   *vision.QwenVisionEncoder
 	merge int
 	full  []bool // per block: attends per frame, not per window
 }
 
-func newQwen25Tower(enc *vision.QwenVisionEncoder) (*qwen25Tower, error) {
+func NewQwen25Tower(enc *vision.QwenVisionEncoder, ptx PTX) (*Qwen25Tower, error) {
 	w := enc.GPUWeights()
 	f32 := func(name string, m vision.QwenGPUMat) ([]float32, error) {
 		if m.Quantized || len(m.F32) != m.Rows*m.Cols {
@@ -39,11 +39,11 @@ func newQwen25Tower(enc *vision.QwenVisionEncoder) (*qwen25Tower, error) {
 	// register-blocked kernel. The extra gate and up rows and bias entries are zero, so silu(0) * 0 = 0 exactly and the
 	// padded columns of down add nothing: the arithmetic is the unpadded tower's.
 	inter := (w.Inter + 63) / 64 * 64
-	g, err := newGridTower(gridQwen25, w.Hidden, inter, w.NumHeads, w.PatchDim, 1e-6) // aikit's rmsNorm: eps 1e-6
+	g, err := newGridTower(gridQwen25, w.Hidden, inter, w.NumHeads, w.PatchDim, 1e-6, ptx) // aikit's rmsNorm: eps 1e-6
 	if err != nil {
 		return nil, err
 	}
-	r := &qwen25Tower{g: g, enc: enc, merge: w.SpatialMergeSize, full: make([]bool, len(w.Blocks))}
+	r := &Qwen25Tower{g: g, enc: enc, merge: w.SpatialMergeSize, full: make([]bool, len(w.Blocks))}
 	for _, li := range w.FullattBlockIndexes {
 		if li >= 0 && li < len(r.full) {
 			r.full[li] = true
@@ -110,7 +110,7 @@ func qwenSegsOf(start, end []int32) ([]int, error) {
 }
 
 // ForwardViT is the pre-merge hidden state [n_patches, hidden] in the original patch order (vision.QwenResidentEncoder).
-func (r *qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32, error) {
+func (r *Qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32, error) {
 	a := r.g
 	plan, err := r.enc.BuildWindowPlan(gridTHW)
 	if err != nil {
@@ -213,4 +213,4 @@ func (r *qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32,
 	return out, nil
 }
 
-func (r *qwen25Tower) Close() { _ = r.g.Close() }
+func (r *Qwen25Tower) Close() { _ = r.g.Close() }

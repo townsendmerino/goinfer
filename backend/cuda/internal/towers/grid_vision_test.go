@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -77,12 +77,12 @@ type gridCase struct {
 	out      int
 	cpu      func(px []float32, g [][3]int) ([]float32, error)
 	dev      func(px []float32, g [][3]int) ([]float32, error)
-	acc      *gridTower
+	acc      *GridTower
 	defects  []string
 }
 
 func gridQwen3Case(t *testing.T) gridCase {
-	enc, err := vision.LoadQwen3VisionEncoder("../../testdata/qwen35vl-tiny", false)
+	enc, err := vision.LoadQwen3VisionEncoder("../../../../testdata/qwen35vl-tiny", false)
 	if err != nil {
 		t.Skipf("no Qwen3.5 tiny tower: %v", err)
 	}
@@ -108,7 +108,7 @@ func gridQwen3Case(t *testing.T) gridCase {
 }
 
 func gridGlmCase(t *testing.T) gridCase {
-	enc, err := vision.LoadGlmOcrVisionEncoder("../../testdata/glm-ocr-vision-tiny", false)
+	enc, err := vision.LoadGlmOcrVisionEncoder("../../../../testdata/glm-ocr-vision-tiny", false)
 	if err != nil {
 		t.Skipf("no GLM-OCR tiny tower: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestGridVisionCUDA_real(t *testing.T) {
 			defer closeFn()
 			all := slices.Concat(images, f.extra)
 			for _, img := range all[:min(caseCount(t, "GOINFER_GRID_IMAGES", 2, 5), len(all))] {
-				data, err := os.ReadFile(filepath.Join("../../testdata", img))
+				data, err := os.ReadFile(filepath.Join("../../../../testdata", img))
 				if err != nil {
 					t.Fatal(err)
 				}

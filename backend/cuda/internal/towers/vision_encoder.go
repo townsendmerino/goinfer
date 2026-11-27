@@ -11,7 +11,7 @@
 //
 // It owns its device, context and goroutine: CUDA contexts are thread-affine, so it mirrors cudaResident's
 // reqCh/ackCh/LockOSThread pattern (BuildResident) rather than reusing it.
-package cuda
+package towers
 
 import (
 	"fmt"
@@ -28,10 +28,10 @@ import (
 // visionLayer holds one SigLIP transformer layer's device-resident weights.
 type visionLayer struct {
 	ln1w, ln1b     Buffer
-	qw, kw, vw, ow cudaWQ
+	qw, kw, vw, ow visWQ
 	qb, kb, vb, ob Buffer
 	ln2w, ln2b     Buffer
-	fc1w, fc2w     cudaWQ
+	fc1w, fc2w     visWQ
 	fc1b, fc2b     Buffer
 }
 
@@ -57,7 +57,7 @@ type VisionEncoder struct {
 	numPatches, cpp                             int
 	eps                                         float32
 
-	patchW cudaWQ // [hidden, C*P*P], quantized on the Go side (GPUWeights keeps it f32)
+	patchW visWQ // [hidden, C*P*P], quantized on the Go side (GPUWeights keeps it f32)
 	patchB Buffer
 	posEmb Buffer
 	layers []visionLayer
@@ -80,7 +80,7 @@ func (ve *VisionEncoder) do(j func() error) error {
 // error (never crashes) on a missing/broken driver or an unsupported shape — the caller
 // (vision_register.go's registered factory) leaves the CPU path intact on any error, exactly as
 // decoder.BuildResident does for the text decoder.
-func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
+func NewVisionEncoder(w vision.GPUWeights, ptx PTX) (ve *VisionEncoder, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			mem.RepanicBug(p)
@@ -105,7 +105,7 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 
 	setupErr := r.do(func() error {
 		var e error
-		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
+		if r.dev, e = gpu.CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
 		r.stream = r.dev.NewCommandQueue()
@@ -122,7 +122,7 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			return nil
 		}
 		// Fused-attention kernels: a load failure is not fatal (the tower falls back to attn_img_batched).
-		if vmod, ve := r.dev.CompileLibrary(attnFusedVitPTX); ve == nil {
+		if vmod, ve := r.dev.CompileLibrary(ptx.AttnFusedVit); ve == nil {
 			loadV := func(dst *Pipeline, name string) {
 				if pl, pe := r.dev.NewComputePipeline(vmod, name); pe == nil {
 					*dst = pl
@@ -148,12 +148,12 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			name string
 			dst  *Pipeline
 		}{
-			{layernormQuantPTX, "layernorm_quant_batched", &r.bLayerNormQuant},
-			{layernormQuantPTX, "layernorm_f32_batched", &r.bLayerNormF32},
-			{geluQuantPTX, "gelu_quant_batched", &r.bGeluQuant},
-			{prefillBatchedPTX, "quant_vec_batched", &r.bQuant},
-			{gemvW8BatchedPTX, "gemv_w8a8_batched", &r.bW8},
-			{attnImgPrefillPTX, "attn_img_batched", &r.bAttnImg},
+			{ptx.LayernormQuant, "layernorm_quant_batched", &r.bLayerNormQuant},
+			{ptx.LayernormQuant, "layernorm_f32_batched", &r.bLayerNormF32},
+			{ptx.GeluQuant, "gelu_quant_batched", &r.bGeluQuant},
+			{ptx.PrefillBatched, "quant_vec_batched", &r.bQuant},
+			{ptx.GemvW8Batched, "gemv_w8a8_batched", &r.bW8},
+			{ptx.AttnImgPrefill, "attn_img_batched", &r.bAttnImg},
 		} {
 			if e := loadFrom(k.ptx, k.name, k.dst); e != nil {
 				return e
@@ -196,16 +196,16 @@ func (r *VisionEncoder) up32(v []float32) Buffer {
 	return b
 }
 
-func (r *VisionEncoder) upW8(q8 []int8, scales []float32, N, K int) cudaWQ {
+func (r *VisionEncoder) upW8(q8 []int8, scales []float32, N, K int) visWQ {
 	wpk := wpack.PackI8(q8, N, K)
 	b := gpu.NewBufferLenOfOn[uint32](r.dev, mem.LineCompanion, len(wpk))
 	if err := gpu.Upload(b, wpk); err != nil {
 		panic(err)
 	}
-	return cudaWQ{kind: "int8", W: b, ws: r.up32(scales), N: N, K: K}
+	return visWQ{kind: "int8", W: b, ws: r.up32(scales), N: N, K: K}
 }
 
-func (r *VisionEncoder) upGPUMat(m vision.GPUMat) cudaWQ {
+func (r *VisionEncoder) upGPUMat(m vision.GPUMat) visWQ {
 	return r.upW8(m.Q, m.Scales, m.Rows, m.Cols)
 }
 
@@ -219,7 +219,7 @@ func (r *VisionEncoder) ai(n int) Buffer {
 
 // bGemv projects a[M,K] (already int8-quantized, scale as) through wt[N,K] + bias into dst[M,N].
 // The plain int8 half of bGemvB (prefill_kernels.go) — this tower never needs int4.
-func (r *VisionEncoder) bGemv(q *Queue, wt cudaWQ, a, as Buffer, bias Buffer, dst Buffer, M int) error {
+func (r *VisionEncoder) bGemv(q *Queue, wt visWQ, a, as Buffer, bias Buffer, dst Buffer, M int) error {
 	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	return q.Launch(r.bW8, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), Arg(bias),
 		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), gpu.ArgValue(int32(M)),

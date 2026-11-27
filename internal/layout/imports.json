@@ -1036,6 +1036,29 @@
       "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
     },
     {
+      "name": "cuda-towers-leaf",
+      "from": [
+        "backend/cuda/internal/towers"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "backend/cuda/internal/towers": [
+          "backend/cuda/internal/gpudev",
+          "backend/cuda/internal/wpack",
+          "internal/audio",
+          "internal/runtime/mem",
+          "internal/runtime/whisper",
+          "internal/testgate",
+          "internal/vision",
+          "multimodal"
+        ]
+      },
+      "why": "backend/cuda/internal/towers holds the standalone CUDA vision and audio tower accelerators below backend/cuda (GTW2). It never imports backend/cuda or decoder."
+    },
+    {
       "name": "metal-towers-leaf",
       "from": [
         "backend/metal/internal/towers"
@@ -1111,6 +1134,7 @@
       "backend/cuda/internal/fitdecide",
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
+      "backend/cuda/internal/towers",
       "backend/cuda/internal/wpack",
       "decoder",
       "decoder/fit",
@@ -1136,6 +1160,13 @@
     ],
     "backend/cuda/internal/fitdecide": [
       "internal/runtime/mem"
+    ],
+    "backend/cuda/internal/towers": [
+      "backend/cuda/internal/gpudev",
+      "backend/cuda/internal/wpack",
+      "internal/audio",
+      "internal/runtime/mem",
+      "internal/vision"
     ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
@@ -1786,12 +1817,19 @@
       "internal/runtime/modelload",
       "internal/runtime/program",
       "internal/runtime/sampling",
-      "internal/runtime/whisper",
       "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
       "tokenizer"
+    ],
+    "backend/cuda/internal/towers": [
+      "backend/cuda/internal/gpudev",
+      "internal/audio",
+      "internal/runtime/whisper",
+      "internal/testgate",
+      "internal/vision",
+      "multimodal"
     ],
     "backend/cuda/kernels": [
       "backend/cuda/internal/gpudev",

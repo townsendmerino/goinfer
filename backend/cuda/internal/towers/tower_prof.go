@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package towers
 
 import "time"
 

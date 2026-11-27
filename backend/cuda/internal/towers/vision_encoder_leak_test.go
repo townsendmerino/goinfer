@@ -1,6 +1,6 @@
 //go:build cuda && goinfer_testhooks
 
-package cuda
+package towers
 
 import (
 	"math"
@@ -48,7 +48,7 @@ func TestVisionEncoder_forwardPatchesReleasesDeviceScratch(t *testing.T) {
 		t.Fatalf("GPUWeights: %v", err)
 	}
 
-	ve, err := NewVisionEncoder(w)
+	ve, err := NewVisionEncoder(w, testPTX())
 	if err != nil {
 		t.Fatalf("NewVisionEncoder: %v", err)
 	}
