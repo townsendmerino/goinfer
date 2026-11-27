@@ -5,6 +5,8 @@ package kernels
 import (
 	"fmt"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
 )
 
 // attnKeysRowsSource is the rows form of a key-split attention kernel, the narrow one or the wide one: every row of a
@@ -12,7 +14,7 @@ import (
 // count is the first row's plus the row, and on a sliding-window layer (p.window not 0) its first key is the row's own,
 // as decode computes it a token. Nothing else is edited, so a row's context is the single-row kernel's.
 func attnKeysRowsSource(wide bool) (string, error) {
-	src, label := attnKeysShaderWGSL, "attnKeysRows"
+	src, label := wgsl.AttnKeysShaderWGSL, "attnKeysRows"
 	ctxOld, ctxNew := "ctx[qh * hd + t]", "ctx[row * p.nH * hd + qh * hd + t]"
 	if wide {
 		var err error

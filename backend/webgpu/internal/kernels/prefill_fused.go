@@ -5,6 +5,8 @@ package kernels
 import (
 	"fmt"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
 )
 
 // Decode quantizes an activation inside the kernel that computes it (rmsnormQuantWGSL, swigluQuantWGSL,
@@ -51,7 +53,7 @@ func (c *Context) fusedRowsSource(kind FusedRowsKind) (code, label string, err e
 	}
 	if kind == fusedRowsRMS {
 		label = "rmsnormQuantRows"
-		src, err := c.quantSrc(label, RmsnormQuantWGSL)
+		src, err := c.quantSrc(label, wgsl.RmsnormQuantWGSL)
 		if err != nil {
 			return "", label, err
 		}
@@ -63,9 +65,9 @@ func (c *Context) fusedRowsSource(kind FusedRowsKind) (code, label string, err e
 		}, out...))
 		return code, label, err
 	}
-	src, label := SwigluQuantWGSL, "swigluQuantRows"
+	src, label := wgsl.SwigluQuantWGSL, "swigluQuantRows"
 	if kind == fusedRowsGeGLU {
-		src, label = GegluQuantWGSL, "gegluQuantRows"
+		src, label = wgsl.GegluQuantWGSL, "gegluQuantRows"
 	}
 	if src, err = c.quantSrc(label, src); err != nil {
 		return "", label, err
@@ -101,7 +103,7 @@ func (c *Context) ensureFusedRows() error {
 // (time, height, width), each rotary pair taking the one its axis names. The rotation itself is the batched kernel's
 // text, so a row whose three positions are equal rotates exactly as it does there.
 func ropeMRoPERowsSource() (string, error) {
-	return editSource("ropeMRoPERows", ropeBatchedShaderWGSL, []srcEdit{
+	return editSource("ropeMRoPERows", wgsl.RopeBatchedShaderWGSL, []srcEdit{
 		{"@group(0) @binding(2) var<uniform>             p:       P;",
 			"@group(0) @binding(2) var<uniform>             p:       P;\n" +
 				"@group(0) @binding(3) var<storage, read>       mpos:    array<u32>;  // [M, 3] time, height, width\n" +

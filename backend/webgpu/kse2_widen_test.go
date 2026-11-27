@@ -5,7 +5,6 @@ package webgpu
 import (
 	"context"
 	"fmt"
-	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -13,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -126,15 +128,15 @@ func TestKSE2_widenedMatchesNarrow(t *testing.T) {
 	}
 	eps := math.Float32bits(1e-6)
 	shaders := []shader{
-		{"rmsnormQuant", kernels.RmsnormQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3), f32w(n, 1)} },
+		{"rmsnormQuant", wgsl.RmsnormQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3), f32w(n, 1)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), eps, 1, uint32(np)} }},
-		{"swigluQuant", kernels.SwigluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
+		{"swigluQuant", wgsl.SwigluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"gegluQuant", kernels.GegluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
+		{"gegluQuant", wgsl.GegluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"relu2Quant", kernels.Relu2QuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2)} },
+		{"relu2Quant", wgsl.Relu2QuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"gptossGluQuant", kernels.GptossGluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2), f32w(2*n, 0.5), {0}} },
+		{"gptossGluQuant", wgsl.GptossGluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2), f32w(2*n, 0.5), {0}} },
 			func(n, np int) []uint32 {
 				return []uint32{uint32(n), uint32(np), 0, 1, math.Float32bits(1.702), math.Float32bits(7), 0, 0}
 			}},

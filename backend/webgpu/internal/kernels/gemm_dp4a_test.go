@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -158,11 +160,11 @@ func TestTiledDP4A_parity(t *testing.T) {
 	}
 	defer rm.Release()
 
-	unpacked, err := runTiledKernel(ctx, matmulTiledW8A8ShaderWGSL, aq, aScales, rm, M)
+	unpacked, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8ShaderWGSL, aq, aScales, rm, M)
 	if err != nil {
 		t.Fatalf("unpacked variant: %v", err)
 	}
-	packed, err := runTiledKernel(ctx, matmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M)
+	packed, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M)
 	if err != nil {
 		t.Fatalf("dot4I8Packed variant: %v", err)
 	}
@@ -230,10 +232,10 @@ func TestTiledDP4A_microbench(t *testing.T) {
 		if err := sequentialGEMV(aq, aScales, M); err != nil {
 			t.Fatalf("gemv warmup: %v", err)
 		}
-		if _, err := runTiledKernel(ctx, matmulTiledW8A8ShaderWGSL, aq, aScales, rm, M); err != nil {
+		if _, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8ShaderWGSL, aq, aScales, rm, M); err != nil {
 			t.Fatalf("unpacked warmup: %v", err)
 		}
-		if _, err := runTiledKernel(ctx, matmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M); err != nil {
+		if _, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M); err != nil {
 			t.Fatalf("dp4a warmup: %v", err)
 		}
 
@@ -246,14 +248,14 @@ func TestTiledDP4A_microbench(t *testing.T) {
 		gemv := time.Since(t0) / time.Duration(iters)
 		t1 := time.Now()
 		for range iters {
-			if _, err := runTiledKernel(ctx, matmulTiledW8A8ShaderWGSL, aq, aScales, rm, M); err != nil {
+			if _, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8ShaderWGSL, aq, aScales, rm, M); err != nil {
 				t.Fatalf("unpacked: %v", err)
 			}
 		}
 		unpacked := time.Since(t1) / time.Duration(iters)
 		t2 := time.Now()
 		for range iters {
-			if _, err := runTiledKernel(ctx, matmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M); err != nil {
+			if _, err := runTiledKernel(ctx, wgsl.MatmulTiledW8A8DP4AShaderWGSL, aq, aScales, rm, M); err != nil {
 				t.Fatalf("dp4a: %v", err)
 			}
 		}

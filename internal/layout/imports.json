@@ -1035,6 +1035,17 @@
       "why": "internal/runtime/giwkv implements the .giw-kv session snapshot format below decoder: CPU KV cache and token encode, header and CRC reading, and the geometry, allocation-ceiling and payload-length guards on decode. It imports only internal/runtime/cpuengine, internal/runtime/giwcodec and the standard library, never decoder."
     },
     {
+      "name": "webgpu-wgsl-leaf",
+      "from": [
+        "backend/webgpu/internal/wgsl"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "backend/webgpu/internal/wgsl holds the pure WGSL compute shader source strings for the WebGPU backend (WGK2). It is cgo-free and imports no goinfer package."
+    },
+    {
       "name": "webgpu-towers-leaf",
       "from": [
         "backend/webgpu/internal/towers"
@@ -1245,6 +1256,7 @@
       "internal/app/serveapp"
     ],
     "backend/webgpu/internal/kernels": [
+      "backend/webgpu/internal/wgsl",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/mem"
@@ -1910,6 +1922,7 @@
     ],
     "backend/webgpu": [
       "backend/webgpu/internal/kernels",
+      "backend/webgpu/internal/wgsl",
       "chat",
       "decoder",
       "decoder/fit",
@@ -1930,6 +1943,7 @@
       "tokenizer"
     ],
     "backend/webgpu/internal/kernels": [
+      "backend/webgpu/internal/wgsl",
       "internal/runtime/hybridattn",
       "internal/runtime/mem",
       "internal/runtime/sampling",

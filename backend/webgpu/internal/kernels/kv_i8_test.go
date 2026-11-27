@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
@@ -294,7 +296,7 @@ func TestKVI8Attn_DP4A(t *testing.T) {
 
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "attn-i8-dp4a",
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: attnI8DP4AShaderWGSL},
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: wgsl.AttnI8DP4AShaderWGSL},
 	})
 	if err != nil {
 		t.Fatalf("compile attn-i8-dp4a: %v", err)

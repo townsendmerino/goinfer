@@ -1,8 +1,8 @@
-//go:build gpu
+// Package wgsl holds the pure WGSL compute shader source strings for the WebGPU backend.
+// It has no cgo dependency and imports no goinfer package.
+package wgsl
 
-package kernels
-
-// ropeCosSinWGSL defines ropeCosSin(theta) -> vec2(cos θ, sin θ), the rotation every RoPE kernel applies, to about 1e-7 of the
+// RopeCosSinWGSL defines ropeCosSin(theta) -> vec2(cos θ, sin θ), the rotation every RoPE kernel applies, to about 1e-7 of the
 // float64 cos and sin of the same f32 θ, for |θ| < 2^30 (beyond, the f32 angle's spacing exceeds 100 rad, and it returns (1, 0)). The
 // WGSL builtins sin and cos are conformant with an absolute error of 2^-11 inside [-π, π] and none bound outside, and adapters do
 // return about 2^-14 there; so no kernel calls them (TestRopeKernels_noBuiltinSinCos). θ is reduced by π/2 in integer arithmetic
@@ -10,7 +10,7 @@ package kernels
 // Cody-Waite split loses its precision to reassociation on some drivers. The remainder's polynomial runs on [-π/4, π/4], whose
 // truncation is under 2e-9. Every shader that rotates is compiled with this prepended; TestRopeCosSin_matchesFloat64 holds the
 // helper to float64 and TestRope_matchesCPUAngles the kernels.
-const ropeCosSinWGSL = `
+const RopeCosSinWGSL = `
 fn ropeMul32(a: u32, b: u32) -> vec2<u32> {
     let a0 = a & 0xffffu; let a1 = a >> 16u; let b0 = b & 0xffffu; let b1 = b >> 16u;
     let p00 = a0 * b0; let p01 = a0 * b1; let p10 = a1 * b0; let p11 = a1 * b1;

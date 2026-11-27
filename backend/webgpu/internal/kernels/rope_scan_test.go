@@ -14,6 +14,8 @@ import (
 // goes through ropeCosSin, whose accuracy does not depend on the adapter.
 func TestRopeKernels_noBuiltinSinCos(t *testing.T) {
 	files, err := filepath.Glob("*.go")
+	wgslFiles, _ := filepath.Glob(filepath.Join("..", "wgsl", "*.go"))
+	files = append(files, wgslFiles...)
 	if err != nil {
 		t.Fatal(err)
 	}
