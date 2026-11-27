@@ -953,6 +953,25 @@
         ]
       },
       "why": "internal/chat/reasoning holds checkpoint thinking-mode detection, ThinkSplitter, UTF-8 rune-safe ReplySplitter, and token-level reasoning/call budgets below chat (CH5). It imports only internal/chat/chatcore, tokenizer, and the standard library."
+    },
+    {
+      "name": "vlprep-leaf",
+      "from": [
+        "internal/runtime/vlprep"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/runtime/vlprep": [
+          "decoder/arch",
+          "internal/runtime/archparts",
+          "internal/runtime/cpuengine",
+          "internal/runtime/residency"
+        ]
+      },
+      "why": "internal/runtime/vlprep holds multimodal sequence preparation below decoder: placeholder span validation, raw-feature splicing, resident block/claim conversion, window/DeepStack/m-RoPE readiness guards, and Gemma 4 row builders (VL1). It never imports decoder."
     }
   ],
   "arrows": {
@@ -1129,6 +1148,7 @@
       "internal/runtime/sampling",
       "internal/runtime/sidecar",
       "internal/runtime/specdecode",
+      "internal/runtime/vlprep",
       "internal/runtime/wbuild",
       "internal/testassets",
       "tokenizer"
@@ -1555,6 +1575,11 @@
       "internal/runtime/program",
       "internal/runtime/sampling"
     ],
+    "internal/runtime/vlprep": [
+      "decoder/arch",
+      "internal/runtime/cpuengine",
+      "internal/runtime/residency"
+    ],
     "internal/runtime/wbuild": [
       "decoder/arch",
       "decoder/config",
@@ -1756,6 +1781,7 @@
       "internal/runtime/sampling",
       "internal/runtime/sidecar",
       "internal/runtime/specdecode",
+      "internal/runtime/vlprep",
       "internal/runtime/wbuild",
       "internal/testassets",
       "internal/testgate",
@@ -1970,6 +1996,10 @@
     ],
     "internal/runtime/rope": [
       "internal/testpath"
+    ],
+    "internal/runtime/vlprep": [
+      "decoder/arch",
+      "internal/runtime/archparts"
     ],
     "internal/runtime/whisper": [
       "internal/audio",

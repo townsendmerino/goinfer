@@ -47,6 +47,7 @@
     "internal/runtime/cpuengine/cpu_gateup_fused.go",
     "internal/runtime/cpuengine/fusedattn.go",
     "decoder/image_spans.go",
+    "internal/runtime/vlprep/spans.go",
     "decoder/int4_floatact.go",
     "internal/runtime/cpuengine/int4_floatact.go",
     "decoder/knobs.go",
