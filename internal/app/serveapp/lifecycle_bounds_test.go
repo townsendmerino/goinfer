@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/runtime/whisper"
 )
 
@@ -82,38 +83,33 @@ func TestSSEWriter_onErrFiresOnWriteFailure(t *testing.T) {
 }
 
 func TestBatch_registerAndEvictFailed(t *testing.T) {
-	bs := newBatchStore(1)
+	bs := stores.NewBatchStore(1)
 	js, err := jobs.NewStore("", 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b1 := bs.create("openai_chat", "/v1/chat/completions", "24h", "file_1", []string{"c1"})
-	b1.requestCancel(js)
+	b1 := bs.Create("openai_chat", "/v1/chat/completions", "24h", "file_1", []string{"c1"})
+	b1.RequestCancel(js)
 	ctx, cancel := context.WithCancel(context.Background())
 	js.CreatePending("j1", "m", nil)
-	if registerBatchJob(b1, 0, "j1", js, cancel) {
-		t.Fatal("registerBatchJob returned true on an already-cancelling batch")
+	if b1.RegisterJob(0, "j1", js, cancel) {
+		t.Fatal("RegisterJob returned true on an already-cancelling batch")
 	}
 	if ctx.Err() == nil {
 		t.Fatal("expected cancel to have been invoked when batch was already cancelling")
 	}
 
-	// Failed batches must stay terminal under requestCancel and be evictable once capacity is exceeded.
-	b1.mu.Lock()
-	b1.Status = "failed"
-	b1.mu.Unlock()
-	b1.requestCancel(js)
-	b1.mu.Lock()
-	st := b1.Status
-	b1.mu.Unlock()
-	if st != "failed" {
-		t.Fatalf("requestCancel on failed batch flipped status to %q, want failed", st)
+	// Failed batches must stay terminal under RequestCancel and be evictable once capacity is exceeded.
+	b1.MarkFailed()
+	b1.RequestCancel(js)
+	if st := b1.Status(); st != "failed" {
+		t.Fatalf("RequestCancel on failed batch flipped status to %q, want failed", st)
 	}
-	b2 := bs.create("openai_chat", "/v1/chat/completions", "24h", "file_2", []string{"c2"})
-	if bs.get(b1.ID) != nil {
+	b2 := bs.Create("openai_chat", "/v1/chat/completions", "24h", "file_2", []string{"c2"})
+	if bs.Get(b1.ID) != nil {
 		t.Fatalf("failed batch %s was not evicted when store exceeded cap", b1.ID)
 	}
-	if bs.get(b2.ID) == nil {
+	if bs.Get(b2.ID) == nil {
 		t.Fatalf("new batch %s missing", b2.ID)
 	}
 }
@@ -201,7 +197,7 @@ func TestLifeContext_shutdownRecordsInterrupted(t *testing.T) {
 func TestRoutes_fileUploadSemaphoreReturns503(t *testing.T) {
 	s := &server{
 		models: map[string]*loadedModel{},
-		files:  newFileStore(0, 0),
+		files:  stores.NewFileStore(0, 0),
 	}
 	mux, _ := s.routes(config{}, "", io.Discard)
 
@@ -391,7 +387,7 @@ func TestServeVisionResponses_checksAllMediaAndReasoning(t *testing.T) {
 	if len(out) != 2 || out[0].(map[string]any)["type"] != "reasoning" || out[1].(map[string]any)["type"] != "message" {
 		t.Fatalf("vision Responses output = %v, want [reasoning, message]", out)
 	}
-	if stored := s.responses.get("resp_vis_1"); stored == nil || len(stored.messages) < 2 || stored.messages[1].ReasoningContent != "Look at pixels." {
+	if stored := s.responses.Get("resp_vis_1"); stored == nil || len(stored.Messages) < 2 || stored.Messages[1].ReasoningContent != "Look at pixels." {
 		t.Fatalf("stored vision response missing reasoning: stored=%+v", stored)
 	}
 

@@ -17,17 +17,18 @@ import (
 // this list must let a programming bug through: classify the value with DeviceAllocFailed (which a runtime.Error never passes) or
 // call RepanicBug first.
 var recoverExempt = map[string]string{
-	"internal/app/serveapp/panicguard.go:*":                    "the server's goroutine guards: a panic fails its one request, job or batch line, with the stack on stderr",
-	"internal/app/serveapp/webui.go:handleWebLoad":             "the web-UI load goroutine's guard: the panic fails that load, with the stack on stderr",
-	"internal/app/serveapp/vision_serve.go:recoverDeviceTower": "a tower panic fails its one request with the panic's value; nothing falls back",
-	"internal/app/inproc/transport.go:RoundTrip":               "the in-process transport's handler boundary, as net/http's own: the panic fails that response",
-	"internal/runtime/ggufconfig/ggufconfig.go:ggufConfig":     "hostile GGUF metadata drives a family builder into a divide by zero or an index panic: that is the malformed-input error",
-	"internal/runtime/residency/batcher.go:runSolo":            "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
-	"decoder/cpu_batch.go:runStep":                             "a panic fails that batched step's tokens with its value; nothing falls back",
-	"backend/cuda/resident.go:pipeName":                        "an error path's name lookup must not panic: a failure reads as \"?\"",
-	"backend/metal/workingset.go:deviceWorkingSet":             "a probe: a missing Metal symbol reads as an unknown working set (0)",
-	"backend/metal/expertpool.go:ensureResidentBatch":          "forwards a child staging goroutine's panic unchanged to the caller goroutine, where forwardLogitsPaged's RepanicBug classifies it",
-	"backend/metal/expertpool.go:prefetchAsync":                "forwards a background prefetch goroutine's panic unchanged to finishPrefetch on the caller goroutine, where RepanicBug classifies it",
+	"internal/app/serveapp/panicguard.go:*":                         "the server's goroutine guards: a panic fails its one request, job or batch line, with the stack on stderr",
+	"internal/app/serveapp/stores/batches.go:recoverFinalizeLocked": "the batch finalizer goroutine's guard: a panic marks that batch failed, with the stack on stderr",
+	"internal/app/serveapp/webui.go:handleWebLoad":                  "the web-UI load goroutine's guard: the panic fails that load, with the stack on stderr",
+	"internal/app/serveapp/vision_serve.go:recoverDeviceTower":      "a tower panic fails its one request with the panic's value; nothing falls back",
+	"internal/app/inproc/transport.go:RoundTrip":                    "the in-process transport's handler boundary, as net/http's own: the panic fails that response",
+	"internal/runtime/ggufconfig/ggufconfig.go:ggufConfig":          "hostile GGUF metadata drives a family builder into a divide by zero or an index panic: that is the malformed-input error",
+	"internal/runtime/residency/batcher.go:runSolo":                 "a panic fails that token's generation with its value, not the others' in the run; nothing falls back",
+	"decoder/cpu_batch.go:runStep":                                  "a panic fails that batched step's tokens with its value; nothing falls back",
+	"backend/cuda/resident.go:pipeName":                             "an error path's name lookup must not panic: a failure reads as \"?\"",
+	"backend/metal/workingset.go:deviceWorkingSet":                  "a probe: a missing Metal symbol reads as an unknown working set (0)",
+	"backend/metal/expertpool.go:ensureResidentBatch":               "forwards a child staging goroutine's panic unchanged to the caller goroutine, where forwardLogitsPaged's RepanicBug classifies it",
+	"backend/metal/expertpool.go:prefetchAsync":                     "forwards a background prefetch goroutine's panic unchanged to finishPrefetch on the caller goroutine, where RepanicBug classifies it",
 }
 
 // classifies reports whether fn, the function whose body calls recover, lets a bug through: it calls DeviceAllocFailed or

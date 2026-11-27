@@ -34,8 +34,8 @@ func (s *server) haltState() *haltInfo { return s.halted.Load() }
 // halt reasons.
 func (s *server) halt(reason, trigger string) (quiescedIn time.Duration) {
 	s.halted.Store(&haltInfo{reason: reason, at: time.Now(), trigger: trigger})
-	n := s.gens.cancelAll(reason)
-	quiescedIn = s.gens.waitEmpty(30 * time.Second)
+	n := s.gens.CancelAll(reason)
+	quiescedIn = s.gens.WaitEmpty(30 * time.Second)
 	fmt.Fprintf(os.Stderr, "halt: %s (trigger=%s reason=%q, cancelled %d generation(s), quiesced in %s)\n",
 		trigger, trigger, reason, n, quiescedIn)
 	if s.cfg.haltExitCode != 0 {

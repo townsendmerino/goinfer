@@ -3,14 +3,11 @@ package serveapp
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"mime/multipart"
 	"net/http"
 	"reflect"
@@ -18,6 +15,9 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 // Request-body size ceilings. Bodies are buffered before validation, so an unbounded body is a memory-exhaustion DoS.
@@ -592,14 +592,7 @@ func completeUTF8(s string) int {
 // reads back someone else's turns. crypto/rand, not math/rand, because guessability is the whole property; 16 bytes
 // because these ids go in URLs and logs, and 128 bits is beyond enumeration.
 func reqID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand does not fail on any supported platform; if it somehow does, a panic is
-		// correct — silently falling back to a predictable id restores the defect this exists
-		// to close, and would do so invisibly.
-		panic("serveapp: crypto/rand unavailable: " + err.Error())
-	}
-	return hex.EncodeToString(b[:])
+	return stores.MintID()
 }
 
 // humanBytes formats a byte count as MiB/GiB for the startup line (whole MiB is exact here —

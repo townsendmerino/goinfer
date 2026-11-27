@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
 // The two batch APIs (OpenAI /v1/batches, Anthropic /v1/messages/batches): thin translations onto the job store.
-// batches_run.go does the per-line execution and batches_finalize.go completion and output assembly. This file is
-// HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope.
+// batches_run.go does the per-line execution and stores.BatchRecord.Finalize handles completion and output assembly.
+// This file is HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope.
 
 // --- OpenAI: POST /v1/files, GET /v1/files/{id}, GET /v1/files/{id}/content ---
 
@@ -41,11 +41,11 @@ func (s *server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 	if purpose == "" {
 		purpose = "batch"
 	}
-	f := s.files.put(header.Filename, purpose, data)
+	f := s.files.Put(header.Filename, purpose, data)
 	writeJSON(w, http.StatusOK, fileObject(f))
 }
 
-func fileObject(f *storedFile) map[string]any {
+func fileObject(f *stores.StoredFile) map[string]any {
 	return map[string]any{
 		"id": f.ID, "object": "file", "bytes": len(f.Bytes),
 		"created_at": f.CreatedAt.Unix(), "filename": f.Filename, "purpose": f.Purpose,
@@ -53,7 +53,7 @@ func fileObject(f *storedFile) map[string]any {
 }
 
 func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
-	f := s.files.get(r.PathValue("id"))
+	f := s.files.Get(r.PathValue("id"))
 	if f == nil {
 		writeErr(w, http.StatusNotFound, fileNotFound)
 		return
@@ -62,7 +62,7 @@ func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
-	f := s.files.get(r.PathValue("id"))
+	f := s.files.Get(r.PathValue("id"))
 	if f == nil {
 		writeErr(w, http.StatusNotFound, fileNotFound)
 		return
@@ -84,10 +84,20 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 
 // --- OpenAI: POST /v1/batches, GET /v1/batches/{id}, POST /v1/batches/{id}/cancel ---
 
-// batchBudgetMsg is the refusal for a batch the server-wide line budget (batchStore.create) cannot take now.
+// batchBudgetMsg is the refusal for a batch the server-wide line budget (stores.BatchStore.Create) cannot take now.
 func batchBudgetMsg(limit, n int) string {
 	return fmt.Sprintf("the server is running its limit of batch requests (%d across all batches); this batch of %d does not fit until earlier lines finish: retry later",
 		limit, n)
+}
+
+func (s *server) finalizeBatch(id string) {
+	b := s.batches.Get(id)
+	if b == nil {
+		return
+	}
+	b.Finalize(func(files ...stores.NewFile) []*stores.StoredFile {
+		return s.files.PutAll(files...)
+	})
 }
 
 func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +114,7 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("endpoint %q is not supported this pass; only \"/v1/chat/completions\" is", req.Endpoint))
 		return
 	}
-	f := s.files.get(req.InputFileID)
+	f := s.files.Get(req.InputFileID)
 	if f == nil {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("input_file_id %q not found", req.InputFileID))
 		return
@@ -137,70 +147,34 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		reqs = append(reqs, creq)
 	}
 
-	b := s.batches.create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
+	b := s.batches.Create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
 	if b == nil {
-		writeErr(w, http.StatusTooManyRequests, batchBudgetMsg(s.batches.maxActiveLines, len(customIDs)))
+		writeErr(w, http.StatusTooManyRequests, batchBudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
 		return
 	}
 	runBatchPool(len(reqs), func(i int) { runBatchChatLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 
-	writeJSON(w, http.StatusOK, openAIBatchObject(b))
-}
-
-func openAIBatchObject(b *batchRecord) map[string]any {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	status := b.Status // internal vocabulary already matches OpenAI's almost verbatim
-	total, completed, failed := 0, 0, 0
-	for _, r := range b.Results {
-		if r.CustomID == "" {
-			continue // this line hasn't finished yet — every real result has a non-empty CustomID
-		}
-		total++
-		if r.ErrType == "" && r.Body != nil {
-			completed++
-		} else {
-			failed++
-		}
-	}
-	out := map[string]any{
-		"id": b.ID, "object": "batch", "endpoint": b.Endpoint, "input_file_id": b.InputFileID,
-		"completion_window": b.CompletionWindow, "status": status,
-		"created_at": b.Created.Unix(),
-		"request_counts": map[string]any{
-			"total": len(b.CustomIDs), "completed": completed, "failed": failed,
-		},
-	}
-	if b.OutputFileID != "" {
-		out["output_file_id"] = b.OutputFileID
-	}
-	if b.ErrorFileID != "" {
-		out["error_file_id"] = b.ErrorFileID
-	}
-	if b.CompletedAt != nil {
-		out["completed_at"] = b.CompletedAt.Unix()
-	}
-	return out
+	writeJSON(w, http.StatusOK, b.OpenAIObject())
 }
 
 func (s *server) handleGetBatch(w http.ResponseWriter, r *http.Request) {
-	b := s.batches.get(r.PathValue("id"))
+	b := s.batches.Get(r.PathValue("id"))
 	if b == nil {
 		writeErr(w, http.StatusNotFound, "batch not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, openAIBatchObject(b))
+	writeJSON(w, http.StatusOK, b.OpenAIObject())
 }
 
 func (s *server) handleCancelBatch(w http.ResponseWriter, r *http.Request) {
-	b := s.batches.get(r.PathValue("id"))
+	b := s.batches.Get(r.PathValue("id"))
 	if b == nil {
 		writeErr(w, http.StatusNotFound, "batch not found")
 		return
 	}
-	b.requestCancel(s.jobs)
-	writeJSON(w, http.StatusOK, openAIBatchObject(b))
+	b.RequestCancel(s.jobs)
+	writeJSON(w, http.StatusOK, b.OpenAIObject())
 }
 
 // --- Anthropic: POST /v1/messages/batches, GET .../{id}, GET .../{id}/results, POST .../{id}/cancel ---
@@ -221,9 +195,9 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "requests must not be empty")
 		return
 	}
-	if len(req.Requests) > maxBatchLines {
+	if len(req.Requests) > stores.MaxBatchLines {
 		writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "request_too_large",
-			fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", maxBatchLines, len(req.Requests)))
+			fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", stores.MaxBatchLines, len(req.Requests)))
 		return
 	}
 	customIDs := make([]string, len(req.Requests))
@@ -245,84 +219,33 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	b := s.batches.create("anthropic_messages", "/v1/messages", "", "", customIDs)
+	b := s.batches.Create("anthropic_messages", "/v1/messages", "", "", customIDs)
 	if b == nil {
-		writeAnthropicErr(w, http.StatusTooManyRequests, "rate_limit_error", batchBudgetMsg(s.batches.maxActiveLines, len(customIDs)))
+		writeAnthropicErr(w, http.StatusTooManyRequests, "rate_limit_error", batchBudgetMsg(s.batches.MaxActiveLines(), len(customIDs)))
 		return
 	}
 	runBatchPool(len(reqs), func(i int) { runBatchMessageLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 
-	writeJSON(w, http.StatusOK, anthropicBatchObject(b))
-}
-
-func anthropicBatchObject(b *batchRecord) map[string]any {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	// Anthropic vocabulary: in_progress | canceling | ended. No "finalizing" — folds into
-	// in_progress; "completed" and "cancelled" both surface as "ended", matching the real API.
-	status := "in_progress"
-	switch b.Status {
-	case "cancelling":
-		status = "canceling"
-	case "completed", "cancelled", "failed":
-		status = "ended"
-	}
-	processing, succeeded, errored, canceled := 0, 0, 0, 0
-	for _, r := range b.Results {
-		if r.CustomID == "" {
-			processing++
-			continue
-		}
-		switch {
-		case r.ErrType == "cancelled":
-			canceled++
-		case r.ErrType != "" || r.Body == nil:
-			errored++
-		default:
-			succeeded++
-		}
-	}
-	out := map[string]any{
-		"id": b.ID, "type": "message_batch", "processing_status": status,
-		"created_at": b.Created.Format(time.RFC3339),
-		"request_counts": map[string]any{
-			"processing": processing, "succeeded": succeeded, "errored": errored,
-			"canceled": canceled, "expired": 0,
-		},
-		"results_url": nil,
-	}
-	if status == "ended" {
-		out["results_url"] = "/v1/messages/batches/" + b.ID + "/results"
-	}
-	if b.CompletedAt != nil {
-		out["ended_at"] = b.CompletedAt.Format(time.RFC3339)
-	}
-	return out
+	writeJSON(w, http.StatusOK, b.AnthropicObject())
 }
 
 func (s *server) handleGetMessageBatch(w http.ResponseWriter, r *http.Request) {
-	b := s.batches.get(r.PathValue("id"))
+	b := s.batches.Get(r.PathValue("id"))
 	if b == nil {
 		writeAnthropicErr(w, http.StatusNotFound, "not_found_error", "batch not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, anthropicBatchObject(b))
+	writeJSON(w, http.StatusOK, b.AnthropicObject())
 }
 
 func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Request) {
-	b := s.batches.get(r.PathValue("id"))
+	b := s.batches.Get(r.PathValue("id"))
 	if b == nil {
 		writeAnthropicErr(w, http.StatusNotFound, "not_found_error", "batch not found")
 		return
 	}
-	b.mu.Lock()
-	ready := b.Status == "completed" || b.Status == "cancelled" || b.Status == "failed"
-	var results []batchLineResult
-	if ready {
-		results = slices.Clone(b.Results)
-	}
-	b.mu.Unlock()
+	results, ready := b.TerminalResults()
 	if !ready {
 		writeAnthropicErr(w, http.StatusConflict, "invalid_request_error", "batch results are not ready yet")
 		return
@@ -356,11 +279,11 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 }
 
 func (s *server) handleCancelMessageBatch(w http.ResponseWriter, r *http.Request) {
-	b := s.batches.get(r.PathValue("id"))
+	b := s.batches.Get(r.PathValue("id"))
 	if b == nil {
 		writeAnthropicErr(w, http.StatusNotFound, "not_found_error", "batch not found")
 		return
 	}
-	b.requestCancel(s.jobs)
-	writeJSON(w, http.StatusOK, anthropicBatchObject(b))
+	b.RequestCancel(s.jobs)
+	writeJSON(w, http.StatusOK, b.AnthropicObject())
 }

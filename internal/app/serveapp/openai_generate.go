@@ -19,6 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/app/connect"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -43,7 +44,7 @@ const maxOutputTokensCeiling = 131072
 // modelCaches groups the lazily computed, sync.Once-guarded derived tables cached per loadedModel.
 type modelCaches struct {
 	featOnce        sync.Once // vision_serve.go: the tower-output cache, made on first image
-	feat            *featureCache
+	feat            *stores.FeatureCache
 	tokenBytesOnce  sync.Once // constraint masker's token-to-bytes table (one entry per vocab id)
 	tokenBytes      [][]byte
 	tokenBytesFrom  *loadedModel // base model whose table this adapter shares
@@ -568,9 +569,9 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *stores.GenerationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
-	var g *generation
+	var g *stores.Generation
 	if gens != nil && gr.id != "" {
 		// The admin cancel must land on parent itself, not on ctx below (drive's stop-string-derived child):
 		// streamTokens tells an admin cancel apart from a stop-string hit by checking parent.Err(), because the
@@ -579,13 +580,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		var adminCancel context.CancelFunc
 		parent, adminCancel = context.WithCancel(parent)
 		defer adminCancel()
-		g = gens.register(gr.id, lm.name, adminCancel)
-		defer gens.remove(gr.id)
+		g = gens.Register(gr.id, lm.name, adminCancel)
+		defer gens.Remove(gr.id)
 		wrapped := onText
-		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+		onText = func(t string) { g.AddTokens(1); wrapped(t) }
 		if gr.think != nil { // a model that is still reasoning is making progress, not stuck
 			wr := gr.think.onReasoning
-			gr.think.onReasoning = func(t string) { g.tokens.Add(1); wr(t) }
+			gr.think.onReasoning = func(t string) { g.AddTokens(1); wr(t) }
 		}
 	}
 	if js != nil && gr.id != "" {
@@ -638,11 +639,11 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 // reads parent (not the stop-string-derived ctx) for the external-cancel signal, and a stop-string hit always wins:
 // the generation completed naturally at about the same moment, so the natural "stop" is reported rather than a race
 // with an admin cancel that arrived too late to matter.
-func cancelledReason(g *generation, parent context.Context, stopHit string) string {
+func cancelledReason(g *stores.Generation, parent context.Context, stopHit string) string {
 	if g == nil || parent.Err() == nil || stopHit != "" {
 		return ""
 	}
-	return g.reason()
+	return g.Reason()
 }
 
 // driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the projected vision features (from
@@ -651,18 +652,18 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *stores.GenerationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
-	var g *generation
+	var g *stores.Generation
 	if gens != nil && gr.id != "" {
 		// See drive's identical block for why this must wrap parent, not the ctx derived below.
 		var adminCancel context.CancelFunc
 		parent, adminCancel = context.WithCancel(parent)
 		defer adminCancel()
-		g = gens.register(gr.id, lm.name, adminCancel)
-		defer gens.remove(gr.id)
+		g = gens.Register(gr.id, lm.name, adminCancel)
+		defer gens.Remove(gr.id)
 		wrapped := onText
-		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+		onText = func(t string) { g.AddTokens(1); wrapped(t) }
 	}
 	if js != nil && gr.id != "" {
 		j := js.GetOrCreate(gr.id, lm.name, gr.promptIDs)

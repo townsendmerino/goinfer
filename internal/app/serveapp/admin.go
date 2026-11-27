@@ -25,7 +25,7 @@ type adminCancelReq struct {
 // handleAdminGenerationsList lists every in-flight generation. s.gens is its own registry, independent of model
 // load/unload, so no liveness or regMu interaction is needed.
 func (s *server) handleAdminGenerationsList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"generations": s.gens.list()})
+	writeJSON(w, http.StatusOK, map[string]any{"generations": s.gens.List()})
 }
 
 // handleAdminGenerationCancel cancels one generation by id. Cancelling an id that has already finished (or never
@@ -41,7 +41,7 @@ func (s *server) handleAdminGenerationCancel(w http.ResponseWriter, r *http.Requ
 		writeErr(w, http.StatusBadRequest, "reason is required")
 		return
 	}
-	found := s.gens.cancel(id, req.Reason)
+	found := s.gens.Cancel(id, req.Reason)
 	fmt.Fprintf(os.Stderr, "admin: cancel %s (found=%v reason=%q)\n", id, found, req.Reason)
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "found": found})
 }
@@ -92,7 +92,7 @@ func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func
 // the live generation count, so `serve status` has something to report without /health on the same listener.
 func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	hi := s.haltState()
-	resp := map[string]any{"halted": hi != nil, "generations_inflight": s.gens.count()}
+	resp := map[string]any{"halted": hi != nil, "generations_inflight": s.gens.Count()}
 	if hi != nil {
 		resp["halt_reason"] = hi.reason
 		resp["halt_trigger"] = hi.trigger

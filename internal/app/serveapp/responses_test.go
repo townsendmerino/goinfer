@@ -210,11 +210,11 @@ func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	s.maybeStore(true, "resp_1", "m", []chatMessage{{Role: "user", Content: rawStr("weather in nyc?")}},
 		"", "", []apiToolCall{tc})
 
-	entry := s.responses.get("resp_1")
+	entry := s.responses.Get("resp_1")
 	if entry == nil {
 		t.Fatal("maybeStore did not store an entry")
 	}
-	last := entry.messages[len(entry.messages)-1]
+	last := entry.Messages[len(entry.Messages)-1]
 	if last.Role != "assistant" {
 		t.Fatalf("stored last message role = %q, want assistant", last.Role)
 	}
@@ -230,7 +230,7 @@ func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := slices.Concat(entry.messages, contMsgs)
+	full := slices.Concat(entry.Messages, contMsgs)
 	if len(full) < 2 {
 		t.Fatal("reconstructed conversation is too short to check")
 	}
