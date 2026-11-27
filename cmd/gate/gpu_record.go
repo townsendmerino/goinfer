@@ -122,23 +122,6 @@ func (g *gpuGate) writeRecord(verdict string) {
 	fmt.Fprintf(g.w, "\n  record: %s (commit it with the release; `gate gpu-records` reads it)\n", path)
 }
 
-// writeFileAtomic writes b to path through a temporary file and a rename, so a reader never sees half a record.
-func writeFileAtomic(path string, b []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-// gitTree is the git tree id of dir at rev.
-func gitTree(root, rev, dir string) (string, error) {
-	return gitOut(root, "rev-parse", rev+":"+dir)
-}
-
 // loadGPURecords reads every record in dir, oldest first. A file that is not a record is an error, not a skip: a record that
 // cannot be read must not read as "no record".
 func loadGPURecords(dir string) ([]gpuRecord, error) {

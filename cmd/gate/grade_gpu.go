@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
-	"maps"
-	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // gpuTally is what the gpu gate's check groups leave for its verdict: the groups declared and the ones that reported,
@@ -42,13 +42,13 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 			missing = append(missing, e)
 		}
 	}
-	for _, e := range sortedSet(t.Emitted) {
+	for _, e := range gatecore.SortedSet(t.Emitted) {
 		if !declared[e] {
 			unexpected = append(unexpected, e)
 		}
 	}
 	bad := func(format string, a ...any) {
-		fmt.Fprintf(w, "  %sFAIL%s  %s\n", red, off, fmt.Sprintf(format, a...))
+		fmt.Fprintf(w, "  %sFAIL%s  %s\n", gatecore.Red, gatecore.Off, fmt.Sprintf(format, a...))
 		t.Fail++
 	}
 	if len(missing) > 0 {
@@ -60,7 +60,7 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 			strings.Join(unexpected, " "))
 	}
 
-	fmt.Fprintf(w, "\n%s== %s ==%s\n", bold, "verdict", off)
+	fmt.Fprintf(w, "\n%s== %s ==%s\n", gatecore.Bold, "verdict", gatecore.Off)
 	// ONE UNIT: check groups, so a reader deciding whether to ship sees at a glance whether one is missing.
 	fmt.Fprintf(w, "  check groups: %d declared -> %d reported   |   verdicts within them: %d pass, %d skip, %d fail\n",
 		len(t.Expect), len(t.Emitted), t.Pass, t.Skip, t.Fail)
@@ -81,26 +81,26 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 			len(t.Expect)-len(t.Emitted))
 	}
 	if t.Skip > 0 {
-		fmt.Fprintf(w, "\n  %sSkipped — a skip is not a pass; this gate does NOT cover:%s\n", amber, off)
+		fmt.Fprintf(w, "\n  %sSkipped — a skip is not a pass; this gate does NOT cover:%s\n", gatecore.Amber, gatecore.Off)
 		for _, n := range t.Notes {
 			fmt.Fprintf(w, "    - %s\n", n)
 		}
 	}
 	if len(t.Notices) > 0 {
-		fmt.Fprintf(w, "\n  %sNotices%s — readings that moved; they do not change this verdict:\n", amber, off)
+		fmt.Fprintf(w, "\n  %sNotices%s — readings that moved; they do not change this verdict:\n", gatecore.Amber, gatecore.Off)
 		for _, n := range t.Notices {
 			fmt.Fprintf(w, "    - %s\n", n)
 		}
 	}
 	if t.Ran == 0 {
-		fmt.Fprintf(w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
+		fmt.Fprintf(w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", gatecore.Red, gatecore.Off)
 		return 1, "NO_GATE"
 	}
 	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE: coverage the verdict vouches
 	// for did not run. It is separate from Empty because the tests exist and were selected, they all
 	// opted out, and `go test` exits 0 on an all-skip package, so nothing upstream notices.
 	if len(t.Vacuous) > 0 {
-		fmt.Fprintf(w, "\n  %sVACUOUS CELL(S)%s — every test skipped, so the PASS above vouches for nothing:\n", red, off)
+		fmt.Fprintf(w, "\n  %sVACUOUS CELL(S)%s — every test skipped, so the PASS above vouches for nothing:\n", gatecore.Red, gatecore.Off)
 		for _, c := range t.Vacuous {
 			fmt.Fprintf(w, "    - %s\n", c)
 		}
@@ -109,7 +109,7 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 		return 1, "VACUOUS"
 	}
 	if len(t.Empty) > 0 {
-		fmt.Fprintf(w, "\n  %sEMPTY CELL(S)%s — a -run pattern matched no test, so that coverage is gone:\n", red, off)
+		fmt.Fprintf(w, "\n  %sEMPTY CELL(S)%s — a -run pattern matched no test, so that coverage is gone:\n", gatecore.Red, gatecore.Off)
 		for _, c := range t.Empty {
 			fmt.Fprintf(w, "    - %s\n", c)
 		}
@@ -121,7 +121,7 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 		if in.Dirty {
 			d = " +dirty"
 		}
-		fmt.Fprintf(w, "\n  %sFAIL%s — %s on %s @ %s%s. Do not tag.\n", red, off, in.Backend, in.Host, in.Commit, d)
+		fmt.Fprintf(w, "\n  %sFAIL%s — %s on %s @ %s%s. Do not tag.\n", gatecore.Red, gatecore.Off, in.Backend, in.Host, in.Commit, d)
 		return 1, "FAIL"
 	}
 	// THREE STATES, NOT TWO. Every check is green here, but a dirty tree is a failure of PROVENANCE, not of
@@ -130,17 +130,14 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 	// EVIDENCE?). Verdicts get pasted into tag messages, which is what this gate is for.
 	if in.Dirty {
 		fmt.Fprintf(w, "\n  %sINCONCLUSIVE%s — %d/%d groups green, but the working tree is DIRTY.\n",
-			amber, off, len(t.Expect), len(t.Expect))
+			gatecore.Amber, gatecore.Off, len(t.Expect), len(t.Expect))
 		fmt.Fprintf(w, "  The verdict names %s and the tree is not %s. Commit, then re-run before tagging.\n", in.Commit, in.Commit)
 		for _, ln := range in.DirtyLines {
 			fmt.Fprintf(w, "    %s\n", ln)
 		}
 		return 1, "INCONCLUSIVE"
 	}
-	fmt.Fprintf(w, "\n  %sPASS%s — %s on %s @ %s (%s)\n", green, off, in.Backend, in.Host, in.Commit, in.Now)
+	fmt.Fprintf(w, "\n  %sPASS%s — %s on %s @ %s (%s)\n", gatecore.Green, gatecore.Off, in.Backend, in.Host, in.Commit, in.Now)
 	fmt.Fprintf(w, "  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.\n")
 	return 0, "PASS"
-}
-func sortedSet(m map[string]bool) []string {
-	return slices.Sorted(maps.Keys(m))
 }

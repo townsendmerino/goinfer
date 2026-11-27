@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // checkRow is one named gate's outcome, ready to print. Kind is its outcome class, which the verdict line counts: a blocker
@@ -22,7 +24,7 @@ var envGateSkip = regexp.MustCompile(`\bset (GOINFER_[A-Z0-9_]+)=`)
 // ledger is injected for the same reason.
 func classifyChecks(res *results, checks []gateCheck, ledger func(string) string, cells []cell, lists parityLists) (rows []checkRow, blockers, gaps, firstRuns int) {
 	for _, g := range checks {
-		act, seen := res.lookupTop(g.Test)
+		act, seen := res.LookupTop(g.Test)
 		var mark, kind string
 		switch {
 		case !seen:
@@ -70,7 +72,7 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + lists.NeverConfirmed[g.Test]
 				gaps++
 			default:
-				if m := envGateSkip.FindStringSubmatch(skipReason(res.topOutput(g.Test))); m != nil {
+				if m := envGateSkip.FindStringSubmatch(gatecore.SkipReason(res.TopOutput(g.Test))); m != nil {
 					mark = "SKIP - not evaluated, " + m[1] + " unset (blocker)"
 					kind = "env"
 				} else {
@@ -90,8 +92,8 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 func catchAllSkips(res *results, checks []gateCheck) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, k := range res.order {
-		if isSubtest(k) || res.final[k] != "skip" || !strings.HasPrefix(k.Test, "Test") {
+	for _, k := range res.Order {
+		if gatecore.IsSubtest(k) || res.Final[k] != "skip" || !strings.HasPrefix(k.Test, "Test") {
 			continue
 		}
 		low := strings.ToLower(k.Test)
@@ -161,14 +163,14 @@ func unlistedFailures(res *results, checks []gateCheck) []string {
 	}
 	seen := map[string]bool{}
 	var out []string
-	for _, k := range res.topLevel("fail") {
+	for _, k := range res.TopLevel("fail") {
 		if named[k.Test] || seen[k.Test] {
 			continue
 		}
 		seen[k.Test] = true
 		// Last-writer-wins, the same rule the checkset reads by: a test that failed in the plain
 		// cell and passed in the realckpt one is not a failure.
-		if act, _ := res.lookupTop(k.Test); act != "fail" {
+		if act, _ := res.LookupTop(k.Test); act != "fail" {
 			continue
 		}
 		out = append(out, k.Test)
@@ -201,7 +203,7 @@ func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellRe
 	// sweep delivers a verdict about a cell that never finished.
 	for _, c := range cells {
 		if c.Hidden {
-			if after, running := res.timeoutPanic(); after != "" {
+			if after, running := res.TimeoutPanic(); after != "" {
 				fmt.Fprintf(w, "\n   ❌ cell %q TIMED OUT at -timeout %s (rc=%d), not a test failure: in flight %s; every gate after "+
 					"it did not run — raise TIMEOUT, or re-run just those gates with GATE_RUN — BLOCKER: %s\n",
 					c.Cell.Name, after, c.RC, strings.Join(running, ", "), c.LogPath)
@@ -218,7 +220,7 @@ func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellRe
 	if realckpt && len(lists.RealckptNotRequired) > 0 {
 		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(lists.RealckptNotRequired))
 		for _, name := range slices.Sorted(maps.Keys(lists.RealckptNotRequired)) {
-			act, seen := res.lookupTop(name)
+			act, seen := res.LookupTop(name)
 			if !seen {
 				act = "no result"
 			}

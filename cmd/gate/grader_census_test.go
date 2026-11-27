@@ -123,25 +123,31 @@ func dispatchedSubcommands(t *testing.T) []string {
 	return slices.Sorted(maps.Keys(seen))
 }
 
-// packageDecls is every function and method name declared in this package's non-test files.
+// packageDecls is every function and method name declared in this package's or internal/guard/gate*'s non-test files.
 func packageDecls(t *testing.T) map[string]bool {
 	t.Helper()
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	globs := []string{"*.go", "../../internal/guard/gate*/*.go"}
 	out := map[string]bool{}
-	for _, n := range names {
-		if strings.HasSuffix(n, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(token.NewFileSet(), n, nil, 0)
+	for _, pat := range globs {
+		names, err := filepath.Glob(pat)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, d := range f.Decls {
-			if fn, ok := d.(*ast.FuncDecl); ok {
-				out[fn.Name.Name] = true
+		for _, n := range names {
+			if strings.HasSuffix(n, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), n, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range f.Decls {
+				if fn, ok := d.(*ast.FuncDecl); ok {
+					out[fn.Name.Name] = true
+					if len(fn.Name.Name) > 0 {
+						out[strings.ToLower(fn.Name.Name[:1])+fn.Name.Name[1:]] = true
+					}
+				}
 			}
 		}
 	}

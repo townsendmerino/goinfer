@@ -1165,7 +1165,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling`, `internal/testgate` |
 | `backend/webgpu/internal/kvdecl` | `internal/runtime/program` |  |
 | `chat` | `constrain`, `tokenizer` | `internal/codec`, `multimodal` |
-| `cmd/gate` | `internal/guard/paritykey`, `internal/runtime/mem/probe`, `tokenizer` | `internal/testgate` |
+| `cmd/gate` | `internal/guard/gatecore`, `internal/guard/gatehygiene`, `internal/guard/gatequick`, `internal/guard/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
 | `cmd/serve` | `internal/app/serveapp` |  |
@@ -1204,6 +1204,9 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/decide` | `chat`, `decoder`, `internal/codec`, `internal/confidence`, `tokenizer` |  |
 | `internal/diag/hwreport` | `decoder`, `internal/app/fitcmd` |  |
 | `internal/diag/towerid` | `embeddinggemma2`, `internal/audio`, `internal/diag/kernelprint`, `internal/vision`, `multimodal` |  |
+| `internal/guard/gatecore` | `internal/runtime/mem/probe` | `internal/testgate`, `internal/testpath` |
+| `internal/guard/gatehygiene` | `internal/guard/gatecore`, `internal/guard/paritykey` | `internal/testpath` |
+| `internal/guard/gatequick` | `internal/guard/gatecore`, `internal/guard/gatehygiene`, `internal/guard/paritykey` | `internal/testgate`, `internal/testpath` |
 | `internal/guard/memgate` | `decoder`, `decoder/fit`, `internal/runtime/mem` | `internal/diag/sb2census` |
 | `internal/guard/servecheck` | `decoder`, `internal/diag/hwreport` |  |
 | `internal/guard/swapguard` | `decoder`, `internal/runtime/logs`, `internal/runtime/mem/probe` |  |
@@ -1274,5 +1277,8 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | serveapp-adminsock-leaf | `internal/app/serveapp/adminsock`, tests included | any goinfer package | internal/app/serveapp/adminsock provides the 0600 Unix-domain /admin/* socket listener and CLI subcommands below serveapp (SA4). It imports no goinfer package. |
 | serveapp-netguard-leaf | `internal/app/serveapp/netguard`, tests included | any goinfer package | internal/app/serveapp/netguard provides loopback DNS-rebinding and browser cross-origin guards, constant-time API-key auth, request body caps, in-flight admission, and JSON error framing below serveapp (SA4). It imports no goinfer package. |
 | serveapp-banner-leaf | `internal/app/serveapp/banner`, tests included | any goinfer package; (`internal/app/serveapp/banner` may import `decoder`, `internal/runtime/mem`) | internal/app/serveapp/banner formats startup status lines for loaded generative models, KV pools, concurrency settings, and server route summaries from resolved Facts below serveapp (SA5). It never imports serveapp. |
+| gatecore-leaf | `internal/guard/gatecore`, tests included | any goinfer package; (`internal/guard/gatecore` may import `internal/runtime/mem/probe`, `internal/testgate`, `internal/testpath`) | internal/guard/gatecore holds the go test -json event accumulator, matrix cell runner, run-record codec, /proc memory sampler, git/pre-move path helpers, and pure tally/skip/timeout graders below cmd/gate (GT1). Its production files import only internal/runtime/mem/probe. |
+| gatehygiene-leaf | `internal/guard/gatehygiene`, tests included | any goinfer package; (`internal/guard/gatehygiene` may import `internal/guard/gatecore`, `internal/guard/paritykey`, `internal/testpath`) | internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath). |
+| gatequick-leaf | `internal/guard/gatequick`, tests included | any goinfer package; (`internal/guard/gatequick` may import `internal/guard/gatecore`, `internal/guard/gatehygiene`, `internal/guard/paritykey`, `internal/testgate`, `internal/testpath`) | internal/guard/gatequick holds gate quick's package dependency graph, changed-file-to-cell selector, parallel cell runner, duration/summary records, and pure quick graders below cmd/gate (GT3). It imports only internal/guard/gatecore, internal/guard/gatehygiene, and internal/guard/paritykey (its tests, internal/testgate and internal/testpath). |
 
 <!-- imports:end -->

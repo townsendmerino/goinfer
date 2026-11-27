@@ -274,7 +274,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 	prov.Dirty = false
 	prov.Fields = append(prov.Fields, [2]string{"tree", "the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both"})
 	fmt.Fprintf(w, "%s== identity provenance ==%s\n", bold, off)
-	prov.write(w)
+	prov.Write(w)
 	if runnable == 0 {
 		fmt.Fprintf(w, "\n")
 		printNotRun(w, cells)
@@ -535,16 +535,6 @@ func identityEnv(set map[string]string) []string {
 	}
 	slices.Sort(env)
 	return env
-}
-
-func gitOut(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return strings.TrimSpace(string(out)), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // buildIdentitySide checks out s's revision in a detached worktree and builds the dumper in it.

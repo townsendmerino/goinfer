@@ -321,10 +321,10 @@ func planIdentityCells(o *identityOpts, fams map[string]manifestFamily) ([]*iden
 		if !want[a.Family] {
 			continue
 		}
-		if len(o.Only) > 0 && !slicesContains(o.Only, a.Name) {
+		if len(o.Only) > 0 && !slices.Contains(o.Only, a.Name) {
 			continue
 		}
-		if len(a.Backends) > 0 && !slicesContains(a.Backends, o.Backend) {
+		if len(a.Backends) > 0 && !slices.Contains(a.Backends, o.Backend) {
 			continue
 		}
 		has[a.Family] = true

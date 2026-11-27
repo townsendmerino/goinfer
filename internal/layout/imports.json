@@ -628,6 +628,62 @@
         ]
       },
       "why": "internal/app/serveapp/banner formats startup status lines for loaded generative models, KV pools, concurrency settings, and server route summaries from resolved Facts below serveapp (SA5). It never imports serveapp."
+    },
+    {
+      "name": "gatecore-leaf",
+      "from": [
+        "internal/guard/gatecore"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatecore": [
+          "internal/runtime/mem/probe",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatecore holds the go test -json event accumulator, matrix cell runner, run-record codec, /proc memory sampler, git/pre-move path helpers, and pure tally/skip/timeout graders below cmd/gate (GT1). Its production files import only internal/runtime/mem/probe."
+    },
+    {
+      "name": "gatehygiene-leaf",
+      "from": [
+        "internal/guard/gatehygiene"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatehygiene": [
+          "internal/guard/gatecore",
+          "internal/guard/paritykey",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath)."
+    },
+    {
+      "name": "gatequick-leaf",
+      "from": [
+        "internal/guard/gatequick"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatequick": [
+          "internal/guard/gatecore",
+          "internal/guard/gatehygiene",
+          "internal/guard/paritykey",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatequick holds gate quick's package dependency graph, changed-file-to-cell selector, parallel cell runner, duration/summary records, and pure quick graders below cmd/gate (GT3). It imports only internal/guard/gatecore, internal/guard/gatehygiene, and internal/guard/paritykey (its tests, internal/testgate and internal/testpath)."
     }
   ],
   "arrows": {
@@ -745,8 +801,10 @@
       "tokenizer"
     ],
     "cmd/gate": [
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
+      "internal/guard/gatequick",
       "internal/guard/paritykey",
-      "internal/runtime/mem/probe",
       "tokenizer"
     ],
     "cmd/hostmem": [
@@ -1000,6 +1058,18 @@
       "internal/diag/kernelprint",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/guard/gatecore": [
+      "internal/runtime/mem/probe"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey"
+    ],
+    "internal/guard/gatequick": [
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
+      "internal/guard/paritykey"
     ],
     "internal/guard/memgate": [
       "decoder",
@@ -1275,8 +1345,9 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey",
-      "internal/testgate"
+      "internal/guard/gatecore",
+      "internal/guard/gatequick",
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -1454,6 +1525,18 @@
     ],
     "internal/diag/towerid": [
       "internal/vision"
+    ],
+    "internal/guard/gatecore": [
+      "internal/testgate",
+      "internal/testpath"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
+      "internal/testpath"
+    ],
+    "internal/guard/gatequick": [
+      "internal/testgate",
+      "internal/testpath"
     ],
     "internal/guard/memgate": [
       "decoder",

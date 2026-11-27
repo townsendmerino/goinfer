@@ -1,12 +1,9 @@
 package main
 
 import (
-	"flag"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -224,55 +221,6 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 	if got := byGroup["kv10"]; !slices.Equal(got, []string{"TestKV10_longContextFidelity"}) {
 		t.Errorf("group kv10 = %v, want [TestKV10_longContextFidelity] alone, out of the shared group", got)
 	}
-}
-
-func TestParseProcStat(t *testing.T) {
-	name, ppid, ok := parseProcStat("4242 (we(ird) name.test) S 17 4242 4242 0 -1")
-	if !ok || name != "we(ird) name.test" || ppid != 17 {
-		t.Errorf("parseProcStat: %q %d %v", name, ppid, ok)
-	}
-}
-
-// The sampler finds a .test binary that is a grandchild of the process it is given, as `go test`'s binary is of `go`.
-func TestProcSampler_findsTheTestBinaryUnderItsParent(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("reads /proc")
-	}
-	// The grandchild is this test binary, already named "<pkg>.test", re-run into TestProcSampler_helperSleeps. A copy of a system
-	// binary under a .test name is not a stand-in: a multi-call coreutils (uutils, busybox) picks its utility from argv[0] and exits.
-	bin, err := os.Executable()
-	if err != nil {
-		t.Skip(err)
-	}
-	if !strings.HasSuffix(filepath.Base(bin), ".test") {
-		t.Skipf("test binary %s is not named .test", bin)
-	}
-	old := procSamplePeriod
-	procSamplePeriod = 20 * time.Millisecond
-	t.Cleanup(func() { procSamplePeriod = old })
-	cmd := exec.Command("sh", "-c", `"$0" -test.run='^TestProcSampler_helperSleeps$' -procsampler.helper; true`, bin)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	stop := startProcSampler(cmd.Process.Pid, func() (string, time.Duration, bool) { return "TestFake/sub", 0, true })
-	_ = cmd.Wait()
-	p := stop()
-	if p.Samples == 0 || p.HWMKB == 0 || p.PID == cmd.Process.Pid {
-		t.Fatalf("sampled %+v; want the grandchild's VmHWM", p)
-	}
-	if p.ByTest["TestFake"] == 0 || len(p.ByTest) != 1 {
-		t.Errorf("attribution %v; want the top-level test only", p.ByTest)
-	}
-}
-
-var procSamplerHelper = flag.Bool("procsampler.helper", false, "run TestProcSampler_helperSleeps as the sampler test's grandchild")
-
-// TestProcSampler_helperSleeps is the grandchild TestProcSampler_findsTheTestBinaryUnderItsParent samples: it lives a second.
-func TestProcSampler_helperSleeps(t *testing.T) {
-	if !*procSamplerHelper {
-		t.Skip("only as TestProcSampler_findsTheTestBinaryUnderItsParent's grandchild")
-	}
-	time.Sleep(time.Second)
 }
 
 // The shared group runs only tests that reach a heavy check (Francis, 2026-11-23): a test with none runs in the parity cell,

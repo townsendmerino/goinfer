@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -123,8 +124,8 @@ func checkOwedCase(t *testing.T, name, why, dir string) {
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
-	if len(res.final) == 0 {
+	res.Consume(f)
+	if len(res.Final) == 0 {
 		t.Errorf("%s: owed (%s) but its stream holds no test result", name, why)
 	}
 }
@@ -256,7 +257,7 @@ func gradeGoldenCensus(t *testing.T, dir string, c *goldenCase, _ lookupFn) stri
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
+	res.Consume(f)
 	var b strings.Builder
 	rc := reportCensus(&b, censusConfig(c.Passthrough), res, false)
 	return fmt.Sprintf("exit %d\n%s", rc, b.String())
@@ -482,7 +483,7 @@ func gradeGoldenQuickCoverage(t *testing.T, dir string, c *goldenCase, look look
 	var b strings.Builder
 	for _, head := range c.Heads {
 		for _, goos := range quickRecordSystems {
-			r, why := quickCoverage(recs, goos, head, changed)
+			r, why := gatequick.QuickCoverage(recs, goos, head, changed)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), goos, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}
 	}

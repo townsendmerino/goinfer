@@ -108,19 +108,6 @@ func parityQualifyingPaths(manifest []byte) ([]string, error) {
 	return slices.Sorted(maps.Keys(set)), nil
 }
 
-// gitObject is the git object id of path (a file or a directory) at rev, and "" when rev has no such path. An unknown rev is an error.
-func gitObject(root, rev, path string) (string, error) {
-	out, err := gitOut(root, "ls-tree", rev, "--", path)
-	if err != nil {
-		return "", err
-	}
-	f := strings.Fields(out) // <mode> <type> <object>\t<path>
-	if len(f) < 3 {
-		return "", nil
-	}
-	return f[2], nil
-}
-
 // loadParityRecords reads every record in dir, oldest first. A file that is not a record is an error, not a skip: a record that
 // cannot be read must not read as "no record".
 func loadParityRecords(dir string) ([]parityRecord, error) {

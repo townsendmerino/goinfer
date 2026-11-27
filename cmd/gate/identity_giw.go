@@ -99,7 +99,7 @@ type giwSource struct {
 // testdata/ and decoder/testdata/ (the directory-stream gate's walk; whether a directory is a model the transcode builds is decided by
 // running it, and one neither build accepts is NOT RUN). Real: the -assets real table's GGUFs and directories.
 func planGiwSources(o identityOpts) ([]giwSource, error) {
-	keep := func(name string) bool { return len(o.Only) == 0 || slicesContains(o.Only, name) }
+	keep := func(name string) bool { return len(o.Only) == 0 || slices.Contains(o.Only, name) }
 	var out []giwSource
 	if o.Assets == "real" {
 		seen := map[string]bool{}
@@ -107,7 +107,7 @@ func planGiwSources(o identityOpts) ([]giwSource, error) {
 			if strings.HasSuffix(a.Path, ".giw") || seen[a.Path] || !keep(a.Name) {
 				continue
 			}
-			if len(o.Families) > 0 && !slicesContains(o.Families, a.Family) {
+			if len(o.Families) > 0 && !slices.Contains(o.Families, a.Family) {
 				continue
 			}
 			seen[a.Path] = true
@@ -331,7 +331,7 @@ func identityGiwBytes(o identityOpts, w io.Writer) int {
 	prov.Dirty = false
 	prov.Fields = append(prov.Fields, [2]string{"tree", "the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both"})
 	fmt.Fprintf(w, "%s== identity provenance ==%s\n", bold, off)
-	prov.write(w)
+	prov.Write(w)
 	if runnable == 0 {
 		return refuse("no source on this host — nothing would be compared (a skip is not a pass)")
 	}
