@@ -2005,7 +2005,9 @@
     ],
     "internal/runtime/vlprep": [
       "decoder/arch",
-      "internal/runtime/archparts"
+      "internal/runtime/archparts",
+      "internal/runtime/cpuengine",
+      "internal/runtime/kvmgr"
     ],
     "internal/runtime/whisper": [
       "internal/audio",
