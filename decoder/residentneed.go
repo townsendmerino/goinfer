@@ -1,201 +1,77 @@
 package decoder
 
 import (
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// One memory-accounting path per backend.
-//
-// ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
-// both use, so they cannot price the same load differently. Its KV half is ResidentKVBytes, which prices a backend's KV
-// the way that backend allocates it. The layout differs per backend, so "one formula" has to be one function with a
-// per-backend layout, not one flat formula:
-//
-//   - Metal allocates the precision ResolveKV delivers there (f16, f32 or int8 with per-head scales; an MLA layer's latent
-//     f32) and the full context for every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
-//     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
-//     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
-//   - CUDA allocates f32 K/V, or f16 where kv16_cuda.go clears the model (the default for a cleared family, or -kv f16 for one the kernels
-//     cover); an MLA layer holds one latent buffer, at the same precision, rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
-//   - Other backends (webgpu, cpu) keep Plan's per-position formula.
-
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
-// may occupy before a load is refused — the load-time fit guard applies it to available host memory,
-// Metal's resident guard to physical RAM. One constant, so the two cannot drift.
+// may occupy before a load is refused.
 const WeightsMemFraction = mem.WeightsFraction
 
-// metalKVPad is the position granularity Metal's KV takes: its pools hold 64-row blocks (metal/model.go).
+// metalKVPad is the position granularity Metal's KV takes: its pools hold 64-row blocks.
 const metalKVPad = KVBlockRows
 
-// ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
-// it is exact to the allocation at the precision ResolveKV delivers there (f16; f32; int8 with per-head f32 scales), the full
-// padded context on every attention layer, nothing for a layer whose mixer is not
-// attention (ResidentLayerOps: DeltaNet, Mamba, or none). On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
-// f32, f16 or int8 with per-head f32 scales where the KV policy delivers it, the full context on every attention layer, one latent buffer on an MLA layer, none on a
-// layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
-// own fit check does not add either. On "cpu" it is exact to what NewCache holds (cpuKVBytes). On any other backend it is Plan's
-// long-standing per-position formula at the precision requested (kvF16 / kvI8), multiplied by ctx.
+// ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions.
 func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {
 	if ctx <= 0 {
 		return 0
 	}
-	if backend == "cuda" {
-		return m.cudaKVBytes(ctx, kvF16, kvI8)
-	}
-	if backend == "cpu" {
-		return m.cpuKVBytes(ctx, kvF16, kvI8)
-	}
-	if backend != "metal" {
+	switch backend {
+	case "cuda":
+		slot, null := m.cudaKVParts(ctx, kvF16, kvI8)
+		return slot + null
+	case "cpu":
+		if m.w.Arch == nil {
+			return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
+		}
+		return memprice.CPUKVBytesForCtx(m.w.Arch, ctx, kvF16, kvI8)
+	case "metal":
+		slot, null := memprice.MetalKVPartsFor(m.w.Arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
+		return slot + null
+	default:
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}
-	slot, null := m.metalKVParts(ctx)
-	return slot + null
-}
-
-// cpuKVBytes is what this model's CPU cache holds for ctx positions (kvBytesForCtx); without a resolved architecture, Plan's flat rate.
-func (m *Model) cpuKVBytes(ctx int, f16, i8 bool) int64 {
-	if m.w.Arch == nil {
-		return m.kvBytesPerPositionAllLayers(f16, i8) * int64(ctx)
-	}
-	return kvBytesForCtx(m.w.Arch, ctx, f16, i8)
 }
 
 // MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.
 func (m *Model) MetalKVSlotBytes(ctx int) int64 {
-	slot, _ := m.metalKVParts(ctx)
+	slot, _ := memprice.MetalKVPartsFor(m.w.Arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
 	return slot
 }
 
-// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions: the pools' null blocks once, every slot's blocks,
-// and every slot's block table at one conversation's cap (MetalKVTableRaiseBytes).
+// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions.
 func (m *Model) MetalKVBytes(slots, ctx int) int64 {
 	return m.ResidentKVBytes("metal", ctx, false, false) + int64(slots-1)*m.MetalKVSlotBytes(ctx) + m.MetalKVTableRaiseBytes(slots, ctx)
 }
 
-// MetalKVCap is one conversation's cap on a metal load of slots KV slots at a planned per-slot context of share positions: the pool's
-// positions (every slot's share in whole blocks), within the model's window and MetalCtxCeiling, so one conversation may borrow from
-// the others. It is share for one slot, a context the caller or the fit guard pinned, a load that prices KV per position beside the pool
-// (a drafter's), and an int8 cache, whose prefill dequantizes the whole context into an f16 scratch the fit does not price.
+// MetalKVCap is one conversation's cap on a metal load of slots KV slots at a planned per-slot context of share positions.
 func (m *Model) MetalKVCap(slots, share int) int {
-	if slots < 2 || m.ResidentContextRequest() > 0 || m.ExtraResidentKVPerPosition() != 0 || m.KVDeliveredFor("metal") == kvPrecI8 {
-		return share
-	}
-	c := min(slots*((share+KVBlockRows-1)/KVBlockRows)*KVBlockRows, MetalCtxCeiling)
-	if w := m.Config().MaxPositions; w > 0 {
-		c = min(c, w)
-	}
-	return max(c, share)
+	return memprice.MetalKVCap(slots, share, m.Config().MaxPositions, m.ResidentContextRequest() > 0,
+		m.ExtraResidentKVPerPosition(), m.KVDeliveredFor("metal"))
 }
 
-// MetalKVTableRaiseBytes is what slots slots' block tables hold past the per-slot price at ctx when one conversation's cap is raised
-// (MetalKVCap): each table addresses the cap, 4 B a block. 0 for a model with no KV.
+// MetalKVTableRaiseBytes is what slots' block tables hold past the per-slot price at ctx when one conversation's cap is raised.
 func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
-	if ctx <= 0 || m.MetalKVSlotBytes(ctx) == 0 {
-		return 0
-	}
-	blocks := func(n int) int64 { return int64((n + KVBlockRows - 1) / KVBlockRows) }
-	return int64(metalKVTables(m.w.Arch)) * int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
+	return memprice.MetalKVTableRaiseBytes(m.w.Arch, slots, ctx, m.MetalKVCap(slots, ctx), ctx > 0 && m.MetalKVSlotBytes(ctx) > 0)
 }
 
-// metalKVTables is how many block tables a Metal resident holds for each slot: the primary group's and, when sliding layers and
-// layers of another group both hold K/V, the window group's. It reads the geometry the build reads.
-func metalKVTables(a *darch.Architecture) int {
-	if a == nil {
-		return 1
-	}
-	win, other := false, false
-	for _, g := range a.KVGeometry().Groups {
-		if g.Retention == darch.KVRetainWindow {
-			win = true
-		} else {
-			other = true
-		}
-	}
-	if win && other {
-		return 2
-	}
-	return 1
-}
-
-// metalKVParts is one slot's KV on Metal at the precision ResolveKV delivers for this model's load, and its pools' null blocks
-// (metalKVPartsFor over the memoized LayerBuffers).
-func (m *Model) metalKVParts(ctx int) (slot, null int64) {
-	return metalKVPartsFor(m.w.Arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
-}
-
-// metalKVBytesFor is ResidentKVBytes("metal") for arch at precision delivered, read from the architecture alone: what the host guards
-// price a Metal-resident load's KV at before any model exists.
-func metalKVBytesFor(a *darch.Architecture, ctx int, delivered string) int64 {
-	if a == nil || ctx <= 0 {
-		return 0
-	}
-	slot, null := metalKVPartsFor(a, ctx, delivered, func(l int) []program.Buf { return layerBuffers(a, l) }, 0)
-	return slot + null
-}
-
-// metalKVPartsFor is one slot's KV on Metal at precision delivered, and its pools' null blocks, once per load: per 64-row block,
-// every row bufs declares for a layer at Metal's size for it (MetalKVRowBytes), and the slot's tables, 4 B a block each (metalKVTables).
-// winBlocks, when positive, is the blocks a slot's window group holds (MetalWindowBlocks): the layers of a window-retention group take
-// no more than that many; 0 prices every layer at the context's blocks, which the host guards do before any model exists and a binary
-// without the Metal backend does always: more than a bounded build allocates, the safe direction.
-func metalKVPartsFor(a *darch.Architecture, ctx int, delivered string, bufs func(l int) []program.Buf, winBlocks int) (slot, null int64) {
-	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
-	win := map[int]bool{}
-	if winBlocks > 0 {
-		for _, g := range a.KVGeometry().Groups {
-			if g.Retention == darch.KVRetainWindow {
-				for _, l := range g.Layers {
-					win[l] = true
-				}
-			}
-		}
-	}
-	var perBlock, perBlockWin int64
-	for l := range a.NumLayers {
-		for _, b := range bufs(l) {
-			if b.Unit != program.PerPosition {
-				continue
-			}
-			if win[l] {
-				perBlockWin += KVBlockRows * MetalKVRowBytes(b, delivered)
-			} else {
-				perBlock += KVBlockRows * MetalKVRowBytes(b, delivered)
-			}
-		}
-	}
-	if perBlock+perBlockWin == 0 {
-		return 0, 0
-	}
-	return blocks*perBlock + min(blocks, int64(winBlocks))*perBlockWin + int64(metalKVTables(a))*blocks*4, perBlock + perBlockWin
-}
-
-// MetalKVRowBytes is one position's row of b in Metal's KV pools when the cache is delivered at precision delivered (ResolveKV's
-// "f16", "f32" or "i8"): an f32 buffer at 4 bytes an element, else int8 codes and one f32 scale per head, f32, or f16.
+// MetalKVRowBytes is one position's row of b in Metal's KV pools when delivered at precision delivered.
 func MetalKVRowBytes(b program.Buf, delivered string) int64 {
-	switch {
-	case b.Prec == program.PrecF32 || delivered == kvPrecF32:
-		return int64(b.Elems) * 4
-	case delivered == kvPrecI8:
-		return int64(b.Elems) + int64(b.Heads)*4
-	}
-	return int64(b.Elems) * 2
+	return memprice.MetalRowBytesFor(b, delivered)
 }
 
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)
-// to hold with `slots` expert slots per layer (0 = every expert resident) and a ctx-position KV cache:
-// the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a.
-// giw mapping), the buffers its build derives (metalDerivedDenseBytes) and decode's scratch (MetalDecodeScratchBytes), the KV
-// cache, and one slot's recurrent state. Plan's NeedBytes and
-// Metal's resident guard are this number.
+// to hold with slots expert slots per layer (0 = every expert resident) and a ctx-position KV cache.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {
-	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
+	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - memprice.MambaProjSavings(backend, m.w) +
+		m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
 	switch backend {
 	case "metal":
-		need += m.ResidentHostCopyBytes(slots) + m.MetalDecodeScratchBytes(slots) + m.metalDerivedDenseBytes()
+		need += m.ResidentHostCopyBytes(slots) + m.MetalDecodeScratchBytes(slots) + memprice.MetalDerivedDenseBytes(m.w, m.Program())
 	case "cpu":
-		dense, experts := m.cpuStructBytes()
+		dense, experts := memprice.CPUStructBytes(m.w)
 		need += dense + experts
 	}
 	return need
@@ -209,76 +85,20 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 	return m.ResidentHostCopyBytes(slots)
 }
 
-// cudaKVBytes is ResidentKVBytes("cuda", ctx, …): what a one-slot cuda resident allocates for its paged K/V (cuda/kvpool.go). One
-// slot's blocks: ceil(ctx/KVBlockRows) blocks of K and V on a full-attention layer and of one latent row on an MLA layer
-// (the V head is reconstructed from the latent), and on a windowed layer the blocks of window+slack positions plus one; its two
-// tables, 4 B a block each. Then the pools' null blocks, one block of every layer that holds K/V, once per load. Nothing on a layer that
-// holds no attention K/V (DeltaNet and the other recurrent mixers). A row is priced at the precision the CUDA backend's KV policy
-// delivers for the request (cudaKVRowBytes): kvI8 or kvF16 asked of an architecture the policy does not cover is f32 on the device. Each
-// further slot costs CUDAKVSlotBytes.
-func (m *Model) cudaKVBytes(ctx int, kvF16, kvI8 bool) int64 {
-	slot, null := m.cudaKVParts(ctx, kvF16, kvI8)
-	return slot + null
-}
-
 // CUDAKVSlotBytes is what one more resident KV slot costs a cuda load at ctx positions: cudaKVBytes less the null blocks.
 func (m *Model) CUDAKVSlotBytes(ctx int, kvF16, kvI8 bool) int64 {
 	slot, _ := m.cudaKVParts(ctx, kvF16, kvI8)
 	return slot
 }
 
-// cudaKVPrec is the precision a CUDA resident's KV pools would hold for this architecture when kvF16 or kvI8 is asked: int8 where the CUDA
-// int8 kernels cover the architecture, else f16 where the f16 kernels do, else f32. It reads the architecture alone, never the options this
-// model was loaded with: ResidentKVBytes answers what a precision would cost (fit and Plan ask it of loads that hold another), so a load's
-// slot count or drafter must not change the price of the cache asked about.
-func (m *Model) cudaKVPrec(kvF16, kvI8 bool) string {
+func (m *Model) cudaKVParts(ctx int, kvF16, kvI8 bool) (slot, null int64) {
 	a := m.w.Arch
 	bare := Options{Backend: "cuda"}
+	prec := kvPrecF32
 	if p, ok := kvPolicies["cuda"]; kvI8 && ok && p.DeclineI8 != nil && p.DeclineI8(a.KVFacts(), bare) == "" {
-		return kvPrecI8
+		prec = kvPrecI8
+	} else if kvF16 && kvF16Decline("cuda", a, bare) == "" {
+		prec = kvPrecF16
 	}
-	if kvF16 && kvF16Decline("cuda", a, bare) == "" {
-		return kvPrecF16
-	}
-	return kvPrecF32
-}
-
-// cudaKVRowBytes is one position's row of b in a CUDA pool at prec: a row at the KV precision in int8 codes and one f32 scale per head
-// (the scale pools, laid out like the cache), else 2 B an element at f16 and 4 at f32. A row declared f32 whatever the KV precision (MLA's
-// latent) follows an f16 cache on CUDA, whose MLA kernels have f16 twins, and has no int8 form. The cuda package's kvRowBytes sizes the
-// same row from the layer its build checks against the declaration (kvCheckDeclared).
-func cudaKVRowBytes(b program.Buf, prec string) int64 {
-	switch {
-	case prec == kvPrecI8 && b.Prec == program.PrecKV:
-		return int64(b.Elems) + 4*int64(b.Heads)
-	case prec == kvPrecF16:
-		return 2 * int64(b.Elems)
-	}
-	return 4 * int64(b.Elems)
-}
-
-// cudaKVParts is one slot's KV on CUDA at the precision its policy delivers (cudaKVPrec), and its pools' null blocks, once per load:
-// every per-position row its layers declare (LayerBuffers) at CUDA's size for it (cudaKVRowBytes), per 64-row block. A row with a
-// window, when the windowed cache is on and the context is past the window plus WindowedKVSlack, takes the blocks of window+slack
-// positions plus one, for a range that starts mid-block (cuda/kvpool.go's kvWindowBlocks); at a shorter context the windowed cache does
-// not engage. Then the slot's two tables, 4 B a block each.
-func (m *Model) cudaKVParts(ctx int, kvF16, kvI8 bool) (slot, null int64) {
-	prec := m.cudaKVPrec(kvF16, kvI8)
-	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
-	var perBlock, windowed int64
-	for l := range m.w.Arch.NumLayers {
-		for _, b := range m.LayerBuffers(l) {
-			if b.Unit != program.PerPosition {
-				continue
-			}
-			block := KVBlockRows * cudaKVRowBytes(b, prec)
-			null += block
-			if held := b.Window + WindowedKVSlack; b.Window > 0 && m.opts.ResidentWindowedKV && ctx > held {
-				windowed += block * int64((held+KVBlockRows-1)/KVBlockRows+1)
-				continue
-			}
-			perBlock += block
-		}
-	}
-	return perBlock*blocks + windowed + 2*4*blocks, null
+	return memprice.CUDAKVParts(a, ctx, prec, m.opts.ResidentWindowedKV, m.LayerBuffers)
 }

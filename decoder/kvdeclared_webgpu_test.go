@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -94,7 +95,7 @@ func TestWebGPUKV_isTheDeclaredRows(t *testing.T) {
 					if mixer != MixerAttention && mixer != MixerMLA {
 						continue
 					}
-					got, _ := m.webgpuLayerCaches(l, ctx, f16, i8)
+					got, _ := memprice.WebGPULayerCaches(m.w, m.LayerBuffers, l, ctx, f16, i8)
 					if want := webgpuKVBuffersOracle(m, l, ctx, f16, i8); !slices.Equal(got, want) {
 						t.Errorf("%s layer %d ctx=%d kv=%q: buffers from the declared rows %v, from the architecture %v", fx.name, l, ctx, kv, got, want)
 					}
@@ -198,7 +199,7 @@ func TestWebGPUKVBuffersOf_plantedShortRowGoesRed(t *testing.T) {
 					break
 				}
 			}
-			if slices.Equal(webgpuKVBuffersOf(m.LayerBuffers(l), 256, false, false), oracle) && slices.Equal(webgpuKVBuffersOf(short, 256, false, false), oracle) {
+			if slices.Equal(memprice.WebGPUKVBuffersOf(m.LayerBuffers(l), 256, false, false), oracle) && slices.Equal(memprice.WebGPUKVBuffersOf(short, 256, false, false), oracle) {
 				t.Errorf("%s layer %d: a row declared one element short left the buffers at %v: the plant did not go red", fx.name, l, oracle)
 			}
 			planted++

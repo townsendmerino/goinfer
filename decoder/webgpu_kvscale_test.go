@@ -1,10 +1,14 @@
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
+)
 
 // TestWebGPUKV_int8HoldsOneScaleAPositionAKVHead holds WebGPU's plan at int8 KV to the buffers its build allocates: K and V at one byte an
 // element, and a K and a V scale buffer of one f32 a KV head a position (backend/webgpu's kvBytesPerPosition is the same figure). The rate
-// Plan reads (kvBytesPerPositionAllLayers) and the per-buffer ledger (webgpuLayerCaches) must each equal it, on a narrow head, a wide
+// Plan reads (kvBytesPerPositionAllLayers) and the per-buffer ledger (WebGPULayerCaches) must each equal it, on a narrow head, a wide
 // one, and a family whose recurrent layers hold no K/V (and so no scale).
 func TestWebGPUKV_int8HoldsOneScaleAPositionAKVHead(t *testing.T) {
 	const ctx = 64
@@ -18,7 +22,7 @@ func TestWebGPUKV_int8HoldsOneScaleAPositionAKVHead(t *testing.T) {
 			_, layers, _, _, _, _, _ := m.Dims()
 			var want, ledger int64
 			for l := range layers {
-				bufs, kv := m.webgpuLayerCaches(l, ctx, false, true)
+				bufs, kv := memprice.WebGPULayerCaches(m.w, m.LayerBuffers, l, ctx, false, true)
 				if !kv {
 					continue
 				}

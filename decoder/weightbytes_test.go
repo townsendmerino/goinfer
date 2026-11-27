@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // loadGemma4MoETiny loads the gitignored tiny gemma4-MoE fixture, skipping (not failing) when it
@@ -86,7 +87,7 @@ func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 		t.Fatalf("fixture has no gemma4moe experts to count — did enable_moe_block/num_experts change?")
 	}
 
-	vectors := m.denseVectorBytes()
+	vectors := memprice.DenseVectorBytes(m.w)
 	if vectors <= 0 {
 		t.Fatalf("the fixture has no 1-D tensors to price (denseVectorBytes = %d); the expectation below would not tell MM8's term from the experts", vectors)
 	}
@@ -327,7 +328,7 @@ func TestResidentHostCopyBytes_exemptsMappedQ4KBlocks(t *testing.T) {
 	// Every weight of the bundle is in the mapping (the Q4_K projections, the int8 embedding and head), so the host copy is the
 	// f32 vectors alone, which a .giw does not alias.
 	host, all := m.ResidentHostCopyBytes(0), m.ResidentWeightBytesPaged(0)
-	if want := m.denseVectorBytes(); host != want {
+	if want := memprice.DenseVectorBytes(m.w); host != want {
 		t.Errorf("the q4k .giw: host copy %d B of %d B of weights, want the f32 vectors' %d B (%d B of them are mapped Q4_K blocks)",
 			host, all, want, mapped)
 	}
