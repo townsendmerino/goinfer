@@ -35,7 +35,7 @@ func TestGemma4BareOff_templateMatchesHuggingFace(t *testing.T) {
 			t.Fatalf("%s: Detect: %v", g.Checkpoint, err)
 		}
 		r := tmpl.Reasoning()
-		if r == nil || r.hist != histGemma4 || !r.bareOff || r.offScaffold() {
+		if r == nil || r.Hist != histGemma4 || !r.BareOff || r.offScaffold() {
 			t.Fatalf("%s: want the canonical Gemma 4 reasoning with a bare thinking-off prompt, got %+v", g.Checkpoint, r)
 		}
 		if !tmpl.WithToolFormat(ToolFormatAuto).WithThinking(ThinkTemplate).usesNativeTools() {

@@ -13,7 +13,7 @@ var proseTools = []Tool{
 }
 
 func TestToolCalls_proseStaysProse(t *testing.T) {
-	tm := &Template{name: "chatml"}
+	tm := ChatML()
 	for _, c := range []struct{ name, in string }{
 		{"a prose example of a call", "You can read a file like this: {\"name\": \"read\", \"arguments\": {\"filePath\": \"a.go\"}} and then continue."},
 		{"a prose example with the function key", "Call it as {\"function\": \"read\", \"arguments\": {\"filePath\": \"a.go\"}}."},

@@ -31,7 +31,7 @@ func TestMellum21_templateMatchesHuggingFace(t *testing.T) {
 	if tmpl.Reasoning() == nil {
 		t.Fatal("the 2.1 template declares enable_thinking, but Detect attached no reasoning behaviour")
 	}
-	if got := tmpl.Reasoning().hist; got != histMellum21 {
+	if got := tmpl.Reasoning().Hist; got != histMellum21 {
 		t.Fatalf("history rule = %v, want histMellum21", got)
 	}
 	n := 0

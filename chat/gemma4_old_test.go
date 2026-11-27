@@ -30,7 +30,7 @@ func TestGemma4Old_detected(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := tm.Reasoning()
-	if r == nil || !r.gemma4 || !r.oldGemma4 {
+	if r == nil || !r.Gemma4 || !r.OldGemma4 {
 		t.Fatalf("the earlier template was not recognised as the earlier Gemma 4 variant: %+v", r)
 	}
 	if r.DefaultOn() || r.Open() != "<|channel>thought\n" || r.Close() != "<channel|>" {
@@ -46,7 +46,7 @@ func TestGemma4Old_detected(t *testing.T) {
 			continue
 		}
 		ct, _ := Detect(Meta{ChatTemplate: e.ChatTemplate})
-		if cr := ct.Reasoning(); cr == nil || cr.oldGemma4 {
+		if cr := ct.Reasoning(); cr == nil || cr.OldGemma4 {
 			t.Fatalf("canonical template misread as the earlier one: %+v", cr)
 		}
 	}

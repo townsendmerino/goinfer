@@ -63,13 +63,13 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `internal/app/serveapp/` | HTTP serving shell behind `server/` and `cmd/serve`, backed by leaf subpackages `adminsock`, `banner`, `carriedids`, `embedders`, `jobs`, `media`, `netguard`, `sessions`, `stores`, `streamframe`, and `towerfit` (enforced by `serveapp-*-leaf` rules in `internal/layout/imports.json`) |
-| `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
+| `chat/` | chat templates, thinking scaffolds, and tool-call rendering and parsing, no Jinja engine, backed by leaf subpackages under `internal/chat/` (`chatcore`, `harmony`, `gemma4tools`, `inkling2`, `toolwire`, and `reasoning`, enforced by `chatcore-leaf` and `chat-*-leaf` rules in `internal/layout/imports.json`) |
 | `constrain/` | constrained decoding: JSON Schema and grammar logit masks |
 | `tokenizer/` | the BPE tokenizers the models ship |
 | `multimodal/` | vision and audio towers and preprocessing |
 | `embeddinggemma2/` | the EmbeddingGemma 2 text encoder |
 | `pull/` | resumable checkpoint download from HuggingFace |
-| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`), and `testgate`, the skip gates tests share (imported by `_test.go` files only); `internal/layout` holds repository-shape checks as tests |
+| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/chat/` (dialect leaves and shared codec/reasoning primitives below `chat`), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`), and `testgate`, the skip gates tests share (imported by `_test.go` files only); `internal/layout` holds repository-shape checks as tests |
 
 ## Tier 3: subpackages of `decoder/`
 
