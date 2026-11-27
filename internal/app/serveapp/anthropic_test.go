@@ -167,7 +167,7 @@ func TestAnthropicOutputFormat(t *testing.T) {
 			if aerr != nil {
 				t.Fatalf("unexpected refusal: %v", aerr)
 			}
-			if got := sm.constrainsOutput(); got != c.want {
+			if got := sm.ConstrainsOutput(); got != c.want {
 				t.Fatalf("constrainsOutput = %v, want %v (response_format %+v)", got, c.want, sm.ResponseFormat)
 			}
 			if c.want && (sm.ResponseFormat.Type != "json_schema" || string(sm.ResponseFormat.JSONSchema.Schema) != outputConfigSchema) {

@@ -153,13 +153,13 @@ func TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt(t *testing.
 					if _, seen := pos[sel.Sel.Name]; !seen {
 						pos[sel.Sel.Name] = x.Pos()
 					}
-					if sel.Sel.Name == "payload" {
+					if strings.EqualFold(sel.Sel.Name, "payload") {
 						payloads++
 					}
 				}
 			case *ast.AssignStmt:
 				for _, l := range x.Lhs {
-					if sel, ok := l.(*ast.SelectorExpr); ok && sel.Sel.Name == "confidenceOK" {
+					if sel, ok := l.(*ast.SelectorExpr); ok && strings.EqualFold(sel.Sel.Name, "confidenceOK") {
 						confOK = true
 					}
 				}

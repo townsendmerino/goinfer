@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/connect"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -175,32 +176,10 @@ func promptByteBudgetError(inputBytes, ctx, maxTokenBytes int) error {
 	return nil
 }
 
-// chatInputBytes sums the tokenizable text across chat messages: the input the BPE runs over (JSON structure and
-// image data are not tokenized), so it is what the promptTooLargeForContext guard bounds. It includes each message's
-// replayed tool_calls[].function.arguments: messagesToTurns converts an assistant message's ToolCalls
-// unconditionally, and a chat template renders them into the prompt whenever they appear in history, tools active
-// this turn or not, so an unpriced arguments blob would run the full BPE past the guard.
-func chatInputBytes(msgs []chatMessage) int {
-	n := 0
-	for _, m := range msgs {
-		n += len(m.text())
-		for _, tc := range m.ToolCalls {
-			n += len(tc.Function.Name) + len(tc.Function.Arguments)
-		}
-	}
-	return n
-}
-
-// toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes. RenderToolsSegments renders every
-// tool's name, description and parameters into the prompt whenever tools are active, so a large schema list is priced
-// at the same guard as the messages, not left to run the full BPE unpriced.
-func toolSchemaBytes(tools []toolSpec) int {
-	n := 0
-	for _, t := range tools {
-		n += len(t.Function.Name) + len(t.Function.Description) + len(t.Function.Parameters)
-	}
-	return n
-}
+var (
+	chatInputBytes  = wirecore.ChatInputBytes
+	toolSchemaBytes = wirecore.ToolSchemaBytes
+)
 
 // setConcurrency decides how many generations of this model run at once and sizes the admission and queue to match:
 // -max-concurrent, but 1 unless the model is safe to run concurrently on the CPU (decoder.Model.CPUConcurrentSafe:
@@ -373,7 +352,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	sm, fromModel := withRecommended(sm, lm.sampling)
 	sp := samplingp.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
-		MinP:        deref(sm.minP, 0),
+		MinP:        deref(sm.MinP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
@@ -449,10 +428,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
-		if maxTok == nil && sm.outputByWindow && ctx > 0 {
+		if maxTok == nil && sm.OutputByWindow && ctx > 0 {
 			gr.maxTokens = connect.OutputLimit(ctx)
 		}
-		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.fixedTokens); err != nil {
+		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.FixedTokens); err != nil {
 			return genRequest{}, err
 		}
 		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
@@ -463,7 +442,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	}
 	if sm.Confidence {
 		switch {
-		case !sm.confidenceOK:
+		case !sm.ConfidenceOK:
 			return genRequest{}, fmt.Errorf("goinfer_confidence is supported on /v1/chat/completions and /v1/completions with response_format json_schema, not with tools, images, jobs or batches")
 		case sm.ResponseFormat == nil || sm.ResponseFormat.Type != "json_schema":
 			return genRequest{}, fmt.Errorf("goinfer_confidence needs response_format {\"type\": \"json_schema\"}: the schema is what says each field's kind")
@@ -866,7 +845,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	if gr.conf != nil && gr.masker != nil {
 		// goinfer_confidence: the stream has drained, so ids is everything this generation emitted (up to a stop
 		// string, if one ended it early — the confidences then cover the part the client received).
-		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
+		gr.conf.Fields, gr.conf.Err = gr.masker.FieldConfidence(ids)
 	}
 	if gr.outcome != nil {
 		gr.outcome.IDs, gr.outcome.Done, gr.outcome.StopHit = ids, true, stopHit != ""

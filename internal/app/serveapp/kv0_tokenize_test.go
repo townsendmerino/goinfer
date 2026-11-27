@@ -125,7 +125,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 			return nil, idsOutcome{}, err
 		}
 		req.Tools, _ = functionTools(req.Tools)
-		ts, err := s.resolveThink(req.think())
+		ts, err := s.resolveThink(req.Think())
 		if err != nil {
 			return nil, idsOutcome{}, err
 		}
@@ -142,7 +142,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 			ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 			return ids, idsOutcome{}, err
 		}
-		if req.sampling.constrainsOutput() {
+		if req.Sampling.ConstrainsOutput() {
 			tm = lm.constrainedTemplate(ts)
 		}
 		ids, err := lm.promptForT(tm, system, turns)

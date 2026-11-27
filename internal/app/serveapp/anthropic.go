@@ -723,7 +723,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	tm := lm.templateFor(ts)
-	if sm.constrainsOutput() {
+	if sm.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	if toolsActive {

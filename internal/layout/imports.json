@@ -655,6 +655,32 @@
       "why": "internal/app/serveapp/towers holds per-family vision and audio tower implementations, device placement fallbacks, and multi-image block splicing and span assembly below serveapp (SA6). It never imports serveapp or decoder."
     },
     {
+      "name": "serveapp-wirecore-leaf",
+      "from": [
+        "internal/app/serveapp/wirecore"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/wirecore": [
+          "chat",
+          "constrain",
+          "decoder/config",
+          "engine",
+          "internal/app/serveapp/carriedids",
+          "internal/app/serveapp/jobs",
+          "internal/app/serveapp/media",
+          "internal/app/serveapp/stores",
+          "internal/app/serveapp/streamframe",
+          "internal/codec",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/app/serveapp/wirecore holds shared wire-format types, message-to-turn translation, stop and UTF-8 streaming holdback, context-overflow diagnostics, KV-boundary discovery, and tool-choice / grammar wiring below serveapp (SA7). It never imports serveapp or decoder."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -1139,6 +1165,7 @@
       "internal/app/serveapp/streamframe",
       "internal/app/serveapp/towerfit",
       "internal/app/serveapp/towers",
+      "internal/app/serveapp/wirecore",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -1208,6 +1235,19 @@
       "internal/runtime/mem",
       "internal/vision",
       "multimodal",
+      "tokenizer"
+    ],
+    "internal/app/serveapp/wirecore": [
+      "chat",
+      "constrain",
+      "decoder/config",
+      "engine",
+      "internal/app/serveapp/carriedids",
+      "internal/app/serveapp/jobs",
+      "internal/app/serveapp/media",
+      "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
+      "internal/codec",
       "tokenizer"
     ],
     "internal/audio": [

@@ -164,17 +164,17 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
-	if err := lm.glmOcrExtractionTurn(req.sampling.ResponseFormat, turns); err != nil {
+	if err := lm.glmOcrExtractionTurn(req.Sampling.ResponseFormat, turns); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ts, terr := s.resolveThink(req.think())
+	ts, terr := s.resolveThink(req.Think())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
-	if req.sampling.constrainsOutput() {
+	if req.Sampling.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	msgText, ordered := chatMediaText(req.Messages)
@@ -183,8 +183,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	req.sampling.confidenceOK = true
-	gr, err := lm.prepare(req.sampling, vi.IDs, false)
+	req.Sampling.ConfidenceOK = true
+	gr, err := lm.prepare(req.Sampling, vi.IDs, false)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
@@ -221,7 +221,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		}
 		sseSend(ss, finishChunk(id, created, lm.name, res.finish, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false))
 		if gr.conf != nil {
-			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.Payload()})
 		}
 		if res.cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": res.cancelReason}})
@@ -262,7 +262,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		vresp["choices"].([]any)[0].(map[string]any)["logprobs"] = lm.logprobs(res.logprobs)
 	}
 	if gr.conf != nil {
-		vresp["goinfer_confidence"] = gr.conf.payload()
+		vresp["goinfer_confidence"] = gr.conf.Payload()
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(vresp))
 }
@@ -296,7 +296,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	tm := lm.templateFor(ts)
-	if sm.constrainsOutput() {
+	if sm.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	msgText, ordered := anthropicMediaText(req)

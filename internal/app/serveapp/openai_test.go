@@ -592,7 +592,7 @@ func TestCompletionReqLogprobs_M06(t *testing.T) {
 	if req.Logprobs == nil || *req.Logprobs != 5 {
 		t.Errorf("req.Logprobs = %v, want *int 5", req.Logprobs)
 	}
-	if req.sampling.Logprobs {
+	if req.Sampling.Logprobs {
 		t.Error("embedded chat-bool Logprobs must stay false (shadowed) so the logprobs path is off")
 	}
 }

@@ -65,7 +65,7 @@ func anyMatch(res []*regexp.Regexp, s string) string {
 // The two branches' wording against both agents' matchers: an overflow compaction can cure is recognised by each, in
 // either dialect, and one it cannot cure is recognised by neither, with or without the -ctx remedy.
 func TestContextOverflow_wordingAgainstTheAgentsMatchers(t *testing.T) {
-	cure := &contextOverflowError{prompt: 20000, ctx: 16384, modelWindow: 32768, fixed: 7000, reserved: 4096}
+	cure := &contextOverflowError{overflowFields{Prompt: 20000, Ctx: 16384, ModelWindow: 32768, Fixed: 7000, Reserved: 4096}}
 	for _, dialect := range []string{"openai", "anthropic"} {
 		msg := cure.message(dialect)
 		if cure.helpless() || anyMatch(piOverflowPatterns, msg) == "" || anyMatch(opencodeOverflowPatterns, msg) == "" || anyMatch(piNotOverflow, msg) != "" {
@@ -82,13 +82,13 @@ func TestContextOverflow_wordingAgainstTheAgentsMatchers(t *testing.T) {
 		t.Errorf("the OpenAI wording lacks the phrase its agents match: %q", msg)
 	}
 	for _, e := range []*contextOverflowError{
-		{prompt: 20000, ctx: 16384, modelWindow: 32768, fixed: 13000, reserved: 4096},
-		{prompt: 40000, ctx: 32768, modelWindow: 32768, fixed: 30000, reserved: 8192},
+		{overflowFields{Prompt: 20000, Ctx: 16384, ModelWindow: 32768, Fixed: 13000, Reserved: 4096}},
+		{overflowFields{Prompt: 40000, Ctx: 32768, ModelWindow: 32768, Fixed: 30000, Reserved: 8192}},
 	} {
 		for _, dialect := range []string{"openai", "anthropic"} {
 			msg := e.message(dialect)
 			if !e.helpless() {
-				t.Fatalf("fixed %d + reserved %d against %d is not read as incurable", e.fixed, e.reserved, e.ctx)
+				t.Fatalf("fixed %d + reserved %d against %d is not read as incurable", e.Fixed, e.Reserved, e.Ctx)
 			}
 			if p := anyMatch(piOverflowPatterns, msg); p != "" {
 				t.Errorf("%s: Pi would compact on an incurable overflow (pattern %s): %q", dialect, p, msg)
@@ -103,7 +103,7 @@ func TestContextOverflow_wordingAgainstTheAgentsMatchers(t *testing.T) {
 			}
 		}
 	}
-	if e := (&contextOverflowError{prompt: 20000, ctx: 16384, modelWindow: 32768, fixed: -1, reserved: 4096}); e.helpless() {
+	if e := (&contextOverflowError{overflowFields{Prompt: 20000, Ctx: 16384, ModelWindow: 32768, Fixed: -1, Reserved: 4096}}); e.helpless() {
 		t.Error("a route that did not measure its fixed part was read as incurable")
 	}
 }
