@@ -589,6 +589,121 @@
         ]
       },
       "why": "internal/app/serveapp/embedders adapts causal decoders into serialized last-token-pooling embedders and resolves EmbeddingGemma 2 device placement below serveapp (SA3). It never imports serveapp."
+    },
+    {
+      "name": "serveapp-adminsock-leaf",
+      "from": [
+        "internal/app/serveapp/adminsock"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/app/serveapp/adminsock provides the 0600 Unix-domain /admin/* socket listener and CLI subcommands below serveapp (SA4). It imports no goinfer package."
+    },
+    {
+      "name": "serveapp-netguard-leaf",
+      "from": [
+        "internal/app/serveapp/netguard"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "internal/app/serveapp/netguard provides loopback DNS-rebinding and browser cross-origin guards, constant-time API-key auth, request body caps, in-flight admission, and JSON error framing below serveapp (SA4). It imports no goinfer package."
+    },
+    {
+      "name": "serveapp-banner-leaf",
+      "from": [
+        "internal/app/serveapp/banner"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/banner": [
+          "decoder",
+          "internal/runtime/mem"
+        ]
+      },
+      "why": "internal/app/serveapp/banner formats startup status lines for loaded generative models, KV pools, concurrency settings, and server route summaries from resolved Facts below serveapp (SA5). It never imports serveapp."
+    },
+    {
+      "name": "gatecore-leaf",
+      "from": [
+        "internal/guard/gatecore"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatecore": [
+          "internal/runtime/mem/probe",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatecore holds the go test -json event accumulator, matrix cell runner, run-record codec, /proc memory sampler, git/pre-move path helpers, and pure tally/skip/timeout graders below cmd/gate (GT1). Its production files import only internal/runtime/mem/probe."
+    },
+    {
+      "name": "gatehygiene-leaf",
+      "from": [
+        "internal/guard/gatehygiene"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatehygiene": [
+          "internal/guard/gatecore",
+          "internal/guard/paritykey",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath)."
+    },
+    {
+      "name": "gateidentity-leaf",
+      "from": [
+        "internal/guard/gateidentity"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gateidentity": [
+          "internal/guard/gatecore",
+          "internal/guard/paritykey",
+          "internal/testgate",
+          "internal/testpath",
+          "tokenizer"
+        ]
+      },
+      "why": "internal/guard/gateidentity holds gate identity's cross-revision worktree builder, logit dumper, .giw byte/logit transcode comparator, asset planner, and pure identity graders below cmd/gate (GT4), isolating cmd/gate's sole tokenizer dependency."
+    },
+    {
+      "name": "gatequick-leaf",
+      "from": [
+        "internal/guard/gatequick"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatequick": [
+          "internal/guard/gatecore",
+          "internal/guard/gatehygiene",
+          "internal/guard/paritykey",
+          "internal/testgate",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatequick holds gate quick's package dependency graph, changed-file-to-cell selector, parallel cell runner, duration/summary records, and pure quick graders below cmd/gate (GT3). It imports only internal/guard/gatecore, internal/guard/gatehygiene, and internal/guard/paritykey (its tests, internal/testgate and internal/testpath)."
     }
   ],
   "arrows": {
@@ -706,9 +821,11 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey",
-      "internal/runtime/mem/probe",
-      "tokenizer"
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
+      "internal/guard/gateidentity",
+      "internal/guard/gatequick",
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -862,10 +979,13 @@
       "internal/app/connect",
       "internal/app/loadflags",
       "internal/app/pullcmd",
+      "internal/app/serveapp/adminsock",
+      "internal/app/serveapp/banner",
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/embedders",
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/media",
+      "internal/app/serveapp/netguard",
       "internal/app/serveapp/sessions",
       "internal/app/serveapp/stores",
       "internal/app/serveapp/streamframe",
@@ -888,6 +1008,10 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/banner": [
+      "decoder",
+      "internal/runtime/mem"
     ],
     "internal/app/serveapp/carriedids": [
       "chat",
@@ -954,6 +1078,23 @@
       "internal/diag/kernelprint",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/guard/gatecore": [
+      "internal/runtime/mem/probe"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey"
+    ],
+    "internal/guard/gateidentity": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey",
+      "tokenizer"
+    ],
+    "internal/guard/gatequick": [
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
+      "internal/guard/paritykey"
     ],
     "internal/guard/memgate": [
       "decoder",
@@ -1229,8 +1370,10 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey",
-      "internal/testgate"
+      "internal/guard/gatecore",
+      "internal/guard/gateidentity",
+      "internal/guard/gatequick",
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -1359,6 +1502,9 @@
       "pull",
       "tokenizer"
     ],
+    "internal/app/serveapp/banner": [
+      "decoder"
+    ],
     "internal/app/serveapp/carriedids": [
       "chat",
       "internal/codec",
@@ -1405,6 +1551,23 @@
     ],
     "internal/diag/towerid": [
       "internal/vision"
+    ],
+    "internal/guard/gatecore": [
+      "internal/testgate",
+      "internal/testpath"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
+      "internal/testpath"
+    ],
+    "internal/guard/gateidentity": [
+      "internal/guard/gatecore",
+      "internal/testgate",
+      "internal/testpath"
+    ],
+    "internal/guard/gatequick": [
+      "internal/testgate",
+      "internal/testpath"
     ],
     "internal/guard/memgate": [
       "decoder",

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // TestGradeHeavy_plants is SB12-C4 for step 12: each part of the
@@ -84,7 +86,7 @@ func TestGradeHeavy_plants(t *testing.T) {
 		dcr := cellResult{RC: c.rc, LogPath: "/l/drain.json"}
 		out := ""
 		if c.rc != 0 {
-			dcr, out = cr, res.text()
+			dcr, out = cr, res.Text()
 		}
 		bad := 0
 		for _, v := range gradeHeavyDrain(1, c.skipped, c.ran, dcr, out) {
@@ -103,7 +105,7 @@ func TestGradeHeavy_plants(t *testing.T) {
 	if _, bad := gradeHeavyIsoTest("TestI", cellResult{}, ""); bad {
 		t.Error("a fresh-process test that passed is reported")
 	}
-	if v, bad := gradeHeavyIsoTest("TestI", cr, res.text()); !bad || v.State != groupFail || v.Line != "TestI (fresh process)" {
+	if v, bad := gradeHeavyIsoTest("TestI", cr, res.Text()); !bad || v.State != groupFail || v.Line != "TestI (fresh process)" {
 		t.Errorf("a failed fresh-process test: %+v", v)
 	}
 	if v := gradeHeavyIso(1, 1, 1, 0); v.State != groupPass {
@@ -118,7 +120,7 @@ func TestGradeHeavy_plants(t *testing.T) {
 		t.Errorf("reconciled but one failed: %+v, want lines only (the failure was its own verdict)", v)
 	}
 
-	if v := gradeHeavyTier(1, 10, res.text(), 2, nil); v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "--- FAIL: TestD") {
+	if v := gradeHeavyTier(1, 10, res.Text(), 2, nil); v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "--- FAIL: TestD") {
 		t.Errorf("a failed main group: %+v", v)
 	}
 	v := gradeHeavyTier(0, 10, "", 3, [][]string{{"TestA"}, nil, {"TestK"}})
@@ -146,16 +148,16 @@ func (f fakeHeavyLive) streamed(c cell) (cellResult, *results, string) {
 		f.t.Fatal(err)
 	}
 	res := newResults()
-	res.cur = c.Name
-	res.stream = func(_, test, action string) {
+	res.Cur = c.Name
+	res.Stream = func(_, test, action string) {
 		f.g.w.Write([]byte("        · " + strings.ToUpper(action) + ": " + test + "\n"))
 	}
 	for _, ev := range f.evs[c.Name] {
-		res.add(ev)
+		res.Add(ev)
 	}
 	cr := gradeCell(c, gpuRunConfig(), res, f.rcs[c.Name], path, 0)
 	f.g.cells = append(f.g.cells, cr)
-	return cr, res, res.text()
+	return cr, res, res.Text()
 }
 
 func (f fakeHeavyLive) heavyCell(i int, h heavyGroup) (cellResult, *results, string, procPeak, error) {
@@ -221,8 +223,12 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	gpuIn, err := gatecore.UnmarshalPayload[gpuRunInputs](rec.GPU)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var replay bytes.Buffer
-	rg := &gpuGate{w: &replay, backend: "cuda", emitted: map[string]bool{}, runIn: *rec.GPU}
+	rg := &gpuGate{w: &replay, backend: "cuda", emitted: map[string]bool{}, runIn: *gpuIn}
 	if err := rg.heavyTier(&recordedInputs{g: rg, path: runRecordPath(dir, gpuRunConfig()), cells: cells, texts: texts}); err != nil {
 		t.Fatal(err)
 	}
@@ -243,8 +249,8 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 	}
 
 	// A record that lacks a process's memory is incomplete: the replay refuses it rather than printing NOT SAMPLED.
-	rec.GPU.Heavy.Peaks = rec.GPU.Heavy.Peaks[:1]
-	short := &gpuGate{w: &bytes.Buffer{}, backend: "cuda", emitted: map[string]bool{}, runIn: *rec.GPU}
+	gpuIn.Heavy.Peaks = gpuIn.Heavy.Peaks[:1]
+	short := &gpuGate{w: &bytes.Buffer{}, backend: "cuda", emitted: map[string]bool{}, runIn: *gpuIn}
 	if err := short.heavyTier(&recordedInputs{g: short, path: runRecordPath(dir, gpuRunConfig()), cells: cells, texts: texts}); err == nil ||
 		!strings.Contains(err.Error(), "no memory reading for heavy process 1 (kernels)") {
 		t.Errorf("a record missing a process's memory replays without error: %v", err)
@@ -318,10 +324,10 @@ func TestHeavyProcLines_readings(t *testing.T) {
 		`{"Action":"pass","Package":"p","Test":"TestKV10_longContextFidelity"}`,
 	}, "\n")
 	r := newResults()
-	if err := r.consume(strings.NewReader(stream)); err != nil {
+	if err := r.Consume(strings.NewReader(stream)); err != nil {
 		t.Fatal(err)
 	}
-	lines, _, rec := heavyProcLines(heavyGroup{Label: "kv10", Tests: []string{"TestKV10_longContextFidelity"}}, cellResult{Pass: 1}, procPeak{}, r.text())
+	lines, _, rec := heavyProcLines(heavyGroup{Label: "kv10", Tests: []string{"TestKV10_longContextFidelity"}}, cellResult{Pass: 1}, procPeak{}, r.Text())
 	want := []string{"KV10 depth 3900: min cosine 0.993464: DEGRADES", "KV10 depth 65536: min cosine 0.985323: FAILS"}
 	if !slices.Equal(rec.Readings, want) {
 		t.Errorf("record readings %q, want %q", rec.Readings, want)

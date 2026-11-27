@@ -98,7 +98,7 @@ func TestServeResponsesWith_toolsOnUnsupportedTemplateReturns400(t *testing.T) {
 			Parameters  json.RawMessage `json:"parameters"`
 		}{Name: "get_weather"}}},
 	}
-	lm := &loadedModel{tmpl: chat.Gemma3()} // SupportsTools() == false
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.Gemma3()}} // SupportsTools() == false
 	w := httptest.NewRecorder()
 	s.serveResponsesWith(w, httptest.NewRequest("POST", "/v1/responses", nil), req, lm)
 

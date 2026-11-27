@@ -202,7 +202,7 @@ func TestServe_responses(t *testing.T) {
 // M-18) would answer a call the reconstructed conversation never shows: user → assistant("") → tool(result).
 // No model or HTTP server needed: maybeStore and its store are plain Go values.
 func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
-	s := &server{responses: newResponseStore(8)}
+	s := &server{serverStores: serverStores{responses: newResponseStore(8)}}
 	tc := apiToolCall{ID: "call_1", Type: "function"}
 	tc.Function.Name = "get_weather"
 	tc.Function.Arguments = `{"city":"nyc"}`

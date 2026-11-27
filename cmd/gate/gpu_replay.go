@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 // gpuRunInputs is what the gpu gate's moved groups read beside their cells: the backend, and the Metal checkpoint the
@@ -80,11 +82,15 @@ func replayGPU(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
 		return 2
 	}
-	if rec.GPU == nil || (rec.GPU.Backend != "metal" && rec.GPU.Backend != "cuda") {
+	in, err := gatecore.UnmarshalPayload[gpuRunInputs](rec.GPU)
+	if err != nil {
+		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
+		return 2
+	}
+	if in == nil || (in.Backend != "metal" && in.Backend != "cuda") {
 		fmt.Fprintf(w, "gate gpu -replay: %s is not a Metal or CUDA run record; only those groups regrade from a record\n", path)
 		return 2
 	}
-	in := rec.GPU
 	g := &gpuGate{w: w, backend: in.Backend, emitted: map[string]bool{}, runIn: *in, expect: gpuExpect(in.Backend)}
 	src := &recordedInputs{g: g, path: path, cells: cells, texts: texts}
 	// A record that holds every runner-side input regrades the groups around the backend's (cleangpu, seam, repo). It gives
@@ -232,14 +238,14 @@ func (r *recordedInputs) streamed(c cell) (cellResult, *results, string, error) 
 		return cellResult{}, nil, "", fmt.Errorf("%s holds no %s cell, or its stream is not beside it", r.path, c.Name)
 	}
 	res := newResults()
-	res.cur = c.Name
-	res.stream = func(_, test, action string) { fmt.Fprintf(r.g.w, "        · %s: %s\n", strings.ToUpper(action), test) }
+	res.Cur = c.Name
+	res.Stream = func(_, test, action string) { fmt.Fprintf(r.g.w, "        · %s: %s\n", strings.ToUpper(action), test) }
 	if i.rc.Err == "" {
 		f, err := openStream(filepath.Join(filepath.Dir(r.path), i.rc.Stream))
 		if err != nil {
 			return cellResult{}, nil, "", err
 		}
-		err = res.consume(f)
+		err = res.Consume(f)
 		f.Close()
 		if err != nil {
 			return cellResult{}, nil, "", err
@@ -249,7 +255,7 @@ func (r *recordedInputs) streamed(c cell) (cellResult, *results, string, error) 
 	if i.rc.Err != "" {
 		cr = gradeCellError(c, i.rc.RC, fmt.Errorf("%s", i.rc.Err), i.rc.LogPath, time.Duration(i.rc.DurNS))
 	}
-	return cr, res, res.text(), nil
+	return cr, res, res.Text(), nil
 }
 
 func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.CleanGPU, nil }
@@ -286,7 +292,7 @@ func loadGPURunRecord(path string, want func(name string) bool) (*runRecord, map
 			continue
 		}
 		res := newResults()
-		res.cur = rc.Name
+		res.Cur = rc.Name
 		if rc.Err == "" {
 			if rc.Stream == "" {
 				return nil, nil, nil, fmt.Errorf("%s: cell %q has neither a stream nor an error", path, rc.Name)
@@ -298,14 +304,14 @@ func loadGPURunRecord(path string, want func(name string) bool) (*runRecord, map
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			err = res.consume(f)
+			err = res.Consume(f)
 			f.Close()
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: cell %q's stream %s: %w", path, rc.Name, rc.Stream, err)
 			}
 		}
 		cells[rc.Name] = gpuRecordedCell{rc: rc, res: res}
-		texts[rc.Name] = res.text()
+		texts[rc.Name] = res.Text()
 	}
 	return rec, cells, texts, nil
 }

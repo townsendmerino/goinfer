@@ -48,7 +48,7 @@ func speechServer(t *testing.T) (*server, *stubSpeech) {
 	st := &stubSpeech{segs: []whisper.Segment{
 		{Start: 0.5, End: 3.21, Tokens: []int{1, 2}, Seek: 0, Temperature: 0, AvgLogprob: -0.25, CompressionRatio: 0.9, NoSpeechProb: 0.01},
 		{Start: 3661.5, End: 3662.0044, Tokens: []int{3, 4}, Seek: 366150, Temperature: 0.2, AvgLogprob: -0.5, CompressionRatio: 1.1, NoSpeechProb: 0.02}}}
-	return &server{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"whisper-small": {name: "whisper-small", eng: st}}}, st
+	return &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"whisper-small": {name: "whisper-small", eng: st}}}}, st
 }
 
 func post(t *testing.T, s *server, fields map[string]string, repeated map[string][]string, wav []byte) *httptest.ResponseRecorder {
@@ -284,7 +284,7 @@ func waitAdmitted(t *testing.T, sm *speechModel, n int) {
 func blockSpeechServer() (*server, *speechModel, *blockSpeech) {
 	eng := newBlockSpeech()
 	sm := &speechModel{name: "w", eng: eng}
-	return &server{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"w": sm}}, sm, eng
+	return &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"w": sm}}}, sm, eng
 }
 
 // One transcription runs and speechMaxWaiting wait; one more is refused at once with 429 and Retry-After, and the queued ones

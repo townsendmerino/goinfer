@@ -113,7 +113,7 @@ type thinkRun struct {
 // runThink drives ids through the real streamTokens with a thinkOut built from tm/ts.
 func runThink(t *testing.T, tk *tokenizer.Tokenizer, ids []int, tm *chat.Template, ts thinkSettings, stops []string, maxTokens int) thinkRun {
 	t.Helper()
-	lm := &loadedModel{tk: tk}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk}}
 	stream := make(chan int, len(ids))
 	for _, id := range ids {
 		stream <- id
@@ -334,7 +334,7 @@ func TestResolveThink(t *testing.T) {
 // first token, so constrainedTemplate renders such a request thinking-off — and leaves every other request alone.
 func TestConstrainedTemplate(t *testing.T) {
 	nine := templateFromGolden(t, "qwen3.5-9b")
-	lm := &loadedModel{tmpl: nine.WithThinking(chat.ThinkTemplate)} // a server whose default opens the block
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: nine.WithThinking(chat.ThinkTemplate)}} // a server whose default opens the block
 	user := []chat.Turn{{Role: "user", Content: "Hi"}}
 	if !lm.tmpl.PromptOpensThink() {
 		t.Fatal("setup: the 9B under ThinkTemplate must open the block")
@@ -347,7 +347,7 @@ func TestConstrainedTemplate(t *testing.T) {
 		t.Fatal("an unconstrained request must keep the server's mode")
 	}
 	// A model that never opens a block is returned unchanged.
-	q3 := &loadedModel{tmpl: templateFromGolden(t, "qwen3-4b")}
+	q3 := &loadedModel{modelIdentity: modelIdentity{tmpl: templateFromGolden(t, "qwen3-4b")}}
 	if q3.constrainedTemplate(thinkSettings{}) != q3.tmpl {
 		t.Fatal("a template whose prompt does not open a block must pass through")
 	}

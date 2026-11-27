@@ -5,25 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
-	"time"
 )
-
-func gatherProvenance(fields [][2]string) provenance {
-	p := provenance{Commit: "?", Date: time.Now().UTC().Format(time.RFC3339), Fields: fields}
-	if out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {
-		p.Commit = strings.TrimSpace(string(out))
-	}
-	if out, err := exec.Command("git", "status", "--porcelain").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-		p.Dirty = true
-	}
-	if out, err := exec.Command("uname", "-sm").Output(); err == nil {
-		p.Host = strings.TrimSpace(string(out))
-	}
-	return p
-}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `gate — one runner over `+"`go test -json`"+` for goinfer's tallying gates (QUEUE E8)
@@ -267,7 +251,7 @@ func run(argv []string, w io.Writer) int {
 			return 2
 		}
 		defer f.Close()
-		res.consume(f)
+		res.Consume(f)
 		cells = append(cells, cellResult{Cell: cell{Name: *stream}, LogPath: *stream})
 		fields = append(fields, [2]string{"stream", *stream})
 	} else {
@@ -289,4 +273,14 @@ func run(argv []string, w io.Writer) int {
 
 func sliceHas(xs []string, want string) bool {
 	return slices.Contains(xs, want)
+}
+
+func splitList(s string) []string {
+	var out []string
+	for f := range strings.SplitSeq(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }

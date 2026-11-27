@@ -63,69 +63,68 @@ type decisionState struct {
 	deciderErr  error
 }
 
-// loadedModel is one resident generative model and the per-model state a request needs: its tokenizer, chat template,
-// stop ids, vocab, warm-KV sessions, and the admission (turns) that serializes its generations. The server registry
-// holds them keyed by served name; requests to distinct models run in parallel.
-type loadedModel struct {
-	tk           *tokenizer.Tokenizer
-	model        *decoder.Model
-	closer       io.Closer      // test-only liveness/close stand-in when model is nil; production uses model directly (livenessKey)
-	tmpl         *chat.Template // nil → raw completion
-	stopIDs      []int          // turn-stop token ids from the template
-	eosIDs       []int
-	vocab        int
-	name         string // served id (reported by /v1/models, matched on the request model field)
-	fp           string // model fingerprint (binds --session-dir snapshots)
-	source       string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
-	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	specAdaptive bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
-	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
-	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
-	blockSpec blockDrafter
-	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
-	// request leaves out; nil when it carries none.
-	sampling  *decoder.RecommendedSampling
-	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	decisions decisionState
-	caches    modelCaches
-	turns     admission // FIFO, context-aware granter of decode turns; a waiter can give up on disconnect or halt
-	// sessMu guards sessions, the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin
-	// and the background save, restore and demote goroutines take it. It is held around those operations only, not
-	// across a generation: the session a generation is using is checked out instead (sessionLRU.busy), and the LRU
-	// never hands out, evicts, demotes, saves or reads a busy session. That is what lets several generations of one
-	// CPU model run at once (-max-concurrent) while nothing frees or moves memory under a running generation.
-	sessMu sync.Mutex
-	// queue bounds in-flight plus waiting requests (cap = concurrent + --max-queue); a request claims a slot before
-	// its turn. nil = unbounded. Backpressure, not batching: a full queue returns 429 Retry-After.
-	queue chan struct{}
-	// concurrent is how many generations of this model may run at once (see setConcurrency); 1 = serialized.
+// modelIdentity groups the checkpoint, tokenizer, chat template, stop tokens,
+// and served naming metadata of a loadedModel.
+type modelIdentity struct {
+	tk      *tokenizer.Tokenizer
+	model   *decoder.Model
+	closer  io.Closer
+	tmpl    *chat.Template
+	stopIDs []int
+	eosIDs  []int
+	vocab   int
+	name    string
+	fp      string
+	source  string
+	adapter string
+}
+
+// modelSpecConfig groups speculative decoding flags, attached block drafter, and
+// checkpoint-recommended sampling defaults on a loadedModel.
+type modelSpecConfig struct {
+	spec         bool
+	specAdaptive bool
+	blockSpec    blockDrafter
+	sampling     *decoder.RecommendedSampling
+}
+
+// modelConcurrency groups CPU session KV reuse, FIFO decode-turn admission, and
+// request-queue backpressure on a loadedModel.
+type modelConcurrency struct {
+	sessions   *sessionLRU
+	turns      admission
+	sessMu     sync.Mutex
+	queue      chan struct{}
 	concurrent int
+}
 
-	// vision is the entry's image input (--vision; nil: the model takes no image). A model with one is vision-capable:
-	// serve accepts image content parts, runs them through the family's preprocessing and tower, and routes the turn to
-	// the family's generator.
-	vision visionTower
-
-	// visionShare counts the entries holding this entry's startup vision tower (nil: none shares it); the last to unload
-	// closes it.
+// modelModalities groups optional vision and audio towers attached to a loadedModel.
+type modelModalities struct {
+	vision      visionTower
 	visionShare *visionShare
+	audio       audioTower
+}
 
-	// audio is the entry's audio input (nil: the model takes no audio clip): a Gemma 4 checkpoint with an audio_config,
-	// Qwen3-ASR or Voxtral Mini. Its encoder loads on the first clip.
-	audio audioTower
-
-	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
-	// slice is the model's end of turn) instead of running model. Production never sets it.
-	scripted []int
-	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
-	onScripted func(promptIDs []int)
-	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
-	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
+// modelScriptedSeam groups deterministic test seams used when driving a loadedModel
+// without executing a real decoder forward pass.
+type modelScriptedSeam struct {
+	scripted          []int
+	onScripted        func(promptIDs []int)
 	scriptedRecurrent bool
 	onScriptedScope   func(kvScope)
-	// fakeEngine, when set, is the engine every text generation runs on. A test seam.
-	fakeEngine engine.Engine
+	fakeEngine        engine.Engine
+}
+
+// loadedModel is one resident generative model and its per-model serving state,
+// composed from focused sub-structs by concern.
+type loadedModel struct {
+	modelIdentity
+	modelSpecConfig
+	modelConcurrency
+	modelModalities
+	modelScriptedSeam
+	decisions decisionState
+	caches    modelCaches
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -248,8 +247,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if lm.model == nil {
 		return ""
 	}
-	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
-		cpuBatched: cpuBatched}, cfg)
+	return concurrencyLine(bannerFacts{Resident: lm.model.ResidentActive(), KVSlots: lm.model.ResidentKVSlots(), Concurrent: n,
+		CPUBatched: cpuBatched}, cfg)
 }
 
 // audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, a Qwen3-ASR checkpoint, or Voxtral Mini).

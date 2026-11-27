@@ -47,7 +47,7 @@ func newTaskTestServer() (*server, *string) {
 	enc := taskStub{dim: 8, last: last, prompts: map[string]string{
 		"query": "task: search result | query: ", "document": "title: none | text: ", "STS": "task: sentence similarity | query: ",
 	}}
-	return &server{embed: enc, embedDim: 8, embedID: "eg2", embedWidths: []int{8, 4, 2}}, last
+	return &server{embedService: embedService{embed: enc, embedDim: 8, embedID: "eg2", embedWidths: []int{8, 4, 2}}}, last
 }
 
 // TestEmbeddings_taskPromptChoice is Gate 3's prompt rule ( owner

@@ -30,7 +30,7 @@ func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	lru := func(adapter string) *loadedModel {
 		l := newSessionLRU(m, 4, 0, fp)
 		l.SetAdapter(adapter)
-		return &loadedModel{model: m, name: "x", fp: fp, adapter: adapter, sessions: l}
+		return &loadedModel{modelIdentity: modelIdentity{model: m, name: "x", fp: fp, adapter: adapter}, modelConcurrency: modelConcurrency{sessions: l}}
 	}
 
 	// The first turn under a1, saved.

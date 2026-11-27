@@ -19,8 +19,8 @@ func TestLoadAdapters_adaptersShareTheBaseTokenBytes(t *testing.T) {
 		t.Fatalf("decoder.Load base: %v", err)
 	}
 	defer m.Close()
-	baseLM := &loadedModel{model: m, name: "base", fp: "base", sessions: newSessionLRU(m, 4, 0, "base"), tk: scriptTokenizer(t), vocab: 40}
-	srv := &server{models: map[string]*loadedModel{"base": baseLM}, cfg: config{}}
+	baseLM := &loadedModel{modelIdentity: modelIdentity{model: m, name: "base", fp: "base", tk: scriptTokenizer(t), vocab: 40}, modelConcurrency: modelConcurrency{sessions: newSessionLRU(m, 4, 0, "base")}}
+	srv := &server{cfg: config{}, modelRegistry: modelRegistry{models: map[string]*loadedModel{"base": baseLM}}}
 	if err := srv.loadAdapters(config{adapters: adapterFlag{{"a1", "base", a1}, {"a2", "base", a2}}, kvSessions: 4}); err != nil {
 		t.Fatalf("loadAdapters: %v", err)
 	}

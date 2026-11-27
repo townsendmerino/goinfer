@@ -24,13 +24,13 @@ func TestReqLog_prefillFallback(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := &server{tokenLog: tl}
+		s := &server{carriedIDState: carriedIDState{tokenLog: tl}}
 		h := s.traceRequests(&buf, func(w http.ResponseWriter, r *http.Request) {
 			if fall {
 				decoder.NotePrefillFallback(r.Context(), "layer-major", "prompt reaches 8192 keys")
 			}
 			if tr := traceFrom(r.Context()); tr != nil {
-				tr.generated(&loadedModel{name: "m"}, genRequest{promptIDs: []int{1, 2, 3}}, nil, []int{4})
+				tr.generated(&loadedModel{modelIdentity: modelIdentity{name: "m"}}, genRequest{promptIDs: []int{1, 2, 3}}, nil, []int{4})
 			}
 		})
 		h(httptest.NewRecorder(), httptest.NewRequest("POST", "/v1/messages", nil))

@@ -34,30 +34,30 @@ func TestGradeCUDACells_plants(t *testing.T) {
 
 	// suite
 	res, cr := gradeEvents(cudaSuiteCell, metalCellEvents(tests, "fail", false), 1)
-	assertFails("suite", gradeCUDASuite(cr, nil, res.text()))
+	assertFails("suite", gradeCUDASuite(cr, nil, res.Text()))
 	res, cr = gradeEvents(cudaSuiteCell, metalCellEvents(tests, "pass", true), 2)
-	assertCrash("suite", gradeCUDASuite(cr, nil, res.text()))
+	assertCrash("suite", gradeCUDASuite(cr, nil, res.Text()))
 	res, cr = gradeEvents(cudaSuiteCell, metalCellEvents(tests, "pass", false), 0)
-	v := gradeCUDASuite(cr, []string{"TestHeavyOne", "TestHeavyTwo"}, res.text())
+	v := gradeCUDASuite(cr, []string{"TestHeavyOne", "TestHeavyTwo"}, res.Text())
 	if d := join(v); v.State != groupPass || !strings.Contains(d, "skipped within it: 2") || !strings.Contains(d, "· TestHeavyOne") ||
 		!strings.Contains(d, "· TestHeavyTwo") {
 		t.Errorf("suite green with two skips: state %d, lines:\n%s\nwant PASS listing both skips by name", v.State, d)
 	}
-	if v := gradeCUDASuite(cr, nil, res.text()); v.State != groupPass || !strings.Contains(join(v), "skip census: 0") {
+	if v := gradeCUDASuite(cr, nil, res.Text()); v.State != groupPass || !strings.Contains(join(v), "skip census: 0") {
 		t.Errorf("suite green with no skips: state %d, lines:\n%s\nwant PASS with the zero-census warning", v.State, join(v))
 	}
 	res, cr = gradeEvents(cudaSuiteCell, metalCellEvents(tests, "fail", false), 1)
-	if v := gradeCUDASuite(cr, []string{"TestHeavyOne"}, res.text()); !strings.Contains(join(v), "· TestHeavyOne") {
+	if v := gradeCUDASuite(cr, []string{"TestHeavyOne"}, res.Text()); !strings.Contains(join(v), "· TestHeavyOne") {
 		t.Errorf("a failed suite drops its skip census:\n%s", join(v))
 	}
 
 	// parity
 	res, cr = gradeEvents(cudaParityCell, metalCellEvents(tests, "fail", false), 1)
-	assertFails("parity", gradeCUDAParity(cr, res.text(), ""))
+	assertFails("parity", gradeCUDAParity(cr, res.Text(), ""))
 	res, cr = gradeEvents(cudaParityCell, metalCellEvents(tests, "pass", true), 2)
-	assertCrash("parity", gradeCUDAParity(cr, res.text(), ""))
+	assertCrash("parity", gradeCUDAParity(cr, res.Text(), ""))
 	res, cr = gradeEvents(cudaParityCell, metalCellEvents(tests, "pass", false), 0)
-	if v := gradeCUDAParity(cr, res.text(), ""); v.State != groupPass || len(v.Lines) == 0 {
+	if v := gradeCUDAParity(cr, res.Text(), ""); v.State != groupPass || len(v.Lines) == 0 {
 		t.Errorf("parity green: state %d, %d evidence lines; want PASS with evidence", v.State, len(v.Lines))
 	}
 	if v := gradeCUDAParity(cellResult{RC: 1}, "    x_test.go:9: cosine 0.000000\n", "123 MiB"); !strings.Contains(join(v), "right now: 123 MiB") {
@@ -67,19 +67,19 @@ func TestGradeCUDACells_plants(t *testing.T) {
 	// graphsforced
 	graphs := []string{"TestGemma4Graphs_a", "TestGemma4Graphs_b"}
 	res, cr = gradeEvents(cudaGraphsCell, metalCellEvents(graphs, "fail", false), 1)
-	v = gradeCUDAGraphs(cr, res.ranCount(), nil, res.text())
+	v = gradeCUDAGraphs(cr, res.RanCount(), nil, res.Text())
 	if d := join(v); v.State != groupFail || !strings.Contains(d, "x_test.go:12: got 1, want 2") {
 		t.Errorf("graphs with a failed test: state %d, detail:\n%s", v.State, d)
 	}
 	res, cr = gradeEvents(cudaGraphsCell, metalCellEvents(graphs, "pass", true), 2)
-	if v := gradeCUDAGraphs(cr, res.ranCount(), nil, res.text()); v.State != groupFail || !strings.Contains(v.Lines[0], "PROCESS DIED") {
+	if v := gradeCUDAGraphs(cr, res.RanCount(), nil, res.Text()); v.State != groupFail || !strings.Contains(v.Lines[0], "PROCESS DIED") {
 		t.Errorf("graphs with a crash: state %d, lines %q", v.State, v.Lines)
 	}
 	if v := gradeCUDAGraphs(cellResult{}, 0, nil, ""); v.State != groupFail || !strings.Contains(v.Line, "matched NO tests") {
 		t.Errorf("graphs that ran nothing: state %d line %q, want FAIL", v.State, v.Line)
 	}
 	res, cr = gradeEvents(cudaGraphsCell, metalCellEvents(graphs, "pass", false), 0)
-	v = gradeCUDAGraphs(cr, res.ranCount(), []string{"TestGemma4Graphs_c"}, res.text())
+	v = gradeCUDAGraphs(cr, res.RanCount(), []string{"TestGemma4Graphs_c"}, res.Text())
 	if v.State != groupPass || !strings.Contains(v.Line, "(2 tests, 1 skipped)") || !strings.Contains(join(v), "· TestGemma4Graphs_c") {
 		t.Errorf("graphs green: state %d line %q lines %q", v.State, v.Line, v.Lines)
 	}

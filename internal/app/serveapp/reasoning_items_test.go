@@ -21,7 +21,7 @@ func scriptedLM(t *testing.T, reply string) (*httptest.Server, *[][]int, []int) 
 	}
 	var prompts [][]int
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))

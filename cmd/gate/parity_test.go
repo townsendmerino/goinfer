@@ -17,10 +17,10 @@ import (
 func parityResults(t *testing.T, entries map[string]string) *results {
 	t.Helper()
 	r := newResults()
-	r.cur = "cell"
+	r.Cur = "cell"
 	for name, act := range entries {
-		r.add(testEvent{Action: "output", Package: "p", Test: name, Output: "=== RUN   " + name + "\n"})
-		r.add(testEvent{Action: act, Package: "p", Test: name})
+		r.Add(testEvent{Action: "output", Package: "p", Test: name, Output: "=== RUN   " + name + "\n"})
+		r.Add(testEvent{Action: act, Package: "p", Test: name})
 	}
 	return r
 }
@@ -87,7 +87,7 @@ func TestParity_missingGateBlocksEvenThoughNothingFailed(t *testing.T) {
 	}
 	// And the tally is genuinely blind to it: nothing failed and nothing skipped.
 	var fail, skip int
-	for _, a := range res.final {
+	for _, a := range res.Final {
 		switch a {
 		case "fail":
 			fail++
@@ -163,16 +163,16 @@ func TestParity_unreachableLedgerKeepsFailuresBlocking(t *testing.T) {
 // grep is what stopped TestFoo from matching TestFooBar).
 func TestParity_lookupTopIsExactAndLastWins(t *testing.T) {
 	r := newResults()
-	r.cur = "plain"
-	r.add(testEvent{Action: "skip", Package: "p", Test: "TestQwen35Real_gate2FullModel"})
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestQwen35Real_gate2FullModelExtra"})
-	r.cur = "realckpt"
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestQwen35Real_gate2FullModel"})
+	r.Cur = "plain"
+	r.Add(testEvent{Action: "skip", Package: "p", Test: "TestQwen35Real_gate2FullModel"})
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestQwen35Real_gate2FullModelExtra"})
+	r.Cur = "realckpt"
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestQwen35Real_gate2FullModel"})
 
-	if act, seen := r.lookupTop("TestQwen35Real_gate2FullModel"); !seen || act != "pass" {
+	if act, seen := r.LookupTop("TestQwen35Real_gate2FullModel"); !seen || act != "pass" {
 		t.Fatalf("lookupTop = %q/%v, want pass/true — the realckpt cell's result must win", act, seen)
 	}
-	if act, seen := r.lookupTop("TestQwen35Real"); seen {
+	if act, seen := r.LookupTop("TestQwen35Real"); seen {
 		t.Fatalf("prefix matched: %q — the name match must be exact", act)
 	}
 }
@@ -198,17 +198,17 @@ func TestParity_catchAllFindsUnlistedSkipsOnly(t *testing.T) {
 // them during the single parse is what lets EMIT_MANIFEST work without re-grepping a log.
 func TestParity_collectsManifestRowsInStreamOrder(t *testing.T) {
 	r := newResults()
-	r.cur = "c"
-	r.add(testEvent{Action: "output", Package: "p", Test: "TestA",
+	r.Cur = "c"
+	r.Add(testEvent{Action: "output", Package: "p", Test: "TestA",
 		Output: `PARITY_ROW {"family":"phi3","method":"real-model-oracle"}` + "\n"})
-	r.add(testEvent{Action: "output", Package: "p", Output: `PARITY_ROW {"family":"cohere","method":"real-model-oracle"}` + "\n"})
-	if len(r.parityRows) != 2 {
-		t.Fatalf("collected %d rows, want 2 (one test-level, one package-level)", len(r.parityRows))
+	r.Add(testEvent{Action: "output", Package: "p", Output: `PARITY_ROW {"family":"cohere","method":"real-model-oracle"}` + "\n"})
+	if len(r.ParityRows) != 2 {
+		t.Fatalf("collected %d rows, want 2 (one test-level, one package-level)", len(r.ParityRows))
 	}
-	if got := jsonField(r.parityRows[0], "family"); got != "phi3" {
+	if got := jsonField(r.ParityRows[0], "family"); got != "phi3" {
 		t.Errorf("family = %q, want phi3", got)
 	}
-	if got := jsonField(r.parityRows[1], "family"); got != "cohere" {
+	if got := jsonField(r.ParityRows[1], "family"); got != "cohere" {
 		t.Errorf("family = %q, want cohere", got)
 	}
 }
@@ -548,10 +548,10 @@ func TestParity_unlistedFailureMatchIsExactNotContainment(t *testing.T) {
 // plain and the realckpt cell, and the plain cell's skip/fail is not the sweep's answer.
 func TestParity_unlistedFailureUsesTheLastCellsResult(t *testing.T) {
 	r := newResults()
-	r.cur = "plain"
-	r.add(testEvent{Action: "fail", Package: "p", Test: "TestRunsInBothCells"})
-	r.cur = "realckpt"
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestRunsInBothCells"})
+	r.Cur = "plain"
+	r.Add(testEvent{Action: "fail", Package: "p", Test: "TestRunsInBothCells"})
+	r.Cur = "realckpt"
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestRunsInBothCells"})
 	if got := unlistedFailures(r, nil); len(got) != 0 {
 		t.Fatalf("unlistedFailures = %v, want none — the realckpt cell's PASS is the result", got)
 	}
@@ -930,8 +930,8 @@ func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 func TestEmitterCoverage_joinedFamilies(t *testing.T) {
 	res := newResults()
 	k := testKey{Test: "TestGemma12Real_gate"}
-	res.final[k] = "pass"
-	res.order = append(res.order, k)
+	res.Final[k] = "pass"
+	res.Order = append(res.Order, k)
 
 	report := func(fams map[string]bool) string {
 		var b strings.Builder
@@ -974,8 +974,8 @@ func TestTimeoutPanic_namesBudgetAndInFlightTests(t *testing.T) {
 
 	// Through results: the panic arrives as package-level output.
 	res := newResults()
-	res.pkgOut["p"] = strings.SplitAfter(blob, "\n")
-	if a, run := res.timeoutPanic(); a != "2h0m0s" || len(run) != 2 {
+	res.PkgOut["p"] = strings.SplitAfter(blob, "\n")
+	if a, run := res.TimeoutPanic(); a != "2h0m0s" || len(run) != 2 {
 		t.Errorf("results.timeoutPanic = %q, %v", a, run)
 	}
 }
@@ -1017,13 +1017,13 @@ func TestSleepsPastTheBudget(t *testing.T) { time.Sleep(30 * time.Second) }
 // that ran and failed and the ones not evaluated, by cause. Both kinds still block.
 func TestParity_notEvaluatedIsCountedApartFromFailed(t *testing.T) {
 	res := newResults()
-	res.cur = "cell"
+	res.Cur = "cell"
 	emit := func(name, act string, lines ...string) {
-		res.add(testEvent{Action: "output", Package: "p", Test: name, Output: "=== RUN   " + name + "\n"})
+		res.Add(testEvent{Action: "output", Package: "p", Test: name, Output: "=== RUN   " + name + "\n"})
 		for _, l := range lines {
-			res.add(testEvent{Action: "output", Package: "p", Test: name, Output: l + "\n"})
+			res.Add(testEvent{Action: "output", Package: "p", Test: name, Output: l + "\n"})
 		}
-		res.add(testEvent{Action: act, Package: "p", Test: name})
+		res.Add(testEvent{Action: act, Package: "p", Test: name})
 	}
 	emit("TestFails", "fail")
 	emit("TestHeavy", "skip", "    heavytest_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in")

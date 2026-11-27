@@ -7,6 +7,10 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 )
 
 // The rows of `gate release`, graders of what they read: every read goes through relEnv.look, which the runner answers
@@ -65,7 +69,7 @@ func relReplayLook(looks []relLookup) (look func(kind string, args ...string) (s
 			return "", nil // a record made before the accepted file existed holds no answer: nothing was accepted
 		}
 		if !ok {
-			if out, err, handled := absentBeforeMove(kind, args, func(k string, a ...string) bool {
+			if out, err, handled := gatecore.AbsentBeforeMove(kind, args, func(k string, a ...string) bool {
 				_, ok := ans[relLookupKey(k, a)]
 				return ok
 			}); handled {
@@ -96,7 +100,7 @@ func (e *relEnv) readMoved(path string) (string, error) {
 	if err == nil {
 		return out, nil
 	}
-	if old, moved := preMovePath(path); moved {
+	if old, moved := gatecore.PreMovePath(path); moved {
 		if o, err2 := e.read(old); err2 == nil {
 			return o, nil
 		}
@@ -110,7 +114,7 @@ func (e *relEnv) cmdMoved(dir, name string, args ...string) (string, error) {
 	if err == nil {
 		return out, nil
 	}
-	if old, moved := preMovePath(dir); moved {
+	if old, moved := gatecore.PreMovePath(dir); moved {
 		if o, err2 := e.cmd(old, name, args...); err2 == nil {
 			return o, nil
 		}
@@ -129,7 +133,7 @@ func (e *relEnv) glob(pattern string) []string {
 
 // gitObject is the git object id of path (a file or a directory) at rev, and "" when rev has no such path. An unknown rev is an error.
 func (e *relEnv) gitObject(rev, path string) (string, error) {
-	return objectAt(e.gitObjectAt, rev, path)
+	return gatecore.ObjectAt(e.gitObjectAt, rev, path)
 }
 
 // gitObjectAt is gitObject without the pre-move fallback.
@@ -354,7 +358,7 @@ func rowGPU(e *relEnv) relRow {
 		return owed(name, gpuRecordDirDefault, err.Error())
 	}
 	treeOf := func(rev, d string) (string, error) {
-		return treeAt(func(r, dd string) (string, error) { return e.git("rev-parse", r+":"+dd) }, rev, d)
+		return gatecore.TreeAt(func(r, dd string) (string, error) { return e.git("rev-parse", r+":"+dd) }, rev, d)
 	}
 	var bad, ok, acc []string
 	for _, be := range []string{"cuda", "metal"} {
@@ -529,24 +533,13 @@ func rowBranches(e *relEnv) relRow {
 
 // ---- row 7: the CHANGELOG ----
 
-// clSection returns the body of the CHANGELOG section named `Unreleased` or a version (`v0.23.0`), up to the next `## [`.
-func clSection(doc, name string) (string, bool) {
-	head := "## [" + name + "]"
-	_, after, ok := strings.Cut(doc, head)
-	if !ok {
-		return "", false
-	}
-	after, _, _ = strings.Cut(after, "\n## [")
-	return after, true
-}
-
 // rowChangelog reads `gate changelog -base <prev> -section <s>` as the "changelog" read: its report, and an error when it
 // exits non-zero.
 func rowChangelog(e *relEnv) relRow {
 	const name = "the CHANGELOG names what changed"
 	section := "Unreleased"
 	if b, err := e.read("CHANGELOG.md"); err == nil {
-		if _, ok := clSection(b, e.tag); ok {
+		if _, ok := gatehygiene.ClSection(b, e.tag); ok {
 			section = e.tag
 		}
 	}
@@ -664,7 +657,7 @@ func rowParity(e *relEnv) relRow {
 			return owed(name, want, why, short, how)
 		}
 		if len(ents) > 0 {
-			return accepted(name, parityRecordDirDefault, append([]string{fmt.Sprintf("%s @ %s on %s: verdict %s, %d blocker(s)", failed.Date, short8(failed.Commit), failed.Host, failed.Verdict, failed.Blockers)},
+			return accepted(name, parityRecordDirDefault, append([]string{fmt.Sprintf("%s @ %s on %s: verdict %s, %d blocker(s)", failed.Date, gatecore.Short8(failed.Commit), failed.Host, failed.Verdict, failed.Blockers)},
 				acceptedLines(file, ents)...)...)
 		}
 		if problem != "" {
@@ -674,7 +667,7 @@ func rowParity(e *relEnv) relRow {
 	if r == nil {
 		return owed(name, want, why, how)
 	}
-	detail := fmt.Sprintf("%s @ %s on %s: %d required gates, no blocker", r.Date, short8(r.Commit), r.Host, r.Required)
+	detail := fmt.Sprintf("%s @ %s on %s: %d required gates, no blocker", r.Date, gatecore.Short8(r.Commit), r.Host, r.Required)
 	if r.Gaps > 0 || r.FirstRuns > 0 {
 		detail += fmt.Sprintf(" (%d coverage gap(s) and %d first-run failure(s) reported, as the sweep prints them)", r.Gaps, r.FirstRuns)
 	}
@@ -715,7 +708,7 @@ func rowQuickFull(e *relEnv) relRow {
 	}
 	var bad, ok, acc []string
 	for _, goos := range quickRecordSystems {
-		r, failed, why := quickCoverageR(recs, goos, head, changed)
+		r, failed, why := gatequick.QuickCoverageR(recs, goos, head, changed)
 		switch {
 		case r != nil:
 			ok = append(ok, fmt.Sprintf("%s: %s @ %s (%d pass, %d skip)", goos, r.Date, r.Commit[:8], r.Pass, r.Skip))

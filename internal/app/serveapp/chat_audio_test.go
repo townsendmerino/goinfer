@@ -89,7 +89,7 @@ func TestOmitChatHistory_audio(t *testing.T) {
 func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Transcribe this audio."}} }
 	tmpl := chat.Gemma4()
-	lm := &loadedModel{tmpl: tmpl}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: tmpl}}
 	clip := imageRef{Data: wavBytes(16000, 16000), Audio: true}
 	if _, err := lm.visionPromptUncached(tmpl, "", turns(), clip); err == nil || !strings.Contains(err.Error(), "no audio tower") {
 		t.Errorf("no tower: %v", err)

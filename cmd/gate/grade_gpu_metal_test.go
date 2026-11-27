@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 const metalPkg = "github.com/townsendmerino/goinfer/metal"
@@ -49,9 +51,9 @@ func metalCellTests(g metalCellGroup) []string {
 
 func gradeEvents(c cell, evs []testEvent, rc int) (*results, cellResult) {
 	res := newResults()
-	res.cur = c.Name
+	res.Cur = c.Name
 	for _, ev := range evs {
-		res.add(ev)
+		res.Add(ev)
 	}
 	return res, gradeCell(c, gpuRunConfig(), res, rc, "", 0)
 }
@@ -64,7 +66,7 @@ func TestGradeMetalCell_plants(t *testing.T) {
 	for _, g := range metalCellGroups(model) {
 		tests := metalCellTests(g)
 		res, cr := gradeEvents(g.Cell, metalCellEvents(tests, "pass", false), 0)
-		v := gradeMetalCell(g, model, true, cr, res.text())
+		v := gradeMetalCell(g, model, true, cr, res.Text())
 		if v.State != groupPass || v.Line != g.OK {
 			t.Errorf("%s green: state %d line %q", g.Group, v.State, v.Line)
 		}
@@ -73,7 +75,7 @@ func TestGradeMetalCell_plants(t *testing.T) {
 		}
 
 		res, cr = gradeEvents(g.Cell, metalCellEvents(tests, "fail", false), 1)
-		v = gradeMetalCell(g, model, true, cr, res.text())
+		v = gradeMetalCell(g, model, true, cr, res.Text())
 		detail := strings.Join(v.Lines, "\n")
 		if v.State != groupFail || v.Line != g.Bad || !strings.Contains(detail, "--- FAIL: "+tests[0]) ||
 			!strings.Contains(detail, "x_test.go:12: got 1, want 2") || strings.Contains(detail, "NO ASSERTION LINE MATCHED") {
@@ -81,13 +83,13 @@ func TestGradeMetalCell_plants(t *testing.T) {
 		}
 
 		res, cr = gradeEvents(g.Cell, metalCellEvents(tests, "skip", false), 0)
-		v = gradeMetalCell(g, model, true, cr, res.text())
+		v = gradeMetalCell(g, model, true, cr, res.Text())
 		if want := map[bool]groupState{true: groupFail, false: groupPass}[g.VacuousFails]; v.State != want {
 			t.Errorf("%s with every test skipped: state %d, want %d", g.Group, v.State, want)
 		}
 
 		res, cr = gradeEvents(g.Cell, metalCellEvents(tests, "pass", true), 2)
-		v = gradeMetalCell(g, model, true, cr, res.text())
+		v = gradeMetalCell(g, model, true, cr, res.Text())
 		if v.State != groupFail || len(v.Lines) == 0 || !strings.Contains(v.Lines[0], "PROCESS DIED") {
 			t.Errorf("%s with a crash: state %d, lines %q; want FAIL with the crash head", g.Group, v.State, v.Lines)
 		}
@@ -133,7 +135,7 @@ func (f fakeLiveInputs) cell(c cell) (cellResult, *results, string, error) {
 	f.g.cells = append(f.g.cells, cr)
 	f.g.noteIfEmpty(c, res)
 	f.g.noteIfAllSkipped(c, cr)
-	return cr, res, res.text(), nil
+	return cr, res, res.Text(), nil
 }
 
 func (f fakeLiveInputs) cleanGPU() (*cleanGPUInput, error) {
@@ -285,12 +287,12 @@ func TestMetalCellGroups_guardsArePinned(t *testing.T) {
 			t.Errorf("%s no longer fails on an all-skip cell: an all-skip run of %s would print PASS", name, g.Cell.Run)
 		}
 		res, cr := gradeEvents(g.Cell, metalCellEvents(metalCellTests(g), "skip", false), 0)
-		if v := gradeMetalCell(g, "/m/qwen.gguf", true, cr, res.text()); v.State != groupFail {
+		if v := gradeMetalCell(g, "/m/qwen.gguf", true, cr, res.Text()); v.State != groupFail {
 			t.Errorf("%s with every test skipped grades %d, want FAIL", name, v.State)
 		}
 	}
 	res, cr := gradeEvents(webgpuParityCell, metalCellEvents(metalCellTests(metalCellGroup{Cell: webgpuParityCell}), "skip", false), 0)
-	if v := gradeWebGPUParity(cr, res.text()); v.State != groupFail {
+	if v := gradeWebGPUParity(cr, res.Text()); v.State != groupFail {
 		t.Errorf("webgpu-parity with every test skipped grades %d, want FAIL: an all-skip run of %s would print PASS", v.State, webgpuParityCell.Run)
 	}
 	for _, name := range needsModel {
@@ -404,7 +406,12 @@ func TestReplayGPU_aMalformedFullRecordIsExit2(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tc.edit(r.GPU)
+		gpuIn, err := gatecore.UnmarshalPayload[gpuRunInputs](r.GPU)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc.edit(gpuIn)
+		r.GPU, _ = json.Marshal(gpuIn)
 		b, err := json.Marshal(r)
 		if err != nil {
 			t.Fatal(err)
@@ -445,15 +452,15 @@ func TestGradeCleanGPU_plants(t *testing.T) {
 // and a green one passes and counts toward ran.
 func TestGradeSeam_plants(t *testing.T) {
 	res, cr := gradeEvents(seamCell, metalCellEvents([]string{"TestSeam_a"}, "pass", false), 0)
-	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupPass || v.Uncounted {
+	if v := gradeSeam(cr, res.RanCount(), res.Text()); v.State != groupPass || v.Uncounted {
 		t.Errorf("a green seam: state %d uncounted %v", v.State, v.Uncounted)
 	}
 	res, cr = gradeEvents(seamCell, metalCellEvents([]string{"TestSeam_a"}, "fail", false), 1)
-	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "--- FAIL: TestSeam_a") {
+	if v := gradeSeam(cr, res.RanCount(), res.Text()); v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "--- FAIL: TestSeam_a") {
 		t.Errorf("a failed seam test: state %d, lines %q", v.State, v.Lines)
 	}
 	res, cr = gradeEvents(seamCell, []testEvent{{Action: "output", Package: metalPkg, Output: "ok  \t" + metalPkg + "\t0.1s [no tests to run]\n"}}, 0)
-	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupFail || !strings.Contains(v.Line, "matched NO tests") {
+	if v := gradeSeam(cr, res.RanCount(), res.Text()); v.State != groupFail || !strings.Contains(v.Line, "matched NO tests") {
 		t.Errorf("a seam run that matched no test: state %d line %q, want FAIL", v.State, v.Line)
 	}
 }

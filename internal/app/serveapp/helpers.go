@@ -1,196 +1,38 @@
 package serveapp
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"mime/multipart"
 	"net/http"
-	"reflect"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/netguard"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/streamframe"
 )
 
-// Request-body size ceilings. Bodies are buffered before validation, so an unbounded body is a memory-exhaustion DoS.
-// Text prompts, tools, embeddings and admin bodies fit in a few MB; the vision endpoints carry base64 image_url data
-// (about 1.33x the raw image), so they get a larger cap.
 const (
-	maxBodyBytes       = 4 << 20  // 4 MiB
-	maxVisionBodyBytes = 32 << 20 // 32 MiB
-	// maxEmbedBodyBytes is /v1/embeddings' own floor, deliberately not derived from any decoder's context window. A
-	// batch embeddings body scales with batch count x input length, which the route already bounds (maxEmbedInputs,
-	// maxEmbedInputBytes), and has nothing to do with a chat model's MaxPositions. Deriving it from the text cap made
-	// the limit arbitrary: on an embed-only server it collapsed to the 4 MiB text floor and rejected a legal 2048 x 4
-	// KiB batch before checkEmbedInputBounds could accept it. 64 MiB covers a realistic maximal RAG batch (2048
-	// inputs x ~32 KiB) while still bounding the read. -max-body-bytes overrides it like the others.
-	maxEmbedBodyBytes = 64 << 20 // 64 MiB
-	// maxBatchFileBytes is POST /v1/files' own floor, independent of the other three the way maxEmbedBodyBytes is: a
-	// batch input file's size scales with line count, not with any one decoder's context window. 64 MiB covers a
-	// realistic batch (thousands of chat-sized lines) while still bounding the read. -max-body-bytes overrides it
-	// like the others.
-	maxBatchFileBytes = 64 << 20 // 64 MiB
+	maxBodyBytes        = netguard.MaxBodyBytes
+	maxVisionBodyBytes  = netguard.MaxVisionBodyBytes
+	maxEmbedBodyBytes   = netguard.MaxEmbedBodyBytes
+	maxBatchFileBytes   = netguard.MaxBatchFileBytes
+	maxFileUploadMemory = netguard.MaxFileUploadMemory
 )
 
-// maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables). Two layers:
-//   - a Content-Length pre-check rejects a declared body over the cap with 413 before a byte is read (the case that
-//     matters, and it costs nothing: no allocation, no upload wait);
-//   - http.MaxBytesReader is the backstop for chunked encoding or a lying Content-Length; it fails the read with
-//     *http.MaxBytesError, which the decode helpers render as 413.
-//
-// The 413 names the limit (and the received size when the client declared one). A client still uploading when the
-// pre-check fires may see EPIPE regardless. note, when non-empty, is appended to the 413: a route whose own validator
-// declares limits in different units than the body cap needs it. /v1/embeddings advertises "up to 2048 inputs of up
-// to 1 MiB each", which multiplies out to 2 GiB and can never all be satisfied at once; those are per-dimension
-// bounds, the body cap bounds the total, and a 413 naming only the total leaves the client unable to tell which
-// number it violated.
-func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {
-	extra := ""
-	if len(note) > 0 && note[0] != "" {
-		extra = " " + note[0]
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		if n > 0 && r.ContentLength > n {
-			writeErr(w, http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("request body is %d bytes, which exceeds the %d-byte limit (raise it with -max-body-bytes)%s", r.ContentLength, n, extra))
-			return
-		}
-		if n > 0 {
-			r.Body = http.MaxBytesReader(w, r.Body, n)
-		}
-		h(w, r)
-	}
-}
-
-// limitInflight caps how many wrapped handlers run concurrently across the whole server, via a shared semaphore. It
-// bounds the pre-queue stage (JSON and base64-image decode, tokenization, template render, the vision-tower Forward,
-// constrain.TokenBytes over the full vocab) that runs before a request reaches the per-model decode queue (lm.enter);
-// without it that stage has unbounded concurrency, and 200 parallel 32 MiB vision requests each allocate before any
-// backpressure applies. A full cap returns 503 + Retry-After (an orchestrator back-off signal), distinct from the
-// per-model 429. sem == nil disables it (-max-inflight 0). The slot is held for the whole handler including
-// generation, a hard ceiling on total concurrent requests that composes with the finer per-model queue.
-func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {
-	if sem == nil {
-		return h
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-			h(w, r)
-		default:
-			w.Header().Set("Retry-After", "1")
-			writeErr(w, http.StatusServiceUnavailable, "server at capacity (max in-flight requests reached); retry")
-		}
-	}
-}
-
-// requireAuth wraps a handler with an optional shared-secret check. With key == "" it is a pass-through (auth
-// disabled, safe only because -addr defaults to loopback). With a key, the request must present it as `Authorization:
-// Bearer <key>` or `x-api-key: <key>`. The two are compared as SHA-256 digests in constant time: digests are one
-// length, so the time taken says nothing about the key's length or prefix (ConstantTimeCompare on the raw strings
-// returns at once when the lengths differ). A coarse gate (one shared secret, not per-user): enough to keep an
-// exposed port from being open inference, and required whenever -allow-admin is on.
-func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
-	if key == "" {
-		return h
-	}
-	want := sha256.Sum256([]byte(key))
-	return func(w http.ResponseWriter, r *http.Request) {
-		got := r.Header.Get("x-api-key")
-		if got == "" {
-			got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		}
-		if sum := sha256.Sum256([]byte(got)); subtle.ConstantTimeCompare(sum[:], want[:]) != 1 {
-			writeErr(w, http.StatusUnauthorized, "missing or invalid API key")
-			return
-		}
-		h(w, r)
-	}
-}
-
-// bodyTooLarge reports whether err is maxBytes' cap firing during a body read, with the message its 413 carries. The
-// message names the limit and how to raise it: a bare "too large" leaves the operator guessing which of the several caps
-// fired (TestOversizeBody_BackstopBounded pins that a 413 says which bound was hit).
-func bodyTooLarge(err error) (msg string, tooLarge bool) {
-	if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		return fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit), true
-	}
-	return "", false
-}
-
-// writeBodyErr answers a request body that could not be read: 413 at the maxBytes cap, else 400 with msg and the error.
-func writeBodyErr(w http.ResponseWriter, msg string, err error) {
-	if tooLarge, ok := bodyTooLarge(err); ok {
-		writeErr(w, http.StatusRequestEntityTooLarge, tooLarge)
-		return
-	}
-	writeErr(w, http.StatusBadRequest, msg+": "+err.Error())
-}
-
-// maxFileUploadMemory is how much of an upload parseUpload holds in memory before spilling to a temp file.
-const maxFileUploadMemory = 32 << 20
-
-// parseUpload parses r's multipart/form-data body; a failure is answered through writeBodyErr with msg, and ok is false.
-// The caller defers the form's RemoveAll: net/http removes a form only when it was parsed on the request the server made,
-// and traceRequests and NewHandler hand handlers a copy, so nothing else deletes the temp files of a large upload.
-func parseUpload(w http.ResponseWriter, r *http.Request, msg string) (form *multipart.Form, ok bool) {
-	if err := r.ParseMultipartForm(maxFileUploadMemory); err != nil {
-		writeBodyErr(w, msg, err)
-		return nil, false
-	}
-	return r.MultipartForm, true
-}
-
-// jsonDecodeMessage shapes a json decode error into a message safe to return to a client: it never echoes the raw
-// error, whose UnmarshalTypeError rendering leaks the Go struct name (e.g. "...Go struct field completionReq.logprobs
-// of type bool"). tooLarge reports the body-cap case, which callers answer with a different status. The OpenAI and
-// Anthropic surfaces share it.
-func jsonDecodeMessage(err error) (msg string, tooLarge bool) {
-	if msg, tooLarge := bodyTooLarge(err); tooLarge {
-		return msg, true
-	}
-	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
-		// ute.Type is a reflect.Type; for a composite field it renders the internal named type (e.g.
-		// "[]serveapp.chatMessage"), leaking Go type names. Name the expected type only for scalar kinds (bool,
-		// number, string); else stay generic.
-		switch ute.Type.Kind() {
-		case reflect.Bool, reflect.String,
-			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-			reflect.Float32, reflect.Float64:
-			return fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type.Kind()), false
-		default:
-			return fmt.Sprintf("invalid request body: field %q has the wrong type", ute.Field), false
-		}
-	}
-	if se, ok := errors.AsType[*json.SyntaxError](err); ok {
-		return fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset), false
-	}
-	return "invalid request body", false
-}
-
-// decodeJSON reads the (size-bounded, see maxBytes) request body into v, writing an OpenAI-shaped error on failure: 413
-// when the body exceeded the limit, else 400. It returns false iff it wrote an error.
-func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		msg, tooLarge := jsonDecodeMessage(err)
-		if tooLarge {
-			writeErr(w, http.StatusRequestEntityTooLarge, msg)
-			return false
-		}
-		writeErr(w, http.StatusBadRequest, msg)
-		return false
-	}
-	return true
-}
+var (
+	maxBytes          = netguard.MaxBytes
+	limitInflight     = netguard.LimitInflight
+	requireAuth       = netguard.RequireAuth
+	writeBodyErr      = netguard.WriteBodyErr
+	parseUpload       = netguard.ParseUpload
+	jsonDecodeMessage = netguard.JSONDecodeMessage
+	decodeJSON        = netguard.DecodeJSON
+	serveHandler      = netguard.ServeHandler
+	sameOriginGuard   = netguard.SameOriginGuard
+	splitHosts        = netguard.SplitHosts
+)
 
 // --- SSE ---
 
@@ -269,56 +111,13 @@ func completionChunk(id string, created int64, model, text string, finish *strin
 
 // --- JSON responses ---
 
-// jsonWriteTimeout bounds a non-streaming response's write, writeJSON's twin of sseWriteTimeout above: a client that
-// stops reading a large buffered body (logprobs, a long completion) would otherwise block Encode/Write with no
-// deadline, pinning the decode worker, its queue slot and its inflight slot until the client closed. A var so tests
-// can drive it.
-var jsonWriteTimeout = 30 * time.Second
+const statusCancelled = netguard.StatusCancelled
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	// An unsupported controller is not a failure (httptest's recorder has no deadline support), so the error is
-	// deliberately dropped, as in sseWriter.frame.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(jsonWriteTimeout))
-	// Encode before the status line goes out: a value JSON cannot carry (a NaN or an infinity in a float) must be a
-	// 500 that says so, not an HTTP 200 with Content-Length 0 from an encoder error nobody read.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	if err := enc.Encode(v); err != nil {
-		msg, _ := json.Marshal("response could not be encoded: " + err.Error()) // a string always encodes
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, `{"error":{"message":%s,"type":"api_error"}}`+"\n", msg)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_, _ = w.Write(buf.Bytes())
-}
-
-// statusCancelled is the non-streaming status for an admin-cancelled generation.
-// 499 is not a registered HTTP status (net/http has no constant for it): it is nginx's "client closed request",
-// repurposed for "the server ended this request on someone's behalf, not a normal 4xx/5xx".
-// http.ResponseWriter.WriteHeader accepts any int, so it works like any other status.
-const statusCancelled = 499
-
-func writeErr(w http.ResponseWriter, code int, msg string) {
-	// Type mirrors the status so typed OpenAI-SDK client retry logic keys off it
-	// (429 → back off, 5xx → retry, 4xx → don't).
-	typ := "invalid_request_error"
-	switch {
-	case code == http.StatusTooManyRequests:
-		typ = "rate_limit_error"
-	case code >= 500:
-		typ = "api_error"
-	}
-	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": typ}})
-}
-
-// writeServerErr reports a generation or encode failure as a 500 with type "api_error" (distinct from a bad request's
-// 4xx "invalid_request_error"), before any body is written, on the non-streaming paths.
-func writeServerErr(w http.ResponseWriter, msg string) {
-	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
-}
+var (
+	writeJSON      = netguard.WriteJSON
+	writeErr       = netguard.WriteErr
+	writeServerErr = netguard.WriteServerErr
+)
 
 // --- request helpers ---
 

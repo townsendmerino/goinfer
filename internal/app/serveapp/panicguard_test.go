@@ -15,7 +15,7 @@ import (
 // One batch may hold stores.MaxBatchLines requests; the body cap alone admits millions of minimal lines, each a goroutine and a parsed request.
 // No model is needed: the 413 is decided before any line runs.
 func TestBatches_lineCountIsCapped(t *testing.T) {
-	srv := &server{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStore(8)}
+	srv := &server{serverStores: serverStores{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStore(8)}}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 
@@ -56,7 +56,7 @@ func TestBatches_lineCountIsCapped(t *testing.T) {
 // and fails if the body loses its recovery.
 func TestPanicGuard_runBatchChatLineFailsAloneAndTheBatchStillFinalizes(t *testing.T) {
 	// A registered model with nothing loaded behind it: the line resolves it, then dereferences what a real model has.
-	s := &server{models: map[string]*loadedModel{"m": {name: "m"}}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m"}}}}}
 	bs := stores.NewBatchStore(4)
 	b := bs.Create("openai_chat", "/v1/chat/completions", "24h", "file_x", []string{"a", "b"})
 	good := chatReq{} // an empty request fails validation before it reaches the registry: line b is an ordinary 400
@@ -77,7 +77,7 @@ func TestPanicGuard_runJobFailsTheJobAndClosesItsStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{jobs: js}
+	s := &server{serverStores: serverStores{jobs: js}}
 	js.CreatePending("job_p", "m", nil)
 	released := false
 	// lm is nil: tryEnter dereferences it, which is the panic.
@@ -100,7 +100,7 @@ func TestPanicGuard_runJobFailsTheJobAndClosesItsStream(t *testing.T) {
 }
 
 func TestPanicGuard_finalizeBatchMarksTheBatchFailed(t *testing.T) {
-	s := &server{batches: stores.NewBatchStore(4)} // no file store: assembling the output file dereferences it
+	s := &server{serverStores: serverStores{batches: stores.NewBatchStore(4)}} // no file store: assembling the output file dereferences it
 	b := s.batches.Create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"a"})
 	b.SetResult(0, stores.LineError("a", 400, "invalid_request_error", "x"))
 	b.DoneLine()
@@ -113,7 +113,7 @@ func TestPanicGuard_finalizeBatchMarksTheBatchFailed(t *testing.T) {
 // A request may carry at most maxStopSequences stop strings and maxToolsPerRequest tools: each is matched or branched on at every
 // generated token, so their count multiplies the cost of the whole generation. prepare is the one place every dialect's stop reaches.
 func TestRequestAmplifiers_stopAndToolCountsAreCapped(t *testing.T) {
-	lm := &loadedModel{name: "m"}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "m"}}
 	stops := func(n int) json.RawMessage {
 		a := make([]string, n)
 		for i := range a {
