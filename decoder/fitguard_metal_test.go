@@ -3,6 +3,8 @@ package decoder
 import (
 	"errors"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // withFakeMetalCompiled registers a stand-in "metal" backend for the test, so the Metal build-demand report sees Metal as
@@ -114,7 +116,7 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metalKV := metalKVBytesFor(arch, MetalCtxDefault, kvPrecF16) // one slot of Metal's f16 pools
+	metalKV := memprice.MetalKVBytesFor(arch, MetalCtxDefault, kvPrecF16) // one slot of Metal's f16 pools
 	metalNeed := metalKV + prefillAttnScratchBudget
 	cpuNeed := estimateKVBytes(cfg, cfg.MaxPositions, false, false) + prefillAttnScratchBudget
 	avail := 2*metalNeed + giwMemMargin // twice what Metal holds; a small fraction of the CPU's ceiling

@@ -1,10 +1,12 @@
 package decoder
 
 import (
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"os"
 	"testing"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // TestKvDimAt_zeroForRecurrentLayers (M-28): a linear (DeltaNet), Mamba-2 or gated-conv mixer layer holds no
@@ -92,19 +94,19 @@ func TestKvBytesForCtx_skipsRecurrentLayers(t *testing.T) {
 	const ctx = 1000
 	perLayerAtCtx := int64(2 * 4 /* f32 */ * dim * ctx) // ×2 for K+V
 	want := perLayerAtCtx * 4                           // 4 real attention layers, not 8
-	if got := kvBytesForCtx(a, ctx, false, false); got != want {
-		t.Errorf("kvBytesForCtx = %d, want %d (4 real attention layers, not the flat formula's 8)", got, want)
+	if got := memprice.CPUKVBytesForCtx(a, ctx, false, false); got != want {
+		t.Errorf("CPUKVBytesForCtx = %d, want %d (4 real attention layers, not the flat formula's 8)", got, want)
 	}
 }
 
 // TestKvBytesForCtx_nilOrEmptyProceedsUnknown: an unresolved architecture or a non-positive ctx prices at zero rather
 // than panicking or guessing (the guard's "every unknown proceeds" discipline).
 func TestKvBytesForCtx_nilOrEmptyProceedsUnknown(t *testing.T) {
-	if got := kvBytesForCtx(nil, 1000, false, false); got != 0 {
-		t.Errorf("kvBytesForCtx(nil arch) = %d, want 0", got)
+	if got := memprice.CPUKVBytesForCtx(nil, 1000, false, false); got != 0 {
+		t.Errorf("CPUKVBytesForCtx(nil arch) = %d, want 0", got)
 	}
-	if got := kvBytesForCtx(&darch.Architecture{NumLayers: 8, NumKVHeads: 8, HeadDim: 128}, 0, false, false); got != 0 {
-		t.Errorf("kvBytesForCtx(ctx=0) = %d, want 0", got)
+	if got := memprice.CPUKVBytesForCtx(&darch.Architecture{NumLayers: 8, NumKVHeads: 8, HeadDim: 128}, 0, false, false); got != 0 {
+		t.Errorf("CPUKVBytesForCtx(ctx=0) = %d, want 0", got)
 	}
 }
 
@@ -206,8 +208,8 @@ func TestKVBytes_mlaHoldsOneLatentRow(t *testing.T) {
 		name    string
 		f16, i8 bool
 	}{{"f32", false, false}, {"f16", true, false}, {"i8", false, true}} {
-		if got := kvBytesForCtx(m.w.Arch, ctx, p.f16, p.i8); got != held {
-			t.Errorf("%s: kvBytesForCtx %d, the cache holds %d", p.name, got, held)
+		if got := memprice.CPUKVBytesForCtx(m.w.Arch, ctx, p.f16, p.i8); got != held {
+			t.Errorf("%s: CPUKVBytesForCtx %d, the cache holds %d", p.name, got, held)
 		}
 		if got := m.kvBytesPerPositionAllLayers(p.f16, p.i8) * ctx; got != held {
 			t.Errorf("%s: Plan's rate at %d positions is %d, the cache holds %d", p.name, ctx, got, held)

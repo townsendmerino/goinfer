@@ -1,79 +1,34 @@
 package decoder
 
 import (
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
-
 	"fmt"
-	"slices"
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // kquantNativeOff empties every backend's kquantLane, so a load keeps the int8 copies on the device and in its pricing: the arm
 // without the native K-quant lane. Set only by a test (SetKQuantNativeOffForTest).
 var kquantNativeOff atomic.Bool
 
-// kquantLane is the weights backend's q4k lane uploads as the file's Q5_K and Q6_K blocks (KQuantReader) in place of their
-// int8 copies, on a q4k load: those with a recorded source among the projections the backend's build hands its lane.
-//   - metal: each layer's q, k, v, o, gate, up and down (buildResident calls q4kLaneProj on exactly those).
-//   - cuda: the projections BuildResident plans (a KV-shared layer has no k or v, a K=V layer no v) and the untied LM head, under
-//     per-32 activations only (the native GEMVs read the group sums quantG32 writes; every q4k load has them).
-//
-// Any other backend, or a load that is not q4k, has no lane.
-func (m *Model) kquantLane(backend string) []*linalg.WeightMat {
-	if kquantNativeOff.Load() || m == nil || m.w == nil || len(m.w.KQuant) == 0 || m.Quant() != "q4k" || (backend != "metal" && backend != "cuda") {
-		return nil
-	}
-	if backend == "cuda" && m.opts.ActQuantGroup != 32 {
-		return nil
-	}
-	var ws []*linalg.WeightMat
-	for l := range m.w.Layers {
-		lw := &m.w.Layers[l]
-		ps := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
-		if backend == "cuda" {
-			switch {
-			case m.BackendView().Layer(l).KVSrc() != l:
-				ps = []*linalg.WeightMat{&lw.QProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
-			case m.BackendView().Layer(l).VFromK():
-				ps = []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
-			}
-		}
-		for _, wm := range ps {
-			if _, ok := m.w.KQuantOf(wm); ok {
-				ws = append(ws, wm)
-			}
-		}
-	}
-	if _, ok := m.w.KQuantOf(&m.w.LMHead); ok && backend == "cuda" && m.w.LMHead.Rows() > 0 {
-		ws = append(ws, &m.w.LMHead)
-	}
-	return ws
-}
-
-// kquantSavings is the device bytes backend's q4k lane does not allocate because it uploads the file's blocks for the weights
-// of kquantLane: their int8 bytes less their native bytes. The host copy keeps the int8 copies, so only the device term of a
-// backend's need takes it (ResidentNeedBytes, ResidentDenseWeightBytesFor).
+// kquantSavings is the device bytes backend's q4k lane does not allocate because it uploads the file's blocks in place of int8 copies.
 func (m *Model) kquantSavings(backend string) int64 {
-	var n int64
-	for _, wm := range m.kquantLane(backend) {
-		s, _ := m.w.KQuantOf(wm)
-		n += s.Int8Bytes - s.NativeBytes
+	if m == nil || m.w == nil {
+		return 0
 	}
-	return n
+	return memprice.KQuantSavings(backend, m.w, m.Quant(), m.opts.ActQuantGroup, kquantNativeOff.Load())
 }
 
-// KQuantNative is "q5k" or "q6k" when backend's q4k lane uploads wm as the file's blocks (kquantLane), else "". wm is
-// compared by address, so it must be the model's own weight (a pointer into Weights()).
+// KQuantNative is "q5k" or "q6k" when backend's q4k lane uploads wm as the file's blocks, else "".
 func (m *Model) KQuantNative(backend string, wm *linalg.WeightMat) string {
-	if slices.Contains(m.kquantLane(backend), wm) {
-		s, _ := m.w.KQuantOf(wm)
-		return s.Kind
+	if m == nil || m.w == nil {
+		return ""
 	}
-	return ""
+	return memprice.KQuantNativeKind(backend, m.w, m.Quant(), m.opts.ActQuantGroup, kquantNativeOff.Load(), wm)
 }
 
 // KQuantReader serves the GGUF's own Q5_K and Q6_K blocks for the int8 matmuls of a q4k load that the file stores that way,

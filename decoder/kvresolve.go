@@ -2,11 +2,10 @@ package decoder
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // The KV precision a load delivers. ResolveKV is the one answer every
@@ -101,89 +100,14 @@ func kvRefusal(path string, arch *darch.Architecture, opts Options) *KVRefusal {
 	return &KVRefusal{Path: path, Requested: req, Delivered: got, Reason: why}
 }
 
-// cudaKVF16Delivered lists the families whose every KV-touching CUDA path has an f16 kernel: `--kv f16` is delivered for them whatever
-// the quality reads (the precision doc's contract, item 4). A family group joins with its exact-input identity and delivered-bytes gates
-// (docs/measurements/kv4-cuda-2026-10-21.md § "f16 pools, per family group"), never by compiling.
-func cudaKVF16Delivered(f darch.KVFacts) bool {
-	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
-		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2",
-		"nemotron_h", "flint":
-		return true
-	}
-	return false
-}
+// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can.
+func CUDAKVF16Decline(f darch.KVFacts, _ Options) string { return memprice.CUDAF16Decline(f) }
 
-// cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (f16
-// becomes the default for each family group as it clears its quality gate against f32, docs/measurements/kv4-cuda-2026-10-21.md
-// § "f16 pools, per family group"). A
-// model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
-func cudaKVF16AutoCleared(f darch.KVFacts) bool {
-	if f.SlidingWindow || f.PairwiseRoPE || f.Hybrid || f.MLA {
-		return false
-	}
-	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_5_vl", "qwen3_vl", "qwen2_moe", "qwen3_moe", "mixtral", "qwen3_vl_moe":
-		return true
-	}
-	return false
-}
+// CUDAKVF16AutoDecline returns why --kv auto keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
+func CUDAKVF16AutoDecline(f darch.KVFacts, _ Options) string { return memprice.CUDAF16AutoDecline(f) }
 
-// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can: a family outside
-// cudaKVF16Delivered. Every kernel that reads or writes the cache, MLA's latent included, has an f16 twin; a family joins the list
-// with its group's gates, so one whose paths were never checked stays f32. It lives here so ResolveKV answers for CUDA without the
-// cuda package; the cuda package registers it as its policy.
-func CUDAKVF16Decline(f darch.KVFacts, _ Options) string {
-	if !cudaKVF16Delivered(f) {
-		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
-			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; " +
-			f.Family + " keeps f32"
-	}
-	return ""
-}
-
-// CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
-// A group whose quality read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, Readings).
-func CUDAKVF16AutoDecline(f darch.KVFacts, o Options) string {
-	switch {
-	case cudaKVF16AutoCleared(f):
-		return ""
-	case f.Hybrid:
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"
-	case f.Family == "gpt-oss":
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: gpt-oss's attention sinks have no quality gate yet (a sinks G4 cell would clear it)"
-	case f.PairwiseRoPE:
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (a passing K=8,000 cell would clear it)"
-	case f.SlidingWindow:
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate did not pass at 8,000 keys (mean KL 1.16x f32's over ten prompts, against a 1.10x bar; a passing K=8,000 cell would clear it)"
-	case f.Family == "nemotron_h":
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: no quality gate has read a Mamba-2 hybrid yet (a passing G4 cell would clear it)"
-	}
-	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
-}
-
-// cudaKVI8Families are the families CUDA's int8 cache is delivered for: the dense ones, whose every path the _kv8 kernels and the
-// quantizing store cover (docs/measurements/cuda-kv-i8-2026-11/scope.md, § "the int8 cache delivered on the dense families"). A
-// family joins with its own identity and delivered-bytes gates.
-var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
-
-// CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
-// it is waiting for. Several KV slots, their shared blocks and copy on write, host snapshots and demotion carry the scale pools (cuda's
-// kvCopyBlockRows and kvsnap.go).
-func CUDAKVI8Decline(f darch.KVFacts, o Options) string {
-	if !slices.Contains(cudaKVI8Families, f.Family) {
-		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + "); " + f.Family + " is not among them (widening to other families is parked)"
-	}
-	switch {
-	case f.SlidingWindow:
-		return "int8 KV on CUDA does not cover sliding-window layers yet (the windowed ring and its rollback carry no scales)"
-	case f.MoE || f.MLA || f.MRoPE || f.PairwiseRoPE || f.Hybrid:
-		return "int8 KV on CUDA covers dense attention only so far"
-	case f.KVRowNotWords > 0:
-		return fmt.Sprintf("int8 KV on CUDA moves rows as whole 4-byte words, and this model's %d-element K/V row is not", f.KVRowNotWords)
-	}
-	return ""
-}
+// CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can.
+func CUDAKVI8Decline(f darch.KVFacts, _ Options) string { return memprice.CUDAI8Decline(f) }
 
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.
 func (m *Model) kvPath() string {
