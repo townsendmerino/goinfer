@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"encoding/json"

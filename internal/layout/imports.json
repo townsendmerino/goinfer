@@ -704,6 +704,26 @@
         ]
       },
       "why": "internal/guard/gatequick holds gate quick's package dependency graph, changed-file-to-cell selector, parallel cell runner, duration/summary records, and pure quick graders below cmd/gate (GT3). It imports only internal/guard/gatecore, internal/guard/gatehygiene, and internal/guard/paritykey (its tests, internal/testgate and internal/testpath)."
+    },
+    {
+      "name": "gaterelease-leaf",
+      "from": [
+        "internal/guard/gaterelease"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gaterelease": [
+          "internal/guard/gatecore",
+          "internal/guard/gatehygiene",
+          "internal/guard/gatequick",
+          "internal/guard/paritykey",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gaterelease holds gate release's pre-flight runner, gpu-records, GPU/parity record codecs and qualification graders, and accepted-reds reader below cmd/gate (GT5). It imports only internal/guard/gatecore, internal/guard/gatehygiene, internal/guard/gatequick, and internal/guard/paritykey (its tests, internal/testpath)."
     }
   ],
   "arrows": {
@@ -825,7 +845,7 @@
       "internal/guard/gatehygiene",
       "internal/guard/gateidentity",
       "internal/guard/gatequick",
-      "internal/guard/paritykey"
+      "internal/guard/gaterelease"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -1094,6 +1114,12 @@
     "internal/guard/gatequick": [
       "internal/guard/gatecore",
       "internal/guard/gatehygiene",
+      "internal/guard/paritykey"
+    ],
+    "internal/guard/gaterelease": [
+      "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
+      "internal/guard/gatequick",
       "internal/guard/paritykey"
     ],
     "internal/guard/memgate": [
@@ -1373,6 +1399,7 @@
       "internal/guard/gatecore",
       "internal/guard/gateidentity",
       "internal/guard/gatequick",
+      "internal/guard/gaterelease",
       "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
@@ -1567,6 +1594,11 @@
     ],
     "internal/guard/gatequick": [
       "internal/testgate",
+      "internal/testpath"
+    ],
+    "internal/guard/gaterelease": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey",
       "internal/testpath"
     ],
     "internal/guard/memgate": [

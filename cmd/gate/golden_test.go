@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/guard/gateidentity"
 	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -431,7 +432,7 @@ func gradeGoldenGPUCoverage(t *testing.T, dir string, c *goldenCase, look lookup
 	var b strings.Builder
 	for _, head := range c.Heads {
 		for _, be := range []string{"cuda", "metal"} {
-			r, why := gpuCoverage(recs, be, head, treeOf)
+			r, why := gaterelease.GPUCoverage(recs, be, head, treeOf)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), be, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}
 	}
@@ -462,7 +463,7 @@ func gradeGoldenParityCoverage(t *testing.T, dir string, c *goldenCase, look loo
 	}
 	var b strings.Builder
 	for _, head := range c.Heads {
-		r, why := parityCoverage(recs, head, c.Paths, objOf)
+		r, why := gaterelease.ParityCoverage(recs, head, c.Paths, objOf)
 		fmt.Fprintf(&b, "%s: %s\n", short8(head), coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 	}
 	return b.String()
@@ -483,7 +484,7 @@ func gradeGoldenQuickCoverage(t *testing.T, dir string, c *goldenCase, look look
 	}
 	var b strings.Builder
 	for _, head := range c.Heads {
-		for _, goos := range quickRecordSystems {
+		for _, goos := range gaterelease.QuickRecordSystems {
 			r, why := gatequick.QuickCoverage(recs, goos, head, changed)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), goos, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}

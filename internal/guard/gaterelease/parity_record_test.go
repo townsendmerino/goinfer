@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"bytes"
@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // The parity sweep's record and the release row that reads it (parity_record.go), registered here before the code: no
@@ -57,7 +59,7 @@ func parityPathsIn(t *testing.T, dir string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths, err := parityQualifyingPaths(b)
+	paths, err := ParityQualifyingPaths(b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,16 +67,16 @@ func parityPathsIn(t *testing.T, dir string) []string {
 }
 
 func objOfIn(dir string) func(rev, path string) (string, error) {
-	return func(rev, path string) (string, error) { return gitObject(dir, rev, path) }
+	return func(rev, path string) (string, error) { return gatecore.GitObject(dir, rev, path) }
 }
 
-func prec(commit, date, verdict string) parityRecord {
-	return parityRecord{Schema: 1, Commit: commit, Date: date, Verdict: verdict, Realckpt: true}
+func prec(commit, date, verdict string) ParityRecord {
+	return ParityRecord{Schema: 1, Commit: commit, Date: date, Verdict: verdict, Realckpt: true}
 }
 
 // The qualifying set is the four directories and every hashed file that is outside them, each once.
 func TestParityRecord_qualifyingPaths(t *testing.T) {
-	got, err := parityQualifyingPaths([]byte(parityTestManifest))
+	got, err := ParityQualifyingPaths([]byte(parityTestManifest))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,10 +84,10 @@ func TestParityRecord_qualifyingPaths(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("qualifying paths %v, want %v", got, want)
 	}
-	if _, err := parityQualifyingPaths([]byte(`{"families": {}}`)); err == nil {
+	if _, err := ParityQualifyingPaths([]byte(`{"families": {}}`)); err == nil {
 		t.Error("a manifest that hashes no file was accepted: the row would then cover nothing but the four directories without saying so")
 	}
-	if _, err := parityQualifyingPaths([]byte(`not json`)); err == nil {
+	if _, err := ParityQualifyingPaths([]byte(`not json`)); err == nil {
 		t.Error("an unreadable manifest was accepted")
 	}
 }
@@ -94,15 +96,12 @@ func TestParityRecord_qualifyingPaths(t *testing.T) {
 // directories are there, and so is at least one hashed file outside them (the pin scripts). A test manifest in a shape the
 // real one does not have passed every other test here while the release row could not read the real file.
 func TestParityRecord_readsTheCommittedManifest(t *testing.T) {
-	root, err := repoRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := testpath.Root(t)
 	b, err := paritykey.ManifestJSON(paritykey.Dir(root))
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths, err := parityQualifyingPaths(b)
+	paths, err := ParityQualifyingPaths(b)
 	if err != nil {
 		t.Fatalf("the committed manifest does not parse: %v", err)
 	}
@@ -111,11 +110,11 @@ func TestParityRecord_readsTheCommittedManifest(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Errorf("qualifying path %s is not in the repository", p)
 		}
-		if !slices.Contains(parityQualifyingTrees, p) {
+		if !slices.Contains(ParityQualifyingTrees, p) {
 			outside++
 		}
 	}
-	for _, d := range parityQualifyingTrees {
+	for _, d := range ParityQualifyingTrees {
 		if !slices.Contains(paths, d) {
 			t.Errorf("the qualifying paths lack %s/", d)
 		}
@@ -135,18 +134,18 @@ func TestParityRecord_coversLaterCommitsOnlyIfTheHashedCodeIsUnchanged(t *testin
 	dir, commit := parityTestRepo(t)
 	ran := gitIn(t, dir, "rev-parse", "HEAD")
 	paths, objOf := parityPathsIn(t, dir), objOfIn(dir)
-	recs := []parityRecord{prec(ran, "2026-10-11T10:00:00Z", "PASS")}
+	recs := []ParityRecord{prec(ran, "2026-10-11T10:00:00Z", "PASS")}
 
-	if r, why := parityCoverage(nil, ran, paths, objOf); r != nil || why != "no record" {
+	if r, why := ParityCoverage(nil, ran, paths, objOf); r != nil || why != "no record" {
 		t.Errorf("no record: covered=%v why=%q", r != nil, why)
 	}
-	if r, why := parityCoverage(recs, ran, paths, objOf); r == nil {
+	if r, why := ParityCoverage(recs, ran, paths, objOf); r == nil {
 		t.Fatalf("a complete sweep at HEAD does not cover HEAD: %s", why)
 	}
 	for _, f := range []string{"docs/f.txt", "scripts/unrelated.py"} {
 		gitIn(t, dir, "checkout", "-q", "-B", "side", ran)
 		head := commit(f, "edit")
-		if r, why := parityCoverage(recs, head, paths, objOf); r == nil {
+		if r, why := ParityCoverage(recs, head, paths, objOf); r == nil {
 			t.Errorf("a change to %s voided the sweep: %s", f, why)
 		}
 	}
@@ -157,7 +156,7 @@ func TestParityRecord_coversLaterCommitsOnlyIfTheHashedCodeIsUnchanged(t *testin
 		if i := strings.Index(f, "/f.txt"); i > 0 {
 			name = f[:i] + "/"
 		}
-		r, why := parityCoverage(recs, head, paths, objOf)
+		r, why := ParityCoverage(recs, head, paths, objOf)
 		if r != nil || !strings.Contains(why, name+" changed since") {
 			t.Errorf("a change to %s left the sweep covering the commit (covered=%v, %q)", f, r != nil, why)
 		}
@@ -173,7 +172,7 @@ func TestParityRecord_aHashedFileAddedSinceTheSweepVoidsIt(t *testing.T) {
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "the manifest hashes a new file")
 	head := gitIn(t, dir, "rev-parse", "HEAD")
-	r, why := parityCoverage([]parityRecord{prec(ran, "2026-10-11T10:00:00Z", "PASS")}, head, parityPathsIn(t, dir), objOfIn(dir))
+	r, why := ParityCoverage([]ParityRecord{prec(ran, "2026-10-11T10:00:00Z", "PASS")}, head, parityPathsIn(t, dir), objOfIn(dir))
 	if r != nil || !strings.Contains(why, "scripts/new.py changed since") {
 		t.Errorf("a newly hashed file left the sweep covering the commit (covered=%v, %q)", r != nil, why)
 	}
@@ -185,15 +184,15 @@ func TestParityRecord_onlyACompleteSweepCounts(t *testing.T) {
 	dir, _ := parityTestRepo(t)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
 	paths, objOf := parityPathsIn(t, dir), objOfIn(dir)
-	for name, mod := range map[string]func(*parityRecord){
-		"blockers":    func(r *parityRecord) { r.Verdict = "BLOCKERS"; r.Blockers = 2 },
-		"dirty":       func(r *parityRecord) { r.Dirty = true },
-		"no realckpt": func(r *parityRecord) { r.Realckpt = false },
-		"scoped":      func(r *parityRecord) { r.Scoped = "Qwen" },
+	for name, mod := range map[string]func(*ParityRecord){
+		"blockers":    func(r *ParityRecord) { r.Verdict = "BLOCKERS"; r.Blockers = 2 },
+		"dirty":       func(r *ParityRecord) { r.Dirty = true },
+		"no realckpt": func(r *ParityRecord) { r.Realckpt = false },
+		"scoped":      func(r *ParityRecord) { r.Scoped = "Qwen" },
 	} {
 		r := prec(head, "2026-10-11T10:00:00Z", "PASS")
 		mod(&r)
-		got, why := parityCoverage([]parityRecord{r}, head, paths, objOf)
+		got, why := ParityCoverage([]ParityRecord{r}, head, paths, objOf)
 		if got != nil || !strings.Contains(why, "does not count") {
 			t.Errorf("%s: covered=%v why=%q", name, got != nil, why)
 		}
@@ -207,12 +206,12 @@ func TestParityRecord_theNewestRecordAtTheSameCodeDecides(t *testing.T) {
 	b := commit("docs/f.txt", "docs")
 	paths, objOf := parityPathsIn(t, dir), objOfIn(dir)
 	bad := prec(b, "2026-10-11T11:00:00Z", "BLOCKERS")
-	recs := []parityRecord{prec(a, "2026-10-11T10:00:00Z", "PASS"), bad}
-	if r, why := parityCoverage(recs, b, paths, objOf); r != nil || !strings.Contains(why, "verdict BLOCKERS") {
+	recs := []ParityRecord{prec(a, "2026-10-11T10:00:00Z", "PASS"), bad}
+	if r, why := ParityCoverage(recs, b, paths, objOf); r != nil || !strings.Contains(why, "verdict BLOCKERS") {
 		t.Errorf("an earlier clean sweep hid a later one with blockers at the same code: covered=%v %q", r != nil, why)
 	}
 	c := commit("decoder/f.txt", "code")
-	if r, why := parityCoverage(recs, c, paths, objOf); r != nil || !strings.Contains(why, "decoder/ changed since") {
+	if r, why := ParityCoverage(recs, c, paths, objOf); r != nil || !strings.Contains(why, "decoder/ changed since") {
 		t.Errorf("records at older code cover a later commit: covered=%v %q", r != nil, why)
 	}
 }
@@ -255,9 +254,9 @@ func TestParityRecord_writtenAndReadBack(t *testing.T) {
 	dir, _ := parityTestRepo(t)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	cells := []cellResult{{Pass: 40, Skip: 3}, {Pass: 12, Fail: 1, RC: 1}}
-	writeParityRecord(&out, dir, parityRecordDirDefault, parityRun{Realckpt: true, Blockers: 1, Gaps: 2, FirstRuns: 0, Required: 55, Cells: cells})
-	recs, err := loadParityRecords(filepath.Join(dir, parityRecordDirDefault))
+	cells := []gatecore.CellResult{{Pass: 40, Skip: 3}, {Pass: 12, Fail: 1, RC: 1}}
+	WriteParityRecord(&out, dir, parityRecordDirDefault, ParityRun{Realckpt: true, Blockers: 1, Gaps: 2, FirstRuns: 0, Required: 55, Cells: cells})
+	recs, err := LoadParityRecords(filepath.Join(dir, parityRecordDirDefault))
 	if err != nil || len(recs) != 1 {
 		t.Fatalf("%d records read back (%v); output: %s", len(recs), err, out.String())
 	}
@@ -275,23 +274,23 @@ func TestParityRecord_writtenAndReadBack(t *testing.T) {
 		t.Errorf("the run did not say where its record went: %q", out.String())
 	}
 	// An empty record directory writes nothing; a sweep with no blocker writes PASS.
-	writeParityRecord(&out, dir, "", parityRun{Realckpt: true})
-	if recs2, _ := loadParityRecords(filepath.Join(dir, parityRecordDirDefault)); len(recs2) != 1 {
+	WriteParityRecord(&out, dir, "", ParityRun{Realckpt: true})
+	if recs2, _ := LoadParityRecords(filepath.Join(dir, parityRecordDirDefault)); len(recs2) != 1 {
 		t.Errorf("an empty record directory still wrote a record (%d files)", len(recs2))
 	}
-	writeParityRecord(&out, dir, "elsewhere", parityRun{Realckpt: true, Scoped: "Qwen"})
-	if recs3, err := loadParityRecords(filepath.Join(dir, "elsewhere")); err != nil || len(recs3) != 1 || recs3[0].Verdict != "PASS" || recs3[0].Scoped != "Qwen" {
+	WriteParityRecord(&out, dir, "elsewhere", ParityRun{Realckpt: true, Scoped: "Qwen"})
+	if recs3, err := LoadParityRecords(filepath.Join(dir, "elsewhere")); err != nil || len(recs3) != 1 || recs3[0].Verdict != "PASS" || recs3[0].Scoped != "Qwen" {
 		t.Errorf("a sweep with no blocker, narrowed by GATE_RUN: %+v (%v)", recs3, err)
 	}
 }
 
 // The release command reads twelve rows, the parity sweep among them.
 func TestRelease_rowsIncludeTheParitySweep(t *testing.T) {
-	if len(releaseRows) != 12 {
-		t.Errorf("gate release has %d rows, want 12", len(releaseRows))
+	if len(ReleaseRows) != 12 {
+		t.Errorf("gate release has %d rows, want 12", len(ReleaseRows))
 	}
 	found := false
-	for _, f := range releaseRows {
+	for _, f := range ReleaseRows {
 		if reflect.ValueOf(f).Pointer() == reflect.ValueOf(rowParity).Pointer() {
 			found = true
 		}

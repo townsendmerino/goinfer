@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 )
 
 func usage() {
@@ -102,9 +104,9 @@ func run(argv []string, w io.Writer) int {
 	if name == "comments-only" {
 		return runCommentsOnly(rest, w)
 	}
-	// `release` is RELEASING.md's pre-flight as rows (release.go).
+	// `release` is RELEASING.md's pre-flight as rows.
 	if name == "release" {
-		return runRelease(rest, w)
+		return gaterelease.RunRelease(rest, w, awaitingFirstConfirmation)
 	}
 	// `changelog` compares the tree with a tag and lists what the CHANGELOG section does not name (changelog.go).
 	if name == "changelog" {

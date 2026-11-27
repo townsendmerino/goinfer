@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -622,5 +623,53 @@ func TestGPU_noMeasurementTakesAFreshProcess(t *testing.T) {
 		if slices.Contains(measure, n) {
 			t.Errorf("%s calls testgate.RequireMeasure and carries needsFreshProcess: drop the marker", n)
 		}
+	}
+}
+
+// The verdict block writes the record, with the verdict word, the counts and the tree ids; the heavy skip and a dirty tree are in it.
+func TestGPURecord_theVerdictWritesTheRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		fail         int
+		dirty, heavy bool
+		want         string
+	}{
+		{"pass", 0, false, false, "PASS"},
+		{"fail", 1, false, false, "FAIL"},
+		{"dirty", 0, true, false, "INCONCLUSIVE"},
+		{"heavy skipped still a PASS verdict, flagged", 0, false, true, "PASS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var out bytes.Buffer
+			g := &gpuGate{w: &out, backend: "cuda", commit: "abc", dirty: tc.dirty, heavySkipped: tc.heavy, recordDir: dir, gpuName: "test gpu",
+				expect: []string{"seam"}, emitted: map[string]bool{"seam": true}, pass: 3, fail: tc.fail, ran: 3}
+			g.verdict()
+			ents, _ := os.ReadDir(dir)
+			if len(ents) != 1 {
+				t.Fatalf("%d record files written, want 1 (output: %s)", len(ents), out.String())
+			}
+			b, _ := os.ReadFile(filepath.Join(dir, ents[0].Name()))
+			var r gpuRecord
+			if err := json.Unmarshal(b, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.Verdict != tc.want || r.Dirty != tc.dirty || r.HeavySkipped != tc.heavy || r.Groups.Pass != 3 || r.Backend != "cuda" || len(r.Commit) != 40 {
+				t.Errorf("record = %+v, want verdict %s dirty %v heavy %v", r, tc.want, tc.dirty, tc.heavy)
+			}
+			if len(r.Trees) != len(gpuQualifyingTrees) {
+				t.Errorf("trees = %v, want an id for each of %v", r.Trees, gpuQualifyingTrees)
+			}
+		})
+	}
+}
+
+// With no record directory the run writes nothing.
+func TestGPURecord_noDirectoryWritesNothing(t *testing.T) {
+	var out bytes.Buffer
+	g := &gpuGate{w: &out, backend: "cuda", expect: []string{"seam"}, emitted: map[string]bool{"seam": true}, pass: 1, ran: 1}
+	g.verdict()
+	if strings.Contains(out.String(), "record:") || strings.Contains(out.String(), "RECORD NOT WRITTEN") {
+		t.Errorf("a run with no record directory mentioned a record: %s", out.String())
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"bytes"
@@ -148,7 +148,7 @@ func TestReportRelease_acceptedDoesNotBlock(t *testing.T) {
 	gpu, quick, parity := failingRecords()
 	e := acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", entriesFor(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), 2)...))
 	var out bytes.Buffer
-	if code := reportRelease(&out, e, []func(*relEnv) relRow{rowGPU}); code != 0 {
+	if code := ReportRelease(&out, e, []func(*relEnv) relRow{rowGPU}); code != 0 {
 		t.Errorf("exit %d with only an accepted row\n%s", code, out.String())
 	}
 	if s := out.String(); !strings.Contains(s, "accepted") || !strings.Contains(s, "0 of 1 done, 1 accepted") || strings.Contains(s, "not ready to tag") {
@@ -157,7 +157,7 @@ func TestReportRelease_acceptedDoesNotBlock(t *testing.T) {
 	// with a second row still owed the tag is not ready, and the accepted row is still shown as accepted
 	out.Reset()
 	e = acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", entriesFor(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), 2)...))
-	if code := reportRelease(&out, e, []func(*relEnv) relRow{rowGPU, rowParity}); code != 1 || !strings.Contains(out.String(), "not ready to tag") {
+	if code := ReportRelease(&out, e, []func(*relEnv) relRow{rowGPU, rowParity}); code != 1 || !strings.Contains(out.String(), "not ready to tag") {
 		t.Errorf("exit %d with a row still owed\n%s", code, out.String())
 	}
 }

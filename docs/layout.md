@@ -132,7 +132,7 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 | Path | What it is | Module |
 |---|---|---|
 | `cmd/serve/` | `goinfer-serve`, the server | root |
-| `cmd/gate/` | the gate runner (`go run ./cmd/gate`) | root |
+| `cmd/gate/` | the gate runner (`go run ./cmd/gate`), backed by leaf packages `internal/guard/gate{core,hygiene,quick,identity,release}` (enforced by `gate*-leaf` rules in `internal/layout/imports.json` and `TestGraders_arePure`) | root |
 | `cmd/lint/` | CI's staticcheck, pinned and verified | root |
 | `cmd/hostmem/`, `cmd/prequant/` | prints the memory figure the fit guard uses; builds a `.giw` bundle from a GGUF | root |
 | `cmd/claude-guard/` | the Claude Code PreToolUse hook that refuses commands the repo rules forbid | root |

@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"bytes"
@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // replayEditedRelease replays the release-replay golden's record with edit applied to its reads, and returns the report
 // and the exit code.
 func replayEditedRelease(t *testing.T, edit func(in *releaseInputs)) (string, int) {
 	t.Helper()
-	rec, err := readRunRecord(filepath.Join(goldenRoot, "release-replay", "gate_release_run.json.gz"))
+	rec, err := gatecore.ReadRunRecord(filepath.Join(testpath.Testdata(t, "gate", "goldens"), "release-replay", "gate_release_run.json.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func replayEditedRelease(t *testing.T, edit func(in *releaseInputs)) (string, in
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	rc := replayRelease(&out, path)
+	rc := ReplayRelease(&out, path)
 	return out.String(), rc
 }
 

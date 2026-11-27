@@ -4,6 +4,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 )
 
 type (
@@ -18,17 +19,15 @@ type (
 	recordCell     = gatecore.RecordCell
 	runRecord      = gatecore.RunRecord
 	runRecordExtra = gatecore.RunRecordExtra
-	quickRecord    = gatequick.QuickRecord
 )
 
 const (
-	bold                  = gatecore.Bold
-	red                   = gatecore.Red
-	green                 = gatecore.Green
-	amber                 = gatecore.Amber
-	off                   = gatecore.Off
-	runRecordSchema       = gatecore.RunRecordSchema
-	quickRecordDirDefault = gatequick.QuickRecordDirDefault
+	bold            = gatecore.Bold
+	red             = gatecore.Red
+	green           = gatecore.Green
+	amber           = gatecore.Amber
+	off             = gatecore.Off
+	runRecordSchema = gatecore.RunRecordSchema
 )
 
 var (
@@ -44,7 +43,6 @@ var (
 	gitOut             = gatecore.GitOut
 	gitTree            = gatecore.GitTree
 	gitObject          = gatecore.GitObject
-	writeFileAtomic    = gatecore.WriteFileAtomic
 	runRecordPath      = gatecore.RunRecordPath
 	writeRunRecord     = gatecore.WriteRunRecord
 	loadRunRecord      = gatecore.LoadRunRecord
@@ -65,7 +63,6 @@ var (
 	treeAt             = gatecore.TreeAt
 	objectAt           = gatecore.ObjectAt
 	runChangelog       = gatehygiene.RunChangelog
-	newestVersionTag   = gatehygiene.NewestVersionTag
 	runCommentsOnly    = gatehygiene.RunCommentsOnly
 	replayCommentsOnly = gatehygiene.ReplayCommentsOnly
 	runLedger          = gatehygiene.RunLedger
@@ -73,4 +70,5 @@ var (
 	reconcileLedger    = gatehygiene.ReconcileLedger
 	runShadow          = gatehygiene.RunShadow
 	loadQuickRecords   = gatequick.LoadQuickRecords
+	replayRelease      = gaterelease.ReplayRelease
 )
