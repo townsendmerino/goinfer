@@ -6,6 +6,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -37,7 +38,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			kEqV := m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			geoms[geomKey{hd, kv, len(m.BackendView().Layer(l).RopeInvFreq()), kEqV}] = true
 			nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, kv*hd)
-			fa = max(fa, metalAttnFAPartialFloats(hd, nH, kv))
+			fa = max(fa, memprice.MetalAttnFAPartialFloats(hd, nH, kv))
 			attn++
 		}
 		if l >= len(w.Layers) {
@@ -57,8 +58,9 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		// The q4k lane's segments, one row-count uniform a run of parts of one kind in each fused group, on the dense attention
 		// and SwiGLU layers it runs (buildResident refuses a q4k load with any other).
 		if q4k && mixer == MixerAttention && denseFFN {
+			kquantKind := func(wm *linalg.WeightMat) string { return m.KQuantNative("metal", wm) }
 			for _, group := range [][]*linalg.WeightMat{{&lw.QProj, &lw.KProj, &lw.VProj}, {&lw.OProj}, {&lw.DownProj}, {&lw.GateProj, &lw.UpProj}} {
-				u32s += int64(m.metalQ4KRuns(group))
+				u32s += int64(memprice.MetalQ4KRuns(group, kquantKind))
 			}
 		}
 	}
@@ -140,7 +142,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			f32 += int64(k*2*inter + k + k*H)
 			bytes += int64(k * inter)
 		}
-		if metalMoEPaged(slots, nE) {
+		if memprice.MetalMoEPaged(slots, nE) {
 			bytes += int64(4 * k)
 		}
 	}
@@ -148,14 +150,14 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		f32 += int64(2*g4b.NE + 2*g4b.TopK + 4*H)
 		bytes += int64(8 * g4b.TopK)
 		u32s += int64(10 + g4b.TopK)
-		if metalMoEPaged(slots, g4b.NE) {
+		if memprice.MetalMoEPaged(slots, g4b.NE) {
 			bytes += int64(4 * g4b.TopK)
 		}
 	}
-	f32 += int64(metalScratchBatchRows * (H + V)) // batchX, batchLogits
-	u32s += 3 * metalScratchBatchRows             // each batch row's position uniforms
-	u32s += 12 + 7                                // the greedy chain's two tokens and position sets; a sampled chain's temperature, keys and draws
-	f32 += int64(2 * V)                           // a sampled chain's two logits rows
+	f32 += int64(memprice.MetalScratchBatchRows * (H + V)) // batchX, batchLogits
+	u32s += 3 * memprice.MetalScratchBatchRows             // each batch row's position uniforms
+	u32s += 12 + 7                                         // the greedy chain's two tokens and position sets; a sampled chain's temperature, keys and draws
+	f32 += int64(2 * V)                                    // a sampled chain's two logits rows
 	return 4*f32 + bytes + 4*u32s
 }
 
@@ -202,8 +204,8 @@ func TestMetalDecodeScratch_fromTheDeclarations(t *testing.T) {
 				continue
 			}
 			for name := range m.MetalDecodeRowWidths() { // a router row Metal builds with, with no term, would price its MoE short
-				if strings.HasSuffix(name, "-router") && metalRowTerms[name] == nil {
-					t.Errorf("%s %s: Metal builds a load declaring %s, which metalRowTerms prices no term for", f, c.Name, name)
+				if strings.HasSuffix(name, "-router") && memprice.MetalRowTerms[name] == nil {
+					t.Errorf("%s %s: Metal builds a load declaring %s, which MetalRowTerms prices no term for", f, c.Name, name)
 				}
 			}
 			slotCounts := []int{0}

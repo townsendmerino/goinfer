@@ -1,10 +1,12 @@
 package decoder
 
 import (
-	darch "github.com/townsendmerino/goinfer/decoder/arch"
-	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
 	"strings"
 	"testing"
+
+	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/archparts"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // TestKVFacts_readTheArchitecture: the facts a backend's KV policy sees are the architecture's own properties, one per disqualifier.
@@ -127,7 +129,7 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		case c.want != "" && !strings.Contains(got, c.want):
 			t.Errorf("%s: decline = %q, want it to contain %q", c.name, got, c.want)
 		}
-		if c.want == "" && !cudaKVF16Delivered(c.f) {
+		if c.want == "" && !memprice.CUDAF16Delivered(c.f) {
 			t.Errorf("%s: allowed by the decline check but not in the delivered set", c.name)
 		}
 	}

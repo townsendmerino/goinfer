@@ -47,7 +47,7 @@ speed and fidelity numbers. AMBIGUOUS: parked with the numbers. KILL: the never 
 
 The instrument as registered timed the wrong cache. `backend/cuda`'s test suite pins `kvF16Auto` false in
 `kv16_default_test.go`'s `init`, so under the test binary `auto` delivers **f32** ("auto is f32 on CUDA in this build"), while serve's
-`auto` gives Phi-3 f16 (`decoder/kvresolve.go:cudaKVF16AutoCleared`). The first identity run and six completed depth-128 cells (a seventh was stopped mid-run) ran on f32. They are
+`auto` gives Phi-3 f16 (`internal/runtime/memprice/cuda.go:CUDAF16AutoCleared`). The first identity run and six completed depth-128 cells (a seventh was stopped mid-run) ran on f32. They are
 kept, ungraded, under `raw/void-f32/` and are void by instrument, not by load. (One of the six, d128 b1 c2, would also have been void: a
 foreign `go`/`compile` was running at its start under the exclusive lock.)
 

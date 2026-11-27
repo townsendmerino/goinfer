@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 )
 
 // Audit R-12. K=1 decode on an f32 sliding-window ring used to copy every resident row into scratch each token. It now
@@ -220,8 +222,8 @@ func TestKvBytesForCtx_countsTheRingMirror(t *testing.T) {
 	}
 	for _, c := range cases {
 		want := int64(2 * c.row * (c.local + c.glob)) // K and V
-		if got := kvBytesForCtx(arch, c.ctx, false, c.kvI8); got != want {
-			t.Errorf("%s: kvBytesForCtx = %d, want %d (local %d rows + global %d)", c.name, got, want, c.local, c.glob)
+		if got := memprice.CPUKVBytesForCtx(arch, c.ctx, false, c.kvI8); got != want {
+			t.Errorf("%s: CPUKVBytesForCtx = %d, want %d (local %d rows + global %d)", c.name, got, want, c.local, c.glob)
 		}
 	}
 }

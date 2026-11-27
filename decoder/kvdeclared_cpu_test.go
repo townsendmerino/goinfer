@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	darch "github.com/townsendmerino/goinfer/decoder/arch"
+	"github.com/townsendmerino/goinfer/internal/runtime/memprice"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -57,7 +58,7 @@ func TestKVBytesForCtx_isTheDeclaredRows(t *testing.T) {
 		a := fx.m.w.Arch
 		for _, ctx := range hostKVContexts(a) {
 			for _, kv := range []string{"", "f16", "i8"} {
-				got, want := kvBytesForCtx(a, ctx, kv == "f16", kv == "i8"), kvBytesForCtxOracle(a, ctx, kv == "f16", kv == "i8")
+				got, want := memprice.CPUKVBytesForCtx(a, ctx, kv == "f16", kv == "i8"), kvBytesForCtxOracle(a, ctx, kv == "f16", kv == "i8")
 				if got != want {
 					t.Errorf("%s ctx=%d kv=%q: the price from the declared rows is %d, the architecture's is %d", fx.name, ctx, kv, got, want)
 				}
@@ -78,7 +79,7 @@ func TestKVBytesForRows_plantedShortRowGoesRed(t *testing.T) {
 	for _, fx := range hostKVFixtures(t) {
 		a := fx.m.w.Arch
 		short := func(l int) []program.Buf {
-			bufs := slices.Clone(layerBuffers(a, l))
+			bufs := slices.Clone(memprice.LayerBuffers(a, l))
 			for i := range bufs {
 				if bufs[i].Unit == program.PerPosition && bufs[i].Elems > 0 {
 					bufs[i].Elems--
@@ -88,13 +89,13 @@ func TestKVBytesForRows_plantedShortRowGoesRed(t *testing.T) {
 			return bufs
 		}
 		ctx := hostKVContexts(a)[1]
-		if kvBytesForRows(a, ctx, kvqF32, layerBuffersOf(a)) != kvBytesForCtxOracle(a, ctx, false, false) {
+		if memprice.CPUKVBytesForRows(a, ctx, memprice.CPUKVF32, memprice.LayerBuffersOf(a)) != kvBytesForCtxOracle(a, ctx, false, false) {
 			t.Errorf("%s: the unplanted rows already differ from the oracle", fx.name)
 			continue
 		}
 		if oracle := kvBytesForCtxOracle(a, ctx, false, false); oracle > 0 {
 			planted++
-			if kvBytesForRows(a, ctx, kvqF32, short) == oracle {
+			if memprice.CPUKVBytesForRows(a, ctx, memprice.CPUKVF32, short) == oracle {
 				t.Errorf("%s: a K row declared one element short left the price at %d: the plant did not go red", fx.name, oracle)
 			}
 		}
