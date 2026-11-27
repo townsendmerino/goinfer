@@ -21,8 +21,8 @@ type DecodeScratch struct {
 	q        []float32  // [qDim]
 	k, v     []float32  // [kvDim]
 	ctx      []float32  // [qDim] attention context before the O-projection
-	Gate     []float32  // [inter] gatedMLPAct gate
-	Up       []float32  // [inter] gatedMLPAct up
+	gate     []float32  // [inter] gatedMLPAct gate
+	up       []float32  // [inter] gatedMLPAct up
 	Scores   []float32  // [>=nKeys] attention scores; grown on demand as context extends
 	attnGate []float32  // [>=nH or nH*hd] Laguna attention output-gate scratch (g_proj result, pre-softplus); nil for every other family
 	logits   []float32  // [vocab]
@@ -151,9 +151,9 @@ func (s *DecodeScratch) row(name string) *[]float32 {
 	case "ctx":
 		return &s.ctx
 	case "gate":
-		return &s.Gate
+		return &s.gate
 	case "up":
-		return &s.Up
+		return &s.up
 	case "logits":
 		return &s.logits
 	case "moeLogits":
@@ -465,4 +465,15 @@ func (c *Cache) HeadLogits(n int) []float32 {
 		c.Scr.logitsN = make([]float32, n)
 	}
 	return c.Scr.logitsN[:n]
+}
+
+// GateSlice returns the FFN gate scratch buffer.
+func (s *DecodeScratch) GateSlice() []float32 { return s.gate }
+
+// UpSlice returns the FFN up scratch buffer.
+func (s *DecodeScratch) UpSlice() []float32 { return s.up }
+
+// NewGateUpScratch allocates a minimal DecodeScratch with gate and up slices of length inter (used by tests).
+func NewGateUpScratch(inter int) *DecodeScratch {
+	return &DecodeScratch{gate: make([]float32, inter), up: make([]float32, inter)}
 }

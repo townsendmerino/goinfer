@@ -915,7 +915,7 @@ func (m *Engine) PrefillLogits(ctx context.Context, prompt []int, cache *Cache) 
 // so a cache with one keeps the single pass whenever the prefill takes fast attention. A cut never falls inside an image block
 // (Cache.prefillCut), so every block's rows share a pass.
 func (m *Engine) PrefillPassesN(ctx context.Context, n int, cache *Cache, embed func(dst []float32, lo, hi int), keep func(lo int, rows []float32)) ([]float32, error) {
-	fast := knobCPUFastAttention(m.Knobs) && n >= FastAttnMinPrompt
+	fast := m.CPUFastAttention() && n >= FastAttnMinPrompt
 	C := n
 	if cache.prefillChunkable() && !(cache.LocalAny && fast) {
 		C = PrefillChunkRows
@@ -937,7 +937,7 @@ func (m *Engine) PrefillPassesN(ctx context.Context, n int, cache *Cache, embed 
 		embed(dst, c0, c1)
 		var err error
 		atomic.AddInt64(&PrefillPasses, 1)
-		if h, err = m.RunLayersFromEmbedNFloor(ctx, dst, cache, knobCPUFastAttention(m.Knobs), n, ps); err != nil {
+		if h, err = m.RunLayersFromEmbedNFloor(ctx, dst, cache, m.CPUFastAttention(), n, ps); err != nil {
 			return nil, err
 		}
 		if keep != nil {

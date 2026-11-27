@@ -55,7 +55,7 @@ func (m *Engine) nemotronMoEWith(n []float32, lw *darch.LayerWeights, moe *darch
 // nemotronExpertFFN is one MoE expert's non-gated relu² FFN: down(relu²(up(x))) —
 // the same shape as an mlp block's non-gated FFN, just parameterized by width
 // (routed experts and the shared expert differ) and evaluated per-expert. Only
-// expertWeights.Up/.Down are populated for this family; .Gate is left unset.
+// expertWeights.up/.Down are populated for this family; .Gate is left unset.
 func (m *Engine) nemotronExpertFFN(ex *archparts.ExpertWeights, n []float32, inter, hidden int) []float32 {
 	up := make([]float32, inter)
 	Matmul(m.Be, &ex.Up, n, up, 1)

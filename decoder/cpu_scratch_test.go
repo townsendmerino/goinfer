@@ -84,7 +84,7 @@ func TestCPUDecodeScratch_plantsGoRed(t *testing.T) {
 		t.Fatalf("unplanted: %v", err)
 	}
 	scr.Scores = make([]float32, 8)
-	if err := cpuScratchHolds(scr, terms); err == nil || !strings.Contains(err.Error(), "scores: the stream holds 32 B the plan names no term for") {
+	if err := cpuScratchHolds(scr, terms); err == nil || !strings.Contains(err.Error(), "Scores: the stream holds 32 B the plan names no term for") {
 		t.Errorf("a row beside the list: err = %v, want one naming scores and 32 B", err)
 	}
 	scr.Scores = nil

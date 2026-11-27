@@ -2,8 +2,6 @@ package cpuengine
 
 import (
 	"errors"
-	"os"
-	"strconv"
 	"sync/atomic"
 	"unsafe"
 
@@ -73,49 +71,54 @@ const (
 	KnobPrefillWorkers = "GOINFER_PREFILL_ATTN_WORKERS"
 )
 
+func resolveKnobs(k KnobSource) KnobSource {
+	if k != nil {
+		return k
+	}
+	if h := ActiveHooks(); h != nil {
+		return h.DefaultKnobs
+	}
+	return nil
+}
+
 func knobAttnGrouped(k KnobSource) bool {
-	if k == nil {
-		return os.Getenv("GOINFER_ATTN_GROUPED") != "0"
+	if k = resolveKnobs(k); k == nil {
+		return true
 	}
 	return k.AttnGrouped()
 }
 
 func knobFusedAttention(k KnobSource) bool {
-	if k == nil {
-		return os.Getenv("GOINFER_FUSED_ATTENTION") != "0"
+	if k = resolveKnobs(k); k == nil {
+		return true
 	}
 	return k.FusedAttention()
 }
 
 func knobMLANaive(k KnobSource) bool {
-	if k == nil {
-		return os.Getenv("GOINFER_MLA_NAIVE") != ""
+	if k = resolveKnobs(k); k == nil {
+		return false
 	}
 	return k.MLANaive()
 }
 
 func knobMoEExpertMajor(k KnobSource) bool {
-	if k == nil {
-		return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0"
+	if k = resolveKnobs(k); k == nil {
+		return true
 	}
 	return k.MoEExpertMajor()
 }
 
 func knobCPUFastAttention(k KnobSource) bool {
-	if k == nil {
-		return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0"
+	if k = resolveKnobs(k); k == nil {
+		return true
 	}
 	return k.CPUFastAttention()
 }
 
 func knobPositiveInt(k KnobSource, name string) (int, bool) {
-	if k != nil {
+	if k = resolveKnobs(k); k != nil {
 		return k.PositiveInt(name)
-	}
-	if v := os.Getenv(name); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
-			return n, true
-		}
 	}
 	return 0, false
 }
@@ -187,6 +190,7 @@ type Hooks struct {
 	G4TraceQKV        func(layer int, q, k, v []float32)
 	ReleaseHostMemory func()
 	DecodeTimingStats *DecodeTimingStats
+	DefaultKnobs      KnobSource
 }
 
 var defaultHooks = Hooks{

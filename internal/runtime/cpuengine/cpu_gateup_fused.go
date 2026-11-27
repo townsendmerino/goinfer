@@ -41,7 +41,7 @@ func fusedWorkers(n int) int {
 	return w
 }
 
-// GatedMLPFusedGateUp computes scr.Gate = silu(gate·h) * (up·h) in one fork/join. It reports false,
+// GatedMLPFusedGateUp computes scr.gate = silu(gate·h) * (up·h) in one fork/join. It reports false,
 // having touched nothing, when its preconditions do not hold — the caller then runs the normal path.
 func GatedMLPFusedGateUp(h []float32, lw *darch.LayerWeights, arch *darch.Architecture, scr *DecodeScratch) bool {
 	return gatedMLPFusedGateUpAct(h, lw, arch.Act, scr)
@@ -62,11 +62,11 @@ func gatedMLPFusedGateUpAct(h []float32, lw *darch.LayerWeights, act darch.ActKi
 	q4u, su, groupU, _ := lw.UpProj.Int4F16()
 	N, K := lw.GateProj.Rows(), lw.GateProj.Cols()
 	if group != groupU || lw.UpProj.Rows() != N || lw.UpProj.Cols() != K || group <= 0 || K%group != 0 ||
-		len(h) < K || N > len(scr.Gate) || N > len(scr.Up) {
+		len(h) < K || N > len(scr.gate) || N > len(scr.up) {
 		return false
 	}
 	bpr, ng := (K+1)/2, K/group
-	gate, up := scr.Gate[:N], scr.Up[:N]
+	gate, up := scr.gate[:N], scr.up[:N]
 
 	w := fusedWorkers(N)
 	wss := scr.fusedPair.workspaces(w)
