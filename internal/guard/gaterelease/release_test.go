@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"bytes"
@@ -7,10 +7,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
+
+func writeTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for p, c := range files {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 // The rows of `gate release` (release.go), each against what it reads: a repository built in the test, files on disk, or a canned command.
 
@@ -212,7 +228,7 @@ func TestCIVerdict(t *testing.T) {
 		"other wf":    {[]ciRun{{sha, "completed", "success", "coverage"}}, "OWED"},
 		"none":        {nil, "OWED"},
 	} {
-		if st, _ := ciVerdict(tc.runs, sha); st != tc.state {
+		if st, _ := CIVerdict(tc.runs, sha); st != tc.state {
 			t.Errorf("%s: %s, want %s", name, st, tc.state)
 		}
 	}
@@ -254,15 +270,15 @@ func TestReportRelease(t *testing.T) {
 	unk := func(*relEnv) relRow { return unknown("c", "r3", "offline") }
 	var buf bytes.Buffer
 	e := &relEnv{tag: "v0.23.0", prev: "v0.22.0"}
-	if rc := reportRelease(&buf, e, []func(*relEnv) relRow{ok, ok}); rc != 0 || !strings.Contains(buf.String(), "2 of 2 done") {
+	if rc := ReportRelease(&buf, e, []func(*relEnv) relRow{ok, ok}); rc != 0 || !strings.Contains(buf.String(), "2 of 2 done") {
 		t.Errorf("all done: rc=%d\n%s", rc, buf.String())
 	}
 	buf.Reset()
-	if rc := reportRelease(&buf, e, []func(*relEnv) relRow{ok, bad}); rc != 1 || !strings.Contains(buf.String(), "not ready to tag") || !strings.Contains(buf.String(), "why") {
+	if rc := ReportRelease(&buf, e, []func(*relEnv) relRow{ok, bad}); rc != 1 || !strings.Contains(buf.String(), "not ready to tag") || !strings.Contains(buf.String(), "why") {
 		t.Errorf("one owed: rc=%d\n%s", rc, buf.String())
 	}
 	buf.Reset()
-	if rc := reportRelease(&buf, e, []func(*relEnv) relRow{ok, unk}); rc != 1 {
+	if rc := ReportRelease(&buf, e, []func(*relEnv) relRow{ok, unk}); rc != 1 {
 		t.Errorf("an unknown row must not read as ready: rc=%d", rc)
 	}
 }
@@ -296,7 +312,8 @@ func TestRowGofmtAndLint(t *testing.T) {
 // relModules is the list of modules a release tags. It is read from the tree here, not from itself: TestRowPins and TestRowGofmtAndLint build their
 // fixtures from relModules, so a list that names directories the repository no longer has passes both.
 func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
-	out, err := exec.Command("git", "-C", "../..", "ls-files", "go.mod", "*/go.mod").Output()
+	root := testpath.Root(t)
+	out, err := exec.Command("git", "-C", root, "ls-files", "go.mod", "*/go.mod").Output()
 	if err != nil {
 		t.Skipf("git ls-files: %v", err)
 	}
@@ -319,8 +336,40 @@ func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
 		t.Errorf("relModules = %v, but the tagged modules of the tree are %v", want, inTree)
 	}
 	for _, m := range relModules {
-		if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(m), "go.mod")); err != nil {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(m), "go.mod")); err != nil {
 			t.Errorf("relModules names %q, which has no go.mod: %v", m, err)
 		}
+	}
+}
+
+// TestParity_pendingOutlivingRelease holds the rule itself; it runs everywhere.
+func TestParity_pendingOutlivingRelease(t *testing.T) {
+	cl := "# Changelog\n\n## [Unreleased]\n\n## [v0.18.0] — 2026-09-20\n\n### Fixed\n\n## [v0.17.2] — 2026-09-08\n\n## [v0.17.1] — 2026-09-07\n"
+	pending := map[string]string{
+		"TestOld":     "2026-09-02 — added before v0.17.2",
+		"TestSameDay": "2026-09-08 — added on v0.17.2's day",
+		"TestNew":     "2026-09-15 — added between v0.17.2 and v0.18.0",
+	}
+	for _, tc := range []struct {
+		name, releasing, wantPrev string
+		want                      []string
+	}{
+		{"header written", "v0.18.0", "v0.17.2", []string{"TestOld (pending since 2026-09-02)"}},
+		{"header not yet written", "v0.18.1", "v0.18.0", []string{
+			"TestNew (pending since 2026-09-15)", "TestOld (pending since 2026-09-02)", "TestSameDay (pending since 2026-09-08)"}},
+	} {
+		prev, _, got, err := PendingOutlivingRelease(pending, cl, tc.releasing)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if prev != tc.wantPrev || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: previous %s, blockers %q; want %s, %q", tc.name, prev, got, tc.wantPrev, tc.want)
+		}
+	}
+	if _, _, _, err := PendingOutlivingRelease(pending, "## [Unreleased]\n", "v0.18.0"); err == nil {
+		t.Error("a CHANGELOG with no dated release must be an error, not an empty blocker list")
+	}
+	if _, _, _, err := PendingOutlivingRelease(map[string]string{"TestUndated": "added some time"}, cl, "v0.18.0"); err == nil {
+		t.Error("an undated pending entry must be an error: it cannot be placed against a release")
 	}
 }

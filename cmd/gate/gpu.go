@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 )
 
 // The pre-tag GPU correctness gate (gate gpu). Run it on EACH GPU box, paste the verdict, then tag.
@@ -1339,10 +1341,15 @@ func unescapeCI(s string) string {
 }
 
 // ---- 6. group reconciliation + verdict ----
-// verdict prints the verdict block, writes the run's record (gpu_record.go) and returns the exit code.
+// verdict prints the verdict block, writes the run's record (gaterelease.WriteGPURecord) and returns the exit code.
 func (g *gpuGate) verdict() int {
 	code, label := g.verdictLabel()
-	g.writeRecord(label)
+	gaterelease.WriteGPURecord(g.w, g.recordDir, gpuRecord{
+		Backend: g.backend, Verdict: label, Dirty: g.dirty, HeavySkipped: g.heavySkipped, HeavyGroups: g.heavyOnly,
+		GPU: g.gpuName, HeavyProcesses: g.heavyProcs,
+		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
+		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes, Notices: g.notices,
+	})
 	return code
 }
 

@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"bytes"
@@ -14,8 +14,14 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
+
+type quickRecord = gatequick.QuickRecord
+
+const quickRecordDirDefault = gatequick.QuickRecordDirDefault
 
 // `gate release vX.Y.Z`: RELEASING.md's pre-flight as one command. Each read is a row that is `done`, `OWED` or `UNKNOWN` (a read that could
 // not be made: offline, no gh), with the record that proves it or that is missing. It runs nothing long: it reads records and calls the
@@ -43,19 +49,19 @@ func relRefusal(e *relEnv) string {
 	if !tagRE.MatchString(e.tag) {
 		return fmt.Sprintf("%q is not a version tag like v0.23.0", e.tag)
 	}
-	if br, err := gitOut(e.root, "rev-parse", "--abbrev-ref", "HEAD"); err != nil || br != "main" {
+	if br, err := gatecore.GitOut(e.root, "rev-parse", "--abbrev-ref", "HEAD"); err != nil || br != "main" {
 		return "not on main (on " + br + ")"
 	}
-	if st, err := gitOut(e.root, "status", "--porcelain"); err != nil || st != "" {
+	if st, err := gatecore.GitOut(e.root, "status", "--porcelain"); err != nil || st != "" {
 		return "the working tree is not clean"
 	}
-	if _, err := gitOut(e.root, "rev-parse", "-q", "--verify", "refs/tags/"+e.tag); err == nil {
+	if _, err := gatecore.GitOut(e.root, "rev-parse", "-q", "--verify", "refs/tags/"+e.tag); err == nil {
 		return e.tag + " already exists"
 	}
 	return ""
 }
 
-func runRelease(args []string, w io.Writer) int {
+func RunRelease(args []string, w io.Writer, pending map[string]string) int {
 	fs := flag.NewFlagSet("gate release", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	offline := fs.Bool("offline", false, "do not use the network: the CI row reads UNKNOWN")
@@ -65,35 +71,35 @@ func runRelease(args []string, w io.Writer) int {
 		return 2
 	}
 	if *replay != "" {
-		return replayRelease(w, *replay)
+		return ReplayRelease(w, *replay)
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(w, "usage: gate release [-offline] [-logdir DIR] vX.Y.Z | gate release -replay FILE")
 		return 2
 	}
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintln(w, err)
 		return 2
 	}
-	e := liveRelEnv(relEnv{root: root, tag: fs.Arg(0), offline: *offline})
+	e := liveRelEnv(relEnv{root: root, tag: fs.Arg(0), offline: *offline, pending: pending})
 	if why := relRefusal(e); why != "" {
 		fmt.Fprintf(w, "gate release: refused: %s\n", why)
 		return 2
 	}
-	prev, err := newestVersionTag(root, e.tag)
+	prev, err := gatehygiene.NewestVersionTag(root, e.tag)
 	if err != nil {
 		fmt.Fprintf(w, "gate release: refused: %v\n", err)
 		return 2
 	}
 	e.prev = prev
-	code := reportRelease(w, e, releaseRows)
+	code := ReportRelease(w, e, ReleaseRows)
 	if *logDir != "" {
 		if err := os.MkdirAll(*logDir, 0o755); err != nil {
 			fmt.Fprintf(w, "gate: the run record was not written: %v\n", err)
 		} else {
-			writeRunRecord(w, *logDir, &gateConfig{Name: "release", Decision: "rows"}, nil, gatherProvenance(nil), false,
-				runRecordExtra{Release: &releaseInputs{Tag: e.tag, Prev: e.prev, Offline: e.offline, Looks: e.looks}})
+			gatecore.WriteRunRecord(w, *logDir, &gatecore.GateConfig{Name: "release", Decision: "rows"}, nil, gatecore.GatherProvenance(nil), false,
+				gatecore.RunRecordExtra{Release: &releaseInputs{Tag: e.tag, Prev: e.prev, Offline: e.offline, Looks: e.looks}})
 		}
 	}
 	return code
@@ -147,7 +153,7 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 		}
 		return strings.Join(files, "\n"), nil
 	case "git":
-		return gitOut(e.root, args...)
+		return gatecore.GitOut(e.root, args...)
 	case "run":
 		return e.run(filepath.Join(e.root, args[0]), args[1], args[2:]...)
 	case "records":
@@ -155,11 +161,11 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 		var err error
 		switch args[0] {
 		case "gpu":
-			recs, err = loadGPURecords(filepath.Join(e.root, gpuRecordDirDefault))
+			recs, err = LoadGPURecords(filepath.Join(e.root, GPURecordDirDefault))
 		case "parity":
-			recs, err = loadParityRecords(filepath.Join(e.root, parityRecordDirDefault))
+			recs, err = LoadParityRecords(filepath.Join(e.root, ParityRecordDirDefault))
 		case "quick":
-			recs, err = loadQuickRecords(filepath.Join(e.root, quickRecordDirDefault))
+			recs, err = gatequick.LoadQuickRecords(filepath.Join(e.root, quickRecordDirDefault))
 		default:
 			return "", fmt.Errorf("no record kind %q", args[0])
 		}
@@ -173,14 +179,14 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		paths, err := parityQualifyingPaths(mb)
+		paths, err := ParityQualifyingPaths(mb)
 		return strings.Join(paths, "\n"), err
 	case "pending":
-		b, err := json.Marshal(awaitingFirstConfirmation)
+		b, err := json.Marshal(e.pending)
 		return string(b), err
 	case "changelog":
 		var buf bytes.Buffer
-		if rc := runChangelog(args, &buf); rc != 0 {
+		if rc := gatehygiene.RunChangelog(args, &buf); rc != 0 {
 			return buf.String(), fmt.Errorf("gate changelog exited %d", rc)
 		}
 		return buf.String(), nil
@@ -188,10 +194,10 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 	return "", fmt.Errorf("no read of kind %q", kind)
 }
 
-// replayRelease regrades a release run record: the same report and exit code. A record that cannot be read, or that lacks a
+// ReplayRelease regrades a release run record: the same report and exit code. A record that cannot be read, or that lacks a
 // read a row asks for, is exit 2 and prints no report.
-func replayRelease(w io.Writer, path string) int {
-	rec, err := readRunRecord(path)
+func ReplayRelease(w io.Writer, path string) int {
+	rec, err := gatecore.ReadRunRecord(path)
 	if err != nil {
 		fmt.Fprintf(w, "gate release -replay: %v\n", err)
 		return 2
@@ -208,7 +214,7 @@ func replayRelease(w io.Writer, path string) int {
 	look, missing := relReplayLook(in.Looks)
 	e := &relEnv{tag: in.Tag, prev: in.Prev, offline: in.Offline, look: look}
 	var buf bytes.Buffer
-	code := reportRelease(&buf, e, releaseRows)
+	code := ReportRelease(&buf, e, ReleaseRows)
 	if missed := missing(); len(missed) > 0 {
 		fmt.Fprintf(w, "gate release -replay: %s holds no answer for: %s\n", path, strings.Join(missed, "; "))
 		return 2

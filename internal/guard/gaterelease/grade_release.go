@@ -1,4 +1,4 @@
-package main
+package gaterelease
 
 import (
 	"encoding/json"
@@ -30,6 +30,7 @@ type relRow struct {
 type relEnv struct {
 	root, tag, prev string
 	offline         bool
+	pending         map[string]string
 	run             func(dir, name string, args ...string) (string, error) // combined output
 	look            func(kind string, args ...string) (string, error)
 	looks           []relLookup // what the live reader answered, each read once, in the order first asked
@@ -171,9 +172,9 @@ func unknown(name, record string, detail ...string) relRow {
 // from the CHANGELOG rather than git tags because the release workflow's checkout carries no tags.
 var changelogRelease = regexp.MustCompile(`(?m)^## \[(v[0-9][^\]]*)\]\s*[—–-]+\s*(\d{4}-\d{2}-\d{2})`)
 
-// pendingOutlivingRelease finds the release before `releasing` (the newest dated CHANGELOG release
+// PendingOutlivingRelease finds the release before `releasing` (the newest dated CHANGELOG release
 // that is not `releasing` itself) and returns every pending entry dated before it, sorted.
-func pendingOutlivingRelease(pending map[string]string, changelog, releasing string) (prevVer, prevDate string, blockers []string, err error) {
+func PendingOutlivingRelease(pending map[string]string, changelog, releasing string) (prevVer, prevDate string, blockers []string, err error) {
 	for _, m := range changelogRelease.FindAllStringSubmatch(changelog, -1) {
 		if m[1] != releasing {
 			prevVer, prevDate = m[1], m[2]
@@ -184,7 +185,7 @@ func pendingOutlivingRelease(pending map[string]string, changelog, releasing str
 		return "", "", nil, fmt.Errorf("no dated release before %s in CHANGELOG.md (want a header like \"## [v0.17.2] — 2026-09-08\")", releasing)
 	}
 	for gate, reason := range pending {
-		if !isoDatePrefix(reason) {
+		if !ISODatePrefix(reason) {
 			return "", "", nil, fmt.Errorf("%s has no leading ISO date (%q), so it cannot be placed against a release", gate, reason)
 		}
 		if reason[:10] < prevDate {
@@ -195,8 +196,8 @@ func pendingOutlivingRelease(pending map[string]string, changelog, releasing str
 	return prevVer, prevDate, blockers, nil
 }
 
-// isoDatePrefix reports whether a reason opens with a YYYY-MM-DD date.
-func isoDatePrefix(s string) bool {
+// ISODatePrefix reports whether a reason opens with a YYYY-MM-DD date.
+func ISODatePrefix(s string) bool {
 	if len(s) < 10 {
 		return false
 	}
@@ -228,7 +229,7 @@ func rowPending(e *relEnv) relRow {
 	if err != nil {
 		return owed(name, "cmd/gate/parity.go awaitingFirstConfirmation", err.Error())
 	}
-	prevVer, prevDate, blockers, err := pendingOutlivingRelease(pending, cl, e.tag)
+	prevVer, prevDate, blockers, err := PendingOutlivingRelease(pending, cl, e.tag)
 	if err != nil {
 		return owed(name, "cmd/gate/parity.go awaitingFirstConfirmation", err.Error())
 	}
@@ -362,7 +363,7 @@ func rowGPU(e *relEnv) relRow {
 	}
 	var bad, ok, acc []string
 	for _, be := range []string{"cuda", "metal"} {
-		r, failed, why := gpuCoverageR(recs, be, head, treeOf)
+		r, failed, why := GPUCoverageR(recs, be, head, treeOf)
 		switch {
 		case r != nil:
 			ok = append(ok, fmt.Sprintf("%s: %s @ %s", be, r.Date, r.Commit[:8]))
@@ -615,7 +616,7 @@ func rowCI(e *relEnv) relRow {
 	if err := json.Unmarshal([]byte(out), &runs); err != nil {
 		return unknown(name, rec, "gh output not read: "+err.Error())
 	}
-	if st, d := ciVerdict(runs, sha); st != "done" {
+	if st, d := CIVerdict(runs, sha); st != "done" {
 		return owed(name, rec, d)
 	}
 	return done(name, rec)
@@ -649,7 +650,7 @@ func rowParity(e *relEnv) relRow {
 	if err != nil {
 		return owed(name, want, err.Error())
 	}
-	r, failed, why := parityCoverageR(recs, head, paths, e.gitObject)
+	r, failed, why := ParityCoverageR(recs, head, paths, e.gitObject)
 	if r == nil && failed != nil {
 		file := recordFileName("parity", failed.Date, failed.Commit)
 		ents, problem := acceptedFor(e, file)
@@ -676,12 +677,12 @@ func rowParity(e *relEnv) relRow {
 
 // ---- row 12: the deferred tests on both systems ----
 
-// quickRecordSystems are the operating systems a release needs a record from: darwin builds and runs the metal
+// QuickRecordSystems are the operating systems a release needs a record from: darwin builds and runs the metal
 // module, linux the cuda one, and neither box can run the other's.
-var quickRecordSystems = []string{"darwin", "linux"}
+var QuickRecordSystems = []string{"darwin", "linux"}
 
 // rowQuickFull is the release row for the tests the day loop defers: a covering `gate quick -full` record from each
-// of quickRecordSystems.
+// of QuickRecordSystems.
 func rowQuickFull(e *relEnv) relRow {
 	const name = "the deferred tests (gate quick -full) on both systems cover HEAD"
 	var recs []quickRecord
@@ -707,7 +708,7 @@ func rowQuickFull(e *relEnv) relRow {
 		return strings.Split(out, "\n"), nil
 	}
 	var bad, ok, acc []string
-	for _, goos := range quickRecordSystems {
+	for _, goos := range QuickRecordSystems {
 		r, failed, why := gatequick.QuickCoverageR(recs, goos, head, changed)
 		switch {
 		case r != nil:
@@ -742,11 +743,11 @@ func rowQuickFull(e *relEnv) relRow {
 
 // ---- the report ----
 
-// releaseRows are the pre-flight's reads, in the order they are printed.
-var releaseRows = []func(*relEnv) relRow{rowPending, rowPins, rowColdUser, rowGPU, rowHardware, rowBranches, rowChangelog, rowGofmt, rowLint, rowCI, rowParity, rowQuickFull}
+// ReleaseRows are the pre-flight's reads, in the order they are printed.
+var ReleaseRows = []func(*relEnv) relRow{rowPending, rowPins, rowColdUser, rowGPU, rowHardware, rowBranches, rowChangelog, rowGofmt, rowLint, rowCI, rowParity, rowQuickFull}
 
-// reportRelease runs the rows in order, prints them and returns the exit code.
-func reportRelease(w io.Writer, e *relEnv, rows []func(*relEnv) relRow) int {
+// ReportRelease runs the rows in order, prints them and returns the exit code.
+func ReportRelease(w io.Writer, e *relEnv, rows []func(*relEnv) relRow) int {
 	fmt.Fprintf(w, "gate release %s (previous tag %s)\n", e.tag, e.prev)
 	code, nDone, nAccepted := 0, 0, 0
 	for i, f := range rows {

@@ -144,12 +144,27 @@ func packageDecls(t *testing.T) map[string]bool {
 			for _, d := range f.Decls {
 				if fn, ok := d.(*ast.FuncDecl); ok {
 					out[fn.Name.Name] = true
-					if len(fn.Name.Name) > 0 {
-						out[strings.ToLower(fn.Name.Name[:1])+fn.Name.Name[1:]] = true
-					}
+					out[unexportName(fn.Name.Name)] = true
 				}
 			}
 		}
 	}
 	return out
+}
+
+func unexportName(s string) string {
+	i := 0
+	for i < len(s) && s[i] >= 'A' && s[i] <= 'Z' {
+		i++
+	}
+	switch {
+	case i == 0:
+		return s
+	case i == len(s):
+		return strings.ToLower(s)
+	case i == 1:
+		return strings.ToLower(s[:1]) + s[1:]
+	default:
+		return strings.ToLower(s[:i-1]) + s[i-1:]
+	}
 }
