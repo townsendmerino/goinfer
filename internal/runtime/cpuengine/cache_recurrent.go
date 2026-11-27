@@ -101,13 +101,3 @@ func (r *CacheRecurrent) ResetRecurrent() {
 		}
 	}
 }
-
-func layerStates[T any](n int, match func(int) bool, makeOne func() *T) []*T {
-	out := make([]*T, n)
-	for l := range n {
-		if match(l) {
-			out[l] = makeOne()
-		}
-	}
-	return out
-}

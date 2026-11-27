@@ -26,6 +26,16 @@ const (
 // widened reports whether stored rows are read by widening them into f32 scratch (int8, f16) rather than in place (f32).
 func (q KVQuant) widened() bool { return q != KVQF32 }
 
+func layerStates[T any](n int, match func(int) bool, makeOne func() *T) []*T {
+	out := make([]*T, n)
+	for l := range n {
+		if match(l) {
+			out[l] = makeOne()
+		}
+	}
+	return out
+}
+
 // MustUnpadded panics on a padded cache: what names an accessor that hands out the store without its stride.
 func (c *Cache) MustUnpadded(what string) {
 	if c.RowPad != 0 {
