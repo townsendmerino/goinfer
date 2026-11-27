@@ -1,6 +1,6 @@
 //go:build gpu && goinfer_testhooks
 
-package kernels
+package towers
 
 import (
 	"fmt"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -106,7 +107,7 @@ func g4vLowest(t *testing.T, enc *vision.Gemma4Encoder, a *g4vTower, p []float32
 // shuffled, at the attention block the tower picks and at blocks of 6 (divides 18 and 54) and 5 (divides neither).
 // Each planted defect, alone, must put the same comparison under the bar.
 func TestG4VWebGPU_matchesCPU(t *testing.T) {
-	if c, err := New(); err != nil {
+	if c, err := kernels.New(); err != nil {
 		t.Skipf("no gpu: %v", err)
 	} else {
 		c.Close()
@@ -128,9 +129,9 @@ func TestG4VWebGPU_matchesCPU(t *testing.T) {
 		shuffle bool
 	}
 	grids := []grid{{2, 1, false}, {3, 2, true}, {5, 3, false}, {5, 3, true}}
-	defer func() { towerBlockForTest, g4vDefectForTest = 0, 0 }()
+	defer func() { a.block, a.defect = 0, 0 }()
 	for _, B := range []int{0, 6, 5} {
-		towerBlockForTest = B
+		a.block = B
 		for gi, g := range grids {
 			p, pos := g4vCase(enc, g.gw, g.gh, g.shuffle, uint64(10+gi))
 			low := g4vLowest(t, enc, a, p, pos)
@@ -140,16 +141,16 @@ func TestG4VWebGPU_matchesCPU(t *testing.T) {
 			}
 		}
 	}
-	towerBlockForTest = 0
+	a.block = 0
 	p, pos := g4vCase(enc, 5, 3, false, 99)
 	for d, name := range []string{1: "the clamps skipped", 2: "the x and y position tables swapped", 3: "RoPE not applied to k",
 		4: "the v norm skipped", 5: "k normed with q's weight"} {
 		if d == 0 {
 			continue
 		}
-		g4vDefectForTest = d
+		a.defect = d
 		low := g4vLowest(t, enc, a, p, pos)
-		g4vDefectForTest = 0
+		a.defect = 0
 		t.Logf("planted (%d) %s: lowest soft-token cosine %.9f", d, name, low)
 		if low >= bar {
 			t.Errorf("planted defect (%d) %s left the gate green (%.9f)", d, name, low)

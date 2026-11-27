@@ -2,7 +2,10 @@
 
 package webgpu
 
-import "github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+import (
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/towers"
+)
 
 // gpu's public names. The kernel layer lives in gpu/internal/kernels; each type here is an alias of its type there,
 // and each function forwards to its function there, so a program written against gpu compiles unchanged.
@@ -49,5 +52,5 @@ type ResidentW4A8 = kernels.ResidentW4A8
 // ResidentW8A8 is kernels.ResidentW8A8.
 type ResidentW8A8 = kernels.ResidentW8A8
 
-// VisionEncoder is kernels.VisionEncoder.
-type VisionEncoder = kernels.VisionEncoder
+// VisionEncoder is towers.VisionEncoder.
+type VisionEncoder = towers.VisionEncoder

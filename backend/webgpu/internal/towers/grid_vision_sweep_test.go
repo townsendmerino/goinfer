@@ -1,6 +1,6 @@
 //go:build gpu && goinfer_testhooks
 
-package kernels
+package towers
 
 import (
 	"cmp"

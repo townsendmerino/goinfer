@@ -1,12 +1,13 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -171,9 +172,6 @@ const (
 	gvWindowBytes = 128 << 20
 )
 
-// gvNoWindowKernelsForTest sends every block down the matmul path, so the towers' gate can compare the two.
-var gvNoWindowKernelsForTest bool
-
 // gvProj is one projection on the device: [out, in] weights and, when the projection has one, a bias [out].
 type gvProj struct {
 	w, b    *DeviceBuffer
@@ -199,23 +197,24 @@ type gvDefect struct {
 type gridVTower struct {
 	mu sync.Mutex
 	*towerOps
-	kind           gvKind
-	hidden, inter  int
-	heads, hd      int
-	patchDim       int
-	rope, siluMul  towerPipe
-	winScores      towerPipe // windowed attention: the scores, the softmax, the weighted values
-	winSoftmax     towerPipe
-	winValues      towerPipe
-	patchW, patchB *DeviceBuffer
-	blocks         []gvBlock
-	owned          []*DeviceBuffer                     // every uploaded weight, for Close
-	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows; nil for GLM-OCR
-	ropeTables     func([][3]int) (cos, sin []float32) // [n_patches, head_dim] each
-	program        func() vision.TowerBlock            // the block program run walks
-	planted        gvDefect
-	winBlocks      int   // blocks run on the windowed kernels so far (the towers' gate reads it)
-	uerr           error // the first failed upload (up)
+	kind            gvKind
+	hidden, inter   int
+	heads, hd       int
+	patchDim        int
+	rope, siluMul   towerPipe
+	winScores       towerPipe // windowed attention: the scores, the softmax, the weighted values
+	winSoftmax      towerPipe
+	winValues       towerPipe
+	patchW, patchB  *DeviceBuffer
+	blocks          []gvBlock
+	owned           []*DeviceBuffer                     // every uploaded weight, for Close
+	noWindowKernels bool                                // test seam: route every block down the matmul path
+	posEmbeds       func([][3]int) []float32            // Qwen3's interpolated position rows; nil for GLM-OCR
+	ropeTables      func([][3]int) (cos, sin []float32) // [n_patches, head_dim] each
+	program         func() vision.TowerBlock            // the block program run walks
+	planted         gvDefect
+	winBlocks       int   // blocks run on the windowed kernels so far (the towers' gate reads it)
+	uerr            error // the first failed upload (up)
 }
 
 func (a *gridVTower) Name() string { return "webgpu" }
@@ -347,12 +346,12 @@ func newGlmOcrVTower(enc *vision.GlmOcrVisionEncoder) (*gridVTower, error) {
 
 // linear runs out = x·Wᵀ (+ bias) over rows into a new buffer.
 func (a *gridVTower) linear(s *towerScope, x *DeviceBuffer, p *gvProj, rows int) (*DeviceBuffer, error) {
-	out, err := s.add(a.c.matmulF32Device(x.buf, p.w.buf, rows, p.in, p.out))
+	out, err := s.add(a.c.MatmulF32Device(x.Raw(), p.w.Raw(), rows, p.in, p.out))
 	if err != nil {
 		return nil, err
 	}
 	if p.b != nil {
-		if err := a.c.addRowsDevice(out.buf, p.b.buf, rows*p.out, p.out, 0); err != nil {
+		if err := a.c.AddRowsDevice(out.Raw(), p.b.Raw(), rows*p.out, p.out, 0); err != nil {
 			return nil, err
 		}
 	}
@@ -485,7 +484,7 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 		if err != nil {
 			return nil, err
 		}
-		if err := c.addRowsDevice(x.buf, pd.buf, np*H, H, 1); err != nil {
+		if err := c.AddRowsDevice(x.Raw(), pd.Raw(), np*H, H, 1); err != nil {
 			return nil, err
 		}
 	}
@@ -497,7 +496,7 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 			return nil, fmt.Errorf("gpu: block %d's segments do not cover %d patches", bi, np)
 		}
 		var seg *DeviceBuffer // nil: attention as matmuls
-		if longest := maxSegment(segs); !gvNoWindowKernelsForTest && len(segs) > 2 && longest <= gvWindowMax && 4*np*a.heads*longest <= gvWindowBytes {
+		if longest := maxSegment(segs); !a.noWindowKernels && len(segs) > 2 && longest <= gvWindowMax && 4*np*a.heads*longest <= gvWindowBytes {
 			if seg = bounds[&segs[0]]; seg == nil {
 				if seg, err = whole.add(a.uploadBounds(segs)); err != nil {
 					return nil, err
@@ -534,11 +533,7 @@ func (a *gridVTower) uploadBounds(segs []int) (*DeviceBuffer, error) {
 			b[2*r], b[2*r+1] = uint32(segs[si-1]), uint32(segs[si])
 		}
 	}
-	buf, err := a.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "seg-bounds", Contents: wgpu.ToBytes(b), Usage: wgpu.BufferUsageStorage})
-	if err != nil {
-		return nil, err
-	}
-	return NewDeviceBuffer(buf, len(b)), nil
+	return a.c.NewU32StorageBuf("seg-bounds", b)
 }
 
 // windowAttention is attention within each row's own segment for every row and head at once: the scores, their
@@ -547,7 +542,7 @@ func (a *gridVTower) windowAttention(s *towerScope, q, k, v, ctx, seg *DeviceBuf
 	c := a.c
 	nH, hd := a.heads, a.hd
 	n := np * nH * longest
-	sc, err := s.add(c.newDevBuf(n))
+	sc, err := s.add(c.NewDevBuf(n))
 	if err != nil {
 		return err
 	}
@@ -555,15 +550,15 @@ func (a *gridVTower) windowAttention(s *towerScope, q, k, v, ctx, seg *DeviceBuf
 	if a.planted.lateKey {
 		dbg = 1
 	}
-	if err := c.kernelN(a.winScores, []*wgpu.Buffer{q.buf, k.buf, seg.buf, sc.buf},
+	if err := c.KernelN(a.winScores, []*wgpu.Buffer{q.Raw(), k.Raw(), seg.Raw(), sc.Raw()},
 		[]uint32{uint32(n), uint32(nH), uint32(hd), uint32(longest), uint32(np), dbg, 0, 0}, maxWG((n+63)/64), 1); err != nil {
 		return err
 	}
-	if err := c.kernelN(a.winSoftmax, []*wgpu.Buffer{sc.buf}, []uint32{uint32(np * nH), uint32(longest), math.Float32bits(scale), 0}, maxWG((np*nH+63)/64), 1); err != nil {
+	if err := c.KernelN(a.winSoftmax, []*wgpu.Buffer{sc.Raw()}, []uint32{uint32(np * nH), uint32(longest), math.Float32bits(scale), 0}, maxWG((np*nH+63)/64), 1); err != nil {
 		return err
 	}
 	m := np * nH * hd
-	return c.kernelN(a.winValues, []*wgpu.Buffer{sc.buf, v.buf, seg.buf, ctx.buf}, []uint32{uint32(m), uint32(nH), uint32(hd), uint32(longest)}, maxWG((m+63)/64), 1)
+	return c.KernelN(a.winValues, []*wgpu.Buffer{sc.Raw(), v.Raw(), seg.Raw(), ctx.Raw()}, []uint32{uint32(m), uint32(nH), uint32(hd), uint32(longest)}, maxWG((m+63)/64), 1)
 }
 
 // swapRopeHalves returns t [n, hd] with the two quarters of each half exchanged.

@@ -1,12 +1,13 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"os"
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -18,7 +19,7 @@ func TestVisionEncoder_timing(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
 	}
-	c, err := New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no gpu: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestVisionEncoder_timing(t *testing.T) {
 		t.Fatal(err)
 	}
 	tu := time.Now()
-	ve, err := c.NewVisionEncoder(w)
+	ve, err := NewVisionEncoder(c, w)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"fmt"

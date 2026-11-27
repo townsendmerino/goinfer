@@ -1,6 +1,6 @@
 //go:build gpu
 
-package kernels
+package towers
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 		if n < vision.TowerX || n > vision.TowerMid2 {
 			return nil, fmt.Errorf("register %d unknown", n)
 		}
-		d, err := s.add(c.newDevBuf(np * width(n)))
+		d, err := s.add(c.NewDevBuf(np * width(n)))
 		if err != nil {
 			return nil, err
 		}
@@ -68,8 +68,8 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 			var d *DeviceBuffer
 			switch {
 			case op.Kind == vision.TowerNorm && op.Form == vision.TowerLayerNorm:
-				if d, err = s.add(c.newDevBuf(np * H)); err == nil {
-					err = c.layerNormRowsDevice(in.buf, w.buf, bias.buf, d.buf, np, H, eps)
+				if d, err = s.add(c.NewDevBuf(np * H)); err == nil {
+					err = c.LayerNormRowsDevice(in.Raw(), w.Raw(), bias.Raw(), d.Raw(), np, H, eps)
 				}
 			case op.Kind == vision.TowerNorm && op.Form == vision.TowerRMSNorm:
 				d, err = a.rmsRowsEps(&s, in, w, np, H, eps)
@@ -112,7 +112,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 				regs[op.Out] = d
 				continue
 			}
-			if err := c.addRowsDevice(out.buf, d.buf, np*p.out, p.out, 1); err != nil { // out += d
+			if err := c.AddRowsDevice(out.Raw(), d.Raw(), np*p.out, p.out, 1); err != nil { // out += d
 				return err
 			}
 		case vision.TowerRoPE:
@@ -120,7 +120,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 				return fmt.Errorf("op %d (%s): no RoPE tables", i, op.Kind)
 			}
 			nr := np * nH * hd / 2
-			if err := c.kernelN(a.rope, []*wgpu.Buffer{out.buf, cs.buf, sn.buf}, []uint32{uint32(nr), uint32(nH), uint32(hd), 0}, maxWG((nr+63)/64), 1); err != nil {
+			if err := c.KernelN(a.rope, []*wgpu.Buffer{out.Raw(), cs.Raw(), sn.Raw()}, []uint32{uint32(nr), uint32(nH), uint32(hd), 0}, maxWG((nr+63)/64), 1); err != nil {
 				return err
 			}
 		case vision.TowerAttention:
@@ -134,7 +134,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 			if a.planted.noScale {
 				scale = 1
 			}
-			ctx, err := s.add(c.newDevBuf(np * H))
+			ctx, err := s.add(c.NewDevBuf(np * H))
 			if err != nil {
 				return err
 			}
@@ -153,7 +153,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 			regs[op.Out] = ctx
 		case vision.TowerGELUTanh:
 			n := np * width(op.Out)
-			if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, out.buf, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64)); err != nil {
+			if err := c.GELUInplace(out.Raw(), []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64)); err != nil {
 				return err
 			}
 		case vision.TowerSiLUMul:
@@ -161,14 +161,14 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
 			}
 			n := np * width(op.Out)
-			if err := c.kernelN(a.siluMul, []*wgpu.Buffer{out.buf, in.buf}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
+			if err := c.KernelN(a.siluMul, []*wgpu.Buffer{out.Raw(), in.Raw()}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
 				return err
 			}
 		default:
 			return fmt.Errorf("op %d: kind %s not implemented on WebGPU", i, op.Kind)
 		}
 	}
-	c.device.Poll(true, nil)
+	c.PollWait()
 	return nil
 }
 

@@ -4,8 +4,9 @@ package kernels
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -34,6 +35,7 @@ type visionPipes struct {
 	mmTiledF32Layout   *wgpu.BindGroupLayout
 	mmRB64F32Pipeline  *wgpu.ComputePipeline
 	mmRB64F32Layout    *wgpu.BindGroupLayout
+	visionMatmul       int
 }
 
 // layerNormRowsWGSL: standard LayerNorm over each of `rows` independent rows of
@@ -455,15 +457,16 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// The float32 matmul kernels matmulF32Device can run. visionMatmulForTest picks one for the kernels' gates and timing
-// comparisons; outside them it is the default.
+// The float32 matmul kernels MatmulF32Device can run. SetVisionMatmul picks one for tests and timing comparisons;
+// outside them it is the default.
 const (
-	visionMatmulRB64    = iota // matmulRB64F32WGSL, the default
-	visionMatmulTiled16        // matmulTiledF32WGSL
-	visionMatmulNaive          // the naive kernel
+	VisionMatmulRB64    = iota // matmulRB64F32WGSL, the default
+	VisionMatmulTiled16        // matmulTiledF32WGSL
+	VisionMatmulNaive          // the naive kernel
 )
 
-var visionMatmulForTest = visionMatmulRB64
+// SetVisionMatmul selects the float32 matmul kernel variant for c.
+func (c *Context) SetVisionMatmul(mode int) { c.visionMatmul = mode }
 
 // matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on a float32 kernel (the register-blocked one unless a test says
 // otherwise), output to a fresh device buffer, NO Poll. Used for the tower's patch embed, its float32 projections, and
@@ -488,10 +491,10 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	defer releaseBuf(dims)
 	// The naive kernel indexes rows by its x dimension and the tiled ones by y.
 	pl, ly, gx, gy := c.mmRB64F32Pipeline, c.mmRB64F32Layout, (uint32(N)+63)/64, (uint32(M)+63)/64
-	if visionMatmulForTest == visionMatmulTiled16 {
+	if c.visionMatmul == VisionMatmulTiled16 {
 		pl, ly, gx, gy = c.mmTiledF32Pipeline, c.mmTiledF32Layout, (uint32(N)+15)/16, (uint32(M)+15)/16
 	}
-	if visionMatmulForTest == visionMatmulNaive || pl == nil {
+	if c.visionMatmul == VisionMatmulNaive || pl == nil {
 		pl, ly, gx, gy = c.pipeline, c.layout, (uint32(M)+15)/16, (uint32(N)+15)/16
 	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{

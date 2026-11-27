@@ -1,6 +1,6 @@
 //go:build gpu && goinfer_testhooks && unix
 
-package kernels
+package towers
 
 import (
 	"fmt"

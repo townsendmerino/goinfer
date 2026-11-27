@@ -20,7 +20,6 @@ var (
 	_ io.Closer = (*ResidentW4A8)(nil)
 	_ io.Closer = (*ResidentW8A8)(nil)
 	_ io.Closer = (*ResidentStackedW8A8)(nil)
-	_ io.Closer = (*VisionEncoder)(nil)
 )
 
 // Deprecated: use Close.
