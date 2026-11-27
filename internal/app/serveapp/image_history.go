@@ -1,8 +1,7 @@
 package serveapp
 
 import (
-	"encoding/json"
-
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/anthropicapi"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/media"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
 )
@@ -14,14 +13,7 @@ const (
 )
 
 var (
-	noteOmittedImages     = media.NoteOmittedImages
-	omitChatHistoryImages = wirecore.OmitChatHistoryImages
+	noteOmittedImages          = media.NoteOmittedImages
+	omitChatHistoryImages      = wirecore.OmitChatHistoryImages
+	omitAnthropicHistoryImages = anthropicapi.OmitHistoryImages
 )
-
-func omitAnthropicHistoryImages(msgs []anthropicMessage) int {
-	cs := make([]*json.RawMessage, len(msgs))
-	for i := range msgs {
-		cs[i] = &msgs[i].Content
-	}
-	return media.OmitHistoryImages(cs, "image")
-}

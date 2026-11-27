@@ -3,10 +3,10 @@ package serveapp
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/anthropicapi"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/towers"
 )
 
@@ -105,33 +105,4 @@ func contentHasMedia(raw json.RawMessage) bool {
 	return false
 }
 
-func anthropicMediaText(req *anthropicReq) (string, bool) {
-	media, lastUser := -1, -1
-	var text string
-	for i, m := range req.Messages {
-		if m.Role == "user" {
-			lastUser = i
-		}
-		var blocks []anthropicBlock
-		if json.Unmarshal(m.Content, &blocks) != nil {
-			continue
-		}
-		var b strings.Builder
-		has := false
-		for _, bl := range blocks {
-			switch bl.Type {
-			case "text":
-				b.WriteString(bl.Text)
-			case "image":
-				has = true
-			}
-		}
-		if has {
-			media, text = i, b.String()
-		}
-	}
-	if media < 0 {
-		return "", false
-	}
-	return text, media == lastUser
-}
+var anthropicMediaText = anthropicapi.MediaText

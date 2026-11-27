@@ -74,7 +74,7 @@ func FuzzServeMessagesRequest(f *testing.F) {
 		mode, name := anthropicToolMode(req.ToolChoice)
 		_ = anthropicForcedTool(mode, name, anthropicTools(req.Tools))
 		// output_config.format → its validation and grammar compile; prepare runs without the masker, as above.
-		if sm, aerr := req.toSampling(); aerr == nil {
+		if sm, aerr := req.ToSampling(); aerr == nil {
 			sm.ResponseFormat = nil
 			lm := &loadedModel{}
 			_, _ = lm.prepare(sm, []int{1, 2, 3}, true)

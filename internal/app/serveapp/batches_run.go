@@ -2,7 +2,6 @@ package serveapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/anthropicapi"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
@@ -38,24 +38,6 @@ func runBatchWorker(n int, next *atomic.Int64, fn func(i int)) {
 		}
 		fn(i)
 	}
-}
-
-// hasAnthropicImages reports whether any message carries an image block, reading block types only (see wirecore.HasChatMedia).
-func hasAnthropicImages(req *anthropicReq) bool {
-	for _, m := range req.Messages {
-		var blocks []struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(m.Content, &blocks) != nil {
-			continue
-		}
-		for _, bl := range blocks {
-			if bl.Type == "image" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // runBatchChatLine is one line of an OpenAI batch: the same validate -> resolveAndLock -> encode -> prepare -> admission
@@ -195,7 +177,7 @@ func runBatchMessageLine(s *server, batch *stores.BatchRecord, i int, req anthro
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", "messages must not be empty"))
 		return
 	}
-	if hasAnthropicImages(&req) {
+	if anthropicapi.ContainsImages(&req) {
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image inputs this pass; use /v1/messages"))
 		return
@@ -216,21 +198,21 @@ func runBatchMessageLine(s *server, batch *stores.BatchRecord, i int, req anthro
 
 	system, turns, aerr := anthropicTurns(&req)
 	if aerr != nil {
-		batch.SetResult(i, stores.LineError(customID, aerr.code, aerr.kind, aerr.msg))
+		batch.SetResult(i, stores.LineError(customID, aerr.Code, aerr.Kind, aerr.Msg))
 		return
 	}
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
-	ts, terr := s.resolveThink(req.thinkRequest())
+	ts, terr := s.resolveThink(req.ThinkRequest())
 	if terr != nil {
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", terr.Error()))
 		return
 	}
-	sm, serr := req.toSampling()
+	sm, serr := req.ToSampling()
 	if serr != nil {
-		batch.SetResult(i, stores.LineError(customID, serr.code, serr.kind, serr.msg))
+		batch.SetResult(i, stores.LineError(customID, serr.Code, serr.Kind, serr.Msg))
 		return
 	}
 	tm := lm.templateFor(ts)
@@ -280,7 +262,7 @@ func runBatchMessageLine(s *server, batch *stores.BatchRecord, i int, req anthro
 
 	reason, seq := anthropicStopReason(res.finish, res.stopHit)
 	content := []map[string]any{textBlock(sb.String())}
-	if req.wantsThinking() && rb.Len() > 0 {
+	if req.WantsThinking() && rb.Len() > 0 {
 		content = append([]map[string]any{thinkingBlock(rb.String(), "")}, content...)
 		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
 			content = content[:1]

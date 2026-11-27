@@ -681,6 +681,29 @@
       "why": "internal/app/serveapp/wirecore holds shared wire-format types, message-to-turn translation, stop and UTF-8 streaming holdback, context-overflow diagnostics, KV-boundary discovery, and tool-choice / grammar wiring below serveapp (SA7). It never imports serveapp or decoder."
     },
     {
+      "name": "serveapp-anthropicapi-leaf",
+      "from": [
+        "internal/app/serveapp/anthropicapi"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/anthropicapi": [
+          "chat",
+          "internal/app/serveapp/carriedids",
+          "internal/app/serveapp/jobs",
+          "internal/app/serveapp/media",
+          "internal/app/serveapp/netguard",
+          "internal/app/serveapp/stores",
+          "internal/app/serveapp/streamframe",
+          "internal/app/serveapp/wirecore"
+        ]
+      },
+      "why": "internal/app/serveapp/anthropicapi holds Anthropic /v1/messages and /v1/messages/count_tokens request/turn/tool-choice/output-config translation, content-block builders, and SSE frame helpers below serveapp (SA8). It never imports serveapp or decoder."
+    },
+    {
       "name": "gatecore-leaf",
       "from": [
         "internal/guard/gatecore"
@@ -1154,6 +1177,7 @@
       "internal/app/loadflags",
       "internal/app/pullcmd",
       "internal/app/serveapp/adminsock",
+      "internal/app/serveapp/anthropicapi",
       "internal/app/serveapp/banner",
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/embedders",
@@ -1184,6 +1208,16 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/anthropicapi": [
+      "chat",
+      "internal/app/serveapp/carriedids",
+      "internal/app/serveapp/jobs",
+      "internal/app/serveapp/media",
+      "internal/app/serveapp/netguard",
+      "internal/app/serveapp/stores",
+      "internal/app/serveapp/streamframe",
+      "internal/app/serveapp/wirecore"
     ],
     "internal/app/serveapp/banner": [
       "decoder",

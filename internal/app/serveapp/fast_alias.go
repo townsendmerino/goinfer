@@ -68,10 +68,3 @@ func (r *responseReq) applyFast() {
 		Effort string `json:"effort"`
 	}{Effort: "none"}
 }
-
-func (r *anthropicReq) applyFast() {
-	r.Thinking = &struct {
-		Type         string `json:"type"`
-		BudgetTokens int    `json:"budget_tokens"`
-	}{Type: "disabled"}
-}
