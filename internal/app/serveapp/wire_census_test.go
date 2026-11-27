@@ -189,8 +189,11 @@ func wireServer(t *testing.T, flags ...string) (*http.Client, *loadedModel, io.C
 	srv := closer.(*handlerCloser).srv
 	srv.regMu.Lock()
 	tiny := srv.models["tiny"]
-	sc := &loadedModel{tk: tiny.tk, tmpl: tiny.tmpl, stopIDs: tiny.stopIDs, eosIDs: tiny.eosIDs, vocab: tiny.vocab,
-		sampling: tiny.sampling, name: "scripted", scripted: []int{}}
+	sc := &loadedModel{
+		modelIdentity:     modelIdentity{tk: tiny.tk, tmpl: tiny.tmpl, stopIDs: tiny.stopIDs, eosIDs: tiny.eosIDs, vocab: tiny.vocab, name: "scripted"},
+		modelSpecConfig:   modelSpecConfig{sampling: tiny.sampling},
+		modelScriptedSeam: modelScriptedSeam{scripted: []int{}},
+	}
 	sc.fakeEngine = scriptedEngine{sc}
 	srv.models["scripted"] = sc
 	srv.regMu.Unlock()

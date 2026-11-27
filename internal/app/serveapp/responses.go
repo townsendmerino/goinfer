@@ -74,7 +74,7 @@ func responseMessagesBytes(model string, messages []chatMessage) int {
 		for _, tc := range m.ToolCalls {
 			n += len(tc.ID) + len(tc.Type) + len(tc.Function.Name) + len(tc.Function.Arguments)
 		}
-		if c := m.carried; c != nil {
+		if c := m.Carried; c != nil {
 			n += len(c.Reason)
 			if b := c.Blob; b != nil {
 				n += len(b.Model) + len(b.NS) + len(b.Text) + 8*len(b.IDs) + len(b.MAC)
@@ -141,7 +141,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	// Sampling: Responses uses max_output_tokens / text.format (vs the chat API's
 	// max_tokens / response_format); map them onto the shared prepare path.
 	sm := req.sampling
-	sm.outputByWindow = true
+	sm.OutputByWindow = true
 	if req.MaxOutputTokens != nil {
 		sm.MaxTokens = req.MaxOutputTokens
 	}
@@ -180,7 +180,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	tm := lm.templateFor(ts)
-	if sm.constrainsOutput() {
+	if sm.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	system, turns, carriers := messagesToTurnsCarried(messages)
@@ -288,7 +288,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	tm := lm.templateFor(ts)
-	if sm.constrainsOutput() {
+	if sm.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	system, turns := messagesToTurns(messages)
@@ -298,7 +298,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	gr, err := lm.prepare(sm, vi.ids, false)
+	gr, err := lm.prepare(sm, vi.IDs, false)
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
@@ -606,7 +606,7 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 			tc := apiToolCall{ID: it.CallID, Type: "function"}
 			tc.Function.Name = it.Name
 			tc.Function.Arguments = it.Arguments
-			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}, ReasoningContent: pending, carried: carried})
+			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}, ReasoningContent: pending, Carried: carried})
 			pending, carried = "", nil
 			continue
 		case "function_call_output":
@@ -632,7 +632,7 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		m := chatMessage{Role: role, Content: content}
 		if role == "assistant" {
 			m.ReasoningContent, pending = pending, ""
-			m.carried, carried = carried, nil
+			m.Carried, carried = carried, nil
 		}
 		msgs = append(msgs, m)
 	}

@@ -80,15 +80,14 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 	t.Cleanup(func() { _ = m.Close() })
 	mcfg := m.Config()
 	lm := &loadedModel{
-		tk: tk, model: m, tmpl: chat.Gemma4(),
-		vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: "gemma4-real-vl",
+		modelIdentity: modelIdentity{tk: tk, model: m, tmpl: chat.Gemma4(), vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: "gemma4-real-vl"},
 	}
 	for _, str := range lm.tmpl.Stops().Strings {
 		if id, ok := tk.TokenID(str); ok {
 			lm.stopIDs = append(lm.stopIDs, id)
 		}
 	}
-	s := &server{models: map[string]*loadedModel{lm.name: lm}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{lm.name: lm}}}
 	if err := s.loadGemma4VisionTower(visionDir, false, "", false); err != nil {
 		t.Fatalf("loadGemma4VisionTower(%s): %v", visionDir, err)
 	}
@@ -106,7 +105,7 @@ func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byt
 	if err != nil {
 		t.Fatalf("imagesPrompt: %v", err)
 	}
-	gr, err := lm.prepare(sampling{}, vi.ids, false)
+	gr, err := lm.prepare(sampling{}, vi.IDs, false)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -173,7 +172,7 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 	}
 	const top = 3
 	topN := top
-	gr, err := lm.prepare(sampling{Logprobs: true, TopLogprobs: &topN}, vi.ids, false)
+	gr, err := lm.prepare(sampling{Logprobs: true, TopLogprobs: &topN}, vi.IDs, false)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}

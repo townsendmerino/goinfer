@@ -62,13 +62,14 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `internal/runtime/specdecode/` | speculative decoding drafters, trace collection, adaptive depth, optimistic-forward overlap, and verification loops below `decoder` (rule `specdecode-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
-| `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
+| `internal/app/serveapp/` | HTTP serving shell behind `server/` and `cmd/serve`, backed by leaf subpackages `adminsock`, `banner`, `carriedids`, `embedders`, `jobs`, `media`, `netguard`, `sessions`, `stores`, `streamframe`, and `towerfit` (enforced by `serveapp-*-leaf` rules in `internal/layout/imports.json`) |
+| `chat/` | chat templates, thinking scaffolds, and tool-call rendering and parsing, no Jinja engine, backed by leaf subpackages under `internal/chat/` (`chatcore`, `harmony`, `gemma4tools`, `inkling2`, `toolwire`, and `reasoning`, enforced by `chatcore-leaf` and `chat-*-leaf` rules in `internal/layout/imports.json`) |
 | `constrain/` | constrained decoding: JSON Schema and grammar logit masks |
 | `tokenizer/` | the BPE tokenizers the models ship |
 | `multimodal/` | vision and audio towers and preprocessing |
 | `embeddinggemma2/` | the EmbeddingGemma 2 text encoder |
 | `pull/` | resumable checkpoint download from HuggingFace |
-| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`), and `testgate`, the skip gates tests share (imported by `_test.go` files only); `internal/layout` holds repository-shape checks as tests |
+| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/chat/` (dialect leaves and shared codec/reasoning primitives below `chat`), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`), and `testgate`, the skip gates tests share (imported by `_test.go` files only); `internal/layout` holds repository-shape checks as tests |
 
 ## Tier 3: subpackages of `decoder/`
 
@@ -131,7 +132,7 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 | Path | What it is | Module |
 |---|---|---|
 | `cmd/serve/` | `goinfer-serve`, the server | root |
-| `cmd/gate/` | the gate runner (`go run ./cmd/gate`) | root |
+| `cmd/gate/` | the gate runner (`go run ./cmd/gate`), backed by leaf packages `internal/guard/gate{core,hygiene,quick,identity,release}` (enforced by `gate*-leaf` rules in `internal/layout/imports.json` and `TestGraders_arePure`) | root |
 | `cmd/lint/` | CI's staticcheck, pinned and verified | root |
 | `cmd/hostmem/`, `cmd/prequant/` | prints the memory figure the fit guard uses; builds a `.giw` bundle from a GGUF | root |
 | `cmd/claude-guard/` | the Claude Code PreToolUse hook that refuses commands the repo rules forbid | root |

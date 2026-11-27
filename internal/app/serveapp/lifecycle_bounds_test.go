@@ -27,7 +27,7 @@ func (panicCloser) Close() error { panic("close exploded") }
 func TestStartDrain_panicStillReleasesLivenessLock(t *testing.T) {
 	key := panicCloser{}
 	ml := &modelLiveness{refs: 1}
-	lm := &loadedModel{name: "boom", closer: key}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "boom", closer: key}}
 	realSrv := newTestDrainServer(lm, ml)
 	done := realSrv.startDrain(lm, ml, true)
 	select {
@@ -49,7 +49,7 @@ func TestStartDrain_panicStillReleasesLivenessLock(t *testing.T) {
 }
 
 func newTestDrainServer(lm *loadedModel, ml *modelLiveness) *server {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{}}}
 	s.liveness = map[io.Closer]*modelLiveness{lm.closer: ml}
 	return s
 }
@@ -145,14 +145,14 @@ func TestLifeContext_shutdownRecordsInterrupted(t *testing.T) {
 	// Shutdown cause maps to jobs.Interrupted (distinct from user jobs.Cancelled).
 	shutCtx, shutCancel := context.WithCancelCause(context.Background())
 	shutCancel(errServerShutdown)
-	got := notAdmitted(shutCtx, "", &loadedModel{name: "m"})
+	got := notAdmitted(shutCtx, "", &loadedModel{modelIdentity: modelIdentity{name: "m"}})
 	if got.state != jobs.Interrupted || got.status != http.StatusServiceUnavailable {
 		t.Fatalf("notAdmitted(shutdown) = %+v, want Interrupted/503", got)
 	}
 
 	userCtx, userCancel := context.WithCancel(context.Background())
 	userCancel()
-	gotUser := notAdmitted(userCtx, "", &loadedModel{name: "m"})
+	gotUser := notAdmitted(userCtx, "", &loadedModel{modelIdentity: modelIdentity{name: "m"}})
 	if gotUser.state != jobs.Cancelled {
 		t.Fatalf("notAdmitted(user cancel) = %+v, want Cancelled", gotUser)
 	}
@@ -163,7 +163,7 @@ func TestLifeContext_shutdownRecordsInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm := &loadedModel{name: "m"}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "m"}}
 	lm.setConcurrency(config{maxConcurrent: 1, maxQueue: 4})
 	// Occupy the lone turn slot so runJob blocks in tryEnter.
 	if ok, _ := lm.tryEnter(context.Background(), admissionRecord{id: "blocker"}, nil); !ok {
@@ -171,7 +171,7 @@ func TestLifeContext_shutdownRecordsInterrupted(t *testing.T) {
 	}
 	defer lm.exit()
 
-	s := &server{models: map[string]*loadedModel{"m": lm}, jobs: js, lifeCtx: lifeCtx}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": lm}}, serverStores: serverStores{jobs: js}, opState: opState{lifeCtx: lifeCtx}}
 	js.CreatePending("job_shut", "m", []int{1})
 	done := make(chan struct{})
 	go func() {
@@ -196,8 +196,8 @@ func TestLifeContext_shutdownRecordsInterrupted(t *testing.T) {
 
 func TestRoutes_fileUploadSemaphoreReturns503(t *testing.T) {
 	s := &server{
-		models: map[string]*loadedModel{},
-		files:  stores.NewFileStore(0, 0),
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{}},
+		serverStores:  serverStores{files: stores.NewFileStore(0, 0)},
 	}
 	mux, _ := s.routes(config{}, "", io.Discard)
 
@@ -269,9 +269,8 @@ func TestHandlerCloser_closesEmbedderAndSpeech(t *testing.T) {
 	sp := &closableFakeSpeech{}
 	sm := &speechModel{name: "whisper", eng: sp}
 	s := &server{
-		models: map[string]*loadedModel{},
-		embed:  emb,
-		speech: map[string]*speechModel{"whisper": sm},
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"whisper": sm}},
+		embedService:  embedService{embed: emb},
 	}
 	_, stop := context.WithCancelCause(context.Background())
 	hc := &handlerCloser{srv: s, stop: stop}
@@ -307,8 +306,7 @@ func (fakeSpeech) HasLanguage(string) bool { return true }
 
 func TestSpeech_rejectsNaNTemperature(t *testing.T) {
 	s := &server{
-		models: map[string]*loadedModel{},
-		speech: map[string]*speechModel{"whisper": {name: "whisper", eng: fakeSpeech{}}},
+		modelRegistry: modelRegistry{models: map[string]*loadedModel{}, speech: map[string]*speechModel{"whisper": {name: "whisper", eng: fakeSpeech{}}}},
 	}
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
@@ -327,15 +325,15 @@ func TestSpeech_rejectsNaNTemperature(t *testing.T) {
 
 type fakeVisionTower struct{ tok int }
 
-func (f fakeVisionTower) family() string { return "gemma3" }
-func (f fakeVisionTower) kind() string   { return "gemma3" }
-func (f fakeVisionTower) imageTok() int  { return f.tok }
-func (f fakeVisionTower) close()         {}
-func (f fakeVisionTower) prep(_ *loadedModel, _ imageRef) (imagePrep, error) {
+func (f fakeVisionTower) Family() string { return "gemma3" }
+func (f fakeVisionTower) Kind() string   { return "gemma3" }
+func (f fakeVisionTower) ImageTok() int  { return f.tok }
+func (f fakeVisionTower) Close()         {}
+func (f fakeVisionTower) Prep(_ int, _ imageRef) (imagePrep, error) {
 	return imagePrep{
-		n:        1,
-		block:    "<IMG>",
-		features: func() ([]float32, error) { return []float32{1}, nil },
+		N:        1,
+		Block:    "<IMG>",
+		Features: func() ([]float32, error) { return []float32{1}, nil },
 	}, nil
 }
 
@@ -349,12 +347,11 @@ func TestServeVisionResponses_checksAllMediaAndReasoning(t *testing.T) {
 	if err != nil || len(imgIDs) == 0 {
 		t.Fatalf("encode <IMG>: %v", err)
 	}
-	s := &server{responses: newResponseStore(8)}
+	s := &server{serverStores: serverStores{responses: newResponseStore(8)}}
 	lm := &loadedModel{
-		tk:       tk,
-		name:     "vlm",
-		scripted: ids,
-		vision:   fakeVisionTower{tok: imgIDs[0]},
+		modelIdentity:     modelIdentity{tk: tk, name: "vlm"},
+		modelModalities:   modelModalities{vision: fakeVisionTower{tok: imgIDs[0]}},
+		modelScriptedSeam: modelScriptedSeam{scripted: ids},
 	}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))

@@ -17,7 +17,7 @@ import (
 // valid base64 gets the unsupported-media refusal, naming what it refuses, never a base64 decode error.
 func TestBatchLines_imagePartsRefusedBeforeDecode(t *testing.T) {
 	bs := stores.NewBatchStore(0)
-	s := &server{batches: bs}
+	s := &server{serverStores: serverStores{batches: bs}}
 	b := bs.Create("openai_chat", "/v1/chat/completions", "", "f", []string{"oa-image", "oa-audio"})
 	image := chatReq{Messages: []chatMessage{{Role: "user", Content: json.RawMessage(
 		`[{"type":"text","text":"describe"},{"type":"image_url","image_url":{"url":"data:image/png;base64,!!!not-base64!!!"}}]`)}}}
@@ -48,7 +48,7 @@ func TestBatchLines_imagePartsRefusedBeforeDecode(t *testing.T) {
 // line returns its reservation when it finishes, whether it completed, failed validation, panicked, or was cancelled.
 func TestBatchStore_activeLineBudgetIsReservedAndReleased(t *testing.T) {
 	bs := stores.NewBatchStoreWithMaxActive(0, 3)
-	s := &server{batches: bs}
+	s := &server{serverStores: serverStores{batches: bs}}
 	b1 := bs.Create("openai_chat", "/v1/chat/completions", "", "f", []string{"a", "b"})
 	if b1 == nil {
 		t.Fatal("a batch inside the budget was refused")
@@ -79,7 +79,7 @@ func TestBatchStore_activeLineBudgetIsReservedAndReleased(t *testing.T) {
 		t.Fatalf("active lines after every line failed validation = %d, want 0", got)
 	}
 	// A registered model with nothing loaded behind it: the line panics past validation, and recoverBatchLine fails it.
-	ps := &server{batches: bs, models: map[string]*loadedModel{"m": {name: "m"}}}
+	ps := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"m": {modelIdentity: modelIdentity{name: "m"}}}}, serverStores: serverStores{batches: bs}}
 	b3 := bs.Create("openai_chat", "/v1/chat/completions", "", "f", []string{"p"})
 	runBatchChatLine(ps, b3, 0, chatReq{Model: "m", Messages: []chatMessage{{Role: "user", Content: json.RawMessage(`"hi"`)}}})
 	if r := b3.ResultAt(0); r.StatusCode != http.StatusInternalServerError {
@@ -96,7 +96,7 @@ func TestBatchStore_activeLineBudgetIsReservedAndReleased(t *testing.T) {
 
 // A saturated line budget is a 429 in each dialect's error shape, and no batch is created.
 func TestBatches_serverWideLineBudgetIs429(t *testing.T) {
-	srv := &server{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStoreWithMaxActive(8, 1)}
+	srv := &server{serverStores: serverStores{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStoreWithMaxActive(8, 1)}}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 

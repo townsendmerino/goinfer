@@ -1,8 +1,6 @@
 package serveapp
 
 import (
-	"encoding/json"
-	"maps"
 	"net/http"
 	"strings"
 )
@@ -63,18 +61,6 @@ func (s *server) fastRoute(r *http.Request, model *string) (fast bool) {
 		tr.mu.Unlock()
 	}
 	return true
-}
-
-func (r *chatReq) applyFast() {
-	if r.ChatTemplateKwargs == nil {
-		r.ChatTemplateKwargs = map[string]json.RawMessage{}
-	} else { // the request's own map is not shared with anything else, but do not edit a caller's value in place
-		m := make(map[string]json.RawMessage, len(r.ChatTemplateKwargs)+1)
-		maps.Copy(m, r.ChatTemplateKwargs)
-		r.ChatTemplateKwargs = m
-	}
-	r.ChatTemplateKwargs["enable_thinking"] = json.RawMessage("false")
-	r.ThinkingTokenBudget = nil
 }
 
 func (r *responseReq) applyFast() {

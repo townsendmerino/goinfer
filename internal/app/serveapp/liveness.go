@@ -147,11 +147,11 @@ func (lm *loadedModel) closeEntryNatives() {
 	last := lm.visionShare.release()
 	lm.visionShare = nil
 	if last && lm.vision != nil {
-		lm.vision.close()
+		lm.vision.Close()
 	}
 	lm.vision = nil
 	if lm.audio != nil {
-		lm.audio.close()
+		lm.audio.Close()
 	}
 }
 

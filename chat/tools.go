@@ -1,34 +1,87 @@
 package chat
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
-)
 
-// Tool calling. Each family declares tools in the prompt, emits a call, and feeds a result back in its own syntax, so goinfer renders
-// and PARSES against the model's template rather than scanning for JSON. RenderTools builds the tool-aware prompt; ParseToolCalls
-// turns the model's output back into structured calls. Supported: ChatML/Qwen (Hermes <tool_call>, or Qwen3.5's XML), Mistral
-// ([TOOL_CALLS]), Llama-3 (bare {name,parameters}), Gemma 4 (its <|tool_call> micro-language) and Harmony.
+	"github.com/townsendmerino/goinfer/internal/chat/chatcore"
+	"github.com/townsendmerino/goinfer/internal/chat/harmony"
+	"github.com/townsendmerino/goinfer/internal/chat/toolwire"
+)
 
 // Tool is a function the model may call (OpenAI "function" shape).
 type Tool struct {
 	Name        string
 	Description string
-	Parameters  json.RawMessage // JSON Schema for the arguments object
+	Parameters  json.RawMessage
 }
 
-// ToolCall is one call the model emitted (or that we render into history).
+// ToolCall is one call the model emitted or that is replayed into history.
 type ToolCall struct {
 	ID        string
 	Name      string
-	Arguments json.RawMessage // a JSON object
+	Arguments json.RawMessage
 }
 
-// RenderTools renders system + turns + tool declarations into the prompt, ending
-// with the generation prompt. Falls back to plain Render when the family has no
-// tool support wired or no tools are given. It is the concatenation of RenderToolsSegments.
+type ToolFormat = chatcore.ToolFormat
+
+const (
+	ToolFormatAuto     = chatcore.ToolFormatAuto
+	ToolFormatHermes   = chatcore.ToolFormatHermes
+	ToolFormatTemplate = chatcore.ToolFormatTemplate
+)
+
+var ParseToolFormat = chatcore.ParseToolFormat
+
+// ProseStreamer incrementally releases prose ahead of a tool-call opener while holding back partial opener prefixes.
+type ProseStreamer = toolwire.ProseStreamer
+
+var (
+	StreamableLen             = toolwire.StreamableLen
+	NewProseStreamer          = toolwire.NewProseStreamer
+	NewBareAwareProseStreamer = toolwire.NewBareAwareProseStreamer
+	apostropheEscape          = chatcore.ApostropheEscape
+)
+
+func declaresQwen35XMLTools(tmpl string, r *Reasoning) bool {
+	if r == nil {
+		return false
+	}
+	return toolwire.DeclaresQwen35XML(tmpl, r.Hist)
+}
+
+// WithToolFormat returns a copy of t that renders tools in format f.
+func (t *Template) WithToolFormat(f ToolFormat) *Template {
+	if t == nil || !t.nativeTools || t.toolFormat == f {
+		return t
+	}
+	c := *t
+	c.toolFormat = f
+	return &c
+}
+
+// ToolFormat returns the tool format selected on t (ToolFormatAuto by default).
+func (t *Template) ToolFormat() ToolFormat {
+	if t == nil {
+		return ToolFormatAuto
+	}
+	return t.toolFormat
+}
+
+// UsesNativeTools reports whether tools are rendered in the model's native template format.
+func (t *Template) UsesNativeTools() bool { return t.usesNativeTools() }
+
+// DeclaresNativeTools reports whether t declares a native tool format goinfer can render.
+func (t *Template) DeclaresNativeTools() bool { return t != nil && t.nativeTools }
+
+func (t *Template) usesNativeTools() bool {
+	if t == nil || !t.nativeTools {
+		return false
+	}
+	return t.toolFormat == ToolFormatTemplate || (t.toolFormat == ToolFormatAuto && t.nativeByDefault && t.think != ThinkAsIs)
+}
+
+// RenderTools renders system + turns + tool declarations into a prompt ending with the generation prompt.
 func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string {
 	var sb strings.Builder
 	for _, s := range t.RenderToolsSegments(system, turns, tools) {
@@ -37,9 +90,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	return sb.String()
 }
 
-// RenderToolsSegments is RenderTools for the EncodeSegments path: the family's control tokens are Special spans and everything a user,
-// a tool, the system prompt or the model wrote is a non-special span, so a marker typed into a message stays literal text instead of
-// forging a turn. With no tools it delegates to RenderSegments.
+// RenderToolsSegments renders system + turns + tool declarations into Special and literal-text segments.
 func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segment {
 	if len(tools) == 0 {
 		return t.RenderSegments(system, turns)
@@ -52,28 +103,32 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 			segs = append(segs, Segment{Text: t.bos, Special: true})
 		}
 		if t.usesNativeTools() {
-			segs = append(segs, t.renderQwen35XMLTools(system, turns, tools, t.historyKind())...)
+			segs = append(segs, toolwire.RenderQwen35XML(t.has, system, toCoreTurns(turns), toCoreTools(tools), t.historyKind())...)
 		} else {
-			segs = append(segs, t.renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults)...)
+			segs = append(segs, toolwire.RenderChatML(t.has, system, toCoreTurns(turns), toCoreTools(tools), t.historyKind(), t.groupsToolResults)...)
 		}
 		return append(segs, t.thinkSuffixSegs()...)
 	case "mistral":
-		return t.renderMistralTools(system, turns, tools)
+		return toolwire.RenderMistral(t.has, system, toCoreTurns(turns), toCoreTools(tools))
 	case "llama3":
-		return t.renderLlama3Tools(system, turns, tools)
+		return toolwire.RenderLlama3(timeNow(), t.has, system, toCoreTurns(turns), toCoreTools(tools))
 	case "gemma4":
 		if t.usesNativeTools() {
 			return t.renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
 		}
-		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4, t.reason.offScaffold())
-	case "harmony": // already segment-built: the markers are special, everything a user or tool wrote is hardened content
-		return harmonySegments(t.harmonyEffort(), system, turns, tools)
+		return t.renderGemma4Tools(system, turns, tools)
+	case "harmony":
+		return harmony.Segments(timeNow(), t.harmonyEffort(), system, toCoreTurns(turns), toCoreTools(tools))
 	case "flint":
 		return t.renderFlintTools(system, turns, tools)
 	case "inkling2":
 		return t.inkling2Segments(system, turns, tools)
 	}
-	return t.RenderSegments(system, turns) // gemma3 etc.: no native tool template
+	return t.RenderSegments(system, turns)
+}
+
+func (t *Template) renderFlintTools(system string, turns []Turn, tools []Tool) []Segment {
+	return toolwire.RenderFlint(t.has, system, toCoreTurns(turns), toCoreTools(tools))
 }
 
 // SupportsTools reports whether this family has a tool-calling template.
@@ -85,7 +140,6 @@ func (t *Template) SupportsTools() bool {
 	return false
 }
 
-// harmonyEffort is a Harmony template's reasoning effort, "medium" (the template's own default) when none was set.
 func (t *Template) harmonyEffort() string {
 	if t.effort == "" {
 		return "medium"
@@ -93,16 +147,12 @@ func (t *Template) harmonyEffort() string {
 	return t.effort
 }
 
-// ToolCallWrapper returns how a single tool call is framed for this family: the
-// literal prefix/suffix around the JSON, the arguments key ("arguments" or
-// "parameters"), and whether the call object is wrapped in a one-element array
-// (Mistral). ok is false when the family has no JSON-constrainable call form
-// (Gemma 4's bespoke micro-language → parse-only, no logit constraint).
+// ToolCallWrapper returns how a single JSON tool call is framed for constrained decoding.
 func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {
 	switch t.name {
 	case "chatml", "mellum2":
 		if t.usesNativeTools() {
-			return "", "", "", false, false // the model's own form is XML: there is no JSON wrapper to constrain a decode to
+			return "", "", "", false, false
 		}
 		return "<tool_call>\n", "\n</tool_call>", "arguments", false, true
 	case "llama3":
@@ -113,75 +163,61 @@ func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok 
 	return "", "", "", false, false
 }
 
-// ParseToolCalls extracts the tool calls from the model's output for this family,
-// returning them plus any leading natural-language text (the content). Empty
-// calls means the model answered normally. A call's ID is the "id" the model wrote
-// in the call object, and "" when it wrote none, which is most families: the caller
-// assigns one. The content is everything before the first call, a reasoning block
-// included, so split a thinking model's output with SplitThink first.
+// ParseToolCalls extracts structured tool calls and leading prose from the model's reply.
 func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	switch t.name {
 	case "chatml", "mellum2":
-		return parseChatMLTools(out, nil)
+		calls, lead := toolwire.ParseChatML(out, nil)
+		return fromCoreCalls(calls), lead
 	case "mistral":
-		return parseMistralTools(out)
+		calls, lead := toolwire.ParseMistral(out)
+		return fromCoreCalls(calls), lead
 	case "llama3":
-		return parseLlama3Tools(out)
+		calls, lead := toolwire.ParseLlama3(out)
+		return fromCoreCalls(calls), lead
 	case "gemma4":
 		return parseGemma4Tools(out)
 	case "harmony":
 		return parseHarmonyTools(out)
 	case "flint":
-		return parseFlintTools(out, nil)
+		calls, lead := toolwire.ParseFlint(out, nil)
+		return fromCoreCalls(calls), lead
 	case "inkling2":
 		return parseInklingTools(out)
 	}
 	return nil, out
 }
 
-// ParseToolCallsFor is ParseToolCalls with the request's tool list in hand, which lets it recover one more shape: a BARE call, the
-// call object with its wrapper left off, on the families whose wrapper is `<tool_call>` (AcceptsBareToolCall). Small Qwen2.5-Coder
-// models practically never write the wrapper under tool_choice "auto"; they emit `{"name": ..., "arguments": {...}}` on its own,
-// which ParseToolCalls reads as prose. Evidence: docs/code-notes/chat.md#Template.ParseToolCallsFor.
-//
-// It is deliberately narrow, because a prose answer that happens to be JSON must stay prose:
-//   - only when ParseToolCalls found no call: a wrapped call is never re-read;
-//   - only when the output's first non-space byte opens a JSON object (a bare call has an empty lead; prose-then-JSON is left alone);
-//   - the object's "name" must be a string EXACTLY equal to a supplied tool's name, and its "arguments" (or "parameters") must be a
-//     JSON object, so this can never produce a call to a tool the caller did not offer;
-//   - the FIRST object only: a small model emits runs of speculative calls, and executing all of them is worse than the prose.
-//
-// With WithLenientToolCalls on, a last fenced block is tried after that (fencedToolCall). Every other output, and every other
-// family, gets exactly what ParseToolCalls returns.
+// ParseToolCallsFor extracts tool calls using the declared tool schemas for parameter typing and bare/fenced recovery.
 func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, string) {
+	coreTools := toCoreTools(tools)
 	var calls []ToolCall
 	var lead string
 	switch {
 	case t != nil && (t.name == "chatml" || t.name == "mellum2"):
-		calls, lead = parseChatMLTools(out, tools) // tools type an XML call's parameters from the schema
+		cs, l := toolwire.ParseChatML(out, coreTools)
+		calls, lead = fromCoreCalls(cs), l
 	case t != nil && t.name == "flint":
-		calls, lead = parseFlintTools(out, tools)
+		cs, l := toolwire.ParseFlint(out, coreTools)
+		calls, lead = fromCoreCalls(cs), l
 	default:
 		calls, lead = t.ParseToolCalls(out)
 	}
 	if len(calls) > 0 || !t.AcceptsBareToolCall() {
 		return calls, lead
 	}
-	if c, ok := bareToolCall(out, tools); ok {
-		return []ToolCall{c}, ""
+	if c, ok := chatcore.BareToolCall(out, coreTools); ok {
+		return []ToolCall{fromCoreCall(c)}, ""
 	}
 	if t.lenientFenced {
-		if c, fenceLead, ok := fencedToolCall(out, tools); ok {
-			return []ToolCall{c}, fenceLead
+		if c, fenceLead, ok := toolwire.FencedToolCall(out, coreTools); ok {
+			return []ToolCall{fromCoreCall(c)}, fenceLead
 		}
 	}
 	return calls, lead
 }
 
-// AcceptsBareToolCall reports whether ParseToolCallsFor also accepts an unwrapped
-// call for this family. A streamer serving such a family must not emit output whose
-// first non-space byte is '{' as prose (NewBareAwareProseStreamer), because it may
-// yet parse as a call.
+// AcceptsBareToolCall reports whether ParseToolCallsFor also accepts an unwrapped JSON call.
 func (t *Template) AcceptsBareToolCall() bool {
 	switch t.name {
 	case "chatml", "mellum2":
@@ -190,606 +226,7 @@ func (t *Template) AcceptsBareToolCall() bool {
 	return false
 }
 
-// bareToolCall parses the first JSON object of out as a call to one of tools, under
-// the conditions ParseToolCallsFor documents.
-func bareToolCall(out string, tools []Tool) (ToolCall, bool) {
-	s := strings.TrimLeft(out, " \t\r\n")
-	if !strings.HasPrefix(s, "{") {
-		return ToolCall{}, false
-	}
-	var raw map[string]json.RawMessage
-	if json.NewDecoder(strings.NewReader(s)).Decode(&raw) != nil {
-		return ToolCall{}, false
-	}
-	var name string
-	if json.Unmarshal(raw["name"], &name) != nil {
-		return ToolCall{}, false
-	}
-	known := false
-	for _, tl := range tools {
-		if tl.Name == name {
-			known = true
-			break
-		}
-	}
-	if !known {
-		return ToolCall{}, false
-	}
-	args, ok := raw["arguments"]
-	if !ok {
-		args, ok = raw["parameters"]
-	}
-	if !ok {
-		return ToolCall{}, false
-	}
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(args, &obj) != nil || obj == nil {
-		return ToolCall{}, false
-	}
-	var id string
-	if v, ok := raw["id"]; ok {
-		_ = json.Unmarshal(v, &id)
-	}
-	return ToolCall{ID: id, Name: name, Arguments: args}, true
-}
-
-// funcDefJSON renders a tool as the OpenAI function-definition JSON object that
-// the JSON families embed in the prompt.
-func funcDefJSON(t Tool) string {
-	m := map[string]any{"type": "function", "function": map[string]any{
-		"name": t.Name, "description": t.Description, "parameters": json.RawMessage(t.Parameters),
-	}}
-	b, _ := json.Marshal(m)
-	return tojsonEscape(string(b))
-}
-
-func jsonStr(s string) string { b, _ := json.Marshal(s); return tojsonEscape(string(b)) }
-
-// tojsonEscape applies the one HTML-safety substitution encoding/json's default escaping leaves out. encoding/json already turns
-// the raw bytes for less-than, greater-than and ampersand into their six-character backslash-u-NNNN escapes, the same substitution
-// Jinja2's htmlsafe_json_dumps (what the `| tojson` filter these chat templates use calls) makes for those three. The apostrophe is
-// the one encoding/json has no flag for, and Jinja writes it in the same backslash-u-NNNN form (not an HTML entity); without this a
-// tool description or default value containing one renders a byte different from the reference template.
-func tojsonEscape(s string) string {
-	return strings.ReplaceAll(s, "'", apostropheEscape)
-}
-
-// apostropheEscape is the exact 6-byte sequence Jinja2's htmlsafe_json_dumps substitutes for an
-// apostrophe (backslash, lowercase u, then the code point 0027 in hex) — built from Sprintf
-// rather than a literal so no editing tool along the way can silently decode it back into a raw
-// apostrophe, which is exactly the bug this function exists to avoid reintroducing.
-var apostropheEscape = fmt.Sprintf(`\u%04x`, '\'')
-
-// callObjectJSON renders {"name":..,"arguments":{...}} for assistant tool-call history (argsKey lets Llama-3 use "parameters").
-func callObjectJSON(c ToolCall, argsKey string) string {
-	args := string(c.Arguments)
-	if args == "" {
-		args = "{}"
-	}
-	return `{"name": ` + jsonStr(c.Name) + `, "` + argsKey + `": ` + args + `}`
-}
-
-// --- ChatML / Qwen (Hermes) ---
-
-// chatMLToolMarks are the control tokens of the ChatML tool dialects (Hermes JSON and Qwen3.5 XML): the turn markers, the tool-call and
-// tool-response tags, and the think tags.
-var chatMLToolMarks = []string{"<|im_start|>", "<|im_end|>", "<tool_call>", "</tool_call>", "<tool_response>", "</tool_response>", "<think>", "</think>"}
-
-// renderChatMLTools is the Hermes-style tool prompt as segments. group is Template.groupsToolResults: consecutive tool results share one
-// user turn, as the template writes them; otherwise each result is a user turn of its own, byte for byte as before.
-func (t *Template) renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group bool) []Segment {
-	b := t.newToolBuf(chatMLToolMarks...)
-	b.lit("<|im_start|>system\n")
-	if s := strings.TrimSpace(system); s != "" {
-		b.txt(s + "\n\n")
-	}
-	b.lit("# Tools\n\nYou may call one or more functions to assist with the user query.\n\n")
-	b.lit("You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n")
-	for _, tl := range tools {
-		b.txt(funcDefJSON(tl) + "\n")
-	}
-	b.lit("</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n")
-	lq := lastQueryIndex(turns)
-	for i, m := range turns {
-		switch m.Role {
-		case "assistant":
-			if hist != histNone {
-				// A managed family (history.go): the think block per the model's own rule, and the template's own newline rule
-				// between the content and a call — a newline only after content or before a later call, none before a first call
-				// that follows nothing.
-				block, reasoning, content := qwenAssistant(hist, m, i, lq, len(turns))
-				b.lit("<|im_start|>assistant\n")
-				if block {
-					b.lit("<think>")
-					b.txt("\n" + reasoning + "\n")
-					b.lit("</think>\n\n")
-				}
-				b.txt(content)
-				for ci, c := range m.ToolCalls {
-					if (ci == 0 && content != "") || ci > 0 {
-						b.txt("\n")
-					}
-					b.lit("<tool_call>\n")
-					b.txt(callObjectJSON(c, "arguments"))
-					b.lit("\n</tool_call>")
-				}
-				b.lit("<|im_end|>\n")
-				continue
-			}
-			b.lit("<|im_start|>assistant\n")
-			b.txt(m.Content)
-			for _, c := range m.ToolCalls {
-				b.lit("\n<tool_call>\n")
-				b.txt(callObjectJSON(c, "arguments"))
-				b.lit("\n</tool_call>")
-			}
-			b.lit("<|im_end|>\n")
-		case "tool":
-			if group {
-				if i == 0 || turns[i-1].Role != "tool" {
-					b.lit("<|im_start|>user")
-				}
-				b.lit("\n<tool_response>\n")
-				b.txt(m.Content)
-				b.lit("\n</tool_response>")
-				if i == len(turns)-1 || turns[i+1].Role != "tool" {
-					b.lit("<|im_end|>\n")
-				}
-				continue
-			}
-			b.lit("<|im_start|>user\n<tool_response>\n")
-			b.txt(m.Content)
-			b.lit("\n</tool_response><|im_end|>\n")
-		default:
-			b.lit("<|im_start|>user\n")
-			b.txt(m.Content)
-			b.lit("<|im_end|>\n")
-		}
-	}
-	b.lit("<|im_start|>assistant\n")
-	return b.out()
-}
-
-// parseChatMLTools reads every <tool_call> block: the JSON form goinfer prompts for ({"name": …, "arguments": {…}}) and, where the body is
-// instead Qwen3.5's own `<function=NAME><parameter=K>…` form, that — so a model that writes either is not silently ignored. tools (may be
-// nil) types the XML form's parameters from the schema.
-func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
-	lead := out
-	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
-		lead = before
-	}
-	var calls []ToolCall
-	for rest := out; ; {
-		_, after, ok := strings.Cut(rest, "<tool_call>")
-		if !ok {
-			break
-		}
-		body, next, hasEnd := strings.Cut(after, "</tool_call>")
-		rest = next
-		if c, ok := callFromJSON(strings.TrimSpace(body), "arguments"); ok {
-			calls = append(calls, c)
-		} else if strings.Contains(body, "<function=") {
-			if c, ok := parseQwenXMLCall(body, tools); ok {
-				calls = append(calls, c)
-			}
-		}
-		if !hasEnd {
-			break
-		}
-	}
-	return calls, strings.TrimSpace(lead)
-}
-
-// --- Mistral ---
-
-func (t *Template) renderMistralTools(system string, turns []Turn, tools []Tool) []Segment {
-	b := t.newToolBuf(mistralMarks...)
-	b.lit("<s>[AVAILABLE_TOOLS] [")
-	for i, tl := range tools {
-		if i > 0 {
-			b.txt(", ")
-		}
-		b.txt(funcDefJSON(tl))
-	}
-	b.lit("][/AVAILABLE_TOOLS]")
-	lastUser := -1
-	for i, m := range turns {
-		if m.Role == "user" {
-			lastUser = i
-		}
-	}
-	for i, m := range turns {
-		switch m.Role {
-		case "assistant":
-			if len(m.ToolCalls) > 0 {
-				b.lit("[TOOL_CALLS] [")
-				for k, c := range m.ToolCalls {
-					if k > 0 {
-						b.txt(", ")
-					}
-					b.txt(callObjectJSON(c, "arguments"))
-				}
-				b.lit("]</s>")
-			} else {
-				b.txt(" " + m.Content)
-				b.lit("</s>")
-			}
-		case "tool":
-			b.lit("[TOOL_RESULTS] {\"content\": ")
-			b.txt(jsonStr(m.Content))
-			b.lit("}[/TOOL_RESULTS]")
-		default:
-			content := m.Content
-			if i == lastUser && strings.TrimSpace(system) != "" {
-				content = strings.TrimSpace(system) + "\n\n" + content
-			}
-			b.lit("[INST] ")
-			b.txt(content)
-			b.lit("[/INST]")
-		}
-	}
-	return b.out()
-}
-
-func parseMistralTools(out string) ([]ToolCall, string) {
-	before, after, ok := strings.Cut(out, "[TOOL_CALLS]")
-	if !ok {
-		return nil, strings.TrimSpace(out)
-	}
-	lead := strings.TrimSpace(before)
-	rest := after
-	if lb := strings.IndexByte(rest, '['); lb >= 0 {
-		rest = rest[lb:]
-	}
-	return callsFromArray(rest, "arguments"), lead
-}
-
-// --- Llama-3 ---
-
-var llama3ToolMarks = []string{"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>"}
-
-func (t *Template) renderLlama3Tools(system string, turns []Turn, tools []Tool) []Segment {
-	b := t.newToolBuf(llama3ToolMarks...)
-	b.lit("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n")
-	b.lit("Environment: ipython\nCutting Knowledge Date: December 2023\nToday Date: " + timeNow().Format("02 Jan 2006") + "\n\n")
-	if s := strings.TrimSpace(system); s != "" {
-		b.txt(s)
-	}
-	b.lit("<|eot_id|>")
-	var instr strings.Builder
-	instr.WriteString("Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n")
-	for i, tl := range tools {
-		instr.WriteString(funcDefJSON(tl))
-		if i < len(tools)-1 {
-			instr.WriteString("\n")
-		}
-	}
-	first := true
-	for _, m := range turns {
-		switch m.Role {
-		case "assistant":
-			b.lit("<|start_header_id|>assistant<|end_header_id|>\n\n")
-			b.txt(m.Content)
-			for _, c := range m.ToolCalls {
-				b.txt(callObjectJSON(c, "parameters"))
-			}
-			b.lit("<|eot_id|>")
-		case "tool":
-			b.lit("<|start_header_id|>ipython<|end_header_id|>\n\n")
-			b.txt(jsonStr(m.Content))
-			b.lit("<|eot_id|>")
-		default:
-			content := m.Content
-			if first { // tool instructions ride the first user turn
-				content = instr.String() + "\n\n" + content
-				first = false
-			}
-			b.lit("<|start_header_id|>user<|end_header_id|>\n\n")
-			b.txt(content)
-			b.lit("<|eot_id|>")
-		}
-	}
-	b.lit("<|start_header_id|>assistant<|end_header_id|>\n\n")
-	return b.out()
-}
-
-func parseLlama3Tools(out string) ([]ToolCall, string) {
-	s := strings.TrimPrefix(strings.TrimSpace(out), "<|python_tag|>")
-	if lb := strings.IndexByte(s, '{'); lb >= 0 {
-		if c, ok := callFromJSON(s[lb:], "parameters"); ok {
-			return []ToolCall{c}, strings.TrimSpace(s[:lb])
-		}
-	}
-	return nil, strings.TrimSpace(out)
-}
-
-// --- Flint ---
-
-var flintToolMarks = []string{
-	"<|begin_of_text|>", "<|end_of_text|>",
-	"<|system|>", "<|developer|>", "<|user|>", "<|assistant|>", "<|observation|>",
-	"<think>", "</think>",
-	"<tools>", "</tools>",
-	"<tool_call>", "</tool_call>",
-	"<arg_key>", "</arg_key>",
-	"<arg_value>", "</arg_value>",
-	"<tool_response>", "</tool_response>",
-}
-
-var flintSanitizer = strings.NewReplacer(
-	"\x00", "",
-	"<think>", "",
-	"</think>", "",
-	"<|begin_of_text|>", "&lt;|begin_of_text|&gt;",
-	"<|end_of_text|>", "&lt;|end_of_text|&gt;",
-	"<|system|>", "&lt;|system|&gt;",
-	"<|developer|>", "&lt;|developer|&gt;",
-	"<|user|>", "&lt;|user|&gt;",
-	"<|assistant|>", "&lt;|assistant|&gt;",
-	"<|observation|>", "&lt;|observation|&gt;",
-)
-
-func flintText(s string) string {
-	return flintSanitizer.Replace(s)
-}
-
-// flintToolJSON renders `fn | tojson(ensure_ascii=False)` for RecursiveSI/flint's chat_template.jinja, where
-// `fn = tool.function if tool.function is defined else tool` is the unwrapped function object.
-func flintToolJSON(t Tool) string {
-	var b strings.Builder
-	b.WriteString(`{"name": ` + pyQuote(t.Name))
-	if t.Description != "" {
-		b.WriteString(`, "description": ` + pyQuote(t.Description))
-	}
-	if len(bytes.TrimSpace(t.Parameters)) > 0 {
-		b.WriteString(`, "parameters": ` + pyArgs(t.Parameters))
-	}
-	b.WriteString("}")
-	return b.String()
-}
-
-func (t *Template) renderFlintTools(system string, turns []Turn, tools []Tool) []Segment {
-	b := t.newToolBuf(flintToolMarks...)
-	if system != "" {
-		b.lit("<|system|>")
-		b.txt(flintText(system))
-	}
-	toolsEmitted := len(tools) == 0
-	emitTools := func() {
-		if toolsEmitted {
-			return
-		}
-		toolsEmitted = true
-		b.lit("<|system|>\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>")
-		for _, tl := range tools {
-			b.txt("\n" + flintToolJSON(tl))
-		}
-		b.lit("\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:\n<tool_call>{function-name}<arg_key>{arg-key-1}</arg_key><arg_value>{arg-value-1}</arg_value>...</tool_call>\n")
-	}
-	for _, m := range turns {
-		if !toolsEmitted && m.Role != "system" {
-			emitTools()
-		}
-		switch m.Role {
-		case "system":
-			b.lit("<|system|>")
-			b.txt(flintText(m.Content))
-		case "developer":
-			b.lit("<|developer|>")
-			b.txt(flintText(m.Content))
-		case "assistant":
-			b.lit("<|assistant|>")
-			reasoning, content := m.Reasoning, m.Content
-			if reasoning == "" && strings.HasPrefix(content, "<think>") {
-				if r, rest, ok := strings.Cut(content[len("<think>"):], "</think>"); ok {
-					reasoning, content = r, rest
-				}
-			}
-			if reasoning != "" {
-				b.lit("<think>")
-				b.txt(reasoning)
-				b.lit("</think>")
-			}
-			b.txt(content)
-			for _, c := range m.ToolCalls {
-				b.lit("<tool_call>")
-				b.txt(c.Name)
-				if args, err := parseJV(c.Arguments); err == nil && args.kind == jObj {
-					for _, k := range args.keys {
-						b.lit("<arg_key>")
-						b.txt(k)
-						b.lit("</arg_key><arg_value>")
-						v := args.vals[k]
-						if v.kind == jStr {
-							b.txt(v.s)
-						} else {
-							b.txt(pyDumps(v))
-						}
-						b.lit("</arg_value>")
-					}
-				}
-				b.lit("</tool_call>")
-			}
-		case "tool":
-			b.lit("<|observation|><tool_response>")
-			b.txt(flintText(m.Content))
-			b.lit("</tool_response>")
-		default:
-			b.lit("<|user|>")
-			b.txt(flintText(m.Content))
-		}
-	}
-	if !toolsEmitted {
-		emitTools()
-	}
-	b.lit("<|assistant|>")
-	return b.out()
-}
-
-func parseFlintTools(out string, tools []Tool) ([]ToolCall, string) {
-	lead := out
-	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
-		lead = before
-	}
-	var calls []ToolCall
-	for rest := out; ; {
-		_, after, ok := strings.Cut(rest, "<tool_call>")
-		if !ok {
-			break
-		}
-		body, next, ok := strings.Cut(after, "</tool_call>")
-		if !ok {
-			break
-		}
-		rest = next
-		if c, ok := parseFlintCall(body, tools); ok {
-			calls = append(calls, c)
-		}
-	}
-	return calls, strings.TrimSpace(lead)
-}
-
-func parseFlintCall(body string, tools []Tool) (ToolCall, bool) {
-	var name, rest string
-	if ak := strings.Index(body, "<arg_key>"); ak >= 0 {
-		name = strings.TrimSpace(body[:ak])
-		rest = body[ak:]
-	} else {
-		name = strings.TrimSpace(body)
-	}
-	if name == "" || strings.ContainsAny(name, " \t\r\n<>\"'{}") {
-		return ToolCall{}, false
-	}
-	types := paramTypes(name, tools)
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	n := 0
-	for rest != "" {
-		rest = strings.TrimSpace(rest)
-		if rest == "" {
-			break
-		}
-		afterKey, ok := strings.CutPrefix(rest, "<arg_key>")
-		if !ok {
-			return ToolCall{}, false
-		}
-		key, afterClose, ok := strings.Cut(afterKey, "</arg_key>")
-		if !ok || key == "" {
-			return ToolCall{}, false
-		}
-		rest, ok = strings.CutPrefix(strings.TrimSpace(afterClose), "<arg_value>")
-		if !ok {
-			return ToolCall{}, false
-		}
-		ve := closeFlintArgValue(rest)
-		if ve < 0 {
-			return ToolCall{}, false
-		}
-		val := rest[:ve]
-		rest = rest[ve+len("</arg_value>"):]
-		kb, _ := json.Marshal(key)
-		if n > 0 {
-			buf.WriteByte(',')
-		}
-		buf.Write(kb)
-		buf.WriteByte(':')
-		buf.Write(typedParam(val, types[key]))
-		n++
-	}
-	buf.WriteByte('}')
-	return ToolCall{Name: name, Arguments: json.RawMessage(buf.Bytes())}, true
-}
-
-func closeFlintArgValue(s string) int {
-	const tag = "</arg_value>"
-	for from := 0; ; {
-		i := strings.Index(s[from:], tag)
-		if i < 0 {
-			return -1
-		}
-		i += from
-		next := strings.TrimSpace(s[i+len(tag):])
-		if next == "" || strings.HasPrefix(next, "<arg_key>") {
-			return i
-		}
-		from = i + len(tag)
-	}
-}
-
-// --- shared JSON-call parsing ---
-
-// callFromJSON parses {"name":..,"<argsKey>":{...}} into a ToolCall. Decodes the
-// first JSON object (ignoring trailing content like an EOS marker), and is
-// tolerant of "arguments"/"parameters" and a stringified arguments value.
-func callFromJSON(s, argsKey string) (ToolCall, bool) {
-	var raw map[string]json.RawMessage
-	if json.NewDecoder(strings.NewReader(s)).Decode(&raw) != nil {
-		return ToolCall{}, false
-	}
-	var name string
-	if json.Unmarshal(raw["name"], &name) != nil || name == "" {
-		return ToolCall{}, false
-	}
-	args := raw[argsKey]
-	if args == nil {
-		if a, ok := raw["arguments"]; ok {
-			args = a
-		} else {
-			args = raw["parameters"]
-		}
-	}
-	var id string
-	if v, ok := raw["id"]; ok {
-		_ = json.Unmarshal(v, &id)
-	}
-	return ToolCall{ID: id, Name: name, Arguments: normalizeArgs(args)}, true
-}
-
-// callsFromArray parses [{...},{...}] of call objects (first JSON array, trailing
-// content ignored).
-func callsFromArray(s, argsKey string) []ToolCall {
-	var arr []json.RawMessage
-	if json.NewDecoder(strings.NewReader(s)).Decode(&arr) != nil {
-		return nil
-	}
-	var calls []ToolCall
-	for _, e := range arr {
-		if c, ok := callFromJSON(string(e), argsKey); ok {
-			calls = append(calls, c)
-		}
-	}
-	return calls
-}
-
-// normalizeArgs ensures the arguments are a JSON object ({} if absent; unwraps a
-// stringified object, which some models emit).
-func normalizeArgs(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return json.RawMessage("{}")
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil { // "{\"k\":..}" → {"k":..}
-		var obj map[string]any
-		if json.Unmarshal([]byte(s), &obj) == nil {
-			return json.RawMessage(s)
-		}
-	}
-	return raw
-}
-
-// ToolCallOpener reports the literal that bounds the prose lead for this family, and whether prose may be streamed INCREMENTALLY
-// before the generation ends.
-//
-// The contract is exact and narrow: ok is true only when ParseToolCalls computes its lead as the RAW, UNTRIMMED prefix of the output
-// up to the first occurrence of the returned literal. That is what lets a caller emit text early and still guarantee the bytes it
-// sent are a prefix of the lead the parser will compute; a delta cannot be unsent, so an over-eager emit is unrecoverable corruption.
-//
-//   - chatml/mellum2, gemma4: lead is strings.Cut(out, opener), a raw prefix. ok.
-//   - mistral: lead is TrimSpace(before "[TOOL_CALLS]"); the trim means streamed bytes need not equal the lead. NOT ok.
-//   - llama3: the output is TrimSpace'd, a "<|python_tag|>" prefix is stripped, and a lead exists only if the JSON at the first "{"
-//     actually parses, so nothing is known until then. NOT ok.
-//
-// A family added here must have its parser checked against this contract, not assumed to match.
+// ToolCallOpener reports the literal bounding the prose lead and whether prose may be streamed incrementally.
 func (t *Template) ToolCallOpener() (string, bool) {
 	switch t.name {
 	case "chatml", "mellum2", "flint":
@@ -800,136 +237,11 @@ func (t *Template) ToolCallOpener() (string, bool) {
 	return "", false
 }
 
-// StreamableLen returns how many bytes of pending may be emitted now without
-// risking that a later tool-call opener makes them part of a call rather than
-// prose.
-//
-// Three cases, in order:
-//   - the opener is already present: everything before it is prose and may go; the
-//     caller must then stop streaming for the rest of the generation.
-//   - pending ends with a proper prefix of the opener: that suffix is held back,
-//     because the next chunk may complete the opener. This is what makes an opener
-//     split across chunk boundaries safe.
-//   - neither: all of pending is prose.
-//
-// It never returns more than len(pending), and holds back at most len(opener)-1
-// bytes, so prose is delayed by a bounded amount and never dropped.
-func StreamableLen(pending, opener string) int {
-	if opener == "" {
-		return len(pending)
-	}
-	if i := strings.Index(pending, opener); i >= 0 {
-		return i
-	}
-	maxHold := min(len(opener)-1, len(pending))
-	for k := maxHold; k > 0; k-- {
-		if strings.HasSuffix(pending, opener[:k]) {
-			return len(pending) - k
-		}
-	}
-	return len(pending)
+func parseHarmonyTools(out string) ([]ToolCall, string) {
+	calls, lead := harmony.ParseTools(out)
+	return fromCoreCalls(calls), lead
 }
 
-// ProseStreamer releases the prose part of a tool-capable generation as it arrives, holding back exactly what could still turn out not
-// to be prose.
-//
-// The safety property is subtler than "split at the opener". Every family's ParseToolCalls returns strings.TrimSpace(lead), so a
-// streamer that emitted the raw prefix would send leading and trailing whitespace the parser later discards, and a delta cannot be
-// unsent. So it normalizes the SAME way the parsers do:
-//
-//   - leading whitespace is never emitted (dropped until the first non-space),
-//   - a trailing whitespace run is held back until a non-space byte follows it, and is dropped entirely if the opener arrives instead,
-//   - a partial opener at the tail is held (StreamableLen).
-//
-// The guarantee, asserted by TestProseStreamerMatchesParser against every streamable family: the concatenation of everything Push
-// returns is always a PREFIX of the lead ParseToolCalls will compute over the full output.
-type ProseStreamer struct {
-	opener     string
-	bareAware  bool // hold an output that opens with '{' (NewBareAwareProseStreamer)
-	fenceAware bool // hold everything from the first code fence on (FenceAware)
-	pending    strings.Builder
-	started    bool // a non-space byte has been emitted
-	done       bool // the opener was seen; nothing after it is prose
-	held       bool // the output opened with '{': it may be a bare call, emit nothing
-}
-
-// NewProseStreamer returns a streamer for a family's opener (Template.ToolCallOpener).
-func NewProseStreamer(opener string) *ProseStreamer { return &ProseStreamer{opener: opener} }
-
-// NewBareAwareProseStreamer is NewProseStreamer for a family that also accepts a
-// bare, unwrapped call (Template.AcceptsBareToolCall): if the output's first
-// non-space byte is '{' the output may parse as a call with an EMPTY lead, so
-// nothing of it may be emitted as prose. Such an output releases nothing at all;
-// the caller delivers whatever the parser decides was prose once generation ends.
-// Outputs that open any other way stream exactly as NewProseStreamer's do. The
-// guarantee, against ParseToolCallsFor, is asserted by
-// TestBareAwareProseStreamerMatchesParser.
-func NewBareAwareProseStreamer(opener string) *ProseStreamer {
-	return &ProseStreamer{opener: opener, bareAware: true}
-}
-
-// FenceAware makes the streamer hold everything from the first code fence on, for a template with
-// WithLenientToolCalls: the fenced block may be a call, and prose already streamed cannot be recalled.
-func (p *ProseStreamer) FenceAware() *ProseStreamer {
-	p.fenceAware = true
-	return p
-}
-
-// Done reports whether the opener has been seen, after which nothing more is prose.
-func (p *ProseStreamer) Done() bool { return p.done }
-
-// Push feeds the next generated chunk and returns the text that is safe to emit
-// now — possibly empty.
-func (p *ProseStreamer) Push(chunk string) string {
-	if p.done || p.held {
-		return ""
-	}
-	p.pending.WriteString(chunk)
-	buf := p.pending.String()
-	if p.bareAware && !p.started {
-		if t := strings.TrimLeft(buf, " \t\r\n"); t != "" && t[0] == '{' {
-			p.held = true
-			return ""
-		}
-	}
-
-	n := StreamableLen(buf, p.opener)
-	fenced := false
-	if p.fenceAware && !strings.Contains(buf, p.opener) {
-		// A fenced block may turn out to be the call (WithLenientToolCalls), so nothing from its opening fence on may go out as prose:
-		// release up to the fence, and hold a partial fence at the tail like a partial opener. What was held is delivered once the
-		// turn ends, by the same reconciliation every held output already goes through (serveapp reconcileProse).
-		if m := StreamableLen(buf, "```"); m < n || strings.Contains(buf, "```") {
-			n = min(n, m)
-			fenced = strings.Contains(buf, "```")
-		}
-	}
-	safe, rest := buf[:n], buf[n:]
-	if strings.Contains(buf, p.opener) {
-		p.done = true
-		rest = "" // everything from the opener on belongs to the call
-	} else if fenced {
-		p.held = true
-		rest = "" // and so does everything from the fence on, if the turn ends in a call; if not, the end-of-turn delivery sends it as prose
-	}
-
-	if !p.started {
-		safe = strings.TrimLeft(safe, " \t\r\n")
-		if safe != "" {
-			p.started = true
-		}
-	}
-	if p.done || p.held {
-		// The parser trims the lead's tail; so must we, and there is no later
-		// chunk that could turn this whitespace back into interior text.
-		safe = strings.TrimRight(safe, " \t\r\n")
-	} else if tail := len(safe) - len(strings.TrimRight(safe, " \t\r\n")); tail > 0 {
-		// Might become interior whitespace once more text arrives — hold it.
-		rest = safe[len(safe)-tail:] + rest
-		safe = safe[:len(safe)-tail]
-	}
-
-	p.pending.Reset()
-	p.pending.WriteString(rest)
-	return safe
+func funcDefJSON(t Tool) string {
+	return chatcore.FuncDefJSON(chatcore.Tool{Name: t.Name, Description: t.Description, Parameters: t.Parameters})
 }

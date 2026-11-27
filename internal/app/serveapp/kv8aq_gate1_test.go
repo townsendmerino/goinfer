@@ -40,7 +40,7 @@ func TestKV8aQ_gate1Scopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: "m", scripted: reply, scriptedRecurrent: true}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: reply, scriptedRecurrent: true}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	var prompts [][]int
@@ -115,7 +115,7 @@ func kv8aqBoundary(t *testing.T, s *server, lm *loadedModel, body string, ids []
 		t.Fatal(err)
 	}
 	req.Tools, _ = functionTools(req.Tools)
-	th, err := s.resolveThink(req.think())
+	th, err := s.resolveThink(req.Think())
 	if err != nil {
 		t.Fatal(err)
 	}

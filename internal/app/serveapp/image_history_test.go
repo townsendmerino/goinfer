@@ -46,7 +46,7 @@ func TestOmitChatHistoryImages(t *testing.T) {
 	if len(imgs) != 1 || string(imgs[0].Data) != "second" {
 		t.Fatalf("after omission the vision path would see %d image(s) %v, want exactly the newest", len(imgs), imgs)
 	}
-	if got := msgs[0].text(); !strings.Contains(got, "what is this?") || !strings.Contains(got, olderImageNote) {
+	if got := msgs[0].Text(); !strings.Contains(got, "what is this?") || !strings.Contains(got, olderImageNote) {
 		t.Errorf("the earlier turn's text = %q, want its words plus the omission note", got)
 	}
 	if strings.Contains(string(msgs[0].Content), "image_url") {

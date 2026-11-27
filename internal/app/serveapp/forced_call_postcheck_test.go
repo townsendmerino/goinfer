@@ -20,7 +20,7 @@ func postCheckServer(t *testing.T, tmpl *chat.Template, reply string) *httptest.
 		t.Fatal(err)
 	}
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	s.models = map[string]*loadedModel{"m": lm}

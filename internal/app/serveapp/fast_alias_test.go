@@ -38,7 +38,7 @@ func newFastRig(t *testing.T, reply string, alias bool) *fastRig {
 	}
 	s := &server{cfg: config{fastAlias: alias}}
 	var prompts [][]int
-	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
@@ -267,7 +267,7 @@ func TestFastAlias_modelsAndNames(t *testing.T) {
 	}
 	// A served model named m-fast takes the name.
 	taken := newFastRig(t, "ok", true)
-	other := &loadedModel{tk: taken.lm.tk, name: "m-fast", tmpl: taken.lm.tmpl, scripted: []int{}}
+	other := &loadedModel{modelIdentity: modelIdentity{tk: taken.lm.tk, name: "m-fast", tmpl: taken.lm.tmpl}, modelScriptedSeam: modelScriptedSeam{scripted: []int{}}}
 	other.fakeEngine = scriptedEngine{other}
 	taken.s.regMu.Lock()
 	taken.s.models["m-fast"] = other
@@ -304,8 +304,8 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 		"chat": {func() thinkRequest {
 			r := chatReq{ChatTemplateKwargs: on, ReasoningEffort: "high", ThinkingTokenBudget: &budget}
 			r.MaxTokens, r.MaxCompletionTokens = &big, &one
-			r.applyFast()
-			return r.think()
+			r.ApplyFast()
+			return r.Think()
 		}, nil},
 		"responses": {func() thinkRequest {
 			r := responseReq{Reasoning: &struct {
@@ -330,12 +330,12 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 	}
 	c := chatReq{}
 	c.MaxTokens, c.MaxCompletionTokens = &big, &one
-	c.applyFast()
+	c.ApplyFast()
 	if *c.MaxTokens != big || *c.MaxCompletionTokens != one {
 		t.Errorf("chat limits: max_tokens %d, max_completion_tokens %d, want %d and %d untouched", *c.MaxTokens, *c.MaxCompletionTokens, big, one)
 	}
 	k := chatReq{ChatTemplateKwargs: on}
-	k.applyFast()
+	k.ApplyFast()
 	if string(on["enable_thinking"]) != "true" {
 		t.Error("applyFast edited the caller's chat_template_kwargs in place")
 	}

@@ -19,7 +19,7 @@ func putBytes(fs *stores.FileStore, n int) *stores.StoredFile {
 // A finished batch with both successes and failures stores an output and an error file. Over the byte limit, together or each
 // alone, storing the error file must not evict the output: the older file goes and both of the batch's stay.
 func TestFinalizeBatch_keepsBothResultFilesOverTheByteLimit(t *testing.T) {
-	s := &server{files: stores.NewFileStore(0, 50), batches: stores.NewBatchStore(4)}
+	s := &server{serverStores: serverStores{files: stores.NewFileStore(0, 50), batches: stores.NewBatchStore(4)}}
 	older := putBytes(s.files, 10)
 	b := s.batches.Create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"ok", "bad"})
 	b.SetResult(0, stores.BatchLineResult{CustomID: "ok", StatusCode: 200, Body: map[string]any{"content": strings.Repeat("x", 200)}})

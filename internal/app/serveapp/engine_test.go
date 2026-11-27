@@ -41,7 +41,7 @@ func (e nilReportEngine) Start(context.Context, engine.Request) *engine.Stream {
 // TestDrive_engineWithNoReportFunc: drive reads the report through its Stream at every use, so an engine with a nil
 // report function streams and finishes like the scripted seam (no logprobs, no reuse, no error) instead of panicking.
 func TestDrive_engineWithNoReportFunc(t *testing.T) {
-	lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: nilReportEngine{}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: &tokenizer.Tokenizer{}}, modelScriptedSeam: modelScriptedSeam{fakeEngine: nilReportEngine{}}}
 	res, err := lm.drive(context.Background(), genRequest{maxTokens: 4}, nil, nil, func(string) {})
 	if res.finish != "stop" || res.nComp != 0 || res.logprobs != nil || res.stopHit != "" || res.reused != (prefillReuse{}) || res.cancelReason != "" || err != nil {
 		t.Fatalf("drive on a nil-report engine = (%+v, %v), want a clean stop and nothing else", res, err)
@@ -64,7 +64,7 @@ func (e mediaEngine) Start(_ context.Context, req engine.Request) *engine.Stream
 func TestDriveVL_mediaRequest(t *testing.T) {
 	multi := []imageSpan{{Pos: 2, Len: 3, Hash: 7}, {Pos: 9, Len: 1, Hash: 8}}
 	grids := [][3]int{{1, 2, 2}, {1, 1, 2}}
-	one := visionInput{imgPos: 4, imgLen: 5, imgHash: 6, grid: [3]int{1, 3, 3}}
+	one := visionInput{ImgPos: 4, ImgLen: 5, ImgHash: 6, Grid: [3]int{1, 3, 3}}
 	with := func(vi visionInput, f func(*visionInput)) visionInput { f(&vi); return vi }
 	for _, c := range []struct {
 		name     string
@@ -75,17 +75,17 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		grids    [][3]int
 		deep     int
 	}{
-		{"audio", with(one, func(v *visionInput) { v.asr = true }), engine.MediaAudio, []imageSpan{{4, 5, 6}}, false, nil, 0},
-		{"qwen3-vl deepstack", with(one, func(v *visionInput) { v.qwen, v.deepSets, v.spans, v.grids = true, 3, multi, grids }), engine.MediaQwen, multi, true, grids, 3},
-		{"qwen one-media", with(one, func(v *visionInput) { v.qwen = true }), engine.MediaQwen, []imageSpan{{4, 5, 6}}, true, [][3]int{{1, 3, 3}}, 0},
-		{"gemma4", with(one, func(v *visionInput) { v.gemma4, v.spans = true, multi }), engine.MediaGemma4, multi, false, nil, 0},
-		{"causal", with(one, func(v *visionInput) { v.causal, v.spans = true, multi }), engine.MediaImageCausal, multi, false, nil, 0},
-		{"bidirectional", with(one, func(v *visionInput) { v.spans = multi }), engine.MediaImage, multi, false, nil, 0},
+		{"audio", with(one, func(v *visionInput) { v.ASR = true }), engine.MediaAudio, []imageSpan{{Pos: 4, Len: 5, Hash: 6}}, false, nil, 0},
+		{"qwen3-vl deepstack", with(one, func(v *visionInput) { v.Qwen, v.DeepSets, v.Spans, v.Grids = true, 3, multi, grids }), engine.MediaQwen, multi, true, grids, 3},
+		{"qwen one-media", with(one, func(v *visionInput) { v.Qwen = true }), engine.MediaQwen, []imageSpan{{Pos: 4, Len: 5, Hash: 6}}, true, [][3]int{{1, 3, 3}}, 0},
+		{"gemma4", with(one, func(v *visionInput) { v.Gemma4, v.Spans = true, multi }), engine.MediaGemma4, multi, false, nil, 0},
+		{"causal", with(one, func(v *visionInput) { v.Causal, v.Spans = true, multi }), engine.MediaImageCausal, multi, false, nil, 0},
+		{"bidirectional", with(one, func(v *visionInput) { v.Spans = multi }), engine.MediaImage, multi, false, nil, 0},
 	} {
 		var got engine.Request
-		lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: mediaEngine{&got}, vision: &qwen25Vision{merge: 2, imgTok: 151655}}
+		lm := &loadedModel{modelIdentity: modelIdentity{tk: &tokenizer.Tokenizer{}}, modelModalities: modelModalities{vision: &qwen25Vision{QwenGrid: qwenGrid{Merge: 2, ImgTok: 151655}}}, modelScriptedSeam: modelScriptedSeam{fakeEngine: mediaEngine{&got}}}
 		ran := false
-		c.vi.features = func() ([]float32, error) { ran = true; return nil, nil }
+		c.vi.Features = func() ([]float32, error) { ran = true; return nil, nil }
 		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}
 		gr.sp.Temperature, gr.sp.TopK = 0.7, 5
 		res, err := lm.driveVL(context.Background(), gr, c.vi, nil, nil, func(string) {})

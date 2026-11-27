@@ -129,7 +129,7 @@ func TestServe_maxConcurrentMatchesAlone(t *testing.T) {
 	}
 	const nConv, turns, maxTok = 4, 3, 24
 	newLM := func(concurrent int) *loadedModel {
-		lm := &loadedModel{tk: tk, model: m, name: "m", fp: "fp", sessions: newSessionLRU(m, 4, 0, "fp")}
+		lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, model: m, name: "m", fp: "fp"}, modelConcurrency: modelConcurrency{sessions: newSessionLRU(m, 4, 0, "fp")}}
 		lm.setConcurrency(config{maxConcurrent: concurrent, kvSessions: 4})
 		return lm
 	}
@@ -225,7 +225,7 @@ func TestSetConcurrency_reportsTheDecidedValue(t *testing.T) {
 	if !m.CPUConcurrentSafe() {
 		t.Skip("synthetic base is not CPU-concurrent-safe")
 	}
-	lm := &loadedModel{model: m, name: "m", fp: "fp", sessions: newSessionLRU(m, 4, 0, "fp")}
+	lm := &loadedModel{modelIdentity: modelIdentity{model: m, name: "m", fp: "fp"}, modelConcurrency: modelConcurrency{sessions: newSessionLRU(m, 4, 0, "fp")}}
 	line := lm.setConcurrency(config{maxConcurrent: 4, kvSessions: 4})
 	if lm.concurrent != 4 || !strings.Contains(line, "4 generations at once") {
 		t.Errorf("setConcurrency decided %d and reported %q", lm.concurrent, line)

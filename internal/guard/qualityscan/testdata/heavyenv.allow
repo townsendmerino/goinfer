@@ -169,8 +169,6 @@ backend/webgpu/spec_resident_parity_test.go 1 -- raw reads before the ratchet; m
 backend/webgpu/staged_bench_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/webgpu/theta_ab_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/webgpu/uploadkv_parity_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-cmd/gate/identity_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-cmd/gate/quick_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 constrain/confidence_cost_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 constrain/maskcost_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 decoder/cost_cpu_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched

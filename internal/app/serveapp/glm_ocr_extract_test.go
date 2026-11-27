@@ -35,7 +35,7 @@ const extractTemplate = "{\n    \"invoice_number\": \"\",\n    \"total\": \"\"\n
 // schema's JSON template); text the user wrote is kept verbatim. And nothing else changes: json_object, no response_format,
 // a model that is not GLM-OCR, and a text-less schema-less request all leave the turn as it was.
 func TestGlmOcr_extractionTurn(t *testing.T) {
-	glm := &loadedModel{vision: &glmVision{glmOcrTower: &glmOcrTower{dir: "unused"}}}
+	glm := &loadedModel{modelModalities: modelModalities{vision: &glmVision{GlmOcrTower: &glmOcrTower{Dir: "unused"}}}}
 	want := multimodal.GlmOcrExtractionInstruction + "\n" + extractTemplate
 	run := func(lm *loadedModel, rf *respFormat, text string) (string, error) {
 		turns := []chat.Turn{{Role: "assistant", Content: "earlier"}, {Role: "user", Content: text}}
@@ -91,9 +91,9 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
-	lm := &loadedModel{tk: tk, model: m, tmpl: chat.GlmOCR(), vision: glmv}
-	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
+	glmv := &glmVision{QwenGrid: qwenGrid{Merge: 2, ImgTok: 59280}, GlmOcrTower: &glmOcrTower{Dir: "unused"}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, model: m, tmpl: chat.GlmOCR()}, modelModalities: modelModalities{vision: glmv}}
+	if glmv.PP, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}
 	img := imageRef{MediaType: "image/png", Data: glmOcrTestPNG(t)}
@@ -106,10 +106,10 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if vi.imgLen != 64 {
-			t.Fatalf("image run %d, want 64", vi.imgLen)
+		if vi.ImgLen != 64 {
+			t.Fatalf("image run %d, want 64", vi.ImgLen)
 		}
-		got, err := tk.Decode(vi.ids)
+		got, err := tk.Decode(vi.IDs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,13 +153,13 @@ func TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt(t *testing.
 					if _, seen := pos[sel.Sel.Name]; !seen {
 						pos[sel.Sel.Name] = x.Pos()
 					}
-					if sel.Sel.Name == "payload" {
+					if strings.EqualFold(sel.Sel.Name, "payload") {
 						payloads++
 					}
 				}
 			case *ast.AssignStmt:
 				for _, l := range x.Lhs {
-					if sel, ok := l.(*ast.SelectorExpr); ok && sel.Sel.Name == "confidenceOK" {
+					if sel, ok := l.(*ast.SelectorExpr); ok && strings.EqualFold(sel.Sel.Name, "confidenceOK") {
 						confOK = true
 					}
 				}

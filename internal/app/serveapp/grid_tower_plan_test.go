@@ -47,18 +47,18 @@ func TestPlanGridTower(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || p.device != c.device || p.where != c.where {
+		if err != nil || p.Device != c.device || p.Where != c.where {
 			t.Errorf("%s: got %+v, %v; want device %q where %q", c.name, p, err, c.device, c.where)
 		}
 	}
 
 	// A device that declines at first use: the CPU with a note, or a refusal under -require-backend.
-	p := gridTowerPlan{device: "metal", where: "Metal"}
-	if acc, err := p.started("GLM-OCR", nil, errors.New("no device")); acc != nil || err != nil || p.where != "CPU (metal declined)" {
-		t.Errorf("declined without -require-backend: acc %v err %v where %q", acc, err, p.where)
+	p := gridTowerPlan{Device: "metal", Where: "Metal"}
+	if acc, err := p.Started("GLM-OCR", nil, errors.New("no device")); acc != nil || err != nil || p.Where != "CPU (metal declined)" {
+		t.Errorf("declined without -require-backend: acc %v err %v where %q", acc, err, p.Where)
 	}
-	p = gridTowerPlan{device: "metal", where: "Metal", require: true}
-	if _, err := p.started("GLM-OCR", nil, errors.New("no device")); err == nil || !strings.Contains(err.Error(), "-require-backend") {
+	p = gridTowerPlan{Device: "metal", Where: "Metal", Require: true}
+	if _, err := p.Started("GLM-OCR", nil, errors.New("no device")); err == nil || !strings.Contains(err.Error(), "-require-backend") {
 		t.Errorf("declined under -require-backend: err %v", err)
 	}
 }

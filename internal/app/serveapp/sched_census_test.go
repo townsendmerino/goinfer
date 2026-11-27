@@ -125,7 +125,7 @@ type schedSim struct {
 // newSchedSim sizes the model's admission and queue with the real setConcurrency. Above one turn it needs a model that is
 // safe to run concurrently on the CPU, which m is; at one turn the model is left nil, as setConcurrency then needs none.
 func newSchedSim(t *testing.T, tr schedTrace, m *decoder.Model) *schedSim {
-	lm := &loadedModel{name: "census"}
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "census"}}
 	if tr.Concurrency > 1 {
 		lm.model = m
 	}

@@ -39,7 +39,7 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 		t.Fatalf("chat template: %v", err)
 	}
 	s := &server{}
-	lm := &loadedModel{tk: tk, name: "kv0"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "kv0"}}
 	// Carried ids (carried_ids.go): a body whose reply echoes the server's signed token ids renders to the ids the server prefilled only when this
 	// renderer holds the same key and the same model identity. The study server runs with --ids-key-file <KV0_IDS_KEY_FILE>; KV0_MODEL_NAME is the name
 	// it serves the model under and KV0_QUANT its --quant (default int4), which with the file's name and size make the identity a blob is minted for
@@ -125,7 +125,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 			return nil, idsOutcome{}, err
 		}
 		req.Tools, _ = functionTools(req.Tools)
-		ts, err := s.resolveThink(req.think())
+		ts, err := s.resolveThink(req.Think())
 		if err != nil {
 			return nil, idsOutcome{}, err
 		}
@@ -142,7 +142,7 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 			ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 			return ids, idsOutcome{}, err
 		}
-		if req.sampling.constrainsOutput() {
+		if req.Sampling.ConstrainsOutput() {
 			tm = lm.constrainedTemplate(ts)
 		}
 		ids, err := lm.promptForT(tm, system, turns)

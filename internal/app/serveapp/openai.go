@@ -26,83 +26,64 @@ import (
 // (e.g. 10M positions) cannot silently raise the default cap into gigabytes; -max-body-bytes still overrides it.
 const maxAutoTextBodyBytes = 64 << 20
 
-type server struct {
-	// Generative (decoder) registry: served name to model, empty when only an embedding model is served. Requests
-	// route on the OpenAI `model` field through withModel. regMu guards the map structure (dynamic load and unload
-	// mutate it concurrently with routing); a request holds the picked *loadedModel beyond the RLock, and unload
-	// drains in-flight requests through liveness before freeing the model.
-	regMu  sync.RWMutex
-	models map[string]*loadedModel
-	speech map[string]*speechModel // Whisper models (speech.go), by served name; guarded by regMu
-	cfg    config                  // backend/quant/lora/kv/session-dir/allow-admin for admin loads
-
-	// pulls serialises -web model downloads to one at a time (webui.go).
-	pulls pullState
-	// loads serialises -web model loads the same way (webui.go handleWebLoad).
-	loads pullState
-
-	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of registry entries
-	// backed by it (refs), so unload can drain in-flight work before freeing native memory instead of racing it into
-	// a use-after-free. A base and its compute-time adapters share one *decoder.Model and thus one entry. Guarded by
-	// regMu; see liveness.go.
+// modelRegistry groups the generative and speech model registries, single-flight
+// web-UI pull/load locks, and per-model liveness/drain tracking on server.
+type modelRegistry struct {
+	regMu    sync.RWMutex
+	models   map[string]*loadedModel
+	speech   map[string]*speechModel
+	pulls    pullState
+	loads    pullState
 	liveness map[io.Closer]*modelLiveness
-	// draining is the set of served names whose entry has been unpublished but whose native memory
-	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
-	// tell when a 202'd unload has actually reclaimed memory before reloading. Guarded by regMu.
 	draining map[string]struct{}
+}
 
-	// Embedding (encoder) half — nil when only a generative model is served.
-	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings takes no
-	// per-request mutex; embedGate only keeps Close from tearing it down under a request.
-	embed     encoder.Encoder
-	embedGate embedGate        // /v1/embeddings requests hold it shared; Close takes it to close embed
-	embedTok  *embed.Tokenizer // counts tokens for usage.prompt_tokens
-	embedID   string
-	embedDim  int
-	// embedMRLMin is the smallest width this embedder may be truncated to (0 = NOT truncatable,
-	// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimensions.
+// embedService groups the /v1/embeddings encoder, close gate, tokenizer, and
+// Matryoshka truncation configuration on server.
+type embedService struct {
+	embed       encoder.Encoder
+	embedGate   embedGate
+	embedTok    *embed.Tokenizer
+	embedID     string
+	embedDim    int
 	embedMRLMin int
-	// embedWidths, when set, is the exact set of widths the embedder was trained to be truncated to
-	// (EmbeddingGemma 2: 768, 512, 256, 128); `dimensions` must be one of them. It takes precedence
-	// over embedMRLMin's floor.
 	embedWidths []int
+}
 
-	// Responses API (/v1/responses) state store for store/previous_response_id.
-	responses *stores.ResponseStore[chatMessage]
-
-	// idsKey signs the token ids a reply carries back (carried_ids.go): random per start, or --ids-key-file. nil turns the
-	// feature off (a server built without newServer). idsStats are the carried-id totals /admin/status reports.
+// carriedIDState groups the HMAC signing key, counters, and optional audit log
+// for carried prompt token IDs on server.
+type carriedIDState struct {
 	idsKey   *idsKey
 	idsStats idsCounters
-	// tokenLog is --log-token-ids' file, nil when the flag is off.
 	tokenLog *tokenIDLog
+}
 
-	// gens is the cancel-by-id registry, shared by every generation surface. Never
-	// nil after newServer.
-	gens *stores.GenerationRegistry
+// serverStores groups the bounded in-memory request, response, file, batch, and
+// job registries shared across endpoints on server.
+type serverStores struct {
+	responses *stores.ResponseStore[chatMessage]
+	gens      *stores.GenerationRegistry
+	jobs      *jobs.Store
+	files     *stores.FileStore
+	batches   *stores.BatchStore
+}
 
-	// jobs is the job registry, shared by every generation surface the way
-	// gens is. Never nil after newServer: every generation gets a job whether or not -job-dir is set; jobs.journal is
-	// what is nil without it.
-	jobs *jobs.Store
-
-	// files and batches hold OpenAI's uploaded and assembled files and both dialects' batch records. Never nil after
-	// newServer.
-	files   *stores.FileStore
-	batches *stores.BatchStore
-
-	// halted is the global halt state; nil = running normally. See halt.go. The
-	// zero value is nil, so newServer needs no init.
-	halted atomic.Pointer[haltInfo]
-
-	// swapGuardTripped and swapWatch are the serving-side swap tripwire; see
-	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
-	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
+// opState groups operator halt state, swap-guard watch, and server-lifetime
+// shutdown context on server.
+type opState struct {
+	halted           atomic.Pointer[haltInfo]
 	swapGuardTripped atomic.Bool
 	swapWatch        *swapguard.Watch
+	lifeCtx          context.Context
+}
 
-	// lifeCtx is the server-lifetime context cancelled on shutdown/Close; background jobs and batch lines derive from it.
-	lifeCtx context.Context
+type server struct {
+	cfg config
+	modelRegistry
+	embedService
+	carriedIDState
+	serverStores
+	opState
 }
 
 // errServerShutdown is the context cancellation cause used by server shutdown and handlerCloser.Close
@@ -333,7 +314,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast()
+		req.ApplyFast()
 	}
 	req.Tools = dropUnrunnableTools(w, req.Tools)
 	if err := validateN(req.N); err != nil {
@@ -361,7 +342,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// The vision stream has no logprobs field, so a stream:true request would silently drop them: the text route's rule (400).
-		if req.Stream && req.sampling.Logprobs {
+		if req.Stream && req.Sampling.Logprobs {
 			writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 			return
 		}
@@ -384,13 +365,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ts, terr := s.resolveThink(req.think())
+	ts, terr := s.resolveThink(req.Think())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
-	if req.sampling.constrainsOutput() {
+	if req.Sampling.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	system, turns := messagesToTurns(req.Messages)
@@ -399,8 +380,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	req.sampling.confidenceOK = true // written back below
-	gr, err := lm.prepareTurn(req.sampling, tm, system, turns, nil, ids)
+	req.Sampling.ConfidenceOK = true // written back below
+	gr, err := lm.prepareTurn(req.Sampling, tm, system, turns, nil, ids)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
@@ -444,7 +425,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		sseSend(ss, finishChunk(id, created, lm.name, res.finish, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false))
 		if gr.conf != nil {
-			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.Payload()})
 		}
 		if res.cancelReason != "" {
 			// One final SSE event naming the reason, so a client cannot mistake this for a natural stop even though
@@ -489,7 +470,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
-		resp["goinfer_confidence"] = gr.conf.payload()
+		resp["goinfer_confidence"] = gr.conf.Payload()
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }
@@ -527,8 +508,8 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
-	req.sampling.confidenceOK = true // written back below
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	req.Sampling.ConfidenceOK = true // written back below
+	gr, err := lm.prepare(req.Sampling, ids, lm.residentPath())
 	if err != nil {
 		writePrepareErr(w, err)
 		return
@@ -562,7 +543,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &res.finish))
 		if gr.conf != nil {
-			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.Payload()})
 		}
 		if res.cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": res.cancelReason}})
@@ -588,7 +569,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
-		resp["goinfer_confidence"] = gr.conf.payload()
+		resp["goinfer_confidence"] = gr.conf.Payload()
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }

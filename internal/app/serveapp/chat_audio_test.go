@@ -79,8 +79,8 @@ func TestOmitChatHistory_audio(t *testing.T) {
 	if err != nil || len(media) != 1 || !media[0].Audio || len(media[0].Data) != len(wavBytes(320, 16000)) {
 		t.Fatalf("after omission: %d media items, err %v; want the newest clip only", len(media), err)
 	}
-	if !strings.Contains(msgs[0].text(), olderAudioNote) || !strings.Contains(msgs[2].text(), olderImageNote) {
-		t.Errorf("the notes are missing: %q / %q", msgs[0].text(), msgs[2].text())
+	if !strings.Contains(msgs[0].Text(), olderAudioNote) || !strings.Contains(msgs[2].Text(), olderImageNote) {
+		t.Errorf("the notes are missing: %q / %q", msgs[0].Text(), msgs[2].Text())
 	}
 }
 
@@ -89,20 +89,20 @@ func TestOmitChatHistory_audio(t *testing.T) {
 func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Transcribe this audio."}} }
 	tmpl := chat.Gemma4()
-	lm := &loadedModel{tmpl: tmpl}
+	lm := &loadedModel{modelIdentity: modelIdentity{tmpl: tmpl}}
 	clip := imageRef{Data: wavBytes(16000, 16000), Audio: true}
 	if _, err := lm.visionPromptUncached(tmpl, "", turns(), clip); err == nil || !strings.Contains(err.Error(), "no audio tower") {
 		t.Errorf("no tower: %v", err)
 	}
-	at := &gemma4Audio{dir: "unused"}
+	at := &gemma4Audio{Dir: "unused"}
 	lm.audio = at
 	long := imageRef{Data: wavBytes(31*16000, 16000), Audio: true}
-	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
+	if _, err := at.ClipPrompt(lm.audioModel(), tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
 		t.Errorf("31 s clip: %v", err)
 	}
 	b24 := wavBytes(16000, 44100)
 	binary.LittleEndian.PutUint16(b24[34:], 24)
-	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, imageRef{Data: b24, Audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
+	if _, err := at.ClipPrompt(lm.audioModel(), tmpl, "", turns(), 0, imageRef{Data: b24, Audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
 		t.Errorf("24-bit clip: %v", err)
 	}
 }

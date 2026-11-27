@@ -13,6 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gateidentity"
+	"github.com/townsendmerino/goinfer/internal/guard/gatequick"
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
@@ -123,8 +126,8 @@ func checkOwedCase(t *testing.T, name, why, dir string) {
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
-	if len(res.final) == 0 {
+	res.Consume(f)
+	if len(res.Final) == 0 {
 		t.Errorf("%s: owed (%s) but its stream holds no test result", name, why)
 	}
 }
@@ -256,7 +259,7 @@ func gradeGoldenCensus(t *testing.T, dir string, c *goldenCase, _ lookupFn) stri
 	}
 	defer f.Close()
 	res := newResults()
-	res.consume(f)
+	res.Consume(f)
 	var b strings.Builder
 	rc := reportCensus(&b, censusConfig(c.Passthrough), res, false)
 	return fmt.Sprintf("exit %d\n%s", rc, b.String())
@@ -429,7 +432,7 @@ func gradeGoldenGPUCoverage(t *testing.T, dir string, c *goldenCase, look lookup
 	var b strings.Builder
 	for _, head := range c.Heads {
 		for _, be := range []string{"cuda", "metal"} {
-			r, why := gpuCoverage(recs, be, head, treeOf)
+			r, why := gaterelease.GPUCoverage(recs, be, head, treeOf)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), be, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}
 	}
@@ -460,7 +463,7 @@ func gradeGoldenParityCoverage(t *testing.T, dir string, c *goldenCase, look loo
 	}
 	var b strings.Builder
 	for _, head := range c.Heads {
-		r, why := parityCoverage(recs, head, c.Paths, objOf)
+		r, why := gaterelease.ParityCoverage(recs, head, c.Paths, objOf)
 		fmt.Fprintf(&b, "%s: %s\n", short8(head), coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 	}
 	return b.String()
@@ -481,8 +484,8 @@ func gradeGoldenQuickCoverage(t *testing.T, dir string, c *goldenCase, look look
 	}
 	var b strings.Builder
 	for _, head := range c.Heads {
-		for _, goos := range quickRecordSystems {
-			r, why := quickCoverage(recs, goos, head, changed)
+		for _, goos := range gaterelease.QuickRecordSystems {
+			r, why := gatequick.QuickCoverage(recs, goos, head, changed)
 			fmt.Fprintf(&b, "%s %s: %s\n", short8(head), goos, coverageLine(r != nil, why, func() string { return r.Date + " @ " + short8(r.Commit) }))
 		}
 	}
@@ -534,8 +537,8 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 			if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 				t.Fatalf("%s: %v", f, err)
 			}
-			old := giwResult{OK: r.OldSHA != "", SHA: r.OldSHA, Size: r.OldBytes, Line: r.OldLine, Err: errIfNoSHA(r.OldSHA, r.Why)}
-			nw := giwResult{OK: r.NewSHA != "", SHA: r.NewSHA, Size: r.NewBytes, Line: r.NewLine, Err: errIfNoSHA(r.NewSHA, r.Why)}
+			old := gateidentity.GiwResult{OK: r.OldSHA != "", SHA: r.OldSHA, Size: r.OldBytes, Line: r.OldLine, Err: errIfNoSHA(r.OldSHA, r.Why)}
+			nw := gateidentity.GiwResult{OK: r.NewSHA != "", SHA: r.NewSHA, Size: r.NewBytes, Line: r.NewLine, Err: errIfNoSHA(r.NewSHA, r.Why)}
 			if r.NewErr != "" {
 				nw.Err = r.NewErr
 			}
@@ -543,7 +546,7 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 			if r.New2SHA != "" {
 				n2.SHA = r.New2SHA
 			}
-			v, detail := judgeGiwBytes(nw, n2, old)
+			v, detail := gateidentity.JudgeGiwBytes(nw, n2, old)
 			counts[v]++
 			rows++
 			if v != r.Verdict {

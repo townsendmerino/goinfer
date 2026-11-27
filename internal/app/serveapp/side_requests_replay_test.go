@@ -51,7 +51,7 @@ func TestSideRequests_evictionCounterfactual(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 
 	reqRE := regexp.MustCompile(`^request: POST (\S+) .*prompt_tokens=(\d+) completion_tokens=(\d+) ttft=(\d+)ms .*reused=(\S+) slot=(\S+) div=(\S+)`)
@@ -172,7 +172,7 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 	sf := registerFlags(fs)
 	_ = fs.Parse(nil)
 	s := &server{cfg: sf.cfg}
-	lm := &loadedModel{tk: tk, name: "mellum2.1-thinking"}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "mellum2.1-thinking"}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 
 	dirs, _ := filepath.Glob(filepath.Join(out, "bodies-*"))

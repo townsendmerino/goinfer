@@ -75,10 +75,10 @@ func sseProbeServer(t *testing.T) (*server, *sseProbeEngine) {
 		t.Fatalf("encode <IMG>: %v", err)
 	}
 	eng := &sseProbeEngine{tok: ids[0]}
-	s := &server{responses: newResponseStore(8)}
-	lm := &loadedModel{tk: tk, name: "m", fakeEngine: eng}
+	s := &server{serverStores: serverStores{responses: newResponseStore(8)}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{fakeEngine: eng}}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
-	vlm := &loadedModel{tk: tk, name: "vlm", fakeEngine: eng, vision: fakeVisionTower{tok: imgIDs[0]}}
+	vlm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "vlm"}, modelModalities: modelModalities{vision: fakeVisionTower{tok: imgIDs[0]}}, modelScriptedSeam: modelScriptedSeam{fakeEngine: eng}}
 	vlm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm, "vlm": vlm}
 	return s, eng

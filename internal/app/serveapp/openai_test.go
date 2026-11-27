@@ -549,7 +549,7 @@ func TestPrepare_topPAndSeed(t *testing.T) {
 func TestConstrainForcedTool_M05(t *testing.T) {
 	tool := &chat.Tool{Name: "get_weather", Parameters: []byte(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)}
 	// gemma4: SupportsTools true, ToolCallWrapper ok=false → unconstrainable.
-	lmG := &loadedModel{tmpl: chat.Gemma4(), vocab: 32, tk: nil}
+	lmG := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.Gemma4(), vocab: 32, tk: nil}}
 	// named force on an unconstrainable family → error (becomes 400).
 	if err := constrainForcedTool(lmG, &genRequest{}, tool, true, "", []chat.Tool{*tool}); err == nil {
 		t.Error("named tool_choice on gemma4 (no constrainable form) should error, got nil (M-05)")
@@ -570,7 +570,7 @@ func TestConstrainForcedTool_M05(t *testing.T) {
 		t.Errorf("nil forced tool without a named choice should not error, got %v", err)
 	}
 	// constrainable family (chatml): wires the masker, returns nil.
-	lmC := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	lmC := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
 	gr := &genRequest{}
 	if err := constrainForcedTool(lmC, gr, tool, true, "", []chat.Tool{*tool}); err != nil {
 		t.Fatalf("chatml named force should succeed, got %v", err)
@@ -592,7 +592,7 @@ func TestCompletionReqLogprobs_M06(t *testing.T) {
 	if req.Logprobs == nil || *req.Logprobs != 5 {
 		t.Errorf("req.Logprobs = %v, want *int 5", req.Logprobs)
 	}
-	if req.sampling.Logprobs {
+	if req.Sampling.Logprobs {
 		t.Error("embedded chat-bool Logprobs must stay false (shadowed) so the logprobs path is off")
 	}
 }
@@ -681,8 +681,8 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 		{Name: "get_weather", Parameters: []byte(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)},
 		{Name: "get_time"},
 	}
-	chatml := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
-	llama := &loadedModel{tmpl: chat.Llama3(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	chatml := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
+	llama := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.Llama3(), vocab: 32, tk: &tokenizer.Tokenizer{}}}
 	cases := []struct {
 		name       string
 		lm         *loadedModel
@@ -728,7 +728,7 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 	}
 	// a speculative server keeps its drafter under auto (no processor, which every speculative path refuses) and gets the lazy union
 	// as gr.lazy, which the engine takes from the call's opener on; required still gets the forced union
-	specLM := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}, spec: true}
+	specLM := &loadedModel{modelIdentity: modelIdentity{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}, modelSpecConfig: modelSpecConfig{spec: true}}
 	grS := &genRequest{}
 	if err := constrainForcedTool(specLM, grS, nil, false, "auto", tools); err != nil || grS.sp.LogitProcessor != nil || grS.lazy == nil {
 		t.Errorf("spec server, auto: err=%v proc=%v lazy=%v — want no processor (keep the drafter) and the lazy union on gr.lazy", err, grS.sp.LogitProcessor != nil, grS.lazy != nil)

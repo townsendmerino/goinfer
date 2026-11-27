@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
 )
 
 const batchLineWorkers = 8
@@ -39,26 +40,7 @@ func runBatchWorker(n int, next *atomic.Int64, fn func(i int)) {
 	}
 }
 
-// hasChatMedia reports whether any message carries an image_url or input_audio content part. It reads part types only, so a
-// batch line with media is refused before any base64 payload is decoded.
-func hasChatMedia(msgs []chatMessage) bool {
-	for _, m := range msgs {
-		var parts []struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(m.Content, &parts) != nil {
-			continue // plain-string content carries no media
-		}
-		for _, p := range parts {
-			if p.Type == "image_url" || p.Type == "input_audio" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// hasAnthropicImages reports whether any message carries an image block, reading block types only (see hasChatMedia).
+// hasAnthropicImages reports whether any message carries an image block, reading block types only (see wirecore.HasChatMedia).
 func hasAnthropicImages(req *anthropicReq) bool {
 	for _, m := range req.Messages {
 		var blocks []struct {
@@ -98,7 +80,7 @@ func runBatchChatLine(s *server, batch *stores.BatchRecord, i int, req chatReq) 
 			"messages is required and must contain at least one message"))
 		return
 	}
-	if hasChatMedia(req.Messages) {
+	if wirecore.HasChatMedia(req.Messages) {
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error",
 			"batch requests do not support image or audio inputs this pass; use /v1/chat/completions"))
 		return
@@ -121,13 +103,13 @@ func runBatchChatLine(s *server, batch *stores.BatchRecord, i int, req chatReq) 
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
-	ts, terr := s.resolveThink(req.think())
+	ts, terr := s.resolveThink(req.Think())
 	if terr != nil {
 		batch.SetResult(i, stores.LineError(customID, 400, "invalid_request_error", terr.Error()))
 		return
 	}
 	tm := lm.templateFor(ts)
-	if req.sampling.constrainsOutput() {
+	if req.Sampling.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	bsys, bturns := messagesToTurns(req.Messages)
@@ -136,7 +118,7 @@ func runBatchChatLine(s *server, batch *stores.BatchRecord, i int, req chatReq) 
 		batch.SetResult(i, stores.LineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	gr, err := lm.prepare(req.Sampling, ids, lm.residentPath())
 	if err != nil {
 		batch.SetResult(i, stores.LineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return
@@ -252,7 +234,7 @@ func runBatchMessageLine(s *server, batch *stores.BatchRecord, i int, req anthro
 		return
 	}
 	tm := lm.templateFor(ts)
-	if sm.constrainsOutput() {
+	if sm.ConstrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
 	ids, err := lm.promptForT(tm, system, turns)

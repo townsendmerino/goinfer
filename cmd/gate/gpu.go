@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gaterelease"
 )
 
 // The pre-tag GPU correctness gate (gate gpu). Run it on EACH GPU box, paste the verdict, then tag.
@@ -115,7 +117,7 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 	res := newResults()
 	if stream {
 		// One line per completed test, as it completes.
-		res.stream = func(_, test, action string) {
+		res.Stream = func(_, test, action string) {
 			fmt.Fprintf(g.w, "        · %s: %s\n", strings.ToUpper(action), test)
 		}
 	}
@@ -126,7 +128,7 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 	// literal test-name prefix or alternation, so renaming a test silently empties its cell.
 	g.noteIfEmpty(c, res)
 	g.noteIfAllSkipped(c, cr)
-	return res, cr, res.text()
+	return res, cr, res.Text()
 }
 
 // noteIfAllSkipped records a FILTERED cell whose tests all SKIPPED, which noteIfEmpty cannot see (a skip
@@ -153,7 +155,7 @@ func (g *gpuGate) noteIfAllSkipped(c cell, cr cellResult) {
 // An unfiltered cell is exempt: an empty -run means "everything", so emptiness there is a different bug
 // (no packages, or a build failure) that runCell's own policies already cover.
 func (g *gpuGate) noteIfEmpty(c cell, res *results) {
-	if c.Run == "" || len(res.final) > 0 {
+	if c.Run == "" || len(res.Final) > 0 {
 		return
 	}
 	fmt.Fprintf(g.w, "\n  !! CELL MATCHED NO TESTS: %s  -run %q\n"+
@@ -369,7 +371,7 @@ func (g *gpuGate) seamGroup(src gpuInputs) error {
 	if err != nil {
 		return err
 	}
-	g.apply(gradeSeam(cr, res.ranCount(), out))
+	g.apply(gradeSeam(cr, res.RanCount(), out))
 	return nil
 }
 
@@ -386,7 +388,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			if err != nil {
 				return err
 			}
-			g.apply(gradeCUDASuite(cr, testNames(res.topLevel("skip")), out))
+			g.apply(gradeCUDASuite(cr, testNames(res.TopLevel("skip")), out))
 			return nil
 		},
 		func() error {
@@ -409,7 +411,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			if err != nil {
 				return err
 			}
-			g.apply(gradeCUDAGraphs(cr, res.ranCount(), testNames(res.topLevel("skip")), out))
+			g.apply(gradeCUDAGraphs(cr, res.RanCount(), testNames(res.TopLevel("skip")), out))
 			return nil
 		},
 		func() error {
@@ -553,8 +555,8 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 	runLines := 0
 	var skipped [][]string
 	for _, r := range mainRes {
-		runLines += r.runLines
-		skipped = append(skipped, testNames(r.topLevel("skip")))
+		runLines += r.RunLines
+		skipped = append(skipped, testNames(r.TopLevel("skip")))
 	}
 	g.apply(gradeHeavyTier(mainRC, src.heavySecs(), mainOut.String(), runLines, skipped))
 	return nil
@@ -696,7 +698,7 @@ func heavyGroupEnv() map[string]string {
 func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, procPeak) {
 	cfg := &gateConfig{Name: "gpu", TopLevelOnly: true, RCIsFailure: true}
 	res := newResults()
-	res.stream = func(_, test, action string) {
+	res.Stream = func(_, test, action string) {
 		fmt.Fprintf(g.w, "        · %s: %s\n", strings.ToUpper(action), test)
 	}
 	var peak procPeak
@@ -709,14 +711,14 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 		Serial: true, Timeout: "120m", Run: h.Run,
 		Env: heavyGroupEnv(),
 		OnStart: func(pid int) func() {
-			stop := startProcSampler(pid, res.inFlight)
+			stop := startProcSampler(pid, res.InFlight)
 			return func() { peak = stop() }
 		},
 	}
 	cr := runCell(c, cfg, res, g.logDir)
 	g.cells = append(g.cells, cr)
 	g.noteIfEmpty(c, res)
-	return res, cr, res.text(), peak
+	return res, cr, res.Text(), peak
 }
 
 // reportPeak prints one process's memory line and returns it as a record row.
@@ -728,7 +730,7 @@ func (g *gpuGate) reportPeak(h heavyGroup, cr cellResult, p procPeak) heavyProcR
 	}
 	rec.VmHWMMB, rec.VmSwapPkMB = p.HWMKB/1024, p.SwapPeakKB/1024
 	var top []string
-	for _, n := range p.topTests(3) {
+	for _, n := range p.TopTests(3) {
 		top = append(top, fmt.Sprintf("%s %d MB", n, p.ByTest[n]/1024))
 	}
 	fmt.Fprintf(g.w, "      %s memory: VmHWM %d MB, peak VmSwap %d MB, wall %ds (pid %d, %d samples); largest RSS in flight: %s\n",
@@ -742,8 +744,8 @@ func reconcileGroups(listed []string, procs []*results) (missing, doubled []stri
 	seen := map[string]int{}
 	for _, r := range procs {
 		inThis := map[string]bool{}
-		for _, k := range r.order {
-			if !isSubtest(k) && r.final[k] != "" && !inThis[k.Test] {
+		for _, k := range r.Order {
+			if !isSubtest(k) && r.Final[k] != "" && !inThis[k.Test] {
 				inThis[k.Test] = true
 				seen[k.Test]++
 			}
@@ -1339,10 +1341,15 @@ func unescapeCI(s string) string {
 }
 
 // ---- 6. group reconciliation + verdict ----
-// verdict prints the verdict block, writes the run's record (gpu_record.go) and returns the exit code.
+// verdict prints the verdict block, writes the run's record (gaterelease.WriteGPURecord) and returns the exit code.
 func (g *gpuGate) verdict() int {
 	code, label := g.verdictLabel()
-	g.writeRecord(label)
+	gaterelease.WriteGPURecord(g.w, g.recordDir, gpuRecord{
+		Backend: g.backend, Verdict: label, Dirty: g.dirty, HeavySkipped: g.heavySkipped, HeavyGroups: g.heavyOnly,
+		GPU: g.gpuName, HeavyProcesses: g.heavyProcs,
+		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
+		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes, Notices: g.notices,
+	})
 	return code
 }
 

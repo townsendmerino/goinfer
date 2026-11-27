@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,14 +105,14 @@ func TestGPU_verdictHasThreeStates(t *testing.T) {
 // TOP-LEVEL results only.
 func TestGPU_zeroMatchedTestsIsDetectable(t *testing.T) {
 	empty := newResults()
-	if empty.ranCount() != 0 {
-		t.Fatalf("an empty stream reports %d tests", empty.ranCount())
+	if empty.RanCount() != 0 {
+		t.Fatalf("an empty stream reports %d tests", empty.RanCount())
 	}
 	r := newResults()
-	r.cur = "c"
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestA"})
-	r.add(testEvent{Action: "pass", Package: "p", Test: "TestA/sub"})
-	if got := r.ranCount(); got != 1 {
+	r.Cur = "c"
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestA"})
+	r.Add(testEvent{Action: "pass", Package: "p", Test: "TestA/sub"})
+	if got := r.RanCount(); got != 1 {
 		t.Fatalf("ranCount = %d, want 1 — subtests must not inflate it", got)
 	}
 }
@@ -327,8 +328,8 @@ func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	g := &gpuGate{w: &buf, logDir: t.TempDir()}
 
 	populated := newResults()
-	populated.add(testEvent{Action: "run", Package: "p", Test: "TestSomething"})
-	populated.add(testEvent{Action: "pass", Package: "p", Test: "TestSomething"})
+	populated.Add(testEvent{Action: "run", Package: "p", Test: "TestSomething"})
+	populated.Add(testEvent{Action: "pass", Package: "p", Test: "TestSomething"})
 	g.noteIfEmpty(cell{Name: "real", Run: "TestSomething"}, populated)
 
 	g.noteIfEmpty(cell{Name: "unfiltered", Run: ""}, newResults())
@@ -493,12 +494,12 @@ func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 		r := newResults()
 		for _, n := range tests {
 			k := testKey{Cell: cell, Pkg: "cuda", Test: n}
-			r.order = append(r.order, k)
-			r.final[k] = "pass"
+			r.Order = append(r.Order, k)
+			r.Final[k] = "pass"
 		}
 		sub := testKey{Cell: cell, Pkg: "cuda", Test: "TestAlpha/sub"}
-		r.order = append(r.order, sub)
-		r.final[sub] = "pass"
+		r.Order = append(r.Order, sub)
+		r.Final[sub] = "pass"
 		return r
 	}
 	listed := []string{"TestAlpha", "TestBeta", "TestMiddle", "TestZeta"}
@@ -622,5 +623,53 @@ func TestGPU_noMeasurementTakesAFreshProcess(t *testing.T) {
 		if slices.Contains(measure, n) {
 			t.Errorf("%s calls testgate.RequireMeasure and carries needsFreshProcess: drop the marker", n)
 		}
+	}
+}
+
+// The verdict block writes the record, with the verdict word, the counts and the tree ids; the heavy skip and a dirty tree are in it.
+func TestGPURecord_theVerdictWritesTheRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		fail         int
+		dirty, heavy bool
+		want         string
+	}{
+		{"pass", 0, false, false, "PASS"},
+		{"fail", 1, false, false, "FAIL"},
+		{"dirty", 0, true, false, "INCONCLUSIVE"},
+		{"heavy skipped still a PASS verdict, flagged", 0, false, true, "PASS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var out bytes.Buffer
+			g := &gpuGate{w: &out, backend: "cuda", commit: "abc", dirty: tc.dirty, heavySkipped: tc.heavy, recordDir: dir, gpuName: "test gpu",
+				expect: []string{"seam"}, emitted: map[string]bool{"seam": true}, pass: 3, fail: tc.fail, ran: 3}
+			g.verdict()
+			ents, _ := os.ReadDir(dir)
+			if len(ents) != 1 {
+				t.Fatalf("%d record files written, want 1 (output: %s)", len(ents), out.String())
+			}
+			b, _ := os.ReadFile(filepath.Join(dir, ents[0].Name()))
+			var r gpuRecord
+			if err := json.Unmarshal(b, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.Verdict != tc.want || r.Dirty != tc.dirty || r.HeavySkipped != tc.heavy || r.Groups.Pass != 3 || r.Backend != "cuda" || len(r.Commit) != 40 {
+				t.Errorf("record = %+v, want verdict %s dirty %v heavy %v", r, tc.want, tc.dirty, tc.heavy)
+			}
+			if len(r.Trees) != len(gpuQualifyingTrees) {
+				t.Errorf("trees = %v, want an id for each of %v", r.Trees, gpuQualifyingTrees)
+			}
+		})
+	}
+}
+
+// With no record directory the run writes nothing.
+func TestGPURecord_noDirectoryWritesNothing(t *testing.T) {
+	var out bytes.Buffer
+	g := &gpuGate{w: &out, backend: "cuda", expect: []string{"seam"}, emitted: map[string]bool{"seam": true}, pass: 1, ran: 1}
+	g.verdict()
+	if strings.Contains(out.String(), "record:") || strings.Contains(out.String(), "RECORD NOT WRITTEN") {
+		t.Errorf("a run with no record directory mentioned a record: %s", out.String())
 	}
 }

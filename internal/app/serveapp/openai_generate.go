@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/connect"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/wirecore"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -63,69 +64,68 @@ type decisionState struct {
 	deciderErr  error
 }
 
-// loadedModel is one resident generative model and the per-model state a request needs: its tokenizer, chat template,
-// stop ids, vocab, warm-KV sessions, and the admission (turns) that serializes its generations. The server registry
-// holds them keyed by served name; requests to distinct models run in parallel.
-type loadedModel struct {
-	tk           *tokenizer.Tokenizer
-	model        *decoder.Model
-	closer       io.Closer      // test-only liveness/close stand-in when model is nil; production uses model directly (livenessKey)
-	tmpl         *chat.Template // nil → raw completion
-	stopIDs      []int          // turn-stop token ids from the template
-	eosIDs       []int
-	vocab        int
-	name         string // served id (reported by /v1/models, matched on the request model field)
-	fp           string // model fingerprint (binds --session-dir snapshots)
-	source       string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
-	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	specAdaptive bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
-	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
-	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
-	blockSpec blockDrafter
-	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
-	// request leaves out; nil when it carries none.
-	sampling  *decoder.RecommendedSampling
-	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	decisions decisionState
-	caches    modelCaches
-	turns     admission // FIFO, context-aware granter of decode turns; a waiter can give up on disconnect or halt
-	// sessMu guards sessions, the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin
-	// and the background save, restore and demote goroutines take it. It is held around those operations only, not
-	// across a generation: the session a generation is using is checked out instead (sessionLRU.busy), and the LRU
-	// never hands out, evicts, demotes, saves or reads a busy session. That is what lets several generations of one
-	// CPU model run at once (-max-concurrent) while nothing frees or moves memory under a running generation.
-	sessMu sync.Mutex
-	// queue bounds in-flight plus waiting requests (cap = concurrent + --max-queue); a request claims a slot before
-	// its turn. nil = unbounded. Backpressure, not batching: a full queue returns 429 Retry-After.
-	queue chan struct{}
-	// concurrent is how many generations of this model may run at once (see setConcurrency); 1 = serialized.
+// modelIdentity groups the checkpoint, tokenizer, chat template, stop tokens,
+// and served naming metadata of a loadedModel.
+type modelIdentity struct {
+	tk      *tokenizer.Tokenizer
+	model   *decoder.Model
+	closer  io.Closer
+	tmpl    *chat.Template
+	stopIDs []int
+	eosIDs  []int
+	vocab   int
+	name    string
+	fp      string
+	source  string
+	adapter string
+}
+
+// modelSpecConfig groups speculative decoding flags, attached block drafter, and
+// checkpoint-recommended sampling defaults on a loadedModel.
+type modelSpecConfig struct {
+	spec         bool
+	specAdaptive bool
+	blockSpec    blockDrafter
+	sampling     *decoder.RecommendedSampling
+}
+
+// modelConcurrency groups CPU session KV reuse, FIFO decode-turn admission, and
+// request-queue backpressure on a loadedModel.
+type modelConcurrency struct {
+	sessions   *sessionLRU
+	turns      admission
+	sessMu     sync.Mutex
+	queue      chan struct{}
 	concurrent int
+}
 
-	// vision is the entry's image input (--vision; nil: the model takes no image). A model with one is vision-capable:
-	// serve accepts image content parts, runs them through the family's preprocessing and tower, and routes the turn to
-	// the family's generator.
-	vision visionTower
-
-	// visionShare counts the entries holding this entry's startup vision tower (nil: none shares it); the last to unload
-	// closes it.
+// modelModalities groups optional vision and audio towers attached to a loadedModel.
+type modelModalities struct {
+	vision      visionTower
 	visionShare *visionShare
+	audio       audioTower
+}
 
-	// audio is the entry's audio input (nil: the model takes no audio clip): a Gemma 4 checkpoint with an audio_config,
-	// Qwen3-ASR or Voxtral Mini. Its encoder loads on the first clip.
-	audio audioTower
-
-	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
-	// slice is the model's end of turn) instead of running model. Production never sets it.
-	scripted []int
-	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
-	onScripted func(promptIDs []int)
-	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
-	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
+// modelScriptedSeam groups deterministic test seams used when driving a loadedModel
+// without executing a real decoder forward pass.
+type modelScriptedSeam struct {
+	scripted          []int
+	onScripted        func(promptIDs []int)
 	scriptedRecurrent bool
 	onScriptedScope   func(kvScope)
-	// fakeEngine, when set, is the engine every text generation runs on. A test seam.
-	fakeEngine engine.Engine
+	fakeEngine        engine.Engine
+}
+
+// loadedModel is one resident generative model and its per-model serving state,
+// composed from focused sub-structs by concern.
+type loadedModel struct {
+	modelIdentity
+	modelSpecConfig
+	modelConcurrency
+	modelModalities
+	modelScriptedSeam
+	decisions decisionState
+	caches    modelCaches
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -176,32 +176,10 @@ func promptByteBudgetError(inputBytes, ctx, maxTokenBytes int) error {
 	return nil
 }
 
-// chatInputBytes sums the tokenizable text across chat messages: the input the BPE runs over (JSON structure and
-// image data are not tokenized), so it is what the promptTooLargeForContext guard bounds. It includes each message's
-// replayed tool_calls[].function.arguments: messagesToTurns converts an assistant message's ToolCalls
-// unconditionally, and a chat template renders them into the prompt whenever they appear in history, tools active
-// this turn or not, so an unpriced arguments blob would run the full BPE past the guard.
-func chatInputBytes(msgs []chatMessage) int {
-	n := 0
-	for _, m := range msgs {
-		n += len(m.text())
-		for _, tc := range m.ToolCalls {
-			n += len(tc.Function.Name) + len(tc.Function.Arguments)
-		}
-	}
-	return n
-}
-
-// toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes. RenderToolsSegments renders every
-// tool's name, description and parameters into the prompt whenever tools are active, so a large schema list is priced
-// at the same guard as the messages, not left to run the full BPE unpriced.
-func toolSchemaBytes(tools []toolSpec) int {
-	n := 0
-	for _, t := range tools {
-		n += len(t.Function.Name) + len(t.Function.Description) + len(t.Function.Parameters)
-	}
-	return n
-}
+var (
+	chatInputBytes  = wirecore.ChatInputBytes
+	toolSchemaBytes = wirecore.ToolSchemaBytes
+)
 
 // setConcurrency decides how many generations of this model run at once and sizes the admission and queue to match:
 // -max-concurrent, but 1 unless the model is safe to run concurrently on the CPU (decoder.Model.CPUConcurrentSafe:
@@ -248,8 +226,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if lm.model == nil {
 		return ""
 	}
-	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
-		cpuBatched: cpuBatched}, cfg)
+	return concurrencyLine(bannerFacts{Resident: lm.model.ResidentActive(), KVSlots: lm.model.ResidentKVSlots(), Concurrent: n,
+		CPUBatched: cpuBatched}, cfg)
 }
 
 // audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, a Qwen3-ASR checkpoint, or Voxtral Mini).
@@ -374,7 +352,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	sm, fromModel := withRecommended(sm, lm.sampling)
 	sp := samplingp.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
-		MinP:        deref(sm.minP, 0),
+		MinP:        deref(sm.MinP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
@@ -450,10 +428,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
-		if maxTok == nil && sm.outputByWindow && ctx > 0 {
+		if maxTok == nil && sm.OutputByWindow && ctx > 0 {
 			gr.maxTokens = connect.OutputLimit(ctx)
 		}
-		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.fixedTokens); err != nil {
+		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.FixedTokens); err != nil {
 			return genRequest{}, err
 		}
 		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
@@ -464,7 +442,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	}
 	if sm.Confidence {
 		switch {
-		case !sm.confidenceOK:
+		case !sm.ConfidenceOK:
 			return genRequest{}, fmt.Errorf("goinfer_confidence is supported on /v1/chat/completions and /v1/completions with response_format json_schema, not with tools, images, jobs or batches")
 		case sm.ResponseFormat == nil || sm.ResponseFormat.Type != "json_schema":
 			return genRequest{}, fmt.Errorf("goinfer_confidence needs response_format {\"type\": \"json_schema\"}: the schema is what says each field's kind")
@@ -689,18 +667,18 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	// The image paths take every image's span; a one-media builder (GLM-OCR, audio) sets only the first.
-	spans, grids := decoderSpans(vi.spans), vi.grids
+	spans, grids := decoderSpans(vi.Spans), vi.Grids
 	if len(spans) == 0 {
-		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
+		spans, grids = []decoder.ImageSpan{{Pos: vi.ImgPos, Len: vi.ImgLen, Hash: vi.ImgHash}}, [][3]int{vi.Grid}
 	}
 	gr.clock.Start()
 	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.CostCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp),
-		Media: vi.media(spans, grids, lm),
+		Media: viMedia(vi, spans, grids, lm),
 	})
 	defer st.Close()
-	if vi.replyPrefix != "" {
-		onText(vi.replyPrefix)
+	if vi.ReplyPrefix != "" {
+		onText(vi.ReplyPrefix)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
 	gr.clock.End()
@@ -709,9 +687,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		return turnResult{finish: finish, nComp: n, stopHit: stopHit, cancelReason: cancelledReason(g, parent, stopHit)}, nil
 	}
 	if len(spans) > 1 && rep.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
-		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), rep.ImgPrefillDecline)
+		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.Images, 1), len(spans), rep.ImgPrefillDecline)
 	}
-	if vi.gemma4 { // log where this image turn decoded
+	if vi.Gemma4 { // log where this image turn decoded
 		where := "cpu"
 		if rep.DecodeResident {
 			where = "resident"
@@ -730,19 +708,17 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	return turnResult{finish: finish, nComp: n, logprobs: rep.Logprobs, stopHit: stopHit, reused: reuseOf(rep), cancelReason: cr}, genErr(rep.Err)
 }
 
-// media is vi as the engine's Media over spans and grids (driveVL's, with the one-media fallback), the kind chosen by
-// vi's flags in this order: audio, Qwen, Gemma 4, causal, else bidirectional images.
-func (vi visionInput) media(spans []decoder.ImageSpan, grids [][3]int, lm *loadedModel) *engine.Media {
-	md := &engine.Media{Kind: engine.MediaImage, Spans: spans, Features: vi.features}
+func viMedia(vi visionInput, spans []decoder.ImageSpan, grids [][3]int, lm *loadedModel) *engine.Media {
+	md := &engine.Media{Kind: engine.MediaImage, Spans: spans, Features: vi.Features}
 	switch {
-	case vi.asr: // Qwen3-ASR, Voxtral: the encoder's embeddings replace the audio run, causal prefill, CPU decode
+	case vi.ASR:
 		md.Kind = engine.MediaAudio
-	case vi.qwen: // Qwen2.5-VL, Qwen3-VL (with DeepStack sets), GLM-OCR
+	case vi.Qwen:
 		g := lm.qwenGrid()
-		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, g.merge, g.imgTok, vi.deepSets
-	case vi.gemma4:
+		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, g.Merge, g.ImgTok, vi.DeepSets
+	case vi.Gemma4:
 		md.Kind = engine.MediaGemma4
-	case vi.causal: // causal image tokens (Ministral 3, LFM2-VL), one span per run
+	case vi.Causal:
 		md.Kind = engine.MediaImageCausal
 	}
 	return md
@@ -869,7 +845,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	if gr.conf != nil && gr.masker != nil {
 		// goinfer_confidence: the stream has drained, so ids is everything this generation emitted (up to a stop
 		// string, if one ended it early — the confidences then cover the part the client received).
-		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
+		gr.conf.Fields, gr.conf.Err = gr.masker.FieldConfidence(ids)
 	}
 	if gr.outcome != nil {
 		gr.outcome.IDs, gr.outcome.Done, gr.outcome.StopHit = ids, true, stopHit != ""

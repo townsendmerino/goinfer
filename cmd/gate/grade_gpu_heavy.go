@@ -1,11 +1,8 @@
 package main
 
 import (
-	"cmp"
 	"fmt"
-	"maps"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 )
@@ -161,7 +158,7 @@ func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]stri
 	} else {
 		rec.VmHWMMB, rec.VmSwapPkMB = p.HWMKB/1024, p.SwapPeakKB/1024
 		var top []string
-		for _, n := range p.topTests(3) {
+		for _, n := range p.TopTests(3) {
 			top = append(top, fmt.Sprintf("%s %d MB", n, p.ByTest[n]/1024))
 		}
 		lines = append(lines, fmt.Sprintf("      %s memory: VmHWM %d MB, peak VmSwap %d MB, wall %ds (pid %d, %d samples); largest RSS in flight: %s",
@@ -288,15 +285,3 @@ func gradeHeavyTier(mainRC, secs int, mainOut string, runLines int, skipped [][]
 
 // failTestRe picks a failing test's header and a panic, for a heavy process's detail.
 var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
-
-// topTests returns up to n tests of a peak's ByTest, largest first.
-func (p procPeak) topTests(n int) []string {
-	names := slices.Collect(maps.Keys(p.ByTest))
-	slices.SortFunc(names, func(a, b string) int {
-		return cmp.Or(cmp.Compare(p.ByTest[b], p.ByTest[a]), cmp.Compare(a, b))
-	})
-	if len(names) > n {
-		names = names[:n]
-	}
-	return names
-}

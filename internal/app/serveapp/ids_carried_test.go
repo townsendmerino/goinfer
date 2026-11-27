@@ -426,8 +426,8 @@ func scriptedIDsServer(t *testing.T, reply string) (*httptest.Server, []int, *se
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{idsKey: newIDsKey([]byte("scripted test key, 32 bytes long"))}
-	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	s := &server{carriedIDState: carriedIDState{idsKey: newIDsKey([]byte("scripted test key, 32 bytes long"))}}
+	lm := &loadedModel{modelIdentity: modelIdentity{tk: tk, name: "m"}, modelScriptedSeam: modelScriptedSeam{scripted: append([]int{}, ids...)}}
 	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}

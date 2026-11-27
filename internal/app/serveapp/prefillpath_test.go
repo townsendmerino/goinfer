@@ -34,8 +34,8 @@ func tinyServed(t *testing.T) (*server, *loadedModel) {
 		t.Fatalf("load tiny fixture: %v", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	lm := &loadedModel{name: "tiny", model: m}
-	return &server{models: map[string]*loadedModel{"tiny": lm}}, lm
+	lm := &loadedModel{modelIdentity: modelIdentity{name: "tiny", model: m}}
+	return &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"tiny": lm}}}, lm
 }
 
 // TestServe_modelsReportsResolvedPaths: /v1/models must carry the paths a model actually got, so a
@@ -268,7 +268,7 @@ func TestServe_modelsReportsVision(t *testing.T) {
 	if v := visionOf(); v != false {
 		t.Errorf("text-only model: vision = %v, want false (present, not omitted)", v)
 	}
-	lm.vision = &qwen25Vision{enc: &vision.QwenVisionEncoder{}} // any loaded tower makes visionCapable true
+	lm.vision = &qwen25Vision{Enc: &vision.QwenVisionEncoder{}} // any loaded tower makes visionCapable true
 	t.Cleanup(func() { lm.vision = nil })
 	if !lm.visionCapable() {
 		t.Fatal("precondition: visionCapable should be true with a tower set")

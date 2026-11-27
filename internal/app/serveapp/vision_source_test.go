@@ -17,7 +17,7 @@ func TestLoadVisionTower_discoversInResolvedSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"model_type":"qwen2_5_vl"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{models: map[string]*loadedModel{"vl": {name: "vl", source: dir}}}
+	s := &server{modelRegistry: modelRegistry{models: map[string]*loadedModel{"vl": {modelIdentity: modelIdentity{name: "vl", source: dir}}}}}
 	cfg := config{models: modelFlag{{path: "hf:owner/vl:safetensors"}}}
 	err := s.loadVisionTower(cfg)
 	if err == nil || !strings.Contains(err.Error(), dir) {

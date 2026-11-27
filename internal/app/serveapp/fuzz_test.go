@@ -37,12 +37,12 @@ func FuzzServeChatRequest(f *testing.F) {
 		_, _ = grammarFor(req.ResponseFormat)
 		// Sampling/stop translation needs no model when there's no response_format
 		// (the masker path legitimately requires a loaded tokenizer).
-		sm := req.sampling
+		sm := req.Sampling
 		sm.ResponseFormat = nil
 		lm := &loadedModel{}
 		_, _ = lm.prepare(sm, []int{1, 2, 3}, true)
 		_, _ = messagesToTurns(req.Messages)
-		_ = parseStop(req.sampling.Stop)
+		_ = parseStop(req.Sampling.Stop)
 	})
 }
 
