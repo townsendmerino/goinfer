@@ -327,7 +327,7 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 	for i := range want {
 		want[i] = float32(i)
 	}
-	lm.visionFeatureCache().put(sha256.Sum256(img.data), want)
+	lm.visionFeatureCache().Put(sha256.Sum256(img.data), want)
 	vi2, err := lm.visionPrompt(tmpl, "", turns(), img)
 	if err != nil {
 		t.Fatal(err)

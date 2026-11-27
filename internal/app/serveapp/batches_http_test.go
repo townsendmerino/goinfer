@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -13,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
 func batchesTestMux(srv *server) *http.ServeMux {
@@ -432,7 +434,7 @@ func TestBatches_cancelStopsQueuedLines(t *testing.T) {
 // request by that id, so a batch that accepted a duplicate would hand back two results nobody could tell apart. No model is
 // needed: the 400 is decided before any line runs.
 func TestBatches_duplicateCustomIDIsRefused(t *testing.T) {
-	srv := &server{files: newFileStore(8, 0), batches: newBatchStore(8)}
+	srv := &server{files: stores.NewFileStore(8, 0), batches: stores.NewBatchStore(8)}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 
@@ -450,10 +452,7 @@ func TestBatches_duplicateCustomIDIsRefused(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(oa.Error.Message, `"a" (entries 1 and 3)`) {
 		t.Errorf("OpenAI dialect: status %d, message %q; want 400 naming the duplicate and both positions", resp.StatusCode, oa.Error.Message)
 	}
-	srv.batches.mu.Lock()
-	n := len(srv.batches.batches)
-	srv.batches.mu.Unlock()
-	if n != 0 {
+	if n := srv.batches.Len(); n != 0 {
 		t.Errorf("a refused batch must not be created (%d in the store)", n)
 	}
 

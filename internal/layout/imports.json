@@ -398,6 +398,23 @@
         "engine/enginetest"
       ],
       "why": "The engine fakes are test code: the serving shell's production files do not link them. A test supplies its engine through loadedModel.fakeEngine."
+    },
+    {
+      "name": "serveapp-stores-leaf",
+      "from": [
+        "internal/app/serveapp/stores"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/app/serveapp/stores": [
+          "internal/app/serveapp/jobs",
+          "internal/batchio"
+        ]
+      },
+      "why": "internal/app/serveapp/stores holds the bounded in-memory serving stores (FileStore, BatchStore, GenerationRegistry, FeatureCache, ResponseStore) below serveapp (SA1). It imports only internal/app/serveapp/jobs and internal/batchio and never decoder or serveapp."
     }
   ],
   "arrows": {
@@ -669,6 +686,7 @@
       "internal/app/serveapp/carriedids",
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/sessions",
+      "internal/app/serveapp/stores",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -699,6 +717,10 @@
     "internal/app/serveapp/sessions": [
       "decoder",
       "internal/runtime/scheduler"
+    ],
+    "internal/app/serveapp/stores": [
+      "internal/app/serveapp/jobs",
+      "internal/batchio"
     ],
     "internal/audio": [
       "internal/vision"
@@ -1069,6 +1091,7 @@
       "internal/app/inproc",
       "internal/app/loadflags",
       "internal/app/serveapp/jobs",
+      "internal/app/serveapp/stores",
       "internal/audio",
       "internal/clef",
       "internal/codec",
@@ -1097,6 +1120,9 @@
     ],
     "internal/app/serveapp/sessions": [
       "internal/runtime/scheduler"
+    ],
+    "internal/app/serveapp/stores": [
+      "internal/app/serveapp/jobs"
     ],
     "internal/audio": [
       "internal/vision"

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -90,32 +91,32 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 // recoverDeviceTower, so a tower that panics (on any device, for any family) fails the request rather than the server.
 func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family string) visionInput {
 	tower := vi.features
-	vi.features = lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
+	vi.features = lm.visionFeatureCache().Wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 	return vi
 }
 
 // visionFeatureCache is this model's per-image tower-output cache, made on first use and sized then by
 // featureCacheSize.
-func (lm *loadedModel) visionFeatureCache() *featureCache {
-	lm.caches.featOnce.Do(func() { lm.caches.feat = newFeatureCache(lm.featureCacheSize()) })
+func (lm *loadedModel) visionFeatureCache() *stores.FeatureCache {
+	lm.caches.featOnce.Do(func() { lm.caches.feat = stores.NewFeatureCache(lm.featureCacheSize()) })
 	return lm.caches.feat
 }
 
-// featureCacheSize is featureCacheBudgetFor over this model's fit plan, read against the memory available when it is
+// featureCacheSize is stores.FeatureCacheBudgetFor over this model's fit plan, read against the memory available when it is
 // called, so a model loaded since this one is counted. With the fit guard off (GOINFER_NO_FIT_GUARD) or --fit=off it is
-// featureCacheBudget.
+// stores.FeatureCacheBudget.
 func (lm *loadedModel) featureCacheSize() int {
 	if lm.model == nil || lm.model.FitDisabled() {
-		return featureCacheBudget
+		return stores.FeatureCacheBudget
 	}
 	if v, _ := lm.model.Knob("GOINFER_NO_FIT_GUARD"); v != "" {
-		return featureCacheBudget
+		return stores.FeatureCacheBudget
 	}
 	_, kvBytes, _, budgetBytes, known := lm.model.FitBudgetSummary()
-	n := featureCacheBudgetFor(known, budgetBytes, kvBytes)
-	if n < featureCacheBudget {
+	n := stores.FeatureCacheBudgetFor(known, budgetBytes, kvBytes)
+	if n < stores.FeatureCacheBudget {
 		fmt.Fprintf(os.Stderr, "vision: the image feature cache holds %d MiB, not %d: that is what the fit budget leaves after this model's KV\n",
-			n>>20, featureCacheBudget>>20)
+			n>>20, stores.FeatureCacheBudget>>20)
 	}
 	return n
 }

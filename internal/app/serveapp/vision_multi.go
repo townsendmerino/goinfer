@@ -191,7 +191,7 @@ func concatImageFeatures(preps []imagePrep, hidden int) func() ([]float32, error
 
 // cachedFeatures answers tower from this model's per-image cache when it holds raw's encode (withFeatureCache, per image).
 func (lm *loadedModel) cachedFeatures(tower func() ([]float32, error), raw []byte, family string) func() ([]float32, error) {
-	return lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
+	return lm.visionFeatureCache().Wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 }
 
 // visionPromptN is visionPrompt for every image of a message. One medium that is not an image of a multi-image family

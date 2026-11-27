@@ -8,139 +8,38 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 )
 
-func TestFileStore_putAndGet(t *testing.T) {
-	fs := newFileStore(0, 0)
-	f := fs.put("in.jsonl", "batch", []byte("hello"))
-	if f.ID == "" {
-		t.Fatal("put returned an empty id")
-	}
-	got := fs.get(f.ID)
-	if got == nil {
-		t.Fatal("get returned nil for a just-put file")
-	}
-	if got.Filename != "in.jsonl" || got.Purpose != "batch" || string(got.Bytes) != "hello" {
-		t.Fatalf("get returned %+v, want filename=in.jsonl purpose=batch bytes=hello", got)
-	}
-}
-
-func TestFileStore_getUnknownReturnsNil(t *testing.T) {
-	fs := newFileStore(0, 0)
-	if fs.get("does-not-exist") != nil {
-		t.Fatal("get for an unknown id returned non-nil")
-	}
-}
-
-// TestFileStore_evictionDropsOldestFirst: plain FIFO at cap, no "never evict a live one"
-// protection (files.go's own doc comment — nothing polls a file the way a client polls a job).
-func TestFileStore_evictionDropsOldestFirst(t *testing.T) {
-	fs := newFileStore(1, 0)
-	a := fs.put("a", "batch", []byte("a"))
-	b := fs.put("b", "batch", []byte("b"))
-	if fs.get(a.ID) != nil {
-		t.Fatal("oldest file was not evicted at cap=1")
-	}
-	if fs.get(b.ID) == nil {
-		t.Fatal("newest file was evicted instead of the oldest")
-	}
-}
-
-func TestFileStore_unboundedWhenCapIsZero(t *testing.T) {
-	fs := newFileStore(0, 0)
-	var ids []string
-	for i := range 10 {
-		f := fs.put(string(rune('a'+i)), "batch", []byte{byte(i)})
-		ids = append(ids, f.ID)
-	}
-	for _, id := range ids {
-		if fs.get(id) == nil {
-			t.Fatalf("file %s evicted despite cap=0 (unbounded)", id)
-		}
-	}
-}
-
-// put stores n bytes.
-func putBytes(fs *fileStore, n int) *storedFile { return fs.put("f", "batch", make([]byte, n)) }
-
-func TestFileStore_byteLimitDropsOldestFirst(t *testing.T) {
-	fs := newFileStore(0, 100)
-	a, b := putBytes(fs, 60), putBytes(fs, 60)
-	if fs.get(a.ID) != nil || fs.get(b.ID) == nil {
-		t.Fatal("over the byte limit, the oldest file must go and the newest stay")
-	}
-	c := putBytes(fs, 30) // 90: nothing goes
-	if fs.get(b.ID) == nil || fs.get(c.ID) == nil {
-		t.Fatal("a file was dropped under the byte limit")
-	}
-	d := putBytes(fs, 20) // 110: b goes, and 50 is enough
-	if fs.get(b.ID) != nil || fs.get(c.ID) == nil || fs.get(d.ID) == nil {
-		t.Fatal("the store dropped more or less than it had to")
-	}
-}
-
-// A result larger than the limit is kept until the next file arrives: dropping it as it is stored would lose a finished batch outright.
-func TestFileStore_newestIsKeptEvenAloneOverTheLimit(t *testing.T) {
-	fs := newFileStore(0, 10)
-	a := putBytes(fs, 50)
-	if fs.get(a.ID) == nil {
-		t.Fatal("the only file was dropped")
-	}
-	b := putBytes(fs, 50)
-	if fs.get(a.ID) != nil || fs.get(b.ID) == nil {
-		t.Fatal("the older oversize file must go when the next arrives")
-	}
-}
-
-// Files dropped by the count limit must leave the byte account too, or the store would drop files it has room for.
-func TestFileStore_countLimitKeepsTheByteAccountRight(t *testing.T) {
-	fs := newFileStore(2, 100)
-	putBytes(fs, 60)
-	b, c := putBytes(fs, 30), putBytes(fs, 30) // the count limit drops the 60
-	d := putBytes(fs, 30)                      // the count limit drops b; c and d are 60
-	if fs.get(b.ID) != nil || fs.get(c.ID) == nil || fs.get(d.ID) == nil {
-		t.Fatal("the count limit dropped the wrong file")
-	}
-	e := putBytes(fs, 30) // the count limit drops c; d and e are 60, well under 100
-	if fs.get(d.ID) == nil || fs.get(e.ID) == nil {
-		t.Fatal("a stale byte account dropped a file the store has room for")
-	}
+func putBytes(fs *stores.FileStore, n int) *stores.StoredFile {
+	return fs.Put("f", "batch", make([]byte, n))
 }
 
 // A finished batch with both successes and failures stores an output and an error file. Over the byte limit, together or each
 // alone, storing the error file must not evict the output: the older file goes and both of the batch's stay.
 func TestFinalizeBatch_keepsBothResultFilesOverTheByteLimit(t *testing.T) {
-	s := &server{files: newFileStore(0, 50), batches: newBatchStore(4)}
+	s := &server{files: stores.NewFileStore(0, 50), batches: stores.NewBatchStore(4)}
 	older := putBytes(s.files, 10)
-	b := s.batches.create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"ok", "bad"})
-	setResult(b, 0, batchLineResult{CustomID: "ok", StatusCode: 200, Body: map[string]any{"content": strings.Repeat("x", 200)}})
-	setResult(b, 1, lineError("bad", 400, "invalid_request_error", strings.Repeat("y", 200)))
-	b.wg.Done()
-	b.wg.Done()
+	b := s.batches.Create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"ok", "bad"})
+	b.SetResult(0, stores.BatchLineResult{CustomID: "ok", StatusCode: 200, Body: map[string]any{"content": strings.Repeat("x", 200)}})
+	b.SetResult(1, stores.LineError("bad", 400, "invalid_request_error", strings.Repeat("y", 200)))
+	b.DoneLine()
+	b.DoneLine()
 	s.finalizeBatch(b.ID)
-	b.mu.Lock()
-	outID, errID := b.OutputFileID, b.ErrorFileID
-	b.mu.Unlock()
-	out, errs := s.files.get(outID), s.files.get(errID)
+	outID, errID := b.OutputFileIDs()
+	out, errs := s.files.Get(outID), s.files.Get(errID)
 	if out == nil || errs == nil {
 		t.Fatalf("output file kept %v, error file kept %v: a batch's result files must survive their own storing", out != nil, errs != nil)
 	}
 	if len(out.Bytes) <= 50 || len(errs.Bytes) <= 50 {
 		t.Fatalf("output %d and error %d bytes: each must be over the 50-byte limit for this to test it", len(out.Bytes), len(errs.Bytes))
 	}
-	if s.files.get(older.ID) != nil {
+	if s.files.Get(older.ID) != nil {
 		t.Error("the older file was kept over the limit")
 	}
-	if c := putBytes(s.files, 10); s.files.get(outID) != nil || s.files.get(errID) != nil || s.files.get(c.ID) == nil {
+	if c := putBytes(s.files, 10); s.files.Get(outID) != nil || s.files.Get(errID) != nil || s.files.Get(c.ID) == nil {
 		t.Error("the next put did not evict the batch's files, oldest first")
-	}
-}
-
-func TestFileStore_zeroBytesIsNoByteLimit(t *testing.T) {
-	fs := newFileStore(0, 0)
-	a, b := putBytes(fs, 1<<20), putBytes(fs, 1<<20)
-	if fs.get(a.ID) == nil || fs.get(b.ID) == nil {
-		t.Fatal("-max-file-store-bytes 0 must mean no limit on bytes")
 	}
 }
 

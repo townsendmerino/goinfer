@@ -17,6 +17,7 @@ import (
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/stores"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/guard/swapguard"
 )
@@ -67,7 +68,7 @@ type server struct {
 	embedWidths []int
 
 	// Responses API (/v1/responses) state store for store/previous_response_id.
-	responses *responseStore
+	responses *stores.ResponseStore[chatMessage]
 
 	// idsKey signs the token ids a reply carries back (carried_ids.go): random per start, or --ids-key-file. nil turns the
 	// feature off (a server built without newServer). idsStats are the carried-id totals /admin/status reports.
@@ -78,7 +79,7 @@ type server struct {
 
 	// gens is the cancel-by-id registry, shared by every generation surface. Never
 	// nil after newServer.
-	gens *generationRegistry
+	gens *stores.GenerationRegistry
 
 	// jobs is the job registry, shared by every generation surface the way
 	// gens is. Never nil after newServer: every generation gets a job whether or not -job-dir is set; jobs.journal is
@@ -87,8 +88,8 @@ type server struct {
 
 	// files and batches hold OpenAI's uploaded and assembled files and both dialects' batch records. Never nil after
 	// newServer.
-	files   *fileStore
-	batches *batchStore
+	files   *stores.FileStore
+	batches *stores.BatchStore
 
 	// halted is the global halt state; nil = running normally. See halt.go. The
 	// zero value is nil, so newServer needs no init.

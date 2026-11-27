@@ -328,12 +328,11 @@ The existing J3/J4 real-checkpoint tests pass unchanged. Six mutations, each red
   knowledge, and the result file's `custom_id` ordering matches the input.
 
 **Status: DONE 2026-09-15** (`main`), text-only scope — see "not built" below. Both dialects reduce
-to the same three parts, all new: `internal/app/serveapp/files.go` (OpenAI's file store — write-once,
-so unlike `job` it needs no `snapshot`-style copy to read race-free), `internal/app/serveapp/batches.go`
-(`batchStore`/`batchRecord`, mirroring `jobStore`'s own FIFO-skip-a-live-one eviction shape almost
-verbatim), `internal/app/serveapp/batches_run.go` (`runBatchChatLine`/`runBatchMessageLine`, one
-goroutine per line), `internal/app/serveapp/batches_finalize.go` (`finalizeBatch`, assembling the
-output once every line is terminal), `internal/app/serveapp/batches_http.go` (the ten new routes).
+to the same three parts, all new: `internal/app/serveapp/stores/files.go` (OpenAI's file store — write-once,
+so unlike `job` it needs no `snapshot`-style copy to read race-free), `internal/app/serveapp/stores/batches.go`
+(`BatchStore`/`BatchRecord`, mirroring `jobStore`'s own FIFO-skip-a-live-one eviction shape almost
+verbatim, plus `Finalize` assembling the output once every line is terminal), `internal/app/serveapp/batches_run.go` (`runBatchChatLine`/`runBatchMessageLine`, one
+goroutine per line), `internal/app/serveapp/batches_http.go` (the ten new routes).
 
 **No second execution path, literally**: every line calls the exact same `lm.tryEnter`/`lm.drive`
 pair every other surface calls, with the SAME `jobStore.createPending`/`setCancel`/`finish`
