@@ -16,8 +16,11 @@ func TestDirSafeAndStart(t *testing.T) {
 	if !IsCLICmd("halt") || IsCLICmd("serve") {
 		t.Error("IsCLICmd mismatch")
 	}
-	// Unix socket paths on darwin/linux have a ~104-byte sun_path limit, so use /tmp rather than t.TempDir().
-	base, err := os.MkdirTemp("/tmp", "gi-as-")
+	tmpRoot := ""
+	if runtime.GOOS == "darwin" {
+		tmpRoot = "/tmp"
+	}
+	base, err := os.MkdirTemp(tmpRoot, "gi-as-")
 	if err != nil {
 		t.Fatal(err)
 	}
