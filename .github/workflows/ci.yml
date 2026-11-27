@@ -1281,30 +1281,6 @@ jobs:
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
-      - name: "TEMPORARY (#1418): the failed tests and their output"
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import json
-          ev = []
-          for line in open("test.json"):
-              try:
-                  ev.append(json.loads(line))
-              except ValueError:
-                  pass
-          failed = {(e["Package"], e.get("Test")) for e in ev if e.get("Action") == "fail"}
-          print("FAILED:", *sorted(f"{p} {t or '(package)'}" for p, t in failed), sep="\n  ")
-          tests = {(p, t) for p, t in failed if t}
-          pkgs = {p for p, t in failed if not t}
-          n = 0
-          for e in ev:
-              if e.get("Action") != "output" or n >= 600:
-                  continue
-              p, t = e.get("Package"), e.get("Test")
-              if (t and any(p == fp and (t == ft or t.startswith(ft + "/")) for fp, ft in tests)) or (not t and p in pkgs):
-                  print(f"{t or p}: {e['Output']}", end="")
-                  n += 1
-          PY
       - name: census golden as this host would write it (artifact only)
         if: failure()
         run: |
