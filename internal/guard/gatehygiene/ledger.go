@@ -1,24 +1,4 @@
-package main
-
-// The gate ledger: the record of gate results a PERSON has confirmed. The file format, the source key
-// and every verdict are byte-for-byte what the original Python implementation produced, so existing
-// confirmations stay valid (TestLedger_realLedgerRoundTripsByteIdentical and
-// TestLedger_sourceKeyMatchesThePythonImplementation pin it).
-//
-// WHY IT EXISTS. A gate reporting FAIL on its FIRST EXECUTION is asserting a delta it has no second
-// point to compute: there is no prior result to differ from. So there is a fourth outcome, FIRST-RUN,
-// and it needs a record of which gates have a confirmed prior result. The ledger is that record, and a
-// gate enters it only when a person promotes an observed value to a baseline — never by the sweep
-// observing itself: auto-promotion turns "never checked" into "expected" in one silent step.
-//
-// FIVE REQUIRED FIELDS — gate, value, promoted_by, date, commit. An entry missing any is a note, not
-// a confirmation.
-//
-// THE SOURCE KEY is the hash of the gate's own test function body, not its name or file: renaming a
-// gate drops its entry to stale (the gate reverts to FIRST-RUN — safe and loud), while a gate KEEPING
-// its name as its assertion changes would otherwise compare a confirmed value against different
-// semantics and report pass. Hashing the body means editing the assertion invalidates the
-// confirmation and reformatting elsewhere in the file does not.
+package gatehygiene
 
 import (
 	"bytes"
@@ -39,6 +19,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
 const ledgerRel = "testdata/gate_ledger.json"
@@ -69,9 +51,6 @@ func loadLedger(root string) (*ledgerDoc, error) {
 	return &d, nil
 }
 
-// encodeLedger renders d the way the script's json.dumps(d, indent=2, sort_keys=True) + "\n" did —
-// map keys sorted (encoding/json does that), two-space indent, and non-ASCII escaped as \uXXXX
-// (Python's ensure_ascii default), so a promote does not rewrite every existing line.
 func encodeLedger(d *ledgerDoc) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -83,9 +62,6 @@ func encodeLedger(d *ledgerDoc) ([]byte, error) {
 	return asciiEscape(buf.Bytes()), nil
 }
 
-// asciiEscape rewrites every non-ASCII rune as \uXXXX (a surrogate pair above U+FFFF), exactly as
-// Python's json ensure_ascii does. Only string contents can hold non-ASCII in encoder output, so a
-// byte-level pass is safe.
 func asciiEscape(b []byte) []byte {
 	var out bytes.Buffer
 	for len(b) > 0 {
@@ -123,11 +99,6 @@ func findEntry(d *ledgerDoc, gate string) map[string]any {
 
 func entryStr(e map[string]any, k string) string { s, _ := e[k].(string); return s }
 
-// gateFuncSource returns the gate's own function body (the `func <name>(` line through the first line
-// starting with "}") or ok=false if no *_test.go under root (outside testdata/) defines it. Deliberately
-// dumb: a parser that can be wrong in subtle ways is worse here than one that fails loudly, and "not
-// found" is handled as "cannot key this gate", never as "unchanged". Files are visited in sorted order, so
-// a name defined twice resolves to the same definition every run.
 func gateFuncSource(root, name string) (string, bool) {
 	pat := regexp.MustCompile(`^func ` + regexp.QuoteMeta(name) + `\(`)
 	var src string
@@ -146,7 +117,7 @@ func gateFuncSource(root, name string) (string, bool) {
 		if rerr != nil {
 			return nil
 		}
-		lines := strings.SplitAfter(strings.ToValidUTF8(string(b), "�"), "\n")
+		lines := strings.SplitAfter(strings.ToValidUTF8(string(b), "\uFFFD"), "\n")
 		for i, ln := range lines {
 			if !pat.MatchString(ln) {
 				continue
@@ -167,7 +138,6 @@ func gateFuncSource(root, name string) (string, bool) {
 	return src, found
 }
 
-// gateSourceKey is the first 16 hex digits of the SHA-256 of the gate's function body.
 func gateSourceKey(root, name string) (string, bool) {
 	src, ok := gateFuncSource(root, name)
 	if !ok {
@@ -185,24 +155,19 @@ func gitShortHead(root string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// classifyGate is one word for the sweep: CONFIRMED | FIRST-RUN | SOURCE-CHANGED | UNKNOWN-GATE.
-func classifyGate(root, gate string) string {
+// ClassifyGate returns CONFIRMED, FIRST-RUN, SOURCE-CHANGED, or UNKNOWN-GATE for gate under root.
+func ClassifyGate(root, gate string) string {
 	if _, err := os.Stat(ledgerPath(root)); err != nil {
-		// NO LEDGER AT ALL means "we have no idea", NOT "nothing has ever run": if an absent ledger
-		// produced FIRST-RUN, deleting the file would make every failing gate non-blocking. Inert means
-		// the old behaviour — a failure blocks.
 		return "CONFIRMED"
 	}
 	d, err := loadLedger(root)
 	if err != nil {
-		return "CONFIRMED" // an unreadable ledger must not downgrade a regression either
+		return "CONFIRMED"
 	}
 	e := findEntry(d, gate)
 	key, keyed := gateSourceKey(root, gate)
 	switch {
 	case e == nil && !keyed:
-		// No entry and no source: a typo, a deleted test, or a gate this scan cannot reach. Granting
-		// it first-run amnesty would free-pass exactly the cases nobody can inspect.
 		return "UNKNOWN-GATE"
 	case e == nil:
 		return "FIRST-RUN"
@@ -212,8 +177,8 @@ func classifyGate(root, gate string) string {
 	return "CONFIRMED"
 }
 
-// reconcileLedger prints the three checks next to the sweep's counts. Informs; never blocks.
-func reconcileLedger(w io.Writer, root string, gates []string) {
+// ReconcileLedger prints the ledger's incomplete, first-run, stale, and source-changed checks.
+func ReconcileLedger(w io.Writer, root string, gates []string) {
 	d, err := loadLedger(root)
 	if err != nil {
 		fmt.Fprintf(w, "  gate ledger: unreadable (%v)\n", err)
@@ -293,8 +258,6 @@ func reconcileLedger(w io.Writer, root string, gates []string) {
 	}
 }
 
-// nonEmptyNonString reports a required field holding a non-string JSON value (the script's `not
-// e.get(f)` is truthiness: a number or object counts as present).
 func nonEmptyNonString(v any) bool {
 	switch x := v.(type) {
 	case nil, string:
@@ -317,13 +280,13 @@ func sortEntries(d *ledgerDoc) {
 
 var seedPassRe = regexp.MustCompile(`(?m)^--- PASS: (\S+) \(`)
 
-// runLedger is `gate ledger promote|classify|reconcile|seed`.
-func runLedger(argv []string, w io.Writer) int {
+// RunLedger implements `gate ledger promote|classify|reconcile|seed`.
+func RunLedger(argv []string, w io.Writer) int {
 	if len(argv) == 0 {
 		fmt.Fprintln(os.Stderr, "gate ledger: promote | classify | reconcile | seed")
 		return 2
 	}
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate ledger: %v\n", err)
 		return 2
@@ -336,14 +299,14 @@ func runLedger(argv []string, w io.Writer) int {
 		if fset.Parse(rest) != nil || *gate == "" {
 			return 2
 		}
-		fmt.Fprintln(w, classifyGate(root, *gate))
+		fmt.Fprintln(w, ClassifyGate(root, *gate))
 		return 0
 	case "reconcile":
 		gates := fset.String("gates", "", "comma-separated gates the sweep checked")
 		if fset.Parse(rest) != nil {
 			return 2
 		}
-		reconcileLedger(w, root, splitGates(*gates))
+		ReconcileLedger(w, root, splitGates(*gates))
 		return 0
 	case "promote":
 		gate := fset.String("gate", "", "gate (test function) name")
@@ -436,8 +399,6 @@ func runLedger(argv []string, w io.Writer) int {
 			if !ok {
 				continue
 			}
-			// BULK-SEEDED IS NOT THE SAME AS CONFIRMED, and the entry says so: pretending a bulk import
-			// is individual human judgements is exactly the false confirmation this ledger prevents.
 			d.Entries = append(d.Entries, map[string]any{
 				"gate": g, "value": "PASS", "promoted_by": *by,
 				"date": orDefault(*date, time.Now().Format("2006-01-02")), "commit": orDefault(*commit, gitShortHead(root)),

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 )
 
 // The graders of the gates that read records: each decides from records and recorded lookups alone. TestGraders_arePure holds every file named grade_*.go to that: no exec,
@@ -235,7 +236,7 @@ func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (strin
 // read does; the documentation tree, the website, the CI definitions, the CHANGELOG's entries (changelog.d/) and the
 // top-level prose files do not, so a release commit that writes the CHANGELOG and commits the records keeps its run.
 func quickRecordVoidedBy(path string) bool {
-	for _, p := range []string{"docs/", "apps/site/", ".github/", changelogFragmentDir + "/"} {
+	for _, p := range []string{"docs/", "apps/site/", ".github/", gatehygiene.ChangelogFragmentDir + "/"} {
 		if strings.HasPrefix(path, p) {
 			return false
 		}

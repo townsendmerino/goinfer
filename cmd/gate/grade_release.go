@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 )
 
 // The rows of `gate release`, graders of what they read: every read goes through relEnv.look, which the runner answers
@@ -531,24 +532,13 @@ func rowBranches(e *relEnv) relRow {
 
 // ---- row 7: the CHANGELOG ----
 
-// clSection returns the body of the CHANGELOG section named `Unreleased` or a version (`v0.23.0`), up to the next `## [`.
-func clSection(doc, name string) (string, bool) {
-	head := "## [" + name + "]"
-	_, after, ok := strings.Cut(doc, head)
-	if !ok {
-		return "", false
-	}
-	after, _, _ = strings.Cut(after, "\n## [")
-	return after, true
-}
-
 // rowChangelog reads `gate changelog -base <prev> -section <s>` as the "changelog" read: its report, and an error when it
 // exits non-zero.
 func rowChangelog(e *relEnv) relRow {
 	const name = "the CHANGELOG names what changed"
 	section := "Unreleased"
 	if b, err := e.read("CHANGELOG.md"); err == nil {
-		if _, ok := clSection(b, e.tag); ok {
+		if _, ok := gatehygiene.ClSection(b, e.tag); ok {
 			section = e.tag
 		}
 	}

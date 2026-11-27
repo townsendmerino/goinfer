@@ -9,6 +9,19 @@ import (
 	"testing"
 )
 
+func writeTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for p, c := range files {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func scratchModule(t *testing.T, src string) string {
 	t.Helper()
 	dir := t.TempDir()

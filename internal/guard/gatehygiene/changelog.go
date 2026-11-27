@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"encoding/json"
@@ -16,41 +16,26 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-)
 
-// `gate changelog`: the release notes say what changed. The docs already have checks that fail when a table disagrees with the code
-// (the flags page, the support table, the env-var list); the CHANGELOG had none. Four kinds of change are user-visible, enumerable
-// from the tree, and have been missed: an HTTP route, a serve flag, a model family, and the aikit pin. This compares the tree at a
-// base tag with the working tree and lists each one the CHANGELOG section does not name.
-//
-// The rule is a whole-string match, deliberately weak: it catches the omission, which is what happens, and not a careless sentence,
-// which no tool catches. A route is covered by its own path (any `{name}` placeholder reads as `{}`) or by a NEW route that is a
-// path prefix of it at a segment boundary (a new family's sub-routes ride with the family). Something that is not release-note
-// material is waived in docs/changelog-waivers.txt as `<kind> <name> <reason>`, the reason mandatory and printed each time.
-//
-// The Unreleased section is read with the fragments in changelog.d/, which hold its entries.
-//
-// Usage: gate changelog [-base vX.Y.Z] [-section Unreleased|vX.Y.Z]   exit 0 clean, 1 something owed, 2 refused.
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+)
 
 const changelogWaiverFile = "docs/changelog-waivers.txt"
 
-// clSource reads files at one revision of the repository, or from the working tree.
 type clSource interface {
 	read(path string) ([]byte, error)
-	list(dir string) ([]string, error) // file names directly under dir
+	list(dir string) ([]string, error)
 }
 
 type gitSource struct{ root, rev string }
 
-// read is the file at g.rev. A path that moved (layout Tier 2; see preMovePath) is read at the revision's own name:
-// the new path first, and the pre-move name once when git says the new one is absent there.
 func (g gitSource) read(path string) ([]byte, error) {
 	b, err := g.showOnce(path)
 	if err == nil {
 		return b, nil
 	}
-	old, moved := preMovePath(path)
-	if !moved || !absentFromRev(err) {
+	old, moved := gatecore.PreMovePath(path)
+	if !moved || !gatecore.AbsentFromRev(err) {
 		return nil, err
 	}
 	return g.showOnce(old)
@@ -68,14 +53,12 @@ func (g gitSource) showOnce(path string) ([]byte, error) {
 	return b, nil
 }
 
-// list is the file names directly under dir at g.rev. `git ls-tree` prints nothing for a missing directory, so a moved
-// directory with no entries at the new name is listed under its pre-move name.
 func (g gitSource) list(dir string) ([]string, error) {
 	names, err := g.lsTree(dir)
 	if err == nil && len(names) > 0 {
 		return names, nil
 	}
-	old, moved := preMovePath(dir)
+	old, moved := gatecore.PreMovePath(dir)
 	if !moved {
 		return names, err
 	}
@@ -114,23 +97,8 @@ func (d dirSource) list(dir string) ([]string, error) {
 	return names, nil
 }
 
-// clState is what a tree says a release changes for a user.
-type clState struct {
-	Routes   map[string]bool // "METHOD /path" as registered, placeholders normalised to {}
-	Flags    map[string]bool
-	Families map[string][]string // capability-matrix name -> the other names it goes by (display name, model types)
-	Pin      string              // the aikit version go.mod requires
-}
-
-var placeholderRE = regexp.MustCompile(`\{[^}]*\}`)
-
-// normRoute reads `POST /v1/jobs/{id}/events` as `POST /v1/jobs/{}/events`.
-func normRoute(r string) string { return placeholderRE.ReplaceAllString(r, "{}") }
-
-// serveAppDirs lists where the serve package has lived: a tree before the layout move has it at the second path.
 var serveAppDirs = []string{"internal/app/serveapp", "internal/serveapp"}
 
-// serveRoutes parses the non-test files of the serve package and returns every route literal passed to a HandleFunc or Handle call.
 func serveRoutes(src clSource) (map[string]bool, error) {
 	dir := serveAppDirs[0]
 	names, err := src.list(dir)
@@ -165,7 +133,7 @@ func serveRoutes(src clSource) (map[string]bool, error) {
 			}
 			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
 				if s, err := strconv.Unquote(lit.Value); err == nil && strings.Contains(s, "/") {
-					routes[normRoute(s)] = true
+					routes[NormRoute(s)] = true
 				}
 			}
 			return true
@@ -174,8 +142,8 @@ func serveRoutes(src clSource) (map[string]bool, error) {
 	return routes, nil
 }
 
-func readClState(src clSource) (*clState, error) {
-	st := &clState{Flags: map[string]bool{}, Families: map[string][]string{}}
+func readClState(src clSource) (*ClState, error) {
+	st := &ClState{Flags: map[string]bool{}, Families: map[string][]string{}}
 	var err error
 	if st.Routes, err = serveRoutes(src); err != nil {
 		return nil, err
@@ -218,105 +186,8 @@ func readClState(src clSource) (*clState, error) {
 	return st, nil
 }
 
-// owedItem is one change the section does not name.
-type owedItem struct{ Kind, Name, Why string }
-
-// changelogOwed compares base with head and returns what the section sec leaves unmentioned and is not waived.
-func changelogOwed(base, head *clState, sec string, waived func(kind, name string) bool) []owedItem {
-	var owed []owedItem
-	add := func(kind, name, why string) {
-		if !waived(kind, name) {
-			owed = append(owed, owedItem{kind, name, why})
-		}
-	}
-	nsec := normRoute(sec)
-	// routes: new at head
-	var newRoutes []string
-	for r := range head.Routes {
-		if !base.Routes[r] {
-			newRoutes = append(newRoutes, r)
-		}
-	}
-	slices.Sort(newRoutes)
-	pathOf := func(r string) string { _, p, _ := strings.Cut(r, " "); return p }
-	for _, r := range newRoutes {
-		p := pathOf(r)
-		if strings.Contains(nsec, p) {
-			continue
-		}
-		covered := false
-		for _, o := range newRoutes {
-			op := pathOf(o)
-			if op != p && strings.HasPrefix(p, strings.TrimSuffix(op, "/")+"/") && strings.Contains(nsec, op) {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			add("route", r, "a new route no section line names")
-		}
-	}
-	// flags: new or removed
-	flagRE := func(n string) *regexp.Regexp {
-		return regexp.MustCompile(`-{1,2}` + regexp.QuoteMeta(n) + `([^A-Za-z0-9_-]|$)`)
-	}
-	for _, n := range slices.Sorted(maps.Keys(head.Flags)) {
-		if !base.Flags[n] && !flagRE(n).MatchString(sec) {
-			add("flag", n, "a new flag")
-		}
-	}
-	for _, n := range slices.Sorted(maps.Keys(base.Flags)) {
-		if !head.Flags[n] && !flagRE(n).MatchString(sec) {
-			add("flag", n, "a removed flag")
-		}
-	}
-	// families
-	for _, n := range slices.Sorted(maps.Keys(head.Families)) {
-		if _, had := base.Families[n]; had {
-			continue
-		}
-		names := append([]string{n}, head.Families[n]...)
-		hit := false
-		for _, nm := range names {
-			if nm != "" && strings.Contains(strings.ToLower(sec), strings.ToLower(nm)) {
-				hit = true
-				break
-			}
-		}
-		if !hit {
-			add("family", n, "a new model family")
-		}
-	}
-	// the aikit pin
-	if head.Pin != "" && head.Pin != base.Pin && !strings.Contains(sec, head.Pin) && !strings.Contains(sec, strings.TrimPrefix(head.Pin, "v")) {
-		add("pin", "aikit "+head.Pin, "the aikit pin moved from "+base.Pin)
-	}
-	return owed
-}
-
-// changelogFragmentDir holds the unreleased entries, one file per change; CHANGELOG.md's [Unreleased] section is a pointer to
-// it, and scripts/changelog.py moves them into a release's section.
-const changelogFragmentDir = "changelog.d"
-
-// unreleasedPointerPrefix begins the one line CHANGELOG.md's [Unreleased] section holds, the pointer to changelogFragmentDir.
-const unreleasedPointerPrefix = "Each unreleased change is a file in"
-
-// unreleasedStray returns the [Unreleased] body's lines other than the pointer: an entry written there instead of in
-// changelogFragmentDir, which a release would leave behind.
-func unreleasedStray(body string) []string {
-	var out []string
-	for ln := range strings.SplitSeq(body, "\n") {
-		if strings.TrimSpace(ln) != "" && !strings.HasPrefix(ln, unreleasedPointerPrefix) {
-			out = append(out, ln)
-		}
-	}
-	return out
-}
-
-// changelogFragments returns every unreleased entry in changelogFragmentDir, newest first as the release renders them.
-// A tree without the directory has none.
 func changelogFragments(src clSource) (string, error) {
-	names, err := src.list(changelogFragmentDir)
+	names, err := src.list(ChangelogFragmentDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -330,7 +201,7 @@ func changelogFragments(src clSource) (string, error) {
 		if n == "README.md" || !strings.HasSuffix(n, ".md") {
 			continue
 		}
-		t, err := src.read(changelogFragmentDir + "/" + n)
+		t, err := src.read(ChangelogFragmentDir + "/" + n)
 		if err != nil {
 			return "", err
 		}
@@ -339,8 +210,6 @@ func changelogFragments(src clSource) (string, error) {
 	return b.String(), nil
 }
 
-// loadChangelogWaivers reads docs/changelog-waivers.txt (absent is none): `<kind> <name> <reason>`. The name may contain spaces
-// only for a route (`route POST /v1/x reason...` is read as kind route, name "POST /v1/x"), so a route's name is its method and path.
 func loadChangelogWaivers(path string) (map[string]string, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -368,9 +237,9 @@ func loadChangelogWaivers(path string) (map[string]string, error) {
 	return w, nil
 }
 
-// newestVersionTag is the newest v* tag reachable from HEAD that is not skip (a submodule's tag, `demo/agent/v0.22.0`, is not one).
-func newestVersionTag(root, skip string) (string, error) {
-	out, err := gitOut(root, "tag", "--merged", "HEAD", "--list", "v[0-9]*", "--sort=-v:refname")
+// NewestVersionTag returns the newest root-module v* tag reachable from HEAD other than skip.
+func NewestVersionTag(root, skip string) (string, error) {
+	out, err := gatecore.GitOut(root, "tag", "--merged", "HEAD", "--list", "v[0-9]*", "--sort=-v:refname")
 	if err != nil {
 		return "", err
 	}
@@ -382,22 +251,23 @@ func newestVersionTag(root, skip string) (string, error) {
 	return "", fmt.Errorf("no v* tag reachable from HEAD")
 }
 
-func runChangelog(args []string, w io.Writer) int {
+// RunChangelog implements `gate changelog`.
+func RunChangelog(args []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate changelog", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	base := fs.String("base", "", "the revision to compare with (default: the newest v* tag reachable from HEAD that is not -section)")
 	section := fs.String("section", "Unreleased", "the CHANGELOG section that must name the changes: Unreleased, or a version such as v0.23.0")
-	headRev := fs.String("head", "", "compare this revision instead of the working tree (a backtest of a past release: -base v0.21.0 -head v0.22.0 -section v0.22.0)")
+	headRev := fs.String("head", "", "compare this revision instead of the working tree")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintln(w, err)
 		return 2
 	}
 	if *base == "" {
-		if *base, err = newestVersionTag(root, *section); err != nil {
+		if *base, err = NewestVersionTag(root, *section); err != nil {
 			fmt.Fprintf(w, "gate changelog: %v\n", err)
 			return 2
 		}
@@ -411,7 +281,7 @@ func runChangelog(args []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate changelog: %v\n", err)
 		return 2
 	}
-	sec, ok := clSection(string(doc), *section)
+	sec, ok := ClSection(string(doc), *section)
 	if !ok {
 		fmt.Fprintf(w, "gate changelog: CHANGELOG.md has no `## [%s]` section\n", *section)
 		return 2
@@ -441,7 +311,6 @@ func runChangelog(args []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate changelog: reading the head tree: %v\n", err)
 		return 2
 	}
-	// A scan that finds nothing reads as "nothing changed": the route pass must find routes in both trees.
 	if len(hs.Routes) < 10 || len(bs.Routes) < 10 {
 		fmt.Fprintf(w, "gate changelog: the route scan found %d routes at the working tree and %d at %s; it is not reading serve's registrations\n", len(hs.Routes), len(bs.Routes), *base)
 		return 2
@@ -454,10 +323,12 @@ func runChangelog(args []string, w io.Writer) int {
 		}
 		return false
 	}
-	owed := changelogOwed(bs, hs, sec, waived)
+	owed := ChangelogOwed(bs, hs, sec, waived)
 	if len(stray) > 0 {
-		owed = append(owed, owedItem{Kind: "entry", Name: strings.TrimSpace(stray[0]),
-			Why: fmt.Sprintf("%d line(s) under CHANGELOG.md's [Unreleased], which holds only the pointer; move the entry into %s/", len(stray), changelogFragmentDir)})
+		owed = append(owed, OwedItem{
+			Kind: "entry", Name: strings.TrimSpace(stray[0]),
+			Why: fmt.Sprintf("%d line(s) under CHANGELOG.md's [Unreleased], which holds only the pointer; move the entry into %s/", len(stray), ChangelogFragmentDir),
+		})
 	}
 	fmt.Fprintf(w, "CHANGELOG [%s] against %s: %d routes, %d flags, %d families, aikit %s (was %s)\n", *section, *base, len(hs.Routes), len(hs.Flags), len(hs.Families), hs.Pin, bs.Pin)
 	for _, k := range slices.Sorted(maps.Keys(used)) {

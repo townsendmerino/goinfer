@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"os"
@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-// The mutation checker is a gate's own gate, so it needs its own — otherwise the mechanism built to
-// prove gates are falsifiable is itself unfalsified. Each case below is a way this tool could
-// certify a gate as falsifiable while nothing was exercised, which is the exact defect class its
-// header records.
-
-// scratchRepo makes a git repo containing one subject file, and chdirs into it so repoRoot() lands
-// there. It returns the subject path relative to the repo, as the CLI takes it.
 func scratchRepo(t *testing.T, body string) (dir, rel string) {
 	t.Helper()
 	for _, bin := range []string{"git", "sed", "grep"} {
@@ -23,8 +16,6 @@ func scratchRepo(t *testing.T, body string) (dir, rel string) {
 		}
 	}
 	dir = t.TempDir()
-	// macOS hands out /var symlinks for TempDir; git reports the resolved path, and the chdir
-	// comparison below would disagree with itself without this.
 	if r, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = r
 	}
@@ -37,7 +28,6 @@ func scratchRepo(t *testing.T, body string) (dir, rel string) {
 	if err := os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// runMutation chdirs to the repo root itself; t.Chdir restores the caller's cwd either way.
 	t.Chdir(dir)
 	return dir, rel
 }
@@ -53,11 +43,10 @@ func subjectBytes(t *testing.T, dir, rel string) string {
 
 const subjectOK = "STATE=OK\nsecond line\n"
 
-// The happy path: green -> mutate -> red -> restore -> green.
 func TestMutation_falsifiableGatePasses(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	rc := runMutation([]string{"demo", rel, "s/STATE=OK/STATE=BROKEN/",
+	rc := RunMutation([]string{"demo", rel, "s/STATE=OK/STATE=BROKEN/",
 		"grep", "-q", "STATE=OK", rel}, &buf)
 	out := buf.String()
 	if rc != 0 {
@@ -73,14 +62,13 @@ func TestMutation_falsifiableGatePasses(t *testing.T) {
 	}
 }
 
-// A sed expression that matches nothing leaves a green run that LOOKS like a verified mutation check.
 func TestMutation_vacuousExpressionIsRejected(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	rc := runMutation([]string{"vacuous", rel, "s/NOT-PRESENT/ALSO-NOT/",
+	rc := RunMutation([]string{"vacuous", rel, "s/NOT-PRESENT/ALSO-NOT/",
 		"grep", "-q", "STATE=OK", rel}, &buf)
 	if rc != 1 {
-		t.Fatalf("rc=%d, want 1 — a no-op mutation must not certify anything\n%s", rc, buf.String())
+		t.Fatalf("rc=%d, want 1\n%s", rc, buf.String())
 	}
 	if !strings.Contains(buf.String(), "changed NOTHING") {
 		t.Errorf("the report does not say why:\n%s", buf.String())
@@ -90,12 +78,10 @@ func TestMutation_vacuousExpressionIsRejected(t *testing.T) {
 	}
 }
 
-// A gate that is ALREADY RED proves nothing by going red under mutation — the mutation would not be
-// what turned it. Checked FIRST, before anything is written to the subject file.
 func TestMutation_alreadyRedBaselineIsRejected(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	rc := runMutation([]string{"already-red", rel, "s/STATE=OK/STATE=BROKEN/",
+	rc := RunMutation([]string{"already-red", rel, "s/STATE=OK/STATE=BROKEN/",
 		"grep", "-q", "MARKER-THAT-IS-ABSENT", rel}, &buf)
 	out := buf.String()
 	if rc != 1 {
@@ -112,12 +98,10 @@ func TestMutation_alreadyRedBaselineIsRejected(t *testing.T) {
 	}
 }
 
-// The finding this whole tool exists to produce: the gate does not see what it claims to check.
 func TestMutation_gateThatSurvivesMutationIsReported(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	// grep for "STATE=" — true both before and after, so the gate is blind to this mutation.
-	rc := runMutation([]string{"blind", rel, "s/STATE=OK/STATE=BROKEN/",
+	rc := RunMutation([]string{"blind", rel, "s/STATE=OK/STATE=BROKEN/",
 		"grep", "-q", "STATE=", rel}, &buf)
 	if rc != 1 {
 		t.Fatalf("rc=%d, want 1\n%s", rc, buf.String())
@@ -130,56 +114,42 @@ func TestMutation_gateThatSurvivesMutationIsReported(t *testing.T) {
 	}
 }
 
-// Misuse is exit 2, distinct from a finding (1) and from a pass (0) — a caller must be able to tell
-// "the check ran and disagreed" from "the check could not run".
 func TestMutation_misuseIsExitTwo(t *testing.T) {
 	_, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	if rc := runMutation([]string{"short"}, &buf); rc != 2 {
+	if rc := RunMutation([]string{"short"}, &buf); rc != 2 {
 		t.Errorf("too few args: rc=%d, want 2", rc)
 	}
-	if rc := runMutation([]string{"nofile", "no/such/file.go", "s/a/b/", "grep", "-q", "x", rel}, &buf); rc != 2 {
+	if rc := RunMutation([]string{"nofile", "no/such/file.go", "s/a/b/", "grep", "-q", "x", rel}, &buf); rc != 2 {
 		t.Errorf("missing subject file: rc=%d, want 2", rc)
 	}
 }
 
-// A verify command that cannot START must not read as green. `go test` on a nonexistent binary,
-// a typo'd tool name — the shell's `"$@"` would have produced 127, and a bare `if cmd.Run() == nil`
-// in Go would have produced a non-nil error handled as "red", which is right, but the baseline step
-// must treat it as red rather than as a green baseline.
 func TestMutation_unstartableVerifyCommandIsNotGreen(t *testing.T) {
 	_, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
-	rc := runMutation([]string{"nocmd", rel, "s/STATE=OK/STATE=BROKEN/",
+	rc := RunMutation([]string{"nocmd", rel, "s/STATE=OK/STATE=BROKEN/",
 		"definitely-not-a-real-binary-xyz"}, &buf)
 	if rc != 1 {
-		t.Fatalf("rc=%d, want 1 — an unstartable verify command is not a green baseline\n%s", rc, buf.String())
+		t.Fatalf("rc=%d, want 1\n%s", rc, buf.String())
 	}
 	if !strings.Contains(buf.String(), "ALREADY RED") {
 		t.Errorf("expected the baseline step to reject it:\n%s", buf.String())
 	}
 }
 
-// REGRESSION PIN. `sed -i` is not portable: GNU takes an optional suffix attached to the flag, BSD
-// (macOS) takes a required separate one, so `sed -i EXPR file` silently means "backup suffix EXPR,
-// script file" on a Mac. Reading stdout is portable on both; this test exists so the flag cannot
-// come back.
 func TestMutation_sedInvocationIsPortable(t *testing.T) {
 	args := sedArgs("s/a/b/", "some/file.go")
 	for _, a := range args {
 		if a == "-i" || strings.HasPrefix(a, "-i") {
-			t.Fatalf("sed invocation uses %q: GNU and BSD sed disagree about it, and the disagreement "+
-				"is silent until someone runs this on the other platform: %v", a, args)
+			t.Fatalf("sed invocation uses %q: %v", a, args)
 		}
 	}
 	if len(args) != 2 || args[0] != "s/a/b/" || args[1] != "some/file.go" {
-		t.Fatalf("sedArgs = %v, want [expr file] so sed writes to stdout", args)
+		t.Fatalf("sedArgs = %v, want [expr file]", args)
 	}
 }
 
-// A restore that cannot write the original back must say so and leave the backup, never return as if the tree were clean: a
-// mutation run edits a source file in place. The verify command here makes the subject read-only once it sees the mutation and
-// passes, so the run takes the early return the deferred restore covers.
 func TestMutation_failedRestoreIsReportedAndKeepsTheBackup(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes through a read-only mode, so the restore cannot be made to fail")
@@ -187,11 +157,11 @@ func TestMutation_failedRestoreIsReportedAndKeepsTheBackup(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dir, rel), 0o644) })
 	var buf strings.Builder
-	rc := runMutation([]string{"lockout", rel, "s/STATE=OK/STATE=BROKEN/",
+	rc := RunMutation([]string{"lockout", rel, "s/STATE=OK/STATE=BROKEN/",
 		"sh", "-c", "if grep -q BROKEN " + rel + "; then chmod 0444 " + rel + "; fi; exit 0"}, &buf)
 	out := buf.String()
 	if rc != 2 {
-		t.Errorf("rc=%d, want 2 for a run that left the tree mutated\n%s", rc, out)
+		t.Errorf("rc=%d, want 2\n%s", rc, out)
 	}
 	if !strings.Contains(out, "NOT restored") {
 		t.Errorf("the failed restore is not reported:\n%s", out)

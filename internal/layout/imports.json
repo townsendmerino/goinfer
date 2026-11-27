@@ -629,6 +629,24 @@
         ]
       },
       "why": "internal/guard/gatecore holds the go test -json event accumulator, matrix cell runner, run-record codec, /proc memory sampler, git/pre-move path helpers, and pure tally/skip/timeout graders below cmd/gate (GT1). Its production files import only internal/runtime/mem/probe."
+    },
+    {
+      "name": "gatehygiene-leaf",
+      "from": [
+        "internal/guard/gatehygiene"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "internal/guard/gatehygiene": [
+          "internal/guard/gatecore",
+          "internal/guard/paritykey",
+          "internal/testpath"
+        ]
+      },
+      "why": "internal/guard/gatehygiene holds the repository, diff, and baseline-ledger gates (changelog, comments-only, ledger, mutation, shadow) below cmd/gate (GT2). It imports only internal/guard/gatecore and internal/guard/paritykey (its tests, internal/testpath)."
     }
   ],
   "arrows": {
@@ -747,6 +765,7 @@
     ],
     "cmd/gate": [
       "internal/guard/gatecore",
+      "internal/guard/gatehygiene",
       "internal/guard/paritykey",
       "tokenizer"
     ],
@@ -999,6 +1018,10 @@
     ],
     "internal/guard/gatecore": [
       "internal/runtime/mem/probe"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
+      "internal/guard/paritykey"
     ],
     "internal/guard/memgate": [
       "decoder",
@@ -1453,6 +1476,10 @@
     ],
     "internal/guard/gatecore": [
       "internal/testgate",
+      "internal/testpath"
+    ],
+    "internal/guard/gatehygiene": [
+      "internal/guard/gatecore",
       "internal/testpath"
     ],
     "internal/guard/memgate": [

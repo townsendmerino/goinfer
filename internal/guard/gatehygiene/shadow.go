@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"encoding/json"
@@ -10,17 +10,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// gate shadow: the parity key's shadow mode. For one push, from before to after, it
-// classes every parity family by today's key (paritykey.TodayKey) and by the shadow key (today's plus the loader rule;
-// paritykey.ShadowKey) and gives each disagreement its reason. Both keys read only committed files, so
-// any runner gives the same answer.
-//
-// Exit: 0 no unexplained disagreement (or VOID, which it prints), 1 an unexplained one, 2 misuse.
-
-type shadowRecord struct {
+// ShadowRecord holds the outcome and per-family verdicts of a `gate shadow` comparison.
+type ShadowRecord struct {
 	Before, After string
 	Outcome       string
 	Void          string `json:",omitempty"`
@@ -28,7 +23,8 @@ type shadowRecord struct {
 	Verdicts      []paritykey.Verdict
 }
 
-func runShadow(argv []string, w io.Writer) int {
+// RunShadow implements `gate shadow`.
+func RunShadow(argv []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate shadow", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	jsonOut := fs.String("json", "", "also write the record as JSON to this file")
@@ -36,13 +32,13 @@ func runShadow(argv []string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "usage: gate shadow [-json FILE] <before> <after>")
 		return 2
 	}
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gate shadow:", err)
 		return 2
 	}
-	rec := shadowRecord{Before: fs.Arg(0), After: fs.Arg(1)}
-	code := shadow(root, &rec)
+	rec := ShadowRecord{Before: fs.Arg(0), After: fs.Arg(1)}
+	code := Shadow(root, &rec)
 	writeShadow(w, rec)
 	if *jsonOut != "" {
 		b, _ := json.MarshalIndent(rec, "", "  ")
@@ -56,7 +52,8 @@ func runShadow(argv []string, w io.Writer) int {
 
 var zeroSHA = regexp.MustCompile(`^0+$`)
 
-func shadow(root string, rec *shadowRecord) int {
+// Shadow evaluates paritykey.Compare between rec.Before and rec.After under root.
+func Shadow(root string, rec *ShadowRecord) int {
 	void := func(why string) int {
 		rec.Outcome, rec.Void = "VOID", why
 		return 0
@@ -101,8 +98,7 @@ func shadow(root string, rec *shadowRecord) int {
 	return 0
 }
 
-// writeShadow prints the record as markdown, for a CI job summary.
-func writeShadow(w io.Writer, rec shadowRecord) {
+func writeShadow(w io.Writer, rec ShadowRecord) {
 	short := func(s string) string { return s[:min(len(s), 8)] }
 	fmt.Fprintf(w, "## VK5 shadow: %s..%s — %s\n\n", short(rec.Before), short(rec.After), rec.Outcome)
 	if rec.Void != "" {

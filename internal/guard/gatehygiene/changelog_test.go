@@ -1,10 +1,13 @@
-package main
+package gatehygiene
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 const serveSrc = `package serveapp
@@ -41,6 +44,18 @@ func baseFiles() map[string]string {
 	}
 }
 
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func TestServeRoutes_readsRegistrationsNotCommentsOrTests(t *testing.T) {
 	root := t.TempDir()
 	writeTree(t, root, baseFiles())
@@ -59,12 +74,8 @@ func TestServeRoutes_readsRegistrationsNotCommentsOrTests(t *testing.T) {
 	}
 }
 
-// The scan is not allowed to read a refactor as "no routes": serve registers dozens today.
 func TestServeRoutes_findsTheRealOnes(t *testing.T) {
-	root, err := repoRoot()
-	if err != nil {
-		t.Skip(err)
-	}
+	root := testpath.Root(t)
 	got, err := serveRoutes(dirSource{root})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +87,7 @@ func TestServeRoutes_findsTheRealOnes(t *testing.T) {
 
 func noWaive(kind, name string) bool { return false }
 
-func states(t *testing.T) (base, head *clState) {
+func states(t *testing.T) (base, head *ClState) {
 	t.Helper()
 	root := t.TempDir()
 	writeTree(t, root, baseFiles())
@@ -105,7 +116,7 @@ func (s *server) more(mux *mux) {
 	return b, h
 }
 
-func owedSet(o []owedItem) string {
+func owedSet(o []OwedItem) string {
 	var s []string
 	for _, i := range o {
 		s = append(s, i.Kind+":"+i.Name)
@@ -113,10 +124,9 @@ func owedSet(o []owedItem) string {
 	return strings.Join(s, "|")
 }
 
-// Everything new is owed against an empty section, and each line added clears exactly its own item.
 func TestChangelogOwed_eachKindAndEachLineClearsOnlyItsItem(t *testing.T) {
 	base, head := states(t)
-	all := owedSet(changelogOwed(base, head, "", noWaive))
+	all := owedSet(ChangelogOwed(base, head, "", noWaive))
 	for _, want := range []string{"route:POST /v1/audio/transcriptions", "route:POST /v1/batches", "flag:windowed-kv", "flag:old-flag", "family:qwen3_asr", "pin:aikit v1.69.0"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("owed set %q lacks %q", all, want)
@@ -131,7 +141,7 @@ func TestChangelogOwed_eachKindAndEachLineClearsOnlyItsItem(t *testing.T) {
 		"route:POST /v1/batches":              "the /v1/batches routes",
 	}
 	for item, line := range lines {
-		got := owedSet(changelogOwed(base, head, line, noWaive))
+		got := owedSet(ChangelogOwed(base, head, line, noWaive))
 		if strings.Contains(got, item) {
 			t.Errorf("the line %q did not clear %s (still owed: %s)", line, item, got)
 		}
@@ -140,23 +150,22 @@ func TestChangelogOwed_eachKindAndEachLineClearsOnlyItsItem(t *testing.T) {
 		}
 	}
 	full := strings.Join([]string{"/v1/audio/transcriptions", "--windowed-kv", "--old-flag", "Qwen3-ASR", "v1.69.0", "/v1/batches"}, "\n")
-	if got := changelogOwed(base, head, full, noWaive); len(got) != 0 {
+	if got := ChangelogOwed(base, head, full, noWaive); len(got) != 0 {
 		t.Errorf("a section naming every change still owes %v", got)
 	}
 }
 
-// A new family's sub-routes ride with the family route, with placeholders read as {}; an unrelated mention does not cover them.
 func TestChangelogOwed_routePrefixAndPlaceholders(t *testing.T) {
 	base, head := states(t)
-	got := owedSet(changelogOwed(base, head, "`POST /v1/batches` and the rest", noWaive))
+	got := owedSet(ChangelogOwed(base, head, "`POST /v1/batches` and the rest", noWaive))
 	if strings.Contains(got, "batches") {
 		t.Errorf("sub-routes of the new /v1/batches were owed though the family route is named: %s", got)
 	}
-	got = owedSet(changelogOwed(base, head, "/v1/audio is mentioned and /v1/chat/completions too", noWaive))
+	got = owedSet(ChangelogOwed(base, head, "/v1/audio is mentioned and /v1/chat/completions too", noWaive))
 	if !strings.Contains(got, "route:POST /v1/audio/transcriptions") {
 		t.Errorf("a parent-path mention covered a route: %s", got)
 	}
-	if got := owedSet(changelogOwed(base, head, "/v1/batches/{id}/cancel", noWaive)); strings.Contains(got, "cancel") {
+	if got := owedSet(ChangelogOwed(base, head, "/v1/batches/{id}/cancel", noWaive)); strings.Contains(got, "cancel") {
 		t.Errorf("a placeholder spelled differently was not read as {}: %s", got)
 	}
 }
@@ -164,7 +173,7 @@ func TestChangelogOwed_routePrefixAndPlaceholders(t *testing.T) {
 func TestChangelogOwed_waiversClearAndAreNeeded(t *testing.T) {
 	base, head := states(t)
 	w := func(kind, name string) bool { return kind == "pin" }
-	if got := owedSet(changelogOwed(base, head, "", w)); strings.Contains(got, "pin:") {
+	if got := owedSet(ChangelogOwed(base, head, "", w)); strings.Contains(got, "pin:") {
 		t.Errorf("a waived pin is still owed: %s", got)
 	}
 	dir := t.TempDir()
@@ -188,17 +197,17 @@ func TestChangelogOwed_waiversClearAndAreNeeded(t *testing.T) {
 
 func TestClSection(t *testing.T) {
 	doc := "# C\n\n## [Unreleased]\nnew things\n\n## [v0.2.0] — d\nold\n"
-	if s, ok := clSection(doc, "Unreleased"); !ok || !strings.Contains(s, "new things") || strings.Contains(s, "old") {
+	if s, ok := ClSection(doc, "Unreleased"); !ok || !strings.Contains(s, "new things") || strings.Contains(s, "old") {
 		t.Errorf("Unreleased = %q, %v", s, ok)
 	}
-	if _, ok := clSection(doc, "v0.9.9"); ok {
+	if _, ok := ClSection(doc, "v0.9.9"); ok {
 		t.Error("an absent section was found")
 	}
 }
 
-// Through git: the base side is read with git show at a tag, the head side from the tree, and a route added after the tag is owed.
 func TestRunChangelog_throughAGitRepo(t *testing.T) {
-	dir, _ := gpuTestRepo(t) // a repository with an initial commit
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
 	writeTree(t, dir, baseFiles())
 	writeTree(t, dir, map[string]string{"CHANGELOG.md": "## [Unreleased]\n\n## [v0.1.0] — d\n"})
 	gitIn(t, dir, "add", ".")
@@ -220,19 +229,17 @@ func TestRunChangelog_throughAGitRepo(t *testing.T) {
 	if bs.Routes["POST /v1/new"] || !hs.Routes["POST /v1/new"] {
 		t.Fatalf("base has the route %v, head has it %v", bs.Routes["POST /v1/new"], hs.Routes["POST /v1/new"])
 	}
-	if got := owedSet(changelogOwed(bs, hs, "", noWaive)); got != "route:POST /v1/new" {
+	if got := owedSet(ChangelogOwed(bs, hs, "", noWaive)); got != "route:POST /v1/new" {
 		t.Errorf("owed = %q, want only the new route", got)
 	}
 }
 
-// TestChangelogFragments: the Unreleased entries come from changelog.d/, newest name first, README.md skipped, and a tree
-// without the directory has none.
 func TestChangelogFragments(t *testing.T) {
 	root := t.TempDir()
 	if got, err := changelogFragments(dirSource{root}); err != nil || got != "" {
 		t.Fatalf("no changelog.d: got %q, %v; want none", got, err)
 	}
-	dir := filepath.Join(root, changelogFragmentDir)
+	dir := filepath.Join(root, ChangelogFragmentDir)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -256,8 +263,6 @@ func TestChangelogFragments(t *testing.T) {
 	}
 }
 
-// TestUnreleasedStray: CHANGELOG.md's [Unreleased] holds only the pointer to changelog.d/; an entry written there instead
-// is named, so gate changelog owes it rather than letting the release strand it.
 func TestUnreleasedStray(t *testing.T) {
 	pointer := "\n" + unreleasedPointerPrefix + " [`changelog.d/`](changelog.d/), collected at release.\n\n"
 	if got := unreleasedStray(pointer); len(got) != 0 {
@@ -266,5 +271,34 @@ func TestUnreleasedStray(t *testing.T) {
 	got := unreleasedStray(pointer[:len(pointer)-1] + "- **a stray entry**\n  more\n\n")
 	if len(got) != 2 || got[0] != "- **a stray entry**" {
 		t.Errorf("stray = %q, want the entry's two lines", got)
+	}
+}
+
+func TestGitSource_preMoveRevisionReadsTheInternalRegroup(t *testing.T) {
+	root := t.TempDir()
+	gitIn(t, root, "init", "-q")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "serveapp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "serveapp", "routes.go"), []byte("package serveapp\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, root, "add", "internal")
+	gitIn(t, root, "commit", "-q", "-m", "before the regroup")
+	pre := gitIn(t, root, "rev-parse", "HEAD")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, root, "mv", "internal/serveapp", "internal/app/serveapp")
+	gitIn(t, root, "commit", "-q", "-m", "after the regroup")
+
+	src := gitSource{root: root, rev: pre}
+	b, err := src.read("internal/app/serveapp/routes.go")
+	if err != nil || string(b) != "package serveapp\n" {
+		t.Fatalf("read at the pre-move revision = %q, %v; want the pre-move file", b, err)
+	}
+	names, err := src.list("internal/app/serveapp")
+	if err != nil || len(names) != 1 || names[0] != "routes.go" {
+		t.Fatalf("list at the pre-move revision = %v, %v; want [routes.go]", names, err)
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"bytes"
@@ -8,9 +8,6 @@ import (
 	"strings"
 	"testing"
 )
-
-// The comments-only gate is only worth having if it can go red. Each case below is one way a "comments commit" could carry code, plus
-// the comment rewrites it must wave through; the repo-level cases run the CLI path against a scratch git repository.
 
 const coBase = `//go:build linux
 
@@ -51,23 +48,21 @@ func ExampleGreet() {
 
 func TestCommentsOnly_commentRewritesAreGreen(t *testing.T) {
 	cases := map[string]string{
-		"doc comment rewritten":       strings.Replace(coBase, "// It took three tries in 2026-09 to get the spacing right; see docs/x.md.", "// Spacing is deliberate; history in docs/code-notes/p.md#Greet.", 1),
-		"doc comment deleted":         strings.Replace(coBase, "// Greet says hello.\n//\n// It took three tries in 2026-09 to get the spacing right; see docs/x.md.\n", "", 1),
-		"trailing comment deleted":    strings.Replace(coBase, " // trailing", "", 1),
-		"comment added between stmts": strings.Replace(coBase, "\ta := 1\n", "\ta := 1\n\t// new note\n", 1),
-		// go/printer would keep a blank line where the comment was and print the two files differently; a token stream does not.
+		"doc comment rewritten":                   strings.Replace(coBase, "// It took three tries in 2026-09 to get the spacing right; see docs/x.md.", "// Spacing is deliberate; history in docs/code-notes/p.md#Greet.", 1),
+		"doc comment deleted":                     strings.Replace(coBase, "// Greet says hello.\n//\n// It took three tries in 2026-09 to get the spacing right; see docs/x.md.\n", "", 1),
+		"trailing comment deleted":                strings.Replace(coBase, " // trailing", "", 1),
+		"comment added between stmts":             strings.Replace(coBase, "\ta := 1\n", "\ta := 1\n\t// new note\n", 1),
 		"comment line between statements deleted": strings.Replace(coBase, "\ta := 1\n\n\tb := 2", "\ta := 1\n\t// to go\n\tb := 2", 1),
 	}
 	for name, cur := range cases {
-		v := compareComments("p.go", []byte(coBase), []byte(cur))
+		v := CompareComments("p.go", []byte(coBase), []byte(cur))
 		if len(v.Reds) != 0 {
 			t.Errorf("%s: want green, got %v", name, v.Reds)
 		}
 	}
-	// the printer pitfall, as its own pair: a comment line between two statements, then deleted
 	with := strings.Replace(coBase, "\ta := 1\n\n\tb := 2", "\ta := 1\n\t// to go\n\tb := 2", 1)
 	without := strings.Replace(coBase, "\ta := 1\n\n\tb := 2", "\ta := 1\n\tb := 2", 1)
-	if v := compareComments("p.go", []byte(with), []byte(without)); len(v.Reds) != 0 {
+	if v := CompareComments("p.go", []byte(with), []byte(without)); len(v.Reds) != 0 {
 		t.Errorf("deleting a comment line between statements: want green, got %v", v.Reds)
 	}
 }
@@ -87,7 +82,7 @@ func TestCommentsOnly_codeChangesAreRed(t *testing.T) {
 		"statement commented out": strings.Replace(coBase, "\tb := 2\n", "\t// b := 2\n", 1),
 	}
 	for name, cur := range cases {
-		v := compareComments("p.go", []byte(coBase), []byte(cur))
+		v := CompareComments("p.go", []byte(coBase), []byte(cur))
 		if len(v.Reds) == 0 {
 			t.Errorf("%s: want red, got green", name)
 		}
@@ -95,46 +90,42 @@ func TestCommentsOnly_codeChangesAreRed(t *testing.T) {
 }
 
 func TestCommentsOnly_exampleComments(t *testing.T) {
-	// a comment inside an Example is protected: its `// Output:` is the test's expectation
 	edit := strings.Replace(coExample, "// Output: hi a 3", "// Output: hi a 4", 1)
-	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 || !strings.Contains(v.Reds[0], "PROTECTED") {
+	if v := CompareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 || !strings.Contains(v.Reds[0], "PROTECTED") {
 		t.Errorf("Output edit: want a PROTECTED COMMENT red, got %v", v.Reds)
 	}
 	edit = strings.Replace(coExample, "// the call", "// the call, reworded", 1)
-	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 {
+	if v := CompareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 {
 		t.Errorf("ordinary comment inside an Example: want red, got green")
 	}
-	// the same edit in a function that is not an Example, and an Example's own doc comment, are ordinary comments
 	notExample := strings.Replace(coExample, "func ExampleGreet", "func helper", 1)
 	edit = strings.Replace(notExample, "// the call", "// reworded", 1)
-	if v := compareComments("p_test.go", []byte(notExample), []byte(edit)); len(v.Reds) != 0 {
+	if v := CompareComments("p_test.go", []byte(notExample), []byte(edit)); len(v.Reds) != 0 {
 		t.Errorf("comment inside a non-Example: want green, got %v", v.Reds)
 	}
 	documented := strings.Replace(coExample, "func ExampleGreet", "// ExampleGreet shows Greet.\nfunc ExampleGreet", 1)
-	if v := compareComments("p_test.go", []byte(documented), []byte(coExample)); len(v.Reds) != 0 {
+	if v := CompareComments("p_test.go", []byte(documented), []byte(coExample)); len(v.Reds) != 0 {
 		t.Errorf("an Example's doc comment: want green, got %v", v.Reds)
 	}
-	// a file that is not a _test.go has no Examples
 	edit = strings.Replace(coExample, "// the call", "// the call, reworded", 1)
-	if v := compareComments("p.go", []byte(coExample), []byte(edit)); len(v.Reds) != 0 {
+	if v := CompareComments("p.go", []byte(coExample), []byte(edit)); len(v.Reds) != 0 {
 		t.Errorf("Example-named func outside a test file: want green, got %v", v.Reds)
 	}
 }
 
 func TestCommentsOnly_rewrapThatCreatesADirectiveLookalikeIsRed(t *testing.T) {
 	cur := strings.Replace(coBase, "// Greet says hello.", "// Greet says hello and\n//     go:embed list is not a directive.", 1)
-	v := compareComments("p.go", []byte(coBase), []byte(cur))
+	v := CompareComments("p.go", []byte(coBase), []byte(cur))
 	if len(v.Reds) == 0 || !strings.Contains(v.Reds[0], "SA9009") {
 		t.Errorf("want an SA9009 red, got %v", v.Reds)
 	}
-	// the same line already in the base file is not this diff's doing
-	if v := compareComments("p.go", []byte(cur), []byte(cur+"\n// more\n")); len(v.Reds) != 0 {
+	if v := CompareComments("p.go", []byte(cur), []byte(cur+"\n// more\n")); len(v.Reds) != 0 {
 		t.Errorf("a lookalike already present before: want green, got %v", v.Reds)
 	}
 }
 
 func TestCommentsOnly_unparseableIsRedNotAPanic(t *testing.T) {
-	v := compareComments("p.go", []byte(coBase), []byte(coBase+"\nfunc broken( {\n"))
+	v := CompareComments("p.go", []byte(coBase), []byte(coBase+"\nfunc broken( {\n"))
 	if len(v.Reds) == 0 {
 		t.Fatal("a file that does not parse must be red")
 	}
@@ -144,19 +135,17 @@ func TestCommentsOnly_movedTextReport(t *testing.T) {
 	story := "The 2026-09-12 debugging story: two causes, found by bisecting."
 	old := "package p\n\n// Run does it.\n//\n// " + story + "\n// Another thing that was said.\nfunc Run() {}\n"
 	cur := "package p\n\n// Run does it. History: docs/code-notes/p.md#Run.\nfunc Run() {}\n"
-	v := compareComments("p.go", []byte(old), []byte(cur))
+	v := CompareComments("p.go", []byte(old), []byte(cur))
 	if len(v.Reds) != 0 {
 		t.Fatalf("comment-only: %v", v.Reds)
 	}
 	if len(v.Removed) != 1 || v.Removed[0].Lines != 3 {
-		t.Fatalf("want one removed run of 3 lines (\"Run does it.\" is gone as a line too), got %+v", v.Removed)
+		t.Fatalf("want one removed run of 3 lines, got %+v", v.Removed)
 	}
-	// verbatim in a blockquote: found
 	r := movedTextReport(v.Removed, "## Run\n\n> Run does it.\n>\n> "+story+"\n> Another thing that was said.\n")
 	if len(r.found) != 1 || len(r.missing) != 0 {
 		t.Errorf("verbatim move: want found, got found=%d missing=%d", len(r.found), len(r.missing))
 	}
-	// edited on the way: listed, not found
 	r = movedTextReport(v.Removed, "## Run\n\nThe story, summarised.\n")
 	if len(r.missing) != 1 {
 		t.Errorf("unmoved text: want listed as missing, got %+v", r)
@@ -167,8 +156,6 @@ func TestCommentsOnly_movedTextReport(t *testing.T) {
 		t.Errorf("report should name the file and the run:\n%s", out.String())
 	}
 }
-
-// ---- the CLI path, against a scratch repository ----
 
 func coRepo(t *testing.T) string {
 	t.Helper()
@@ -213,7 +200,7 @@ func coRepo(t *testing.T) string {
 func coRun(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 	var out bytes.Buffer
-	code := runCommentsOnly(append(args, "-no-checks"), &out)
+	code := RunCommentsOnly(append(args, "-no-checks"), &out)
 	return code, out.String()
 }
 
@@ -229,7 +216,6 @@ func TestCommentsOnly_gitCommitGreenAndRed(t *testing.T) {
 			}
 		}
 	}
-	// a comments commit with the story moved verbatim into docs
 	os.WriteFile(filepath.Join(dir, "p.go"), []byte("package p\n\n// F does a thing; history in docs/code-notes/p.md#F.\nfunc F() int { return 1 }\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "docs/code-notes"), 0o755)
 	os.WriteFile(filepath.Join(dir, "docs/code-notes/p.md"), []byte("## F\n\nThe story of 2026-09-12.\n"), 0o644)
@@ -238,19 +224,16 @@ func TestCommentsOnly_gitCommitGreenAndRed(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "GREEN") || !strings.Contains(out, "found verbatim") {
 		t.Fatalf("comments commit: want green with the story found, got %d\n%s", code, out)
 	}
-	// the same base, a code change hiding in a later commit
 	os.WriteFile(filepath.Join(dir, "p.go"), []byte("package p\n\n// F does a thing; history in docs/code-notes/p.md#F.\nfunc F() int { return 2 }\n"), 0o644)
 	commit("sneaky", "p.go")
 	if code, out := coRun(t, "HEAD~2"); code != 1 || !strings.Contains(out, "CODE CHANGED") {
 		t.Fatalf("code change: want red, got %d\n%s", code, out)
 	}
-	// a non-doc, non-go file in the diff
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
 	commit("readme", "README.md")
 	if code, out := coRun(t, "HEAD~1"); code != 1 || !strings.Contains(out, "neither a .go file nor under docs/") {
 		t.Fatalf("non-doc file: want red, got %d\n%s", code, out)
 	}
-	// a new .go file
 	os.WriteFile(filepath.Join(dir, "q.go"), []byte("package p\n"), 0o644)
 	commit("new file", "q.go")
 	if code, out := coRun(t, "HEAD~1"); code != 1 || !strings.Contains(out, "was added") {
@@ -262,7 +245,7 @@ func TestCommentsOnly_worktreeMode(t *testing.T) {
 	dir := coRepo(t)
 	os.WriteFile(filepath.Join(dir, "p.go"), []byte("package p\n\nfunc F() int { return 1 }\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs/new-notes.md"), []byte("## F\n\nThe story of 2026-09-12.\n"), 0o644) // untracked
+	os.WriteFile(filepath.Join(dir, "docs/new-notes.md"), []byte("## F\n\nThe story of 2026-09-12.\n"), 0o644)
 	code, out := coRun(t, "--worktree", "HEAD")
 	if code != 0 || !strings.Contains(out, "GREEN") || !strings.Contains(out, "found verbatim") {
 		t.Fatalf("worktree comments edit with an untracked notes file: want green, got %d\n%s", code, out)

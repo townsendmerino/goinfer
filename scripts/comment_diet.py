@@ -239,7 +239,7 @@ def cmd_pointers():
     bad, n = [], 0
     files = subprocess.run(['git', 'ls-files', '*.go'], capture_output=True, text=True, cwd=root).stdout.split()
     for rel in files:
-        if rel == 'cmd/gate/comments_only_test.go':  # its fixtures name notes files that do not exist
+        if rel in ('cmd/gate/comments_only_test.go', 'internal/guard/gatehygiene/comments_only_test.go'):  # its fixtures name notes files that do not exist
             continue
         for i, line in enumerate(open(os.path.join(root, rel)).read().split('\n'), 1):
             if '//' not in line:

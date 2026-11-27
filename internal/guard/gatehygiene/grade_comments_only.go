@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"fmt"
@@ -6,55 +6,51 @@ import (
 	"strings"
 )
 
-// The overall step of `gate comments-only` (comments_only.go), a grader of what its runner records: the changed paths, each
-// modified .go file's compareComments verdict, the docs text the diff adds, the flags, and the results of the checks that
-// follow a green.
-
-// pathChange is one changed path and its git status letter.
-type pathChange struct {
+// PathChange records one changed path and its git status letter.
+type PathChange struct {
 	Path   string `json:"path"`
 	Status string `json:"status"`
 }
 
-// removedRun is a run of comment lines a file lost.
-type removedRun struct {
+// RemovedRun records a contiguous run of comment lines removed from a Go file.
+type RemovedRun struct {
 	File  string `json:"file"`
-	Line  int    `json:"line"`  // first line of the run in the old file
-	Lines int    `json:"lines"` // comment lines in the run
-	Text  string `json:"text"`  // the run, markers stripped, one line per source line
+	Line  int    `json:"line"`
+	Lines int    `json:"lines"`
+	Text  string `json:"text"`
 }
 
-// fileVerdict is compareComments' answer for one modified .go file.
-type fileVerdict struct {
+// FileVerdict holds CompareComments' findings and comment-line counts for one modified Go file.
+type FileVerdict struct {
 	Reds            []string     `json:"reds,omitempty"`
-	Removed         []removedRun `json:"removed,omitempty"`
+	Removed         []RemovedRun `json:"removed,omitempty"`
 	CommentLinesOld int          `json:"comment_lines_old"`
 	CommentLinesNew int          `json:"comment_lines_new"`
 }
 
-// commentsOnlyFile is a modified .go file's verdict, or the red saying its two versions could not be read.
-type commentsOnlyFile struct {
-	Verdict    fileVerdict `json:"verdict"`
+// CommentsOnlyFile records either a Go file's verdict or why its versions could not be read.
+type CommentsOnlyFile struct {
+	Verdict    FileVerdict `json:"verdict"`
 	Unreadable string      `json:"unreadable,omitempty"`
 }
 
-// commentsOnlyCheck is one check run after a green: gofmt (Kind "gofmt", red when it prints a file too) or a step.
-type commentsOnlyCheck struct {
+// CommentsOnlyCheck records one post-check step (gofmt, vet, citation lint) run after a green comments check.
+type CommentsOnlyCheck struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 	OK   bool   `json:"ok"`
-	Err  string `json:"err"` // the error as %v prints it ("<nil>" when it ran clean)
+	Err  string `json:"err"`
 	Out  string `json:"out,omitempty"`
 }
 
-// commentsOnlyInput is what a comments-only run records for its grader.
-type commentsOnlyInput struct {
-	Changes  []pathChange                `json:"changes"`
-	Files    map[string]commentsOnlyFile `json:"files,omitempty"`
+// CommentsOnlyInput holds all recorded inputs graded by GradeCommentsOnly.
+type CommentsOnlyInput struct {
+	Changes  []PathChange                `json:"changes"`
+	Files    map[string]CommentsOnlyFile `json:"files,omitempty"`
 	Added    string                      `json:"added_docs"`
 	NoChecks bool                        `json:"no_checks,omitempty"`
 	Verbose  bool                        `json:"verbose,omitempty"`
-	Checks   []commentsOnlyCheck         `json:"checks,omitempty"`
+	Checks   []CommentsOnlyCheck         `json:"checks,omitempty"`
 }
 
 func changeKind(s string) string {
@@ -67,8 +63,8 @@ func changeKind(s string) string {
 	return "renamed or copied (" + s + ")"
 }
 
-// commentsOnlyReds is the comments check's findings over the recorded paths, in path order, and the modified .go files.
-func commentsOnlyReds(in commentsOnlyInput) (reds, goFiles []string) {
+// CommentsOnlyReds returns red findings across changed paths and the modified .go file paths.
+func CommentsOnlyReds(in CommentsOnlyInput) (reds, goFiles []string) {
 	for _, c := range in.Changes {
 		switch {
 		case strings.HasPrefix(c.Path, "docs/"):
@@ -89,11 +85,10 @@ func commentsOnlyReds(in commentsOnlyInput) (reds, goFiles []string) {
 	return reds, goFiles
 }
 
-// gradeCommentsOnly prints the report from the comment-line counts through the verdict, then the checks' lines when the
-// comments check is green and checks were run, and returns the exit code.
-func gradeCommentsOnly(w io.Writer, in commentsOnlyInput) int {
-	reds, goFiles := commentsOnlyReds(in)
-	var removed []removedRun
+// GradeCommentsOnly formats the comments-only verdict and optional post-check steps, returning the exit code.
+func GradeCommentsOnly(w io.Writer, in CommentsOnlyInput) int {
+	reds, goFiles := CommentsOnlyReds(in)
+	var removed []RemovedRun
 	before, after := 0, 0
 	for _, c := range in.Changes {
 		if f, ok := in.Files[c.Path]; ok && f.Unreadable == "" && strings.HasSuffix(c.Path, ".go") && c.Status == "M" && !strings.HasPrefix(c.Path, "docs/") {
@@ -120,11 +115,11 @@ func gradeCommentsOnly(w io.Writer, in commentsOnlyInput) int {
 	if in.NoChecks {
 		return 0
 	}
-	return gradeCommentsOnlyChecks(w, in.Checks, len(goFiles))
+	return GradeCommentsOnlyChecks(w, in.Checks, len(goFiles))
 }
 
-// gradeCommentsOnlyChecks prints each check's line and the closing verdict.
-func gradeCommentsOnlyChecks(w io.Writer, checks []commentsOnlyCheck, nGo int) int {
+// GradeCommentsOnlyChecks formats post-check lines and returns the closing exit code.
+func GradeCommentsOnlyChecks(w io.Writer, checks []CommentsOnlyCheck, nGo int) int {
 	red := false
 	fmt.Fprintln(w)
 	for _, c := range checks {
@@ -157,16 +152,12 @@ func indent(s string) string {
 	return b.String()
 }
 
-// ---- the moved-text report ----
-
 type movedReport struct {
-	found, missing []removedRun
+	found, missing []RemovedRun
 }
 
 func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// normalizeDocs strips the line prefixes a comment gains when it is pasted into markdown (`//`, `>`), then squashes whitespace, so
-// "verbatim" survives being a blockquote or a code block.
 func normalizeDocs(s string) string {
 	var b strings.Builder
 	for ln := range strings.SplitSeq(s, "\n") {
@@ -179,7 +170,7 @@ func normalizeDocs(s string) string {
 	return squash(b.String())
 }
 
-func movedTextReport(removed []removedRun, addedDocs string) movedReport {
+func movedTextReport(removed []RemovedRun, addedDocs string) movedReport {
 	docs := normalizeDocs(addedDocs)
 	var r movedReport
 	for _, run := range removed {
@@ -193,7 +184,7 @@ func movedTextReport(removed []removedRun, addedDocs string) movedReport {
 }
 
 func (r movedReport) write(w io.Writer, verbose bool) {
-	total := func(rs []removedRun) int {
+	total := func(rs []RemovedRun) int {
 		n := 0
 		for _, x := range rs {
 			n += x.Lines
@@ -202,7 +193,7 @@ func (r movedReport) write(w io.Writer, verbose bool) {
 	}
 	fmt.Fprintf(w, "moved-text report: %d removed run(s), %d line(s): %d line(s) found verbatim in the docs this diff adds, %d line(s) NOT found (listed below, not red)\n",
 		len(r.found)+len(r.missing), total(r.found)+total(r.missing), total(r.found), total(r.missing))
-	show := func(label string, rs []removedRun) {
+	show := func(label string, rs []RemovedRun) {
 		for _, x := range rs {
 			first, _, _ := strings.Cut(x.Text, "\n")
 			if len(first) > 90 {

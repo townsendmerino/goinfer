@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
+	"github.com/townsendmerino/goinfer/internal/guard/gatehygiene"
 )
 
 type (
@@ -61,11 +62,17 @@ var (
 	orDash             = gatecore.OrDash
 	wrapWords          = gatecore.WrapWords
 	short8             = gatecore.Short8
-	preMovePath        = gatecore.PreMovePath
-	absentFromRev      = gatecore.AbsentFromRev
 	absentBeforeMove   = gatecore.AbsentBeforeMove
 	treeAt             = gatecore.TreeAt
 	objectAt           = gatecore.ObjectAt
+	runChangelog       = gatehygiene.RunChangelog
+	newestVersionTag   = gatehygiene.NewestVersionTag
+	runCommentsOnly    = gatehygiene.RunCommentsOnly
+	replayCommentsOnly = gatehygiene.ReplayCommentsOnly
+	runLedger          = gatehygiene.RunLedger
+	classifyGate       = gatehygiene.ClassifyGate
+	reconcileLedger    = gatehygiene.ReconcileLedger
+	runShadow          = gatehygiene.RunShadow
 )
 
 func heavyConfig() *gateConfig {

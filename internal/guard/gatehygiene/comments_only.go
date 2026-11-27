@@ -1,4 +1,4 @@
-package main
+package gatehygiene
 
 import (
 	"bytes"
@@ -18,38 +18,15 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/gatecore"
 )
 
-// gate comments-only <base> [--worktree] proves that a commit (or the working tree) changed Go comments and docs and nothing else:
-// the code-comment gate. A comment rewrite is only safe to review quickly if a tool, not
-// the reviewer, vouches that no code moved with it.
-//
-// What is checked, per changed .go file:
-//
-//   - The token stream with comments skipped is identical before and after. String literals are tokens, so an edit inside an
-//     embedded MSL, CUDA or WGSL kernel string is a code change and red. The task text says "print both with go/printer"; a token
-//     stream is the same test without printer's blank-line rule, which keeps a blank line when two statements were two lines apart,
-//     so deleting a comment line between two statements would print differently and read as a code change.
-//   - Protected comments are byte-identical, in order: `//go:` directives, `// +build`, `//nolint`, `//lint:ignore`, and every
-//     comment inside an Example function (its `// Output:` block is the test's expectation).
-//
-// What else is red: a changed path that is neither a .go file nor under docs/, and a .go file that was added, deleted or renamed
-// (new code is a code change).
-//
-// What is listed and not red: the moved-text report. Each run of removed comment lines is searched for in the docs text the same
-// diff adds, so "move, don't delete" is checkable; runs not found are the reviewer's to read against the doc the new comment cites.
-//
-// When the comments check is green the cheap gates for the touched modules follow: gofmt -l on the changed files, go vet per
-// touched package (untagged, then with the tags that package family needs), and the citation lint. -no-checks stops after the
-// comments check. Exit: 0 green, 1 red, 2 refused (bad arguments, no git).
-
-func runCommentsOnly(argv []string, w io.Writer) int {
+// RunCommentsOnly implements `gate comments-only`.
+func RunCommentsOnly(argv []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate comments-only", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	worktree := fs.Bool("worktree", false, "compare <base> with the working tree (uncommitted edits) instead of with HEAD")
 	noChecks := fs.Bool("no-checks", false, "stop after the comments-only check; skip gofmt, go vet and the citation lint")
 	verbose := fs.Bool("v", false, "list every moved-text run, not only those not found")
-	logDir := fs.String("logdir", "", "write the run record (the inputs the report is graded from) here, for -replay")
+	logDir := fs.String("logdir", "", "write the run record here, for -replay")
 	replay := fs.String("replay", "", "regrade a run record instead of reading the repository")
-	// the flags may come before or after <base>
 	var pos []string
 	for len(argv) > 0 {
 		if err := fs.Parse(argv); err != nil {
@@ -62,14 +39,14 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 		}
 	}
 	if *replay != "" {
-		return replayCommentsOnly(w, *replay)
+		return ReplayCommentsOnly(w, *replay)
 	}
 	if len(pos) != 1 {
 		fmt.Fprintln(os.Stderr, "usage: gate comments-only <base> [--worktree] [-no-checks] [-v] [-logdir DIR] | gate comments-only -replay FILE")
 		return 2
 	}
 	base := pos[0]
-	root, err := repoRoot()
+	root, err := gatecore.RepoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate comments-only: %v\n", err)
 		return 2
@@ -90,21 +67,18 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 	var prelude strings.Builder
 	pw := io.MultiWriter(w, &prelude)
 	fmt.Fprintln(pw, "gate comments-only")
-	gatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).Write(pw)
+	gatecore.GatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).Write(pw)
 
-	in := commentsOnlyInput{Changes: changes, Files: map[string]commentsOnlyFile{}, NoChecks: *noChecks, Verbose: *verbose}
+	in := CommentsOnlyInput{Changes: changes, Files: map[string]CommentsOnlyFile{}, NoChecks: *noChecks, Verbose: *verbose}
 	for _, c := range changes {
 		if strings.HasPrefix(c.Path, "docs/") || !strings.HasSuffix(c.Path, ".go") {
 			continue
 		}
-		// --no-renames shows a file moved in layout Tier 2 as a delete of its pre-move path and an add of its new
-		// path. The add is the same file: it is compared with its pre-move content when that content exists at base,
-		// and skipped as a new file when it does not.
 		basePath := c.Path
 		switch c.Status {
 		case "M":
 		case "A":
-			old, moved := preMovePath(c.Path)
+			old, moved := gatecore.PreMovePath(c.Path)
 			if !moved {
 				continue
 			}
@@ -118,10 +92,10 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 		old, err1 := showAt(base, basePath)
 		cur, err2 := currentContent(c.Path, *worktree)
 		if err1 != nil || err2 != nil {
-			in.Files[c.Path] = commentsOnlyFile{Unreadable: fmt.Sprintf("%s: cannot read both versions (%v, %v)", c.Path, err1, err2)}
+			in.Files[c.Path] = CommentsOnlyFile{Unreadable: fmt.Sprintf("%s: cannot read both versions (%v, %v)", c.Path, err1, err2)}
 			continue
 		}
-		in.Files[c.Path] = commentsOnlyFile{Verdict: compareComments(c.Path, old, cur)}
+		in.Files[c.Path] = CommentsOnlyFile{Verdict: CompareComments(c.Path, old, cur)}
 	}
 	added, err := addedDocsText(base, *worktree)
 	if err != nil {
@@ -129,30 +103,29 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 		return 2
 	}
 	in.Added = added
-	if reds, goFiles := commentsOnlyReds(in); len(reds) == 0 && !in.NoChecks {
+	if reds, goFiles := CommentsOnlyReds(in); len(reds) == 0 && !in.NoChecks {
 		in.Checks = runCommentsOnlyChecks(goFiles)
 	}
-	code := gradeCommentsOnly(w, in)
+	code := GradeCommentsOnly(w, in)
 	if *logDir != "" {
 		if err := os.MkdirAll(*logDir, 0o755); err != nil {
 			fmt.Fprintf(w, "gate: the run record was not written: %v\n", err)
 		} else {
-			writeRunRecord(w, *logDir, &gateConfig{Name: "comments-only", Decision: "comments"}, nil, provenance{}, false,
-				runRecordExtra{Prelude: prelude.String(), CommentsOnly: &in})
+			gatecore.WriteRunRecord(w, *logDir, &gatecore.GateConfig{Name: "comments-only", Decision: "comments"}, nil, gatecore.Provenance{}, false,
+				gatecore.RunRecordExtra{Prelude: prelude.String(), CommentsOnly: &in})
 		}
 	}
 	return code
 }
 
-// replayCommentsOnly prints a recorded comments-only run's report as the run printed it: its provenance, then the grader's
-// report from the recorded inputs, with its exit code. A record that cannot be read is exit 2.
-func replayCommentsOnly(w io.Writer, path string) int {
-	rec, err := readRunRecord(path)
+// ReplayCommentsOnly regrades a recorded comments-only run record.
+func ReplayCommentsOnly(w io.Writer, path string) int {
+	rec, err := gatecore.ReadRunRecord(path)
 	if err != nil {
 		fmt.Fprintf(w, "gate comments-only -replay: %v\n", err)
 		return 2
 	}
-	in, err := gatecore.UnmarshalPayload[commentsOnlyInput](rec.CommentsOnly)
+	in, err := gatecore.UnmarshalPayload[CommentsOnlyInput](rec.CommentsOnly)
 	if err != nil {
 		fmt.Fprintf(w, "gate comments-only -replay: %v\n", err)
 		return 2
@@ -162,11 +135,10 @@ func replayCommentsOnly(w io.Writer, path string) int {
 		return 2
 	}
 	fmt.Fprint(w, rec.Prelude)
-	return gradeCommentsOnly(w, *in)
+	return GradeCommentsOnly(w, *in)
 }
 
-// changedPaths is every path that differs between base and HEAD (or the working tree), untracked files included in worktree mode.
-func changedPaths(base string, worktree bool) ([]pathChange, error) {
+func changedPaths(base string, worktree bool) ([]PathChange, error) {
 	args := []string{"diff", "--name-status", "--no-renames", "-z", base}
 	if !worktree {
 		args = append(args, "HEAD")
@@ -175,10 +147,10 @@ func changedPaths(base string, worktree bool) ([]pathChange, error) {
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
-	var cs []pathChange
+	var cs []PathChange
 	parts := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for i := 0; i+1 < len(parts); i += 2 {
-		cs = append(cs, pathChange{Path: parts[i+1], Status: parts[i]})
+		cs = append(cs, PathChange{Path: parts[i+1], Status: parts[i]})
 	}
 	if worktree {
 		un, err := exec.Command("git", "ls-files", "--others", "--exclude-standard", "-z").Output()
@@ -187,7 +159,7 @@ func changedPaths(base string, worktree bool) ([]pathChange, error) {
 		}
 		for p := range strings.SplitSeq(strings.TrimRight(string(un), "\x00"), "\x00") {
 			if p != "" {
-				cs = append(cs, pathChange{Path: p, Status: "A"})
+				cs = append(cs, PathChange{Path: p, Status: "A"})
 			}
 		}
 	}
@@ -205,7 +177,6 @@ func currentContent(path string, worktree bool) ([]byte, error) {
 	return showAt("HEAD", path)
 }
 
-// addedDocsText is the text the diff adds under docs/ (a new untracked file counts in full in worktree mode).
 func addedDocsText(base string, worktree bool) (string, error) {
 	args := []string{"diff", "-U0", "--no-renames", base}
 	if !worktree {
@@ -241,10 +212,9 @@ func addedDocsText(base string, worktree bool) (string, error) {
 	return b.String(), nil
 }
 
-// ---- the per-file comparison (pure: no git, so the tests drive it directly; the types are grade_comments_only.go's) ----
-
-func compareComments(path string, old, cur []byte) fileVerdict {
-	var v fileVerdict
+// CompareComments checks that old and cur have identical non-comment token streams and protected comments.
+func CompareComments(path string, old, cur []byte) FileVerdict {
+	var v FileVerdict
 	oldTok, err := tokensWithoutComments(old)
 	if err != nil {
 		v.Reds = append(v.Reds, fmt.Sprintf("%s: the base version does not scan: %v", path, err))
@@ -349,9 +319,7 @@ func parseWithComments(src []byte) (*ast.File, *token.FileSet, error) {
 
 var protectedPrefixes = []string{"//go:", "// +build", "//+build", "//nolint", "//lint:ignore"}
 
-// protectedComments lists, in source order, every comment this task never edits: directives, and anything inside an Example
-// function of a test file. Each entry carries what a reviewer needs to find it.
-func protectedComments(path string, f *ast.File, fset *token.FileSet) []string {
+func protectedComments(path string, f *ast.File, _ *token.FileSet) []string {
 	var examples []*ast.FuncDecl
 	if strings.HasSuffix(path, "_test.go") {
 		for _, d := range f.Decls {
@@ -382,8 +350,6 @@ func protectedComments(path string, f *ast.File, fset *token.FileSet) []string {
 	return out
 }
 
-// directiveLookalike returns the first comment line of the form `//   go:word`, which staticcheck SA9009 reports as an ineffectual
-// compiler directive; a rewrap that leaves "go:embed" at the start of a line produces one.
 func directiveLookalike(f *ast.File, fset *token.FileSet) string {
 	for _, g := range f.Comments {
 		for _, c := range g.List {
@@ -415,7 +381,6 @@ func describeProtectedDifference(a, b []string) string {
 	return "differs"
 }
 
-// commentLineCount is the number of source lines covered by comments (a trailing comment counts its own line).
 func commentLineCount(f *ast.File, fset *token.FileSet) int {
 	n := 0
 	for _, g := range f.Comments {
@@ -426,7 +391,6 @@ func commentLineCount(f *ast.File, fset *token.FileSet) int {
 	return n
 }
 
-// commentLines is a comment group as text lines, markers stripped and trimmed, blanks dropped, each with its source line.
 type cline struct {
 	text string
 	line int
@@ -453,18 +417,16 @@ func commentLines(g *ast.CommentGroup, fset *token.FileSet) []cline {
 	return out
 }
 
-// removedRuns: the comment lines the old file had that the new file's comments no longer contain, in runs of consecutive lines.
-// A line that merely moved within the file is kept, not removed; a line is compared as text only.
-func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nfs *token.FileSet) []removedRun {
+func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nfs *token.FileSet) []RemovedRun {
 	kept := map[string]bool{}
 	for _, g := range nf.Comments {
 		for _, l := range commentLines(g, nfs) {
 			kept[l.text] = true
 		}
 	}
-	var runs []removedRun
+	var runs []RemovedRun
 	for _, g := range of.Comments {
-		var cur *removedRun
+		var cur *RemovedRun
 		var curLines []string
 		flush := func() {
 			if cur != nil {
@@ -479,7 +441,7 @@ func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nf
 				continue
 			}
 			if cur == nil {
-				cur = &removedRun{File: path, Line: l.line}
+				cur = &RemovedRun{File: path, Line: l.line}
 			}
 			cur.Lines++
 			curLines = append(curLines, l.text)
@@ -489,17 +451,13 @@ func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nf
 	return runs
 }
 
-// ---- the cheap gates that follow a green ----
-
-// runCommentsOnlyChecks runs the cheap gates that follow a green, in order: gofmt -l on the changed files, go vet per touched
-// package and tag set, and the citation lint. It returns each result for gradeCommentsOnlyChecks.
-func runCommentsOnlyChecks(goFiles []string) []commentsOnlyCheck {
-	var out []commentsOnlyCheck
+func runCommentsOnlyChecks(goFiles []string) []CommentsOnlyCheck {
+	var out []CommentsOnlyCheck
 	step := func(kind, name string, cmd *exec.Cmd) {
 		var buf bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &buf, &buf
 		err := cmd.Run()
-		out = append(out, commentsOnlyCheck{Kind: kind, Name: name, OK: err == nil, Err: fmt.Sprint(err), Out: buf.String()})
+		out = append(out, CommentsOnlyCheck{Kind: kind, Name: name, OK: err == nil, Err: fmt.Sprint(err), Out: buf.String()})
 	}
 	if len(goFiles) > 0 {
 		step("gofmt", "gofmt -l", exec.Command("gofmt", append([]string{"-l"}, goFiles...)...))
@@ -523,21 +481,18 @@ func runCommentsOnlyChecks(goFiles []string) []commentsOnlyCheck {
 }
 
 type vetTarget struct {
-	moduleDir string // absolute
-	dir       string // the package directory, repo-relative, for labels
-	pattern   string // as go vet takes it, relative to moduleDir
-	module    string // repo-relative module directory, "." for the root
+	moduleDir string
+	dir       string
+	pattern   string
+	module    string
 	env       []string
 }
 
-// tagSets: untagged always, then the tags CLAUDE.md names for that module's heavy code. metal is darwin-only and cgo-free, so it
-// is vetted for darwin from here rather than skipped.
 func (v vetTarget) tagSets() []string {
 	switch v.module {
 	case ".":
 		return []string{"", "realckpt goinfer_testhooks"}
 	case "backend/cuda", "cuda":
-		// tagged only: prefill_deltanet.go has no build line but uses types the tagged files define, so an untagged vet cannot build
 		return []string{"cuda goinfer_testhooks"}
 	case "backend/webgpu", "gpu":
 		return []string{"", "gpu goinfer_testhooks"}
