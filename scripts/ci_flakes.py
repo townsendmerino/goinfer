@@ -2,7 +2,7 @@
 """ci_flakes.py: a read-only record of the last day's failed ci jobs, for telling flakes from defects.
 
 One record per failed job attempt in the `ci` workflow's runs created in the window: lane (job name), run, attempt, sha,
-event, the failing tests (from root-windows' `root-windows-test-json` artifact where the run has one, otherwise the
+event, the failing tests (from the red run's kept test.json where the lane keeps one, ARTIFACTS, otherwise the
 `--- FAIL:` lines of the job's log, otherwise the log's tail before its first error), whether a later attempt of the same
 job in the same run passed, and which other lanes failed on the same sha. It writes Markdown (the job summary) and JSON;
 it never commits, opens issues or comments. The scheduled workflow is .github/workflows/ci-flakes.yml.
@@ -19,10 +19,11 @@ import subprocess
 import sys
 import tempfile
 
-WINDOWS_ARTIFACT = "root-windows-test-json"
+ARTIFACTS = {"root-windows": "root-windows-test-json", "root-windows-arm64": "root-windows-arm64-test-json"}  # lane -> its red run's test.json
 TAIL_LINES = 15
 
 _TS = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z ")
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")  # the runner colours its own lines
 _FAIL = re.compile(r"--- FAIL: (Test[A-Za-z0-9_]+(?:/[^\s\"\\]+)?)")
 
 
@@ -51,7 +52,7 @@ def failed_tests_from_test_json(text):
 
 def failed_tests_from_log(text):
     """A job log -> (failing tests from its `--- FAIL:` lines, or [] and the log's tail before its first ##[error])."""
-    lines = [_TS.sub("", l) for l in text.splitlines()]
+    lines = [_ANSI.sub("", _TS.sub("", l)) for l in text.splitlines()]
     tests = sorted({m.group(1) for l in lines for m in _FAIL.finditer(l)})
     if tests:
         return tests, ""
@@ -145,22 +146,35 @@ def _jobs(repo, run_id, attempt):
         page += 1
 
 
-def _tests_for(repo):
+def job_log(repo, job_id, sh=subprocess.run):
+    """(a job's log, "") or (None, why it could not be fetched). gh refuses to print a response that holds terminal escape
+    sequences unless told to, and a job log always holds them; a gh without the flag rejects it as unknown and prints such a
+    response as it is."""
+    path = f"repos/{repo}/actions/jobs/{job_id}/logs"
+    r = sh(["gh", "api", "--allow-escape-sequences", path], capture_output=True, text=True)
+    if r.returncode != 0 and "unknown flag" in r.stderr:
+        r = sh(["gh", "api", path], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, r.stderr.strip()[:200]
+    return r.stdout, ""
+
+
+def _tests_for(repo, sh=subprocess.run):
     def call(run, job):
-        if job["name"] == "root-windows":
+        if job["name"] in ARTIFACTS:
             with tempfile.TemporaryDirectory() as d:
-                r = subprocess.run(["gh", "run", "download", str(run["id"]), "-R", repo, "-n", WINDOWS_ARTIFACT, "-D", d],
-                                   capture_output=True, text=True)
+                r = sh(["gh", "run", "download", str(run["id"]), "-R", repo, "-n", ARTIFACTS[job["name"]], "-D", d],
+                       capture_output=True, text=True)
                 p = os.path.join(d, "test.json")
                 if r.returncode == 0 and os.path.exists(p):
                     with open(p, errors="replace") as f:
                         tests = failed_tests_from_test_json(f.read())
                     if tests:
                         return tests, ""
-        r = subprocess.run(["gh", "api", f"repos/{repo}/actions/jobs/{job['id']}/logs"], capture_output=True, text=True)
-        if r.returncode != 0:
-            return [], f"(log unavailable: {r.stderr.strip()[:200]})"
-        return failed_tests_from_log(r.stdout)
+        log, why = job_log(repo, job["id"], sh)
+        if log is None:
+            return [], f"(log unavailable: {why})"
+        return failed_tests_from_log(log)
     return call
 
 
