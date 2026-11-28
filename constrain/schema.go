@@ -23,6 +23,7 @@ import (
 //   - array: items (one schema), minItems, maxItems
 //   - $defs / definitions with a local $ref, recursive ones included (schema_ref.go)
 //   - a type list, anyOf and oneOf, where a value's first byte tells the alternatives apart (schema_union.go)
+//     or the alternatives are objects (schema_variant.go)
 //   - arbitrary nesting of the above
 //
 // Unsupported keywords are a compile error rather than a silent no-op, so a
@@ -36,11 +37,13 @@ const (
 	kObject schemaKind = iota
 	kArray
 	kString
-	kNumber // integer is kNumber with intOnly
-	kEnum   // enum / const / boolean / null: match one of a fixed literal set
-	kAny    // any JSON value: the lenient tool-argument compile's node for a schema it cannot enforce
-	kNever  // no value: a reference cycle cut at maxSchemaDepth. Compile-time only, never part of a grammar
-	kUnion  // one of alts, picked by the value's first byte
+	kNumber  // integer is kNumber with intOnly
+	kEnum    // enum / const / boolean / null: match one of a fixed literal set
+	kAny     // any JSON value: the lenient tool-argument compile's node for a schema it cannot enforce
+	kNever   // no value: a reference cycle cut at maxSchemaDepth. Compile-time only, never part of a grammar
+	kUnion   // one of alts, picked by the value's first byte
+	kVariant // one of the objects alts, followed as one object whose keys and values say which (schema_variant.go)
+	kTagEnum // an enum inside a variant whose literal says which of the variant's alternatives the value fits
 )
 
 // node is a compiled schema node (immutable after compile; shared across frames).
@@ -69,8 +72,14 @@ type node struct {
 	// string: the `format` the grammar holds it to (fmtNone: any string)
 	format strFormat
 
-	// union: the alternatives, no two of which begin with the same byte
-	alts []*node
+	// union: the alternatives, no two of which begin with the same byte. variant: the object alternatives, whose
+	// properties are merged in props
+	alts    []*node
+	variant *variantInfo
+
+	// a property's value inside a variant, when its schema differs between the variant's alternatives: per
+	// alternative of this union or variant, or per literal of this enum, the variant's alternatives it belongs to
+	tags []uint64
 }
 
 // The any-value shapes. A kAny frame becomes one of these on its first byte (schemaGrammar.dispatch).

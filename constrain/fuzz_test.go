@@ -147,7 +147,7 @@ func topFrameInLiteral(g Grammar) bool {
 		return false
 	}
 	switch sg.stack[len(sg.stack)-1].state {
-	case fsStr, fsStrEsc, fsStrU, fsObjKeyStr, fsEnum:
+	case fsStr, fsStrEsc, fsStrU, fsObjKeyStr, fsEnum, fsVarKeyStr, fsTagEnum:
 		return true
 	}
 	return false

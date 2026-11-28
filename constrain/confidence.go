@@ -393,7 +393,7 @@ func (m *Masker) decide(fc *FieldConfidence, f *confField, out []byte, generated
 // fieldKind names the reported kinds; "" for a kind that is not reported.
 func fieldKind(n *node) string {
 	switch n.kind {
-	case kEnum:
+	case kEnum, kTagEnum:
 		if len(n.enum) == 2 {
 			a, b := string(n.enum[0]), string(n.enum[1])
 			if (a == "true" && b == "false") || (a == "false" && b == "true") {
@@ -430,7 +430,7 @@ func scalarTop(g *schemaGrammar) *frame {
 	}
 	f := &g.stack[len(g.stack)-1]
 	switch f.n.kind {
-	case kEnum, kNumber, kString:
+	case kEnum, kTagEnum, kNumber, kString:
 		return f
 	}
 	return nil
@@ -443,7 +443,7 @@ func stackPath(g *schemaGrammar) string {
 	for i := 0; i < len(g.stack)-1; i++ {
 		f := &g.stack[i]
 		switch f.n.kind {
-		case kObject:
+		case kObject, kVariant:
 			if f.sel >= 0 && f.sel < len(f.n.props) {
 				if b.Len() > 0 {
 					b.WriteByte('.')

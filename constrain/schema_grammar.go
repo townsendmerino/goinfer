@@ -29,6 +29,12 @@ const (
 	fsFreeKeyEsc             // a free key, after '\'
 	fsFreeKeyU               // a free key, reading \uXXXX (num = hex left)
 	fsFmt                    // inside a string held to a format (schema_format.go)
+	fsVarKeyOrClose          // a variant's object states (schema_variant.go): after '{'
+	fsVarKey                 // after ','
+	fsVarKeyStr              // inside a key string
+	fsVarColon               // after a key
+	fsVarComma               // after a value
+	fsTagEnum                // matching a tagged enum's literals (cand mask, pos)
 )
 
 // number sub-states (held in frame.num while state == fsNum).
@@ -51,9 +57,9 @@ type frame struct {
 	seen  uint64 // object: properties already parsed (bit per props index)
 	cand  uint64 // enum: candidate literals; object-key: candidate property names
 	pos   int    // enum/key: bytes matched so far
-	count int    // array: items parsed
+	count int    // array: items parsed; variant: the live alternatives, low half (frame.live)
 	sel   int    // object: the property index selected by the current key
-	num   int    // number sub-state; string: \u hex digits remaining
+	num   int    // number sub-state; string: \u hex digits remaining; variant: the live alternatives, high half
 }
 
 type schemaGrammar struct {
@@ -228,6 +234,21 @@ func (g *schemaGrammar) step(b byte) bool {
 			}
 			g.complete()
 			continue
+
+		case fsVarKeyOrClose, fsVarKey, fsVarColon, fsVarComma:
+			return g.varStep(f, b)
+
+		case fsVarKeyStr:
+			return g.varKeyStep(f, b)
+
+		case fsTagEnum:
+			if g.enumStep(f, b) {
+				return true
+			}
+			if !g.tagEnumClose(f) {
+				return false
+			}
+			continue // the literal ended; re-feed b to the variant
 		}
 		return false
 	}
@@ -415,13 +436,23 @@ func (g *schemaGrammar) dispatch(f *frame, b byte) bool {
 		}
 	case kUnion: // no two alternatives begin with the same byte, and the frame continues as the one b begins
 		u := f.n
-		for _, alt := range u.alts {
+		for i, alt := range u.alts {
+			if u.tags != nil && u.tags[i]&g.enclosingLive() == 0 {
+				continue // it belongs to alternatives of the enclosing variant that are no longer live
+			}
 			f.n = alt
 			if g.dispatch(f, b) {
+				if u.tags != nil {
+					g.narrowEnclosing(u.tags[i])
+				}
 				return true
 			}
 		}
 		f.n = u
+	case kVariant:
+		return g.variantOpen(f, b)
+	case kTagEnum:
+		return g.tagEnumOpen(f, b)
 	}
 	return false
 }

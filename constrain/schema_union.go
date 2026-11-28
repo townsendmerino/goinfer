@@ -13,14 +13,20 @@ import (
 // Unions. A `type` list, `anyOf` and `oneOf` say a value is one of several alternatives. The grammar follows a value
 // with one frame, so it holds a union only in a form where the value's first byte picks the alternative
 // (schemaGrammar.dispatch): compiling merges the alternatives until no two can begin with the same byte, and a union
-// that cannot be merged so is a compile error. A frame gains no field for it.
+// that cannot be merged so is a compile error. Object alternatives merge into a variant (schema_variant.go). A frame
+// gains no field for a union.
 //
 // `oneOf` is `anyOf` with the promise that no value matches two alternatives. The grammar does not count matches, so
 // a strict compile takes a `oneOf` only when excludes shows every pair of alternatives apart; a lenient one holds it
 // as `anyOf`, which refuses no value the `oneOf` allows.
 
-// maxUnionAlts caps the alternatives of one anyOf or oneOf, and the literals a union names between them (an enum's cap).
-const maxUnionAlts = 64
+const (
+	// maxUnionAlts caps the alternatives of one anyOf or oneOf, the objects a union holds once the unions inside it
+	// are counted, and the literals it names between its alternatives (an enum's cap).
+	maxUnionAlts = 64
+	// maxUnionWork caps the comparisons a document's oneOf keywords cost (unionState.excludes).
+	maxUnionWork = 1 << 20
+)
 
 // unionAlt is a compiled alternative and its index in the schema's list, which an error names.
 type unionAlt struct {
@@ -41,6 +47,9 @@ const (
 
 var classNames = [clsLiteral]string{"objects", "arrays", "strings", "numbers"}
 
+// isUnion reports that n is made of alternatives: a union by first byte, or a variant.
+func isUnion(n *node) bool { return n.kind == kUnion || n.kind == kVariant }
+
 func classOfByte(b byte) valueClass {
 	switch b {
 	case '{':
@@ -58,7 +67,7 @@ func classOfByte(b byte) valueClass {
 // classOf is the class of a typed node: an object, an array, a string or a number.
 func classOf(n *node) valueClass {
 	switch n.kind {
-	case kObject:
+	case kObject, kVariant:
 		return clsObject
 	case kArray:
 		return clsArray
@@ -111,9 +120,13 @@ func (c compiler) compileUnion(s map[string]any, key string, depth int) (*node, 
 	if key == "oneOf" && !c.lenient {
 		for i, a := range alts {
 			for _, b := range alts[i+1:] {
-				if !c.unions.excludes(a.n, b.n) || !c.unions.excludes(b.n, a.n) {
-					return nil, fmt.Errorf("constrain: oneOf alternatives %d and %d can both match a value, as far as their types, literals, required properties and array lengths show, so \"exactly one\" would not be enforced; make them exclude each other, or use anyOf", a.src, b.src)
+				if c.unions.excludes(a.n, b.n) && c.unions.excludes(b.n, a.n) {
+					continue
 				}
+				if c.unions.work > maxUnionWork {
+					return nil, fmt.Errorf("constrain: telling the schema's oneOf alternatives apart takes more than %d comparisons", maxUnionWork)
+				}
+				return nil, fmt.Errorf("constrain: oneOf alternatives %d and %d can both match a value, as far as their types, literals, required properties and array lengths show, so \"exactly one\" would not be enforced; make them exclude each other, or use anyOf", a.src, b.src)
 			}
 		}
 	}
@@ -151,26 +164,34 @@ func (c compiler) compileTypeList(s map[string]any, list []any, depth int) (*nod
 // what names the keyword. The result is neverNode when no alternative is left.
 func (c compiler) merge(what string, alts []unionAlt) (*node, error) {
 	var typed [clsLiteral][]unionAlt
+	objects := map[int]bool{} // the object alternatives so far, by structure
 	type literal struct {
 		enc []byte
 		src int
 	}
 	var lits []literal
+	pooled := map[string]bool{}
 	for i := 0; i < len(alts); i++ {
 		a := alts[i]
 		switch a.n.kind {
 		case kNever:
 		case kAny:
 			return anyNode, nil
-		case kUnion:
+		case kUnion, kVariant:
 			for _, sub := range a.n.alts {
 				alts = append(alts, unionAlt{sub, a.src})
 			}
 		case kEnum:
 			for _, e := range a.n.enum {
-				if !slices.ContainsFunc(lits, func(l literal) bool { return bytes.Equal(l.enc, e) }) {
+				if !pooled[string(e)] {
+					pooled[string(e)] = true
 					lits = append(lits, literal{e, a.src})
 				}
+			}
+		case kObject: // a free object covers every other; otherwise two objects are one only when they are the same
+			if id := c.unions.id(a.n); !objects[id] {
+				objects[id] = true
+				typed[clsObject] = append(typed[clsObject], a)
 			}
 		default:
 			cls := classOf(a.n)
@@ -181,15 +202,25 @@ func (c compiler) merge(what string, alts []unionAlt) (*node, error) {
 			typed[cls] = append(typed[cls], a)
 		}
 	}
+	if i := slices.IndexFunc(typed[clsObject], func(a unionAlt) bool { return a.n.free }); i >= 0 {
+		typed[clsObject] = typed[clsObject][i : i+1]
+	}
 	var out []*node
 	for cls, group := range typed {
-		if len(group) > 1 {
+		switch {
+		case len(group) == 0:
+			continue
+		case len(group) > 1 && valueClass(cls) == clsObject: // all different, and none free
+			v, err := c.variant(what, group)
+			if err != nil {
+				return nil, err
+			}
+			typed[cls] = []unionAlt{{v, group[0].src}}
+		case len(group) > 1:
 			i, j := min(group[0].src, group[1].src), max(group[0].src, group[1].src)
 			return nil, fmt.Errorf("constrain: %s alternatives %d and %d are both %s, and neither covers the other; the grammar picks an alternative by a value's first byte, so it cannot offer both", what, i, j, classNames[cls])
 		}
-		if len(group) == 1 {
-			out = append(out, group[0].n)
-		}
+		out = append(out, typed[cls][0].n)
 	}
 	var enum [][]byte
 	for _, lit := range lits {
@@ -238,6 +269,7 @@ type unionState struct {
 	byNode   map[*node]int
 	byKey    map[string]int
 	excluded map[[2]*node]bool
+	work     int // excludes calls, against maxUnionWork
 }
 
 // id numbers a node by its structure: two nodes with one number accept the same documents.
@@ -276,7 +308,7 @@ func (u *unionState) id(n *node) int {
 		for _, l := range lits {
 			fmt.Fprintf(&k, "%d:%s", len(l), l)
 		}
-	case kUnion:
+	case kUnion, kVariant:
 		k.WriteByte('U')
 		ids := make([]int, len(n.alts))
 		for i, alt := range n.alts {
@@ -304,9 +336,9 @@ func (u *unionState) covers(a, b *node) bool {
 	switch {
 	case a.kind == kAny || b.kind == kNever || u.id(a) == u.id(b):
 		return true
-	case b.kind == kUnion:
+	case isUnion(b):
 		return !slices.ContainsFunc(b.alts, func(alt *node) bool { return !u.covers(a, alt) })
-	case a.kind == kUnion:
+	case isUnion(a):
 		return slices.ContainsFunc(a.alts, func(alt *node) bool { return u.covers(alt, b) })
 	case b.kind == kEnum:
 		return !slices.ContainsFunc(b.enum, func(lit []byte) bool { return !nodeAccepts(a, lit) })
@@ -331,14 +363,17 @@ func (u *unionState) covers(a, b *node) bool {
 // objects read as JSON Schema reads them (keys they do not declare are allowed). It is conservative: false when the
 // two are not shown apart. It looks at types, literals, the keys objects require and declare, and array lengths.
 func (u *unionState) excludes(a, b *node) bool {
+	if u.work++; u.work > maxUnionWork {
+		return false
+	}
 	switch {
 	case a.kind == kNever || b.kind == kNever:
 		return true
 	case a.kind == kAny || b.kind == kAny:
 		return false
-	case a.kind == kUnion:
+	case isUnion(a):
 		return !slices.ContainsFunc(a.alts, func(alt *node) bool { return !u.excludes(alt, b) })
-	case b.kind == kUnion:
+	case isUnion(b):
 		return !slices.ContainsFunc(b.alts, func(alt *node) bool { return !u.excludes(a, alt) })
 	case a.kind == kEnum && b.kind == kEnum:
 		for _, la := range a.enum {
