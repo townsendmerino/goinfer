@@ -249,6 +249,8 @@ func TestFieldConfidence_oneOption(t *testing.T) {
 			`{"tags":["x"]}`, `{"tags":[`, nil},
 		{"an array's items, a const that is not a string", `{"type":"object","properties":{"flags":{"type":"array","items":{"const":true}}},"required":["flags"]}`,
 			`{"flags":[true]}`, ``, nil},
+		{"an array's items, an enum that names its one value twice", `{"type":"object","properties":{"tags":{"type":"array","items":{"enum":["x","x"]}}},"required":["tags"]}`,
+			`{"tags":["x"]}`, `{"tags":[`, nil},
 		{"a required property", `{"type":"object","properties":{"tag":{"enum":["x"]}},"required":["tag"]}`, `{"tag":"x"}`, ``, nil},
 		{"two options are still reported", `{"type":"object","properties":{"tags":{"type":"array","items":{"enum":["x","y"]}}},"required":["tags"]}`,
 			`{"tags":["x"]}`, `{"tags":[`, []string{"tags[0]"}},
