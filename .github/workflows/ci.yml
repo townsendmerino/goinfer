@@ -209,6 +209,17 @@ jobs:
       - name: compile internal/vision (GOEXPERIMENT=simd)
         run: GOEXPERIMENT=simd go test -c -o /dev/null ./internal/vision
 
+      # The site's tests read the rest of the repository: a page under apps/site/different lists the files it rests on,
+      # links into the tree and names the record each of its figures comes from, and the build refuses a page whose file
+      # is gone or whose record no longer holds the figure. site.yml runs only for the paths it lists, and those cannot
+      # name every file a page cites, so a change that moves one would not run them: they run here, on every pull
+      # request and push. -v, so the log shows each test ran: the ones that read the tree skip when they cannot find it.
+      - name: site tests (the files the pages cite)
+        working-directory: apps/site
+        env:
+          GOWORK: "off"
+        run: go test -count=1 -v ./...
+
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
       # Built from source again since the move to Go 1.27.2 (2026-10-08): no staticcheck release reads its export data,
