@@ -43,6 +43,17 @@ def UNDER(*dirs):
     return [("under_nt", d) for d in dirs]
 
 
+def PATHS_OF(*workflows):
+    """Every path a pull request must change for the workflow to run: its pull_request trigger's paths list."""
+    return [("workflow_paths", w) for w in workflows]
+
+
+def NAMED_IN(*patterns):
+    """Every path the text of a file names, for the files a pattern (dir/glob) matches: a path one of them spells out, and each
+    file that was under a directory one of them spells out, once that directory has left the tree."""
+    return [("named_in", p) for p in patterns]
+
+
 WHOLE = "*"  # in place of a test name: the package's whole test run
 
 
@@ -74,6 +85,88 @@ def _matches(kind, arg, path):
     if kind == "tree_t":
         return not skipped and path.endswith("_test.go")
     raise ValueError(kind)
+
+
+def _workflow_paths(root, workflow):
+    """The pull_request trigger's paths list of a workflow file under root, in order, each entry as (negated, compiled pattern);
+    empty when the file is gone or has no such list. Reads the block form (a "- pattern" line each) and GitHub's ** (any
+    characters) and * (any but /); a leading ! negates."""
+    try:
+        with open(os.path.join(root, workflow), encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    out, keys = [], []  # keys: the mapping keys enclosing the current line, each as (indent, key)
+    for line in lines:
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        item = re.fullmatch(r"-\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))\s*(?:#.*)?", text)
+        if item and [k for _, k in keys] == ["on", "pull_request", "paths"]:
+            pat = next(g for g in item.groups() if g is not None)
+            neg = pat.startswith("!")
+            rx = "".join(".*" if t == "**" else "[^/]*" if t == "*" else re.escape(t) for t in re.split(r"(\*\*|\*)", pat[neg:]))
+            out.append((neg, re.compile(rx)))
+            continue
+        key = re.match(r"(['\"]?)([\w.-]+)\1\s*:", text)
+        if key:
+            indent = len(line) - len(line.lstrip(" "))
+            while keys and keys[-1][0] >= indent:
+                keys.pop()
+            keys.append((indent, key.group(2)))
+    return out
+
+
+def _path_filter(patterns, path):
+    """Whether a workflow's paths list (_workflow_paths) selects path: the last pattern that matches it decides."""
+    hit = False
+    for neg, rx in patterns:
+        if rx.fullmatch(path):
+            hit = not neg
+    return hit
+
+
+def _named_paths(root, pattern):
+    """The paths spelled out in the files directly in the pattern's directory under root whose name matches its glob: each run
+    of path characters, and each tail of one after a / (a link names a path after its host and branch). A longer path that
+    only begins with a path does not name it."""
+    d, glob = os.path.split(pattern)
+    try:
+        bases = sorted(b for b in os.listdir(os.path.join(root, d)) if fnmatch.fnmatch(b, glob))
+    except OSError:
+        return frozenset()
+    out = set()
+    for b in bases:
+        with open(os.path.join(root, d, b), encoding="utf-8", errors="replace") as fh:
+            for run in re.findall(r"[\w./-]+", fh.read()):
+                run = run.rstrip("./")  # the full stop that ends a sentence, a directory's trailing slash
+                out.add(run)
+                cut = run.find("/")
+                while cut >= 0:
+                    out.add(run[cut + 1:])
+                    cut = run.find("/", cut + 1)
+    return frozenset(out)
+
+
+def _reads(kind, arg, path, root, memo):
+    """_matches for every kind of scope. The two that read the tree at root to decide are answered here, from memo once read."""
+    if kind not in ("workflow_paths", "named_in"):
+        return _matches(kind, arg, path)
+    if (kind, arg) not in memo:
+        memo[kind, arg] = _workflow_paths(root, arg) if kind == "workflow_paths" else _named_paths(root, arg)
+    if kind == "workflow_paths":
+        return _path_filter(memo[kind, arg], path)
+    named = memo[kind, arg]
+    if path in named:
+        return True
+    # A directory is named by its own path, and a file under it breaks nothing while the directory stands. Once the directory
+    # is gone, each of its files is in the diff as a deletion.
+    d = os.path.dirname(path)
+    while d and not os.path.lexists(os.path.join(root, d)):
+        if d in named:
+            return True
+        d = os.path.dirname(d)
+    return False
 
 
 # decoder and the runtime packages split out of it: where the families, the forward, the cache and their pricing are declared.
@@ -292,6 +385,11 @@ SCANS = [
     Scan("demo/agent/agent", "TestTurnImage_wiresSpliceImageBlockBeforeEncoding", F("demo/agent/agent/agent.go")),
     # site module
     Scan("apps/site/internal/site", "TestHome_heroCodeIsFromTheExample", F("apps/examples/structured/main.go")),
+    # The site's tests build the site from the repository: a page lists the files it rests on, links into the tree and names
+    # the record each of its figures comes from, and the build refuses a page whose file is gone or whose record no longer
+    # holds the figure. They run for a path site.yml runs for, and for a path a page or a data file names.
+    Scan("apps/site/internal/site", WHOLE, PATHS_OF(".github/workflows/site.yml")
+         + NAMED_IN("apps/site/different/*.md", "apps/site/data/*.json")),
     # gpu module
     # MM5b's G-MS4w: WebGPU's decode scratch pricing names no family or mixer.
     Scan("backend/webgpu", "TestMM5b_webgpuDecodeScratchNamesNoFamily", F("backend/webgpu/sb2_census_test.go")),
@@ -421,7 +519,13 @@ def notes_changes(root):
     return out
 
 
-def _selects_a_file(kind, arg, files, bydir):
+def _selects_a_file(kind, arg, files, bydir, root):
+    if kind == "workflow_paths":
+        patterns = _workflow_paths(root, arg)
+        return any(_path_filter(patterns, p) for p in files)
+    if kind == "named_in":  # it has a file to read
+        d, glob = os.path.split(arg)
+        return any(fnmatch.fnmatch(b, glob) for b in bydir.get(d, ()))
     if kind in ("nt", "t", "cu"):
         return any(_matches(kind, arg, os.path.join(arg, b)) for b in bydir.get(arg, ()))
     if kind == "file":
@@ -465,17 +569,18 @@ def problems(root):
             out.append(f"{what}: not declared in {s.pkg} (moved, renamed or deleted)")
         for scope in s.scopes:
             if scope not in live:
-                live[scope] = _selects_a_file(*scope, files, bydir)
+                live[scope] = _selects_a_file(*scope, files, bydir, root)
             if not live[scope]:
                 out.append(f"{what}: its scope {scope[0]} {scope[1]!r} selects no file (moved, renamed or deleted)")
     return out
 
 
-def select(changed):
-    """{package dir: sorted test names} for the scan tests that read any of the changed paths. WHOLE among a package's names
-    stands for its whole test run."""
-    out = {}
+def select(changed, root=None):
+    """{package dir: sorted test names} for the scan tests that read any of the changed paths, in the tree at root (the
+    repository this file is in, by default). WHOLE among a package's names stands for its whole test run."""
+    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    memo, out = {}, {}
     for s in SCANS:
-        if any(_matches(k, a, p) for k, a in s.scopes for p in changed):
+        if any(_reads(k, a, p, root, memo) for k, a in s.scopes for p in changed):
             out.setdefault(s.pkg, set()).add(s.test)
     return {pkg: sorted(t) for pkg, t in out.items()}
