@@ -18,6 +18,8 @@ import (
 // schema.
 //
 // The fields come from server.pathFields, the same function /v1/models uses, so the two surfaces cannot drift apart.
+//
+// It answers 200 in every state, a halt included, so an operator can always read why the server refuses work.
 func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	models := []map[string]any{}
 	for _, name := range s.servedNames() {
@@ -36,16 +38,20 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.regMu.RUnlock()
 	slices.Sort(draining)
 
-	// halted is always present so a client's shape does not change between the two states; reason and at are null
-	// when not halted, not omitted, for the same reason.
-	var haltedFields map[string]any
-	if hi := s.haltState(); hi != nil {
-		haltedFields = map[string]any{"halted": true, "halt_reason": hi.reason, "halt_at": hi.at}
-	} else {
-		haltedFields = map[string]any{"halted": false, "halt_reason": nil, "halt_at": nil}
+	// The halt fields and swap_guard_tripped are always present so a client's shape does not change between states;
+	// reason and at are null when not halted, not omitted, for the same reason.
+	hi, tripped := s.haltState(), s.swapGuardTripped.Load()
+	haltedFields := map[string]any{"halted": false, "halt_reason": nil, "halt_at": nil, "swap_guard_tripped": tripped}
+	if hi != nil {
+		haltedFields["halted"], haltedFields["halt_reason"], haltedFields["halt_at"] = true, hi.reason, hi.at
+	}
+	// status follows the halt gate: "halted" while the generation routes answer 503, for either cause.
+	status := "ok"
+	if _, refusing := haltRefusal(hi, tripped); refusing {
+		status = "halted"
 	}
 	resp := map[string]any{
-		"status":   "ok",
+		"status":   status,
 		"backend":  s.cfg.load.Backend,
 		"models":   models,
 		"draining": draining,
