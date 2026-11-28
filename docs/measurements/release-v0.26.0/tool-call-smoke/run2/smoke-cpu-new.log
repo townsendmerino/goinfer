@@ -1,0 +1,8 @@
+[smoke    1.0s] server up on cpu; 10 replay + 10 keyword + 30 sampled + 5 auto requests follow
+[smoke  130.3s] replay turn 8: truncated, no call to advance the history with; the replay stops here
+[smoke  130.3s] replay: 7/8 pass of 10 turns
+[smoke  172.2s] keywords: 10/10 pass
+[smoke  270.6s] sampled: 30/30 pass
+[smoke  299.3s] auto: 0 calls of 5 replies, 0 of them pass; 5 prose
+[smoke  299.3s] FAIL replay: 8: truncated
+VERDICT: FAIL — tool-call smoke on cpu: 52 of 53 replies pass; 1 cut by the token budget; the replay stopped early

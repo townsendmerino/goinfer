@@ -1,0 +1,8 @@
+rev:      bfce8996228b66c371629bdedb44624c8ea2eacf
+base:     v0.25.0
+started:  2026-11-28 06:48:24 PST
+go:       go version go1.27.2 darwin/arm64
+machine:  Apple M1 Pro, 16 GB, macOS 26.7.3
+fixtures: fixtures from /Users/francistownsend-merino/tmcode/goinfer: 23 copied (103 MB, entries <= 64 MB), 5 cloned (7904 MB, larger), 0 linked (larger, could not clone), 1 symlinks kept as symlinks; worktree git status: 0 entries
+load:     6.24 9.05 8.58
+tree:     0 git status entries

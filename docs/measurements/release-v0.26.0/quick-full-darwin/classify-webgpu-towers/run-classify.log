@@ -1,0 +1,22 @@
+tree:    bfce8996228b66c371629bdedb44624c8ea2eacf (1 git status entries)
+go:      go version go1.27.4 darwin/arm64
+machine: Apple M1 Pro, macOS 26.7.3, page size 16384
+started: 2026-11-28 07:59:27 PST
+== rerun: the cell as the gate ran it, 10 times
+  rerun 1 (07:59:30): ok (15 PASS lines, 13 SKIP)
+  rerun 2 (07:59:32): ok (15 PASS lines, 13 SKIP)
+  rerun 3 (07:59:35): ok (15 PASS lines, 13 SKIP)
+  rerun 4 (07:59:37): ok (15 PASS lines, 13 SKIP)
+  rerun 5 (07:59:40): ok (15 PASS lines, 13 SKIP)
+  rerun 6 (07:59:42): ok (15 PASS lines, 13 SKIP)
+  rerun 7 (07:59:45): ok (15 PASS lines, 13 SKIP)
+  rerun 8 (07:59:47): ok (15 PASS lines, 13 SKIP)
+  rerun 9 (07:59:50): ok (15 PASS lines, 13 SKIP)
+  rerun 10 (07:59:52): ok (15 PASS lines, 13 SKIP)
+  rerun: 10 of 10 runs ok
+== plant: the Metal backend's GC test against this package's helper as it is
+  plant (07:59:53): DIED: fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+== fixed: the same test with the helper in the Metal backend's form, then the cell's own tests with it
+  fixed, the GC test (07:59:55): ok (1 PASS lines, 0 SKIP)
+  fixed, the cell (07:59:57): ok (16 PASS lines, 13 SKIP)
+finished: 2026-11-28 07:59:57 PST; tree after: 1 git status entries

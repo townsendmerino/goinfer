@@ -1,0 +1,1 @@
+{"t": "2026-11-28 08:04:35", "t_epoch": 1795881875.0033972, "load1": 3.59765625, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8533, "swap_mb": 2087.12, "swapin_mb": 9792.90625, "swapout_mb": 15156.234375, "need_mb": 1024.0, "void": null, "need_source": "the test's own device buffers, about 1 GB", "need_is_lower_bound": false}

@@ -1,0 +1,50 @@
+{
+ "schema": 1,
+ "backend": "metal",
+ "commit": "bfce8996228b66c371629bdedb44624c8ea2eacf",
+ "date": "2026-11-28T14:20:48Z",
+ "host": "Darwin arm64",
+ "gpu": "Apple M1 Pro",
+ "verdict": "FAIL",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 9,
+  "reported": 9,
+  "pass": 9,
+  "skip": 1,
+  "fail": 1,
+  "ran": 8
+ },
+ "trees": {
+  "backend/cuda": "8af603c66d327c872ba98a16f2afbcb33e277949",
+  "backend/metal": "1bbc8e6ab1e5121888c1e204f66df153e5e458a7",
+  "backend/webgpu": "88e857b8a90df2a51599f5abd6314fcd748b061a",
+  "decoder": "8d91e81e7cb5a7c4e866e43d9d91f41ad390aabc"
+ },
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "cgofree",
+  "lifecycle",
+  "prefill",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "lifecycle",
+  "parity",
+  "prefill",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)"
+ ]
+}

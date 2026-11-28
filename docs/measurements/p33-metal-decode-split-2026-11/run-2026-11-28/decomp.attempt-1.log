@@ -1,0 +1,50 @@
+=== RUN   TestMetalDecodeDecomp
+decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw is not in memory: reading its 1.2 GB once before the load
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.108, 0.249); 0 = always the fragment
+[ddecomp    1.8s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw: H=1536 I=8960 nL=28 nH=12 V=151936, ctx 4096, attention_fa on: true (floor 1024), aliased: true
+[ddecomp    4.9s] depth 128 rep 1/5: full 9.729 ms/token, dispatch floor 0.728
+[ddecomp    7.3s] depth 128 rep 2/5: full 9.829 ms/token, dispatch floor 0.714
+[ddecomp    9.7s] depth 128 rep 3/5: full 9.931 ms/token, dispatch floor 0.684
+[ddecomp   12.1s] depth 128 rep 4/5: full 9.954 ms/token, dispatch floor 0.687
+[ddecomp   14.5s] depth 128 rep 5/5: full 9.911 ms/token, dispatch floor 0.719
+
+=== Metal decode decomposition, depth 128 (129 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.822 ms    8.3% of token   paired 0.7 0.8 0.8 0.9 0.8
+  GEMV qkv (+bias)                       work   0.645 ms    6.5% of token   paired 0.5 0.5 0.6 0.8 0.6
+  GEMV o (+residual)                     work   0.536 ms    5.4% of token   paired 0.3 0.5 0.6 0.6 0.5
+  GEMV gate/up                           work   3.095 ms   31.2% of token   paired 2.9 3.0 3.5 3.1 3.1
+  GEMV down (+residual)                  work   1.704 ms   17.2% of token   paired 1.5 1.6 1.9 1.8 1.7
+  LM head (int8)                         work   1.291 ms   13.0% of token   paired 1.1 1.3 1.4 1.4 1.3
+  norm+quant (rms)                       work   0.487 ms    4.9% of token   paired 0.4 0.4 0.5 0.6 0.5
+  rope (rope2)                           work   0.039 ms    0.4% of token   paired -0.2 -0.1 0.0 0.1 0.1
+  kv store                               work   0.103 ms    1.0% of token   paired -0.1 0.1 0.2 0.2 0.1
+  act-quant (swiglu_quant)               work   0.500 ms    5.0% of token   paired 0.2 0.4 0.6 0.5 0.5
+  ctx-quant (quant_vec)                  work   0.116 ms    1.2% of token   paired -0.1 0.1 0.2 0.2 0.1
+  dispatch floor (every pipeline no-op)         0.714 ms    7.2% of token   spread 6.2%
+  full token 9.911 ms (100.9 tok/s), spread 2.3%; categories' work + floor = 10.051 ms (101.4% of full)
+
+[ddecomp   17.3s] depth 192 rep 1/5: full 10.065 ms/token, dispatch floor 0.702
+[ddecomp   19.7s] depth 192 rep 2/5: full 10.019 ms/token, dispatch floor 0.726
+[ddecomp   22.2s] depth 192 rep 3/5: full 9.913 ms/token, dispatch floor 0.685
+[ddecomp   24.7s] depth 192 rep 4/5: full 10.038 ms/token, dispatch floor 0.729
+[ddecomp   27.1s] depth 192 rep 5/5: full 9.970 ms/token, dispatch floor 0.719
+
+=== Metal decode decomposition, depth 192 (193 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.954 ms    9.5% of token   paired 1.0 0.9 0.9 1.1 1.0
+  GEMV qkv (+bias)                       work   0.691 ms    6.9% of token   paired 0.7 0.7 0.6 0.7 0.7
+  GEMV o (+residual)                     work   0.544 ms    5.4% of token   paired 0.6 0.5 0.4 0.5 0.6
+  GEMV gate/up                           work   3.106 ms   31.0% of token   paired 3.1 3.2 3.0 3.1 3.1
+  GEMV down (+residual)                  work   1.719 ms   17.2% of token   paired 1.7 1.8 1.6 1.7 1.7
+  LM head (int8)                         work   1.347 ms   13.4% of token   paired 1.3 1.4 1.2 1.5 1.3
+  norm+quant (rms)                       work   0.492 ms    4.9% of token   paired 0.6 0.5 0.4 0.6 0.5
+  rope (rope2)                           work  -0.009 ms   -0.1% of token   paired -0.0 -0.0 -0.0 0.1 -0.0
+  kv store                               work   0.075 ms    0.8% of token   paired 0.1 0.0 -0.1 0.2 0.1
+  act-quant (swiglu_quant)               work   0.519 ms    5.2% of token   paired 0.5 0.5 0.3 0.7 0.4
+  ctx-quant (quant_vec)                  work   0.106 ms    1.1% of token   paired 0.1 0.1 0.1 0.2 0.1
+  dispatch floor (every pipeline no-op)         0.719 ms    7.2% of token   spread 6.0%
+  full token 10.019 ms (99.8 tok/s), spread 1.5%; categories' work + floor = 10.265 ms (102.5% of full)
+
+--- PASS: TestMetalDecodeDecomp (27.12s)
+PASS
+ledger: 1 device(s) released in this run

@@ -1,0 +1,27 @@
+//go:build gpu && goinfer_testhooks && unix
+
+package towers
+
+import (
+	"fmt"
+	"runtime"
+	"syscall"
+	"unsafe"
+)
+
+func makeWritable(xs ...[]float32) {
+	pg := uintptr(syscall.Getpagesize())
+	for _, x := range xs {
+		if len(x) == 0 {
+			continue
+		}
+		p := uintptr(unsafe.Pointer(&x[0]))
+		base := p &^ (pg - 1)
+		n := (p - base + uintptr(len(x))*4 + pg - 1) &^ (pg - 1)
+		_, _, errno := syscall.Syscall(syscall.SYS_MPROTECT, base, n, syscall.PROT_READ|syscall.PROT_WRITE)
+		runtime.KeepAlive(x)
+		if errno != 0 {
+			panic(fmt.Sprintf("makeWritable: mprotect %d bytes: %v", n, errno))
+		}
+	}
+}

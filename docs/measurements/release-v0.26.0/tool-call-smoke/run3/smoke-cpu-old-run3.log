@@ -1,0 +1,7 @@
+[smoke    5.5s] server up on cpu; groups: required,auto5
+[smoke   53.1s] required: 9 calls of 10 replies, 8 of them pass, 7 to the intended tool; 0 prose, 1 cut
+[smoke   71.7s] auto5: 1 calls of 10 replies, 0 of them pass, 1 to the intended tool; 9 prose, 0 cut
+[smoke   71.8s] FAIL required: create_event: truncated
+[smoke   71.8s] FAIL required: set_threshold: ['$.threshold: matches no anyOf alternative']
+[smoke   71.8s] FAIL auto5: create_event: ['$.attendees[0].email: NoneType is not string']
+VERDICT: FAIL — tool-call smoke on cpu: 17 of 20 replies pass; 1 cut by the token budget

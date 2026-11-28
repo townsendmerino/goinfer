@@ -1,0 +1,5 @@
+[smoke    1.5s] server up on metal; groups: required,auto5
+[smoke   18.9s] required: 9 calls of 10 replies, 9 of them pass, 7 to the intended tool; 0 prose, 1 cut
+[smoke   28.9s] auto5: 0 calls of 10 replies, 0 of them pass, 0 to the intended tool; 10 prose, 0 cut
+[smoke   28.9s] FAIL required: create_event: truncated
+VERDICT: FAIL — tool-call smoke on metal: 19 of 20 replies pass; 1 cut by the token budget
