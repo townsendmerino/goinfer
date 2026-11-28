@@ -1179,6 +1179,26 @@ jobs:
         run: |
           Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors | Format-List
           go version; go env GOARCH
+      # A diagnostic for issue 1078 (this lane's intermittent crash after a recovered nil dereference, seen only on two
+      # Xeon models). It prints, to read beside the CPU above: the processor state Windows saves in a thread context
+      # (the enabled XSTATE mask and the full context's size), then how deep a recovered nil dereference writes into
+      # its goroutine's stack, after the instrument's own check (internal/diag/winfault). It runs before the test step
+      # so a red job has a reading too, and it cannot fail the job. Remove it with that package once the issue is closed.
+      - name: fault frame probe (issue 1078)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try {
+            $def = '[DllImport("kernel32.dll")] public static extern ulong GetEnabledXStateFeatures(); [DllImport("kernel32.dll", SetLastError=true)] public static extern bool InitializeContext(IntPtr buffer, uint flags, out IntPtr context, ref uint length);'
+            $k = Add-Type -Namespace WinFault -Name XState -PassThru -MemberDefinition $def
+            $len = [uint32]0; $ctx = [IntPtr]::Zero
+            # CONTEXT_ALL | CONTEXT_XSTATE for amd64; with no buffer the call fails and reports the size it needs
+            [void]$k::InitializeContext([IntPtr]::Zero, 0x0010005F, [ref]$ctx, [ref]$len)
+            "xstate: enabled=0x{0:X} context_bytes={1}" -f $k::GetEnabledXStateFeatures(), $len
+          } catch { "xstate: probe failed: $_" }
+          go test -count=1 -v ./internal/diag/winfault/ -args -probe
+          "fault frame probe: go test exit code $LASTEXITCODE"
+          exit 0
       - name: build
         run: go build ./...
       - name: test
