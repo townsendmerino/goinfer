@@ -165,11 +165,14 @@ class TimingLockTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def scratch_repo(self):
-        """A git repo holding copies of touched.py and timing_lock.py and no .go file, so touched.py has nothing to build."""
+        """A git repo holding copies of touched.py and timing_lock.py and no .go file, so touched.py has nothing to build. Its
+        scan table is empty: the real one names goinfer's tests and files, and touched.py fails a run on an entry the tree lacks."""
         repo = os.path.join(self.dir.name, "repo")
         os.makedirs(os.path.join(repo, "scripts"))
         for f in ("touched.py", "touched_scans.py", "timing_lock.py"):
             shutil.copy(os.path.join(HERE, f), os.path.join(repo, "scripts", f))
+        with open(os.path.join(repo, "scripts", "touched_scans.py"), "a") as f:
+            f.write("\nSCANS = []\n")
         for c in (["init", "-q"], ["add", "."], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(["git", *c], cwd=repo, check=True, capture_output=True)
         return repo

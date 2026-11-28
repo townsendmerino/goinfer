@@ -1,9 +1,9 @@
 name: quality-scans
 
 # The code-quality scans: each keeps a fixed pattern from coming back, or holds a ratchet so a pattern can only shrink
-# (internal/guard/qualityscan's package doc). They run nightly and by hand, not per push and not in the day loop, so pushes
-# stay fast; a red here names the site and the allowlist to change. Nothing opens an issue: check with
-# `gh run list --workflow quality-scans.yml`.
+# (internal/guard/qualityscan's package doc). CI's lint lane and the day loop run the Go scans too; this run is the nightly
+# and by-hand one, and the only one that runs the comment census over the tree. A red here names the site and the allowlist
+# to change. Nothing opens an issue: check with `gh run list --workflow quality-scans.yml`.
 on:
   schedule:
     - cron: "41 11 * * *" # daily, 11:41 UTC: clear of govulncheck (08:00), coverage (10:23) and the heartbeat (15:17)
