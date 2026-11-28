@@ -899,6 +899,23 @@ class RunsScriptTests(_KeepsRAN):
         rc, text, calls = self._run({}, ok, changed=("docs/changelog.d/x.md",))
         self.assertNotIn(render, calls, "only the repository's own changelog.d")
 
+    def test_a_go_file_runs_the_lanes_comment_census(self):
+        census = (sys.executable, "-B", "scripts/comment_census.py", "tree")
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "VERDICT: PASS\n", "")
+        for path in ("internal/runtime/mem/workingset.go", "testdata/comment_trackers.ratchet", "scripts/comment_census.py"):
+            rc, text, calls = self._run({}, ok, changed=(path,))
+            self.assertIn(census, calls, path)
+            self.assertIn("ok   comment census (scripts/comment_census.py tree)", text, path)
+            if not path.endswith(".go"):  # a Go file also runs its module's checks, which this spy does not answer
+                self.assertEqual(rc, 0, text)
+        red = lambda a: subprocess.CompletedProcess(a, 1, "  internal/runtime/mem/workingset.go: 1 > 0: 15:B4\nVERDICT: RED\n", "")
+        rc, text, _ = self._run({}, red, changed=("scripts/comment_census.py",))
+        self.assertEqual(rc, 1, text)
+        self.assertIn("workingset.go: 1 > 0: 15:B4", text, "the site is in the output")
+        for path in ("decoder/x_test.go", "docs/server.md", "decoder/testdata/x.go", "notes/x.go.txt"):  # what the census does not read
+            rc, text, calls = self._run({}, ok, changed=(path,))
+            self.assertNotIn(census, calls, path)
+
     def test_a_changed_test_no_workflow_runs_is_a_named_skip_not_a_pass(self):
         ok = lambda a: subprocess.CompletedProcess(a, 0, "", "")
         rc, text, calls = self._run({}, ok, changed=("scripts/test_orphan.py",), orphans=("scripts/test_orphan.py",))
