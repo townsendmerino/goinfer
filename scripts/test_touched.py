@@ -809,6 +809,11 @@ class ScriptTestsOnThisTree(unittest.TestCase):
         for _, _, argv in touched.LINT_STEPS:
             self.assertIn("python3 -B " + " ".join(argv), ci, "touched.LINT_STEPS mirrors a lint lane step; change both together")
 
+    def test_a_workflow_names_every_script_test(self):
+        # A script test no workflow names runs nowhere: CI does not run it, and the day loop runs only the ones CI runs.
+        every = {"scripts/" + f for f in os.listdir(os.path.join(ROOT, "scripts")) if re.fullmatch(r"test_\w+\.py", f)}
+        self.assertEqual(sorted(every - set(touched.workflow_tests())), [], "name each in a lane under .github/workflows")
+
 
 class RunsScriptTests(_KeepsRAN):
     """run() runs each selected script test the way the lint lane does and counts it as a check; a changed changelog fragment runs
