@@ -76,10 +76,10 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 // full-binary test above cannot exercise this path. Origin (M-39):
 // docs/code-notes/examples-embed.md#TestBuildPrompt_rendersOnlyOneLeadingBOS.
 func TestBuildPrompt_rendersOnlyOneLeadingBOS(t *testing.T) {
-	fixture := filepath.Join("..", "..", "tokenizer", "testdata", "chatml-tiny.gguf")
+	fixture := filepath.Join("..", "..", "..", "tokenizer", "testdata", "chatml-tiny.gguf")
 	tok, err := tokenizer.LoadGGUF(fixture)
 	if err != nil {
-		t.Skipf("no committed tiny tokenizer fixture at %s: %v", fixture, err)
+		t.Fatalf("the committed tiny tokenizer fixture %s does not load: %v", fixture, err)
 	}
 	if _, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); terr != nil {
 		t.Fatalf("chat.Detect does not recognise %s's template (%v), so the templated path would go untested", fixture, terr)
