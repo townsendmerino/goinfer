@@ -781,6 +781,15 @@ class ScriptTests(unittest.TestCase):
         changed = {"scripts/test_orphan.py", "scripts/test_names.py", "scripts/tool.py", "scripts/test_deleted.py"}
         self.assertEqual(touched.tests_no_workflow_runs(changed), ["scripts/test_orphan.py"])
 
+    def test_one_only_this_script_can_run_is_selected_like_one_ci_runs(self):
+        from unittest import mock
+        with mock.patch.object(touched, "LOCAL_ONLY", {"scripts/test_orphan.py": "rare", "scripts/test_gone.py": "rare"}):
+            self.assertEqual(touched.script_tests({"scripts/tool.py"}).get("scripts/test_orphan.py"), "scripts/tool.py")
+            self.assertEqual(touched.script_tests({"scripts/test_orphan.py"}), {"scripts/test_orphan.py": "scripts/test_orphan.py"})
+            self.assertNotIn("scripts/test_gone.py", touched.script_tests({"scripts/tool.py", "scripts/test_gone.py"}),
+                             "an entry the tree lacks selects nothing")
+            self.assertEqual(touched.tests_no_workflow_runs({"scripts/test_orphan.py"}), [], "it is not one that runs nowhere")
+
     def test_a_change_outside_scripts_and_workflows_selects_nothing(self):
         self.assertEqual(touched.script_tests({"docs/tool.py", "decoder/run.sh", "tool.py"}), {})
 
@@ -808,6 +817,23 @@ class ScriptTestsOnThisTree(unittest.TestCase):
         self.assertTrue(touched.LINT_STEPS)
         for _, _, argv in touched.LINT_STEPS:
             self.assertIn("python3 -B " + " ".join(argv), ci, "touched.LINT_STEPS mirrors a lint lane step; change both together")
+
+    def test_a_workflow_names_every_script_test(self):
+        # CI runs a script test only when a workflow names it. One its runner cannot run, for want of a module, is in
+        # touched.LOCAL_ONLY, and the day loop runs that one where the module imports. Any other runs nowhere.
+        every = {"scripts/" + f for f in os.listdir(os.path.join(ROOT, "scripts")) if re.fullmatch(r"test_\w+\.py", f)}
+        self.assertEqual(sorted(every - set(touched.workflow_tests()) - set(touched.LOCAL_ONLY)), [],
+                         "name each in a lane under .github/workflows, or in touched.LOCAL_ONLY with the module the runner lacks")
+
+    def test_one_ci_cannot_run_is_listed_with_the_module_it_needs(self):
+        named = set(touched.workflow_tests())
+        for test, module in touched.LOCAL_ONLY.items():
+            self.assertTrue(os.path.exists(os.path.join(ROOT, test)), test + ": the tree no longer has it")
+            self.assertNotIn(test, named, "a workflow names it (a comment counts), so CI is taken to run it")
+            self.assertTrue(touched._imports(touched._read(test), module), f"{test} does not import {module}")
+        # The vision cell's test needs Pillow, as bench_peer.fresh_image does; a change to bench_peer.py selects it.
+        self.assertEqual(touched.LOCAL_ONLY.get("scripts/test_bench_peer_vision.py"), "PIL")
+        self.assertEqual(touched.script_tests({"scripts/bench_peer.py"}).get("scripts/test_bench_peer_vision.py"), "scripts/bench_peer.py")
 
 
 class RunsScriptTests(_KeepsRAN):
@@ -878,6 +904,23 @@ class RunsScriptTests(_KeepsRAN):
         self.assertRegex(text, r"skip script test scripts/test_x\.py \(names scripts/x\.py\): each of its 2 test\(s\) was skipped here")
         self.assertEqual(rc, 2, text)  # nothing judged the change
         self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: INCONCLUSIVE"), text)
+
+    def test_one_that_needs_a_module_this_python_lacks_is_a_named_skip_not_a_pass(self):
+        from unittest import mock
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "", ".\nRan 1 test in 0.1s\n\nOK\n")
+        test = (sys.executable, "-B", "scripts/test_x.py")
+        with mock.patch.object(touched, "LOCAL_ONLY", {"scripts/test_x.py": "no_such_module_for_touched"}):
+            rc, text, calls = self._run(self.ONE, ok)
+        self.assertNotIn(test, calls, text)
+        self.assertIn("skip script test scripts/test_x.py (names scripts/x.py): it needs no_such_module_for_touched", text)
+        self.assertEqual(rc, 2, text)  # nothing judged the change
+        last = text.strip().splitlines()[-1]
+        self.assertTrue(last.startswith("VERDICT: INCONCLUSIVE"), text)
+        self.assertIn("did not run: script test scripts/test_x.py (needs no_such_module_for_touched)", last, "the verdict names it")
+        with mock.patch.object(touched, "LOCAL_ONLY", {"scripts/test_x.py": "json"}):
+            rc, text, calls = self._run(self.ONE, ok)
+        self.assertIn(test, calls, "where the module imports, it runs")
+        self.assertEqual(rc, 0, text)
 
     def test_one_that_times_out_fails(self):
         def hang(a):

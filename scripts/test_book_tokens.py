@@ -13,7 +13,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOOK = os.path.join(ROOT, "docs", "book-search", "head-custom.html")
-SITE = [os.path.join(ROOT, "site", "mockups", n) for n in ("home.html", "models.html", "different-confidence.html")]
+SITE = [os.path.join(ROOT, "apps", "site", "mockups", n) for n in ("home.html", "models.html", "different-confidence.html")]
 NAMES = ["ground", "surface", "sunk", "line", "ink", "ink-2", "muted", "accent", "accent-soft", "on-accent",
          "f-display", "f-body", "f-mono"]
 

@@ -326,6 +326,27 @@ jobs:
       - name: bench_peer archive check
         run: python3 -B scripts/test_bench_peer_benchdisk.py
 
+      # bench_peer.py's other tests (the A B B A order, the decode-path check, the preflight, the swap void), the host-memory
+      # and power readers, the book's colour and font tokens against the site's mockups, the comment and citation rewriting
+      # tools, and the citation lint's own tests. Every line runs and the step fails if any failed, so one red does not hide
+      # the rest. scripts/test_touched.py fails on a script test that neither a workflow nor touched.LOCAL_ONLY names. The
+      # vision cell's test is the one in LOCAL_ONLY: it needs Pillow, which this runner does not have, so the day loop runs
+      # it on a machine that has Pillow and no workflow does. Stdlib; about 30 s, 25 s of it the citation lint's.
+      - name: bench_peer, host readers, book tokens, comment tools and citation lint tests
+        run: |
+          rc=0
+          python3 -B scripts/test_bench_peer_abba.py || rc=1
+          python3 -B scripts/test_bench_peer_decodepath.py || rc=1
+          python3 -B scripts/test_bench_peer_preflight.py || rc=1
+          python3 -B scripts/test_bench_peer_swap.py || rc=1
+          python3 -B scripts/test_hostmem.py || rc=1
+          python3 -B scripts/test_power.py || rc=1
+          python3 -B scripts/test_book_tokens.py || rc=1
+          python3 -B scripts/test_comment_diet.py || rc=1
+          python3 -B scripts/test_migrate_citations_to_symbols.py || rc=1
+          python3 -B scripts/test_queue_citation_lint.py || rc=1
+          exit "$rc"
+
       # touched.py runs each source-scan test when a file it reads changes (scripts/touched_scans.py), and the table must name
       # every test that reads Go source: a scanner missing from it is the day loop going green on a change CI then fails.
       - name: touched.py scan selection

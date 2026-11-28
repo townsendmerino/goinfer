@@ -15,7 +15,9 @@ import bench_peer  # noqa: E402  (import has no side effects: main() runs only u
 
 class SelectedOnly(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="benchdisk-")
+        # Resolved: check_bench_disk compares a resolved checkpoint path with the roots, and macOS hands out its temporary
+        # folder through a symlink (/var -> /private/var).
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="benchdisk-"))
         self.archive = os.path.join(self.tmp, "srv", "models")
         os.makedirs(self.archive)
         self.local = os.path.join(self.tmp, "models")
