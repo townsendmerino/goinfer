@@ -4,9 +4,11 @@ package kernels
 
 import (
 	"fmt"
+	"math"
+
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -35,11 +37,11 @@ func gumbelBlocks(v int) int { return (v + 1023) / 1024 }
 // kernel can be driven directly (gumbel_test.go) against arbitrary logits.
 func NewGumbelState(c *Context, logits *wgpu.Buffer, vocab int, keep func(release func())) (*gumbelState, error) {
 	nb := gumbelBlocks(vocab)
-	_, pl1, lay1, err := c.mkPipeline("gumbelStage1", gumbelStage1WGSL)
+	_, pl1, lay1, err := c.mkPipeline("gumbelStage1", wgsl.GumbelStage1WGSL)
 	if err != nil {
 		return nil, err
 	}
-	_, pl2, lay2, err := c.mkPipeline("gumbelStage2", gumbelStage2WGSL)
+	_, pl2, lay2, err := c.mkPipeline("gumbelStage2", wgsl.GumbelStage2WGSL)
 	if err != nil {
 		return nil, err
 	}

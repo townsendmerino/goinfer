@@ -2,12 +2,14 @@
 
 package kernels
 
+import "github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 // attnKeysWideSource is attnKeysShaderWGSL for a head of 129 to 256 dimensions. The key-split kernel's scores and
 // softmax do not depend on the head's width; only its last step does, where each of the 128 lanes owns one output
 // dimension. Here a lane owns two, t and t+128, each summed over the keys exactly as the narrow kernel sums its one.
 // Everything else is the narrow kernel's own text.
 func attnKeysWideSource() (string, error) {
-	return editSource("attnKeysWide", attnKeysShaderWGSL, []srcEdit{
+	return editSource("attnKeysWide", wgsl.AttnKeysShaderWGSL, []srcEdit{
 		{`    var acc: f32 = 0.0;   // lane t's running weighted V-sum for dim t (t < hd)`,
 			`    var acc: array<f32, 2>;   // lane t's running weighted V-sums for dims t and t+128
     acc[0] = 0.0;

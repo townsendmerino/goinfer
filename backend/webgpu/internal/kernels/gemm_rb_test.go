@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -30,9 +32,9 @@ var rbShapes = [][3]int{
 func TestTiledRB64_bitIdentical(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	old, new := matmulTiledW8A8ShaderWGSL, matmulRB64W8A8ShaderWGSL
+	old, new := wgsl.MatmulTiledW8A8ShaderWGSL, wgsl.MatmulRB64W8A8ShaderWGSL
 	if ctx.hasDP4A {
-		old, new = matmulTiledW8A8DP4AShaderWGSL, matmulRB64W8A8DP4AShaderWGSL
+		old, new = wgsl.MatmulTiledW8A8DP4AShaderWGSL, wgsl.MatmulRB64W8A8DP4AShaderWGSL
 	}
 	for _, s := range rbShapes {
 		M, N, K := s[0], s[1], s[2]
@@ -88,9 +90,9 @@ func TestTiledRB64_microbench(t *testing.T) {
 	}
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	old, new := matmulTiledW8A8ShaderWGSL, matmulRB64W8A8ShaderWGSL
+	old, new := wgsl.MatmulTiledW8A8ShaderWGSL, wgsl.MatmulRB64W8A8ShaderWGSL
 	if ctx.hasDP4A {
-		old, new = matmulTiledW8A8DP4AShaderWGSL, matmulRB64W8A8DP4AShaderWGSL
+		old, new = wgsl.MatmulTiledW8A8DP4AShaderWGSL, wgsl.MatmulRB64W8A8DP4AShaderWGSL
 	}
 	shapes := [][3]int{{512, 1536, 1536}, {512, 8960, 1536}, {512, 1536, 8960}, {1024, 8960, 896}}
 	for _, s := range shapes {

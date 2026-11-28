@@ -254,7 +254,7 @@ SCANS = [
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
     Scan("decoder", "TestParityEmit_methodVocabulary", TREE_T),
-    Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("backend/webgpu/internal/kernels/moe.go", "backend/cuda/moe.cu")),
+    Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("backend/webgpu/internal/wgsl/moe.go", "backend/cuda/moe.cu")),
     Scan("decoder", "TestResidentMoECap_runtimeDeclineReadsTheDeclaration", F("backend/webgpu/residency.go")),
     # Censuses and generated tables over the family registry and the cache's declarations. Each compares what the code declares
     # with a table, a golden or a generated doc and reads no Go source, so the reader check in scripts/test_touched.py does not
@@ -397,7 +397,8 @@ SCANS = [
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go", "backend/webgpu/residency_layer.go")),
     Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
-    Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
+    Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels", "backend/webgpu/internal/wgsl")),
+    Scan("backend/webgpu/internal/wgsl", "TestNoBuiltinSinCos", NT("backend/webgpu/internal/wgsl")),
     Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/internal/kernels/attention.go")),
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/internal/kernels/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go", "backend/webgpu/residency_build.go")),
