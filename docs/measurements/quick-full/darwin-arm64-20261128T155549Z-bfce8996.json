@@ -1,0 +1,25 @@
+{
+ "schema": 1,
+ "os": "darwin",
+ "arch": "arm64",
+ "commit": "bfce8996228b66c371629bdedb44624c8ea2eacf",
+ "date": "2026-11-28T15:55:49Z",
+ "verdict": "FAIL",
+ "dirty": false,
+ "full": true,
+ "pass": 4197,
+ "skip": 666,
+ "fail": 1,
+ "cells": 155,
+ "ran": 148,
+ "cached": 0,
+ "not_run": [
+  "backend/cuda",
+  "backend/cuda/internal/fitdecide",
+  "backend/cuda/internal/gpudev",
+  "backend/cuda/internal/launchgeom",
+  "backend/cuda/internal/towers",
+  "backend/cuda/internal/wpack",
+  "backend/cuda/kernels"
+ ]
+}

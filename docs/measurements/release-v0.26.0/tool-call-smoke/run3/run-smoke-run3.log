@@ -1,0 +1,25 @@
+== arm metal: serve-metal-bfce89962 -backend metal, groups required,auto5, started 08:00:14 PST, load 1.85 1.52 2.36
+[smoke    1.5s] server up on metal; groups: required,auto5
+[smoke   18.9s] required: 9 calls of 10 replies, 9 of them pass, 7 to the intended tool; 0 prose, 1 cut
+[smoke   28.9s] auto5: 0 calls of 10 replies, 0 of them pass, 0 to the intended tool; 10 prose, 0 cut
+[smoke   28.9s] FAIL required: create_event: truncated
+VERDICT: FAIL — tool-call smoke on metal: 19 of 20 replies pass; 1 cut by the token budget
+arm metal rc=1, finished 08:00:43 PST
+== arm cpu-new: serve-cpu-bfce89962 -backend cpu, groups required,auto5, started 08:00:43 PST, load 12.92 4.52 3.44
+[smoke    1.0s] server up on cpu; groups: required,auto5
+[smoke   50.5s] required: 9 calls of 10 replies, 9 of them pass, 7 to the intended tool; 0 prose, 1 cut
+[smoke   93.4s] auto5: 1 calls of 10 replies, 0 of them pass, 1 to the intended tool; 9 prose, 0 cut
+[smoke   93.4s] FAIL required: create_event: truncated
+[smoke   93.4s] FAIL auto5: create_event: ['$.attendees[0].email: NoneType is not string']
+VERDICT: FAIL — tool-call smoke on cpu: 18 of 20 replies pass; 1 cut by the token budget
+arm cpu-new rc=1, finished 08:02:17 PST
+== arm cpu-old: serve-cpu-v0.25.0 -backend cpu, groups required,auto5, started 08:02:17 PST, load 9.34 5.78 4.05
+[smoke    5.5s] server up on cpu; groups: required,auto5
+[smoke   53.1s] required: 9 calls of 10 replies, 8 of them pass, 7 to the intended tool; 0 prose, 1 cut
+[smoke   71.7s] auto5: 1 calls of 10 replies, 0 of them pass, 1 to the intended tool; 9 prose, 0 cut
+[smoke   71.8s] FAIL required: create_event: truncated
+[smoke   71.8s] FAIL required: set_threshold: ['$.threshold: matches no anyOf alternative']
+[smoke   71.8s] FAIL auto5: create_event: ['$.attendees[0].email: NoneType is not string']
+VERDICT: FAIL — tool-call smoke on cpu: 17 of 20 replies pass; 1 cut by the token budget
+arm cpu-old rc=1, finished 08:03:29 PST
+all arms done rc=1

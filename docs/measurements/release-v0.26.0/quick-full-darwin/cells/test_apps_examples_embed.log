@@ -1,0 +1,11 @@
+# go test -json -tags goinfer_testhooks -timeout 45m github.com/townsendmerino/goinfer/apps/examples/embed
+# (in /Users/francistownsend-merino/goinfer-bench/relgate-v0260-qf-wt)
+
+=== RUN   TestEmbedExample_outputIsNotARepeatedToken
+    main_test.go:27: no fixture at ../../../testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf
+--- SKIP: TestEmbedExample_outputIsNotARepeatedToken (0.00s)
+=== RUN   TestBuildPrompt_rendersOnlyOneLeadingBOS
+    main_test.go:82: no committed tiny tokenizer fixture at ../../tokenizer/testdata/chatml-tiny.gguf: tokenizer.LoadGGUF: open ../../tokenizer/testdata/chatml-tiny.gguf: no such file or directory
+--- SKIP: TestBuildPrompt_rendersOnlyOneLeadingBOS (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/apps/examples/embed	0.319s

@@ -1,0 +1,4 @@
+=== RUN   TestMakeWritable_heapSlicesUnderGC
+--- PASS: TestMakeWritable_heapSlicesUnderGC (0.11s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/webgpu/internal/towers	0.472s

@@ -1,0 +1,37 @@
+== arm metal: serve-metal-bfce89962 -backend metal, started 06:22:30 PST, load 3.07 2.53 1.97
+[smoke    6.6s] server up on metal; 10 replay + 10 keyword + 30 sampled + 5 auto requests follow
+[smoke   18.8s] replay: 10/10 pass of 10 turns
+[smoke   28.7s] keywords: 10/10 pass
+[smoke   60.6s] sampled: 30/30 pass
+[smoke   66.9s] auto: 0 calls of 5 replies, 0 of them pass; 5 prose
+VERDICT: PASS — tool-call smoke on metal: 55 of 55 replies pass
+arm metal rc=0, finished 06:29:38 PST
+== arm cpu-new: serve-cpu-bfce89962 -backend cpu, started 06:29:38 PST, load 3.57 2.76 2.19
+[smoke    3.1s] server up on cpu; 10 replay + 10 keyword + 30 sampled + 5 auto requests follow
+[smoke   30.9s] replay turn 8: no call to advance the history with; the replay stops here
+[smoke   30.9s] replay: 7/8 pass of 10 turns
+[smoke   53.3s] keywords: 10/10 pass
+[smoke  126.2s] sampled: 30/30 pass
+[smoke  148.8s] auto: 0 calls of 5 replies, 0 of them pass; 5 prose
+[smoke  148.9s] FAIL replay: 8: prose
+VERDICT: FAIL — tool-call smoke on cpu: 52 of 53 replies pass; the replay stopped early
+arm cpu-new rc=1, finished 06:32:07 PST
+== arm cpu-old: serve-cpu-v0.25.0 -backend cpu, started 06:32:07 PST, load 7.82 4.83 3.12
+[smoke    3.0s] server up on cpu; 10 replay + 10 keyword + 30 sampled + 5 auto requests follow
+[smoke   46.2s] replay turn 8: no call to advance the history with; the replay stops here
+[smoke   46.2s] replay: 7/8 pass of 10 turns
+[smoke   83.8s] keywords: 8/10 pass
+[smoke  179.5s] sampled: 24/30 pass
+[smoke  203.0s] auto: 0 calls of 5 replies, 0 of them pass; 5 prose
+[smoke  203.1s] FAIL replay: 8: prose
+[smoke  203.1s] FAIL keywords: create_event: ['$.attendees[0].email: NoneType is not string']
+[smoke  203.1s] FAIL keywords: set_threshold: ['$.threshold: matches no anyOf alternative']
+[smoke  203.1s] FAIL sampled: create_event: ['$.attendees[0]: str is not object']
+[smoke  203.1s] FAIL sampled: create_event: ['$.duration_minutes: matches no anyOf alternative']
+[smoke  203.1s] FAIL sampled: create_event: ['$.duration_minutes: matches no anyOf alternative']
+[smoke  203.1s] FAIL sampled: search_orders: ['$.placed: matches no anyOf alternative']
+[smoke  203.1s] FAIL sampled: set_threshold: ['$.threshold: matches no anyOf alternative']
+[smoke  203.1s] FAIL sampled: set_threshold: ['$.threshold: matches no anyOf alternative']
+VERDICT: FAIL — tool-call smoke on cpu: 44 of 53 replies pass; the replay stopped early
+arm cpu-old rc=1, finished 06:35:30 PST
+all arms done rc=1
