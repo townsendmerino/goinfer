@@ -1,0 +1,8 @@
+rev:      7bc339c77a652dfc06ff2fd0283544413209f7cc (7bc339c77a652dfc06ff2fd0283544413209f7cc)
+started:  2026-11-28 09:58:10 PST
+fixtures: fixtures from /Users/francistownsend-merino/tmcode/goinfer: 23 copied (103 MB, entries <= 64 MB), 5 cloned (7904 MB, larger), 0 linked (larger, could not clone), 1 symlinks kept as symlinks; worktree git status: 0 entries
+go:       go version go1.27.4 darwin/arm64
+gpu:      
+heavy:    on
+record(s) under /Users/francistownsend-merino/goinfer-logs/relgate-2026-11-28/gate-gpu/records: /Users/francistownsend-merino/goinfer-logs/relgate-2026-11-28/gate-gpu/records/metal-20261128T180510Z-7bc339c7.json /Users/francistownsend-merino/goinfer-logs/relgate-2026-11-28/gate-gpu/records/metal-20261128T142826Z-bfce8996.json 
+finished: 2026-11-28 10:05:11 PST rc=0

@@ -4,6 +4,21 @@ What has been read so far for `RELEASING.md` step 8, on one Apple M1 Pro with 16
 CUDA box's rows (its GPU gate, its deferred-tests row, the parity sweep and the SDE goldens) and the cold-user run are not here
 yet. Nothing is tagged.
 
+**The candidate moved to `7bc339c77` on 2026-11-28** (it was decided that day to take two fixes before the tag: pull request
+#1462, the test-helper fix for the red below, and #1461, the `constrain` review fixes). Both Mac rows were run again there and
+are green; the logs are in `candidate-7bc339c77/`.
+
+| row at `7bc339c77` | at | result | record |
+|---|---|---|---|
+| Metal GPU gate, the heavy tier on | 09:58:10 to 10:05:11 PST | **PASS**: 10 pass, 2 skip, 0 fail (the same two skips as below) | `docs/measurements/gpu-gate/metal-20261128T180510Z-7bc339c7.json` |
+| darwin deferred tests (`go run ./cmd/gate quick -full -base v0.25.0`, go1.27.4) | 10:05:18 to 10:53:16 PST | **GREEN**: 4,215 pass, 675 skip, 0 fail; lint 25 of 25; goldens 43 passed, 21 skipped | `docs/measurements/quick-full/darwin-arm64-20261128T185316Z-7bc339c7.json` |
+
+In the second row 88 cells ran, 60 replayed from the test cache and 7 are the CUDA module's, not runnable on darwin. Every test
+skipped in one cell, `constrain [checkpoint]` (two heavy-tier cost measurements). `apps/examples/embed` is no longer such a
+cell. A skip is not a pass.
+
+## The rows at the earlier candidate `bfce89962`
+
 | row | at | result | record | where |
 |---|---|---|---|---|
 | Metal GPU gate (`go run ./cmd/gate gpu`, the heavy tier on) | 06:21:40 to 06:28:26 PST | **PASS**: 10 pass, 2 skip, 0 fail | `docs/measurements/gpu-gate/metal-20261128T142826Z-bfce8996.json` | `gate-gpu-metal-bfce8996.log` |
