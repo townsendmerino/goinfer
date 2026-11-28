@@ -296,6 +296,14 @@ func TestSchema_refNestingBesideACycle(t *testing.T) {
 			t.Errorf("%d arrays under a property: beside a cycle %v, written in place %v; want both to compile below %d arrays only", levels, err, inlined, maxSchemaDepth)
 		}
 	}
+	// And it starts at the level the document itself is compiled at.
+	const base = 3
+	for _, levels := range []int{maxSchemaDepth - base - 1, maxSchemaDepth - base} {
+		doc := mustMap(`{"type":"object","properties":{"deep":{"$ref":"#/$defs/Deep"},"node":{"$ref":"#/$defs/N"}},"$defs":{` + cycle + `,"Deep":` + arraysOf(levels, `{"type":"string"}`) + `}}`)
+		if _, err := compileDocument(doc, false, base); (err == nil) != (levels < maxSchemaDepth-base) {
+			t.Errorf("%d arrays under a property of a document compiled at level %d: %v; want it to compile below %d arrays only", levels, base, err, maxSchemaDepth-base)
+		}
+	}
 }
 
 // TestSchema_refNestingOwedToACycle: nesting a cycle accounts for is cut, not refused, also where the recursive
