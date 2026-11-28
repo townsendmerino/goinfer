@@ -112,7 +112,9 @@ look better: the Phi-3 losses, the CPU 0.5B loss, the llama.cpp losses and the t
 
 Measured 2026-09-29, 22:09–23:38 PDT, on nobara-pc (RTX 2070 SUPER, driver 595.91.07; Ryzen 7 3700X for the CPU rows), against Ollama
 v0.32.5. Each engine's three runs (tok/s, mean of 8 completions × 64 tokens each), their medians, and the pairs against Ollama, as
-graded. These are the cells the site's `claims.json` cites.
+graded. These are the cells the site's `claims.json` cited when this section was written. Since 2026-11-27 none of its
+entries cites this section: the last three, CUDA at depth 128, now cite the 2026-11-19/20 re-anchor
+([`peer-reanchor-2026-11-19/README.md`](peer-reanchor-2026-11-19/README.md)).
 
 | cell | goinfer runs | median | Ollama runs | median | pairs r | median r | outcome |
 |---|---|---:|---|---:|---|---:|---|
