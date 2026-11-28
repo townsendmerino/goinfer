@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -31,13 +32,24 @@ var seedSchemas = []string{
 	`{"enum":[1,2,3]}`,
 }
 
+// unionSeedSchemas plant references and unions: a recursive definition, an Optional, a type list, a oneOf the
+// compiler has to show exclusive, and unions of objects told apart by a tag, by their keys and by a nested object.
+var unionSeedSchemas = []string{
+	`{"$defs":{"N":{"type":"object","properties":{"v":{"type":"integer"},"next":{"anyOf":[{"$ref":"#/$defs/N"},{"type":"null"}]}},"required":["v"]}},"$ref":"#/$defs/N"}`,
+	`{"type":"object","properties":{"a":{"type":["string","null"]},"b":{"anyOf":[{"type":"integer"},{"enum":["x","y"]}]}},"required":["a"]}`,
+	`{"oneOf":[{"type":"array","items":{"type":"boolean"},"maxItems":2},{"type":"string","format":"date"},{"const":-1},{"type":"integer","minimum":0}]}`,
+	`{"oneOf":[{"type":"object","properties":{"t":{"const":"a"},"x":{"type":"integer"}},"required":["t","x"]},{"type":"object","properties":{"t":{"enum":["b","c"]},"y":{"type":"string"}},"required":["t"]}],"discriminator":{"propertyName":"t"}}`,
+	`{"anyOf":[{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"]},{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"null"}}},{"type":"null"}]}`,
+	`{"anyOf":[{"type":"object","properties":{"k":{"const":1},"d":{"type":"object","properties":{"x":{"type":"number"}},"required":["x"]}},"required":["d"]},{"type":"object","properties":{"k":{"const":2},"d":{"type":"object","properties":{"y":{"type":"boolean"}}}},"required":["k"]}]}`,
+}
+
 // FuzzJSONSchema fuzzes the full response_format path: compile an arbitrary
 // schema, and if it compiles, drive the resulting Masker to a complete document
 // and check the output actually conforms. `choices` steers which allowed token
 // is taken at each step, so the mutator can explore distinct generation paths
 // deterministically.
 func FuzzJSONSchema(f *testing.F) {
-	for _, s := range seedSchemas {
+	for _, s := range slices.Concat(seedSchemas, unionSeedSchemas) {
 		f.Add([]byte(s), []byte{0, 1, 2, 3, 7, 11})
 	}
 	f.Fuzz(func(t *testing.T, schema, choices []byte) {
@@ -188,8 +200,11 @@ func FuzzSchemaGrammarBytes(f *testing.F) {
 	f.Add([]byte(`{"name":"x","age":0}`))
 	f.Add([]byte("[1,2]"))
 	f.Add([]byte(`{"u":{"id":-5}}`))
+	f.Add([]byte(`{"v":1,"next":{"v":2,"next":null}}`))
+	f.Add([]byte(`{"t":"b","y":"s"}`))
+	f.Add([]byte(`{"d":{"y":true},"k":2}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		for _, s := range seedSchemas {
+		for _, s := range slices.Concat(seedSchemas, unionSeedSchemas) {
 			g, err := JSONSchema([]byte(s))
 			if err != nil {
 				continue

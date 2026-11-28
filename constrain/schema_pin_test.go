@@ -282,12 +282,15 @@ func pinSources(t *testing.T) []pinEntry {
 		Address pinAddress `json:"address"`
 		Email   *string    `json:"email,omitempty"`
 	}
-	for name, v := range map[string]any{"struct/one string": wsOne{}, "struct/person": pinPerson{}} {
-		schema, err := SchemaFromStruct(v)
+	for _, src := range []struct { // a slice, not a map: the golden lists its grammars in the order they are added
+		name string
+		v    any
+	}{{"struct/person", pinPerson{}}, {"struct/one string", wsOne{}}} {
+		schema, err := SchemaFromStruct(src.v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		add(name, string(schema))
+		add(src.name, string(schema))
 	}
 
 	for _, tl := range unionTools {
