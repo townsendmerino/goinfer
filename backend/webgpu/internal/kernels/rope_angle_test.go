@@ -6,6 +6,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
@@ -223,7 +225,7 @@ func (c *Context) dispatchI8Grid(pl *wgpu.ComputePipeline, layout *wgpu.BindGrou
 	return nil
 }
 
-const ropeCosSinProbeWGSL = ropeCosSinWGSL + `
+const ropeCosSinProbeWGSL = wgsl.RopeCosSinWGSL + `
 @group(0) @binding(0) var<storage, read>       x: array<f32>;
 @group(0) @binding(1) var<storage, read_write> y: array<f32>;  // [2n]: cos, sin
 @compute @workgroup_size(64)

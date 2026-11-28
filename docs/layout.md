@@ -131,6 +131,7 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 |---|---|
 | `backend/webgpu/` | the WebGPU backend (opt-in cgo build, tag `gpu`), plus `backend/webgpu/cmd/{chat,serve}` |
 | `backend/webgpu/internal/towers/` | standalone WebGPU vision tower accelerators below `backend/webgpu` (rule `webgpu-towers-leaf` in `internal/layout/imports.json`) |
+| `backend/webgpu/internal/wgsl/` | cgo-free pure WGSL compute shader source tables for `backend/webgpu` (rule `webgpu-wgsl-leaf` in `internal/layout/imports.json`) |
 | `backend/cuda/` | the CUDA backend (cgo-free, tag `cuda`), `.cu` kernels and `backend/cuda/cmd/{chat,serve}` |
 | `backend/cuda/internal/towers/` | standalone CUDA vision and audio tower accelerators below `backend/cuda` (rule `cuda-towers-leaf` in `internal/layout/imports.json`) |
 | `backend/metal/` | the Metal backend (tag `metal`), `backend/metal/cmd/{chat,serve}` |
