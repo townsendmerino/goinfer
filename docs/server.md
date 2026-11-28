@@ -497,9 +497,10 @@ call is an error (a 500, or an error event on a stream), never prose, and no pro
 - `off`: `GOINFER_TOOL_UNION=0`, where `required` / `any` over several tools is neither constrained nor checked.
 The field is absent for a model whose template takes no tools.
 
-**What the arguments are held to.** The call's form, the tool's name and the argument keys a tool declares are always
-constrained. Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot check is the
-tool's to validate:
+**What the arguments are held to.** Where a call is constrained (a named tool, `required` / `any`, and `auto` from the call
+opener), its form, the tool's name and the argument keys a tool declares always are; an unwrapped call under `auto` is parsed
+and not constrained (below). Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot
+check is the tool's to validate:
 - numeric bounds other than `minimum: 0`, string length and pattern, and similar assertions are not enforced;
 - a value with no type, or under a composite keyword the grammar does not follow (`allOf`, `not`, `if`, …), may be any
   JSON value;
@@ -547,7 +548,11 @@ returned as prose, so an agent got no call at all. An output whose first non-spa
 exactly one of the supplied `tools` and whose arguments are an object is now returned as that one call (the first object only;
 anything else stays prose, and a name you did not supply never becomes a call). This fixes the call's form, not the model's
 choice of tool. Measured in `docs/measurements/tool-call-failure-t0-2026-09-23.md` (0 → 219–236 parsed calls of 300 on the
-0.5B/1.5B; no other output changed).
+0.5B/1.5B; no other output changed). **An unwrapped call's arguments are not held to the tool's schema:** under `auto` the
+constraint starts at the call opener, which such a reply never writes, so the arguments are checked only for being a JSON
+object. A release smoke on 2026-11-28 saw one with a `null` where the schema says a string, on v0.25.0 and on the build that
+became v0.26.0 alike (`docs/measurements/release-v0.26.0/tool-call-smoke/README.md`). Where the arguments must follow the
+schema, name the tool or send `required`.
 
 **A fenced call is accepted on request (`-lenient-tool-calls`, off by default).** Qwen2.5-Coder-7B under opencode (the cold-user run of 2026-10-05) twice wrote its edit call as a fenced
 ```` ```json ```` block, once after a sentence and once as the whole reply, and so made no edit. With the flag, a reply on the `<tool_call>` families is read as one call when exactly one fenced
