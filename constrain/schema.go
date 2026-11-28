@@ -164,7 +164,7 @@ func JSONSchema(schema []byte) (Grammar, error) {
 // compileDocument compiles a whole schema document, the root its local references are read from, with the document
 // itself at nesting level depth. A lenient compile never fails: a document it cannot compile is any JSON value.
 func compileDocument(doc map[string]any, lenient bool, depth int) (*node, error) {
-	c := compiler{lenient: lenient, refs: newRefState(doc), unions: &unionState{}}
+	c := compiler{lenient: lenient, refs: newRefState(doc, lenient, depth), unions: &unionState{}}
 	n, err := c.compile(doc, depth)
 	if err == nil {
 		err = c.refs.err()
