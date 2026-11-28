@@ -2,6 +2,7 @@ package constrain
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -334,17 +335,43 @@ func TestSchema_rejectsInvalid(t *testing.T) {
 
 // --- independent oracle: validate a parsed value against a schema doc ---
 
-// conforms validates val against a schema document. conformsAt validates against one schema of it; root is the
-// document, which a `$ref` is resolved in.
-func conforms(schema map[string]any, val any) error { return conformsAt(schema, schema, val) }
+// conforms validates val against a schema document, as the grammar reads it: an object holds declared keys only.
+func conforms(schema map[string]any, val any) error { return conformsAt(schema, schema, val, false) }
 
-func conformsAt(root, schema map[string]any, val any) error {
+// conformsAt validates val against one schema of the document root, which a `$ref` is resolved in. open reads an
+// object as JSON Schema does (undeclared keys allowed unless additionalProperties is false) instead of as the grammar
+// does: that is how a oneOf's other alternatives are counted, since a real validator would count them so.
+func conformsAt(root, schema map[string]any, val any, open bool) error {
 	if ref, ok := schema["$ref"].(string); ok {
 		target, err := oracleResolve(root, ref)
 		if err != nil {
 			return err
 		}
-		return conformsAt(root, target, val)
+		return conformsAt(root, target, val, open)
+	}
+	if alts, ok := schema["anyOf"].([]any); ok {
+		var first error
+		for _, alt := range alts {
+			err := conformsAt(root, alt.(map[string]any), val, open)
+			if err == nil {
+				return nil
+			}
+			first = cmp.Or(first, err)
+		}
+		return fmt.Errorf("no anyOf alternative matches (the first: %w)", first)
+	}
+	if alts, ok := schema["oneOf"].([]any); ok {
+		matched, asRead := 0, false
+		for _, alt := range alts {
+			if conformsAt(root, alt.(map[string]any), val, true) == nil {
+				matched++
+			}
+			asRead = asRead || conformsAt(root, alt.(map[string]any), val, open) == nil
+		}
+		if matched != 1 || !asRead {
+			return fmt.Errorf("%d oneOf alternatives match %v, want exactly one", matched, val)
+		}
+		return nil
 	}
 	if c, ok := schema["const"]; ok {
 		return eqJSON(c, val)
@@ -357,6 +384,19 @@ func conformsAt(root, schema map[string]any, val any) error {
 		}
 		return fmt.Errorf("value %v not in enum", val)
 	}
+	if types, ok := schema["type"].([]any); ok {
+		var first error
+		for _, typ := range types {
+			one := maps.Clone(schema)
+			one["type"] = typ
+			err := conformsAt(root, one, val, open)
+			if err == nil {
+				return nil
+			}
+			first = cmp.Or(first, err)
+		}
+		return fmt.Errorf("no listed type matches (the first: %w)", first)
+	}
 	switch schema["type"] {
 	case "object":
 		m, ok := val.(map[string]any)
@@ -364,9 +404,11 @@ func conformsAt(root, schema map[string]any, val any) error {
 			return fmt.Errorf("want object, got %T", val)
 		}
 		props, _ := schema["properties"].(map[string]any)
-		for k := range m {
-			if _, known := props[k]; !known {
-				return fmt.Errorf("unknown property %q", k)
+		if ap, _ := schema["additionalProperties"].(bool); !open || (schema["additionalProperties"] != nil && !ap) {
+			for k := range m {
+				if _, known := props[k]; !known {
+					return fmt.Errorf("unknown property %q", k)
+				}
 			}
 		}
 		if rl, ok := schema["required"].([]any); ok {
@@ -378,7 +420,7 @@ func conformsAt(root, schema map[string]any, val any) error {
 		}
 		for k, sub := range props {
 			if v, present := m[k]; present {
-				if err := conformsAt(root, sub.(map[string]any), v); err != nil {
+				if err := conformsAt(root, sub.(map[string]any), v, open); err != nil {
 					return fmt.Errorf("property %q: %w", k, err)
 				}
 			}
@@ -388,15 +430,15 @@ func conformsAt(root, schema map[string]any, val any) error {
 		if !ok {
 			return fmt.Errorf("want array, got %T", val)
 		}
-		if mi, ok := schema["minItems"].(float64); ok && len(a) < int(mi) {
-			return fmt.Errorf("array len %d < minItems %d", len(a), int(mi))
+		if mi, ok := schemaInt(schema["minItems"]); ok && len(a) < mi {
+			return fmt.Errorf("array len %d < minItems %d", len(a), mi)
 		}
-		if ma, ok := schema["maxItems"].(float64); ok && len(a) > int(ma) {
-			return fmt.Errorf("array len %d > maxItems %d", len(a), int(ma))
+		if ma, ok := schemaInt(schema["maxItems"]); ok && len(a) > ma {
+			return fmt.Errorf("array len %d > maxItems %d", len(a), ma)
 		}
 		items, _ := schema["items"].(map[string]any)
 		for i, e := range a {
-			if err := conformsAt(root, items, e); err != nil {
+			if err := conformsAt(root, items, e, open); err != nil {
 				return fmt.Errorf("item %d: %w", i, err)
 			}
 		}
@@ -404,14 +446,15 @@ func conformsAt(root, schema map[string]any, val any) error {
 		if _, ok := val.(string); !ok {
 			return fmt.Errorf("want string, got %T", val)
 		}
-	case "integer":
+	case "integer", "number":
 		num, ok := val.(json.Number)
-		if !ok || strings.ContainsAny(num.String(), ".eE") {
-			return fmt.Errorf("want integer, got %v", val)
+		if !ok || (schema["type"] == "integer" && strings.ContainsAny(num.String(), ".eE")) {
+			return fmt.Errorf("want %s, got %v", schema["type"], val)
 		}
-	case "number":
-		if _, ok := val.(json.Number); !ok {
-			return fmt.Errorf("want number, got %T", val)
+		if _, bounded := schema["minimum"]; bounded { // the grammar takes minimum 0 only
+			if f, err := num.Float64(); err != nil || f < 0 {
+				return fmt.Errorf("want a number that is not negative, got %v", val)
+			}
 		}
 	case "boolean":
 		if _, ok := val.(bool); !ok {
@@ -423,6 +466,18 @@ func conformsAt(root, schema map[string]any, val any) error {
 		}
 	}
 	return nil
+}
+
+// schemaInt reads an integer keyword from a schema decoded either with UseNumber or without.
+func schemaInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case json.Number:
+		i, err := n.Int64()
+		return int(i), err == nil
+	}
+	return 0, false
 }
 
 func eqJSON(a, b any) error {

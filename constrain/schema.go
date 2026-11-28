@@ -22,6 +22,7 @@ import (
 //   - minimum, for the value 0 only (no leading '-')
 //   - array: items (one schema), minItems, maxItems
 //   - $defs / definitions with a local $ref, recursive ones included (schema_ref.go)
+//   - a type list, anyOf and oneOf, where a value's first byte tells the alternatives apart (schema_union.go)
 //   - arbitrary nesting of the above
 //
 // Unsupported keywords are a compile error rather than a silent no-op, so a
@@ -39,6 +40,7 @@ const (
 	kEnum   // enum / const / boolean / null: match one of a fixed literal set
 	kAny    // any JSON value: the lenient tool-argument compile's node for a schema it cannot enforce
 	kNever  // no value: a reference cycle cut at maxSchemaDepth. Compile-time only, never part of a grammar
+	kUnion  // one of alts, picked by the value's first byte
 )
 
 // node is a compiled schema node (immutable after compile; shared across frames).
@@ -66,6 +68,9 @@ type node struct {
 
 	// string: the `format` the grammar holds it to (fmtNone: any string)
 	format strFormat
+
+	// union: the alternatives, no two of which begin with the same byte
+	alts []*node
 }
 
 // The any-value shapes. A kAny frame becomes one of these on its first byte (schemaGrammar.dispatch).
@@ -87,20 +92,22 @@ var neverNode = &node{kind: kNever}
 // parameters: what the grammar cannot enforce is left to the tool). Lenient compiling never fails, and differs from strict
 // only where strict would fail:
 //   - an assertion the grammar does not check (maximum, pattern, minLength, ...) is not enforced;
-//   - a value with no type, an unknown or multi-valued type, or a composite keyword (anyOf, allOf, ...) is any JSON value;
+//   - a value with no type, an unknown type, or a composite keyword (allOf, not, ...) is any JSON value;
 //   - an object with no declared properties, or one past the grammar's limits, is any object;
 //   - an object that allows undeclared keys is held to its declared ones.
 //
-// A `$ref` is held to its target in both modes; one the compiler cannot follow is a strict failure like any other.
+// A `$ref`, a `type` list, `anyOf` and `oneOf` are held to in both modes; one the compiler cannot follow is a strict
+// failure like any other. A `oneOf` is the exception: lenient compiling holds it as `anyOf` (schema_union.go).
 type compiler struct {
 	lenient bool
-	refs    *refState // the document's local references (schema_ref.go)
+	refs    *refState   // the document's local references (schema_ref.go)
+	unions  *unionState // what its unions share (schema_union.go)
 }
 
 // compositeKeywords change a value's shape in ways the grammar does not model; lenient compiling makes such a value any
 // JSON value rather than ignoring the keyword.
 var compositeKeywords = map[string]bool{
-	"anyOf": true, "oneOf": true, "allOf": true, "not": true, "$dynamicRef": true, "if": true, "then": true,
+	"allOf": true, "not": true, "$dynamicRef": true, "if": true, "then": true,
 	"else": true, "patternProperties": true, "prefixItems": true, "dependentSchemas": true, "propertyNames": true,
 	"contains": true, "unevaluatedProperties": true, "unevaluatedItems": true, "additionalItems": true,
 }
@@ -142,7 +149,7 @@ func JSONSchema(schema []byte) (Grammar, error) {
 // compileDocument compiles a whole schema document, the root its local references are read from, with the document
 // itself at nesting level depth. A lenient compile never fails: a document it cannot compile is any JSON value.
 func compileDocument(doc map[string]any, lenient bool, depth int) (*node, error) {
-	c := compiler{lenient: lenient, refs: newRefState(doc)}
+	c := compiler{lenient: lenient, refs: newRefState(doc), unions: &unionState{}}
 	n, err := c.compile(doc, depth)
 	if err == nil {
 		err = c.refs.err()
@@ -166,7 +173,7 @@ func compileDocument(doc map[string]any, lenient bool, depth int) (*node, error)
 const maxSchemaDepth = 64
 
 // schemaKeywords are the keywords compile enforces. With annotationKeywords they are every keyword a schema may
-// carry: any other is an assertion this package does NOT enforce (pattern, maxLength, oneOf, uniqueItems, …), and the
+// carry: any other is an assertion this package does NOT enforce (pattern, maxLength, allOf, uniqueItems, …), and the
 // package contract is that it is a compile error, not a silent no-op, so a caller cannot believe a constraint is in
 // force that isn't. `format` is enforced on a string for the formats stringFormats names; any other value is an
 // annotation, as JSON Schema 2020-12 defines it, and is allowed and ignored.
@@ -174,6 +181,7 @@ var schemaKeywords = map[string]bool{
 	"type": true, "enum": true, "const": true,
 	"properties": true, "required": true, "additionalProperties": true, "items": true,
 	"minItems": true, "maxItems": true, "minimum": true, "format": true, "$ref": true,
+	"anyOf": true, "oneOf": true,
 }
 
 // annotationKeywords assert nothing about a value: they are allowed and ignored, beside a `$ref` too. `$defs` and
@@ -185,9 +193,11 @@ var annotationKeywords = map[string]bool{
 	"$defs": true, "definitions": true,
 }
 
+// checkSchemaKeys refuses a keyword compile does not enforce. `discriminator` is taken beside a union only, where it
+// is an annotation (compiler.compileUnion).
 func checkSchemaKeys(s map[string]any) error {
 	for k := range s {
-		if !schemaKeywords[k] && !annotationKeywords[k] {
+		if !schemaKeywords[k] && !annotationKeywords[k] && (k != "discriminator" || unionKeyword(s) == "") {
 			return fmt.Errorf("constrain: unsupported schema keyword %q — it would be silently ignored, so the constraint the caller expects is not enforced; remove it or use a supported keyword", k)
 		}
 	}
@@ -224,6 +234,9 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 	if _, ok := s["$ref"]; ok {
 		return c.compileRef(s, depth)
 	}
+	if key := unionKeyword(s); key != "" {
+		return c.compileUnion(s, key, depth)
+	}
 	// enum / const first — they pin a fixed set of literals regardless of type.
 	if c, ok := s["const"]; ok {
 		enc, err := encodeLiteral(c)
@@ -251,7 +264,23 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 		return &node{kind: kEnum, enum: enum}, nil
 	}
 
-	typ, _ := s["type"].(string)
+	switch typ := s["type"].(type) {
+	case []any:
+		return c.compileTypeList(s, typ, depth)
+	case string:
+		if typ != "" {
+			return c.compileType(s, typ, depth)
+		}
+	}
+	// "properties" with no explicit type is conventionally an object.
+	if _, ok := s["properties"]; ok {
+		return c.compileObject(s, depth)
+	}
+	return nil, fmt.Errorf("constrain: schema needs a \"type\", \"enum\", or \"const\"")
+}
+
+// compileType compiles s as a value of the one type typ, reading the keywords that type has.
+func (c compiler) compileType(s map[string]any, typ string, depth int) (*node, error) {
 	switch typ {
 	case "object":
 		return c.compileObject(s, depth)
@@ -270,15 +299,8 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 		return &node{kind: kEnum, enum: [][]byte{[]byte("true"), []byte("false")}}, nil
 	case "null":
 		return &node{kind: kEnum, enum: [][]byte{[]byte("null")}}, nil
-	case "":
-		// "properties" with no explicit type is conventionally an object.
-		if _, ok := s["properties"]; ok {
-			return c.compileObject(s, depth)
-		}
-		return nil, fmt.Errorf("constrain: schema needs a \"type\", \"enum\", or \"const\"")
-	default:
-		return nil, fmt.Errorf("constrain: unsupported type %q", typ)
 	}
+	return nil, fmt.Errorf("constrain: unsupported type %q", typ)
 }
 
 // validPropertyName rejects property names the key grammar can't match byte-for-byte: keyStep

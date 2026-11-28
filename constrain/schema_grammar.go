@@ -413,6 +413,15 @@ func (g *schemaGrammar) dispatch(f *frame, b byte) bool {
 			f.cand, f.pos, f.state = cand, 1, fsEnum
 			return true
 		}
+	case kUnion: // no two alternatives begin with the same byte, and the frame continues as the one b begins
+		u := f.n
+		for _, alt := range u.alts {
+			f.n = alt
+			if g.dispatch(f, b) {
+				return true
+			}
+		}
+		f.n = u
 	}
 	return false
 }

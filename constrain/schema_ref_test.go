@@ -1,8 +1,6 @@
 package constrain
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -297,28 +295,7 @@ func refGenSchemas(t *testing.T) map[string][]byte {
 func TestSchema_refGenerates(t *testing.T) {
 	t.Parallel()
 	for name, schema := range refGenSchemas(t) {
-		dec := json.NewDecoder(bytes.NewReader(schema))
-		dec.UseNumber()
-		var doc map[string]any
-		if err := dec.Decode(&doc); err != nil {
-			t.Fatalf("%s: bad schema: %v", name, err)
-		}
-		for i := range 150 {
-			g, err := JSONSchema(schema)
-			if err != nil {
-				t.Fatalf("%s: compile: %v", name, err)
-			}
-			out := genConstrained(t, g, int64(i)+1, 0)
-			vd := json.NewDecoder(bytes.NewReader(out))
-			vd.UseNumber()
-			var val any
-			if err := vd.Decode(&val); err != nil {
-				t.Fatalf("%s seed %d: output is not valid JSON: %q (%v)", name, i, out, err)
-			}
-			if err := conforms(doc, val); err != nil {
-				t.Fatalf("%s seed %d: output %q does not conform: %v", name, i, out, err)
-			}
-		}
+		checkGenerates(t, name, schema, 150)
 	}
 }
 
