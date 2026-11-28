@@ -111,7 +111,8 @@ var neverNode = &node{kind: kNever}
 //   - an object that allows undeclared keys is held to its declared ones.
 //
 // A `$ref`, a `type` list, `anyOf` and `oneOf` are held to in both modes; one the compiler cannot follow is a strict
-// failure like any other. A `oneOf` is the exception: lenient compiling holds it as `anyOf` (schema_union.go).
+// failure like any other. A `oneOf` is the exception: lenient compiling holds it as `anyOf` (schema_union.go;
+// docs/code-notes/constrain.md#Lenient compiling of references and unions).
 type compiler struct {
 	lenient bool
 	refs    *refState   // the document's local references (schema_ref.go)

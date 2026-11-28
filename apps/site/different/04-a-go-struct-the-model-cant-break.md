@@ -17,7 +17,7 @@ doesnt:
   - title: "It doesn't bound a number's size."
     text: "JSON Schema integers have no width, so a uint8 field can be given 99999 and json.Unmarshal will return an error for it. Unsigned fields are stopped from going negative, and that is all."
   - title: "It doesn't take every schema."
-    text: "Supported: objects, arrays with minItems and maxItems, string, number, integer, boolean, null, enum, const, and minimum only when it is 0. Any other keyword (pattern, maxLength, oneOf, $ref, uniqueItems) is a compile error, not a silent skip. So are a freeform object with no declared properties, more than 64 properties or enum entries, and nesting deeper than 64."
+    text: "Supported: objects, arrays with minItems and maxItems, string, number, integer, boolean, null, enum, const, minimum only when it is 0, $defs with a local $ref, and a value that is one of several alternatives (a type list, anyOf, oneOf) when its first character or an object's keys tell them apart. Any other keyword (pattern, maxLength, allOf, not, uniqueItems) is a compile error, not a silent skip. So are a union the grammar cannot split, a freeform object with no declared properties, more than 64 properties or enum entries, and nesting deeper than 64."
   - title: "It doesn't take every Go type."
     text: "Maps, interfaces and recursive types are refused, as is a type with its own UnmarshalJSON. Only json tags are read, so a struct has no way to say 'one of these three strings'; for that, write the schema by hand. A pointer field is optional, but the model cannot write null into it."
   - title: "It can't finish a document the token budget won't fit."

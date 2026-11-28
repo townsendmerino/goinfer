@@ -14,11 +14,11 @@ import (
 // with one frame, so it holds a union only in a form where the value's first byte picks the alternative
 // (schemaGrammar.dispatch): compiling merges the alternatives until no two can begin with the same byte, and a union
 // that cannot be merged so is a compile error. Object alternatives merge into a variant (schema_variant.go). A frame
-// gains no field for a union.
+// gains no field for a union (docs/code-notes/constrain.md#Unions by first byte).
 //
 // `oneOf` is `anyOf` with the promise that no value matches two alternatives. The grammar does not count matches, so
 // a strict compile takes a `oneOf` only when excludes shows every pair of alternatives apart; a lenient one holds it
-// as `anyOf`, which refuses no value the `oneOf` allows.
+// as `anyOf`, which refuses no value the `oneOf` allows (docs/code-notes/constrain.md#oneOf: what is checked).
 
 const (
 	// maxUnionAlts caps the alternatives of one anyOf or oneOf, the objects a union holds once the unions inside it

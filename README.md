@@ -55,9 +55,13 @@ It works from any JSON Schema too (`constrain.JSONSchema(bytes)`), and from the 
 
 Supported subset: objects (required and optional, `additionalProperties:false`), arrays
 (`items`/`minItems`/`maxItems`), `string`/`number`/`integer`/`boolean`/`null`, `enum`/`const`,
-a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`, and arbitrary
-nesting. A property-based test asserts that every constrained generation validates
-against its schema.
+a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`, `$defs` with a
+local `$ref` (recursive ones included), nullable values and unions (`type` lists, `anyOf`,
+`oneOf`, objects with or without a discriminator), and nesting to 64 levels. Those are the
+shapes Pydantic gives a nested model, an optional field, a recursive model and a discriminated
+union. A keyword outside the subset is a compile error; [docs/server.md](docs/server.md) lists
+what is still refused, under "What a `json_schema` may contain". A property-based test asserts
+that every constrained generation validates against its schema.
 
 **Tool calls get the same treatment.** On the Qwen families (Qwen2 through Qwen3.8),
 Nemotron-3-Nano, Mellum2 and Granite 4.2, a tool call cannot be malformed or name a tool you did

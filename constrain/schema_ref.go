@@ -14,7 +14,7 @@ import (
 // as that schema would in its place, at the reference's own nesting level, so a document with references accepts
 // what its inlined form accepts. A reference cycle has no finite inlined form: it is expanded down to maxSchemaDepth
 // and cut there (compiler.overDepth). The cut is made when the schema is compiled, so the grammar's frame stack keeps
-// the bound every other schema has and a mask step does nothing new.
+// the bound every other schema has and a mask step does nothing new (docs/code-notes/constrain.md#Local references).
 
 const (
 	// maxRefWork caps the schemas compiled inside reference expansions, and the schemas read to look for a reference

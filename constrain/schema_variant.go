@@ -18,7 +18,8 @@ import (
 // differs has to say, once its value is written, which alternatives that value fits (compiler.tagged): by the value's
 // first byte when the schemas are of different types, by the literal when they are enums (a discriminator), and by
 // the nested object's own keys when they are objects. Two schemas that would need more than that to tell apart (two
-// arrays, an integer and a number, a literal beside a string) are a compile error naming the property.
+// arrays, an integer and a number, a literal beside a string) are a compile error naming the property
+// (docs/code-notes/constrain.md#Variants: a union of objects).
 
 // variantInfo is a variant's alternatives as masks: bit i of a mask over alternatives is n.alts[i], bit p of a mask
 // over properties is n.props[p].

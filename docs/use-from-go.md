@@ -198,11 +198,21 @@ The supported subset:
 - a string's `format`, held for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email` (any other
   format is an annotation, so the string stays free);
 - `enum` and `const`;
-- nesting to any depth.
+- `$defs` (or `definitions`) with a `$ref` into the same document, which may be recursive: the
+  grammar follows a recursive reference down to its nesting limit;
+- `type` as a list, and `anyOf` or `oneOf` between alternatives a value's first character tells
+  apart (a string or `null`, a number or a string, an object or `null`);
+- `anyOf` or `oneOf` between objects, with a `discriminator` or without: the keys and values
+  written so far decide which alternatives the object can still be;
+- nesting, to 64 levels.
 
-An object may have up to 64 properties and an enum up to 64 values. A keyword or shape outside
-the subset is an error from `JSONSchema`, so a constraint that could not be enforced is never
-silently dropped. A property-based test in `constrain` checks that every constrained generation
+An object may have up to 64 properties, an enum up to 64 values and a union up to 64
+alternatives. A keyword or shape outside the subset is an error from `JSONSchema`, so a
+constraint that could not be enforced is never silently dropped: `allOf`, `not`, `pattern`,
+`maxLength` and `maximum` are refused, as are a union whose alternatives the grammar cannot tell
+apart (two arrays with different `items`) and a `oneOf` whose alternatives are not shown to
+exclude each other. [`docs/server.md`](server.md), under "What a `json_schema` may contain", has
+the whole list. A property-based test in `constrain` checks that every constrained generation
 validates against its schema.
 
 ## How sure was it: `CaptureConfidence`
