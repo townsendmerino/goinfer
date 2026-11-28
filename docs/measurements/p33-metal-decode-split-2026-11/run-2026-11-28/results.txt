@@ -1,0 +1,64 @@
+##### gemv-s0
+=== RUN   TestMetalGEMVS0
+[gemv-s0    0.5s] streaming read, 512 MB,   65536 threads: 3.358 ms -> 159.9 GB/s
+[gemv-s0    0.6s] streaming read, 512 MB,  262144 threads: 3.028 ms -> 177.3 GB/s
+[gemv-s0    0.7s] streaming read, 512 MB, 1048576 threads: 2.957 ms -> 181.6 GB/s
+=== decode GEMV S0 (standalone, real shapes, SLC-defeating rotation, median of 7) ===
+       category kern         MB   production      GB/s     loads-only      GB/s production / loads-only
+  1.5B qkv      sa          1.8     0.025 ms        72       0.016 ms       112 1.56x
+  1.5B o        sa          1.3     0.021 ms        64       0.014 ms        98 1.54x
+  1.5B gate/up  sa         15.5     0.172 ms        90       0.087 ms       178 1.98x
+  1.5B down     coal        7.7     0.115 ms        68       0.072 ms       107 1.58x
+  1.5B LM head  w8        234.0     1.456 ms       161              —          
+  7B   qkv      sa          9.3     0.093 ms       100       0.061 ms       152 1.52x
+  7B   o        sa          7.2     0.076 ms        96       0.050 ms       144 1.50x
+  7B   gate/up  sa         76.4     0.690 ms       111       0.407 ms       188 1.70x
+  7B   down     coal       38.2     0.515 ms        74       0.302 ms       127 1.71x
+  7B   LM head  w8        545.6     3.341 ms       163              —          
+  1.5B qkv      w8sa        3.2     0.028 ms       113              —          
+  1.5B o        w8sa        2.4     0.022 ms       106              —          
+  1.5B gate/up  w8sa       27.6     0.188 ms       147              —          
+  1.5B down     w8body      13.8     0.108 ms       127              —          
+  1.5B qkv      w8sa4       3.2     0.025 ms       128              —          
+  1.5B o        w8sa2       2.4     0.020 ms       121              —          
+  1.5B gate/up  w8sa4      27.6     0.155 ms       178              —          
+  1.5B down     w8body4      13.8     0.097 ms       142              —          
+--- PASS: TestMetalGEMVS0 (5.93s)
+##### decomp
+=== RUN   TestMetalDecodeDecomp
+[ddecomp    1.8s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw: H=1536 I=8960 nL=28 nH=12 V=151936, ctx 4096, attention_fa on: true (floor 1024), aliased: true
+=== Metal decode decomposition, depth 128 (129 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.822 ms    8.3% of token   paired 0.7 0.8 0.8 0.9 0.8
+  GEMV qkv (+bias)                       work   0.645 ms    6.5% of token   paired 0.5 0.5 0.6 0.8 0.6
+  GEMV o (+residual)                     work   0.536 ms    5.4% of token   paired 0.3 0.5 0.6 0.6 0.5
+  GEMV gate/up                           work   3.095 ms   31.2% of token   paired 2.9 3.0 3.5 3.1 3.1
+  GEMV down (+residual)                  work   1.704 ms   17.2% of token   paired 1.5 1.6 1.9 1.8 1.7
+  LM head (int8)                         work   1.291 ms   13.0% of token   paired 1.1 1.3 1.4 1.4 1.3
+  norm+quant (rms)                       work   0.487 ms    4.9% of token   paired 0.4 0.4 0.5 0.6 0.5
+  rope (rope2)                           work   0.039 ms    0.4% of token   paired -0.2 -0.1 0.0 0.1 0.1
+  kv store                               work   0.103 ms    1.0% of token   paired -0.1 0.1 0.2 0.2 0.1
+  act-quant (swiglu_quant)               work   0.500 ms    5.0% of token   paired 0.2 0.4 0.6 0.5 0.5
+  ctx-quant (quant_vec)                  work   0.116 ms    1.2% of token   paired -0.1 0.1 0.2 0.2 0.1
+  dispatch floor (every pipeline no-op)         0.714 ms    7.2% of token   spread 6.2%
+  full token 9.911 ms (100.9 tok/s), spread 2.3%; categories' work + floor = 10.051 ms (101.4% of full)
+=== Metal decode decomposition, depth 192 (193 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.954 ms    9.5% of token   paired 1.0 0.9 0.9 1.1 1.0
+  GEMV qkv (+bias)                       work   0.691 ms    6.9% of token   paired 0.7 0.7 0.6 0.7 0.7
+  GEMV o (+residual)                     work   0.544 ms    5.4% of token   paired 0.6 0.5 0.4 0.5 0.6
+  GEMV gate/up                           work   3.106 ms   31.0% of token   paired 3.1 3.2 3.0 3.1 3.1
+  GEMV down (+residual)                  work   1.719 ms   17.2% of token   paired 1.7 1.8 1.6 1.7 1.7
+  LM head (int8)                         work   1.347 ms   13.4% of token   paired 1.3 1.4 1.2 1.5 1.3
+  norm+quant (rms)                       work   0.492 ms    4.9% of token   paired 0.6 0.5 0.4 0.6 0.5
+  rope (rope2)                           work  -0.009 ms   -0.1% of token   paired -0.0 -0.0 -0.0 0.1 -0.0
+  kv store                               work   0.075 ms    0.8% of token   paired 0.1 0.0 -0.1 0.2 0.1
+  act-quant (swiglu_quant)               work   0.519 ms    5.2% of token   paired 0.5 0.5 0.3 0.7 0.4
+  ctx-quant (quant_vec)                  work   0.106 ms    1.1% of token   paired 0.1 0.1 0.1 0.2 0.1
+  dispatch floor (every pipeline no-op)         0.719 ms    7.2% of token   spread 6.0%
+  full token 10.019 ms (99.8 tok/s), spread 1.5%; categories' work + floor = 10.265 ms (102.5% of full)
+--- PASS: TestMetalDecodeDecomp (27.12s)
+##### chain-ab
+=== RUN   TestCB01ChainAB
+[cb01    0.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw (tied head false): greedy, 9 reps of 256 tokens per arm
+[cb01   56.9s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   56.9s] C-B01 METRIC chain/off greedy qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw: median 1.0381 (min 1.0248, max 1.0499), 9 of 9 pairs above 1; decode off 95.1, chain 99.2 tok/s (medians)
+--- PASS: TestCB01ChainAB (56.91s)

@@ -1,0 +1,1 @@
+{"t": "2026-11-28 08:05:10", "t_epoch": 1795881910.003335, "load1": 2.52783203125, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8472, "swap_mb": 2087.12, "swapin_mb": 9797.609375, "swapout_mb": 15156.234375, "need_mb": 370.0, "void": null, "need_source": "the fit check's plan", "need_is_lower_bound": false}

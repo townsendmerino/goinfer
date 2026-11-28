@@ -1,0 +1,7 @@
+$ chat-metal fit <the model> -ctx 4096 -quant int4 -backend metal -profile testdata/machines/m1pro-apps-open.json   (2026-11-28 08:11:04 PST)
+fit: FITS on m1pro-apps-open: needs 0.36 GiB of a 6.00 GiB budget
+exit 0
+
+$ the same with -json
+{"profile":"m1pro-apps-open","available_bytes":7516192768,"verdict":"fits","answer":{"Guard":"giw","Fits":true,"Unpriced":"","Ctx":4096,"CtxPinned":true,"CtxCapped":false,"MaxCtx":32768,"NeedBytes":387711232,"BudgetBytes":6442450944,"WeightBytes":0,"KVBytes":119275776,"AvailBytes":7516192768,"PinnedExpertBytes":0,"Decline":"","Streamable":false,"DecodePath":"metal-resident (int4)","DecodeUnknown":"","ResidentCtx":4096}}
+exit 0

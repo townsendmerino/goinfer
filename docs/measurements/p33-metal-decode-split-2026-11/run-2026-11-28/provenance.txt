@@ -1,0 +1,19 @@
+tree:     8387e57233427ab9f11640674dc3e1947593126a (0 git status entries)
+binary:   /Users/francistownsend-merino/goinfer-work/eval-followup/p33/metal-tagged-8387e5723.test (sha256 2e80b72c7673dbe0; go1.27.4)
+model:    /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw (1211489310 bytes)
+need:     370 MB for the two cells that load it; 1024 MB for gemv-s0
+started:  2026-11-28 08:04:04 PST
+machine:  Apple M1 Pro, 16 GB, macOS 26.7.3
+load:     { 5.04 5.85 4.31 }
+swap:     total = 3072.00M  used = 2095.12M  free = 976.88M  (encrypted)
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== gemv-s0 attempt 1: start 08:04:35: {"t": "2026-11-28 08:04:35", "t_epoch": 1795881875.0033972, "load1": 3.59765625, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8533, "swap_mb": 2087.12, "swapin_mb": 9792.90625, "swapout_mb": 15156.234375, "need_mb": 1024.0, "void": null, "need_source": "the test's own device buffers, about 1 GB", "need_is_lower_bound": false}
+== gemv-s0 attempt 1: end 08:04:42: test exit 0, end exit 0: {"t": "2026-11-28 08:04:41", "t_epoch": 1795881881.907609, "load1": 3.46923828125, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8581, "swap_mb": 2087.12, "swapin_mb": 9792.96875, "swapout_mb": 15156.234375, "void": null} 
+== gemv-s0: COUNTED attempt 1
+== decomp attempt 1: start 08:04:42: {"t": "2026-11-28 08:04:42", "t_epoch": 1795881882.288277, "load1": 3.46923828125, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8571, "swap_mb": 2087.12, "swapin_mb": 9792.96875, "swapout_mb": 15156.234375, "need_mb": 370.0, "void": null, "need_source": "the fit check's plan", "need_is_lower_bound": false}
+== decomp attempt 1: end 08:05:09: test exit 0, end exit 0: {"t": "2026-11-28 08:05:09", "t_epoch": 1795881909.6197162, "load1": 2.52783203125, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8427, "swap_mb": 2087.12, "swapin_mb": 9797.609375, "swapout_mb": 15156.234375, "void": null} 
+== decomp: COUNTED attempt 1
+== chain-ab attempt 1: start 08:05:10: {"t": "2026-11-28 08:05:10", "t_epoch": 1795881910.003335, "load1": 2.52783203125, "ncores": 8, "available_mb": 13426, "reclaimable_mb": 8472, "swap_mb": 2087.12, "swapin_mb": 9797.609375, "swapout_mb": 15156.234375, "need_mb": 370.0, "void": null, "need_source": "the fit check's plan", "need_is_lower_bound": false}
+== chain-ab attempt 1: end 08:06:07: test exit 0, end exit 0: {"t": "2026-11-28 08:06:07", "t_epoch": 1795881967.114319, "load1": 7.50048828125, "ncores": 8, "available_mb": 13590, "reclaimable_mb": 7836, "swap_mb": 2039.12, "swapin_mb": 9851.75, "swapout_mb": 15156.234375, "void": null} 
+== chain-ab: COUNTED attempt 1
+finished: 2026-11-28 08:06:07 PST; 3 of 3 cells counted, 0 void, 0 not passed

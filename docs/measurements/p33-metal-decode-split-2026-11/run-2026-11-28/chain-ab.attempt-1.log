@@ -1,0 +1,21 @@
+=== RUN   TestCB01ChainAB
+metal: recurrent checkpoint: 0.0 MiB (6 buffers)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.005 ms, fragment 0.007 ms), gate|up at B <= 0 (0.006, 0.006); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers)
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.109, 0.251); 0 = always the fragment
+[cb01    0.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw (tied head false): greedy, 9 reps of 256 tokens per arm
+[cb01   14.3s] rep 1/9: off 93.8 tok/s, chain 97.7 tok/s, chain/off 1.0421
+[cb01   19.6s] rep 2/9: off 97.3 tok/s, chain 100.5 tok/s, chain/off 1.0330
+[cb01   24.8s] rep 3/9: off 98.2 tok/s, chain 100.7 tok/s, chain/off 1.0248
+[cb01   30.2s] rep 4/9: off 94.9 tok/s, chain 99.0 tok/s, chain/off 1.0429
+[cb01   35.5s] rep 5/9: off 95.1 tok/s, chain 99.2 tok/s, chain/off 1.0431
+[cb01   40.8s] rep 6/9: off 96.1 tok/s, chain 100.9 tok/s, chain/off 1.0499
+[cb01   46.2s] rep 7/9: off 94.7 tok/s, chain 98.3 tok/s, chain/off 1.0381
+[cb01   51.6s] rep 8/9: off 95.0 tok/s, chain 98.4 tok/s, chain/off 1.0366
+[cb01   56.9s] rep 9/9: off 96.5 tok/s, chain 99.4 tok/s, chain/off 1.0300
+[cb01   56.9s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   56.9s] C-B01 METRIC chain/off greedy qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v18.giw: median 1.0381 (min 1.0248, max 1.0499), 9 of 9 pairs above 1; decode off 95.1, chain 99.2 tok/s (medians)
+--- PASS: TestCB01ChainAB (56.91s)
+PASS
+ledger: 5 device(s) released in this run
