@@ -37,18 +37,18 @@
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 367.9,
-      "peer": 263.8,
-      "runs": "362.5 / 371.0 / 367.9",
-      "peer_runs": "263.8 / 263.9 / 263.6",
-      "ratio_raw": "1.396",
-      "ratio": "1.40×",
+      "value": 515.0,
+      "peer": 264.9,
+      "runs": "515.0 / 515.3 / 514.7",
+      "peer_runs": "265.0 / 264.6 / 264.9",
+      "ratio_raw": "1.943",
+      "ratio": "1.94×",
       "verdict": "ahead",
       "why": "",
-      "date": "2026-09-29",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/README.md",
+        "heading": "Night 2, 2026-11-20 00:34–02:22 PST, graded 04:20 PST"
       }
     },
     {
@@ -92,18 +92,18 @@
       "checkpoint": "qwen2.5-coder-1.5b",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 270.7,
-      "peer": 183.7,
-      "runs": "270.7 / 270.6 / 270.8",
-      "peer_runs": "183.7 / 183.3 / 183.9",
-      "ratio_raw": "1.474",
-      "ratio": "1.47×",
+      "value": 259.8,
+      "peer": 183.5,
+      "runs": "259.8 / 259.5 / 259.8",
+      "peer_runs": "183.5 / 183.4 / 183.6",
+      "ratio_raw": "1.415",
+      "ratio": "1.42×",
       "verdict": "ahead",
-      "why": "",
-      "date": "2026-09-29",
+      "why": "At the int8 output head, the default since 2026-11-20 for 1B+ models (#1179). The median of 3 pairs, every pair 1.415 to 1.416. At the int4 head it was 1.51×.",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/int8head-2026-11-20/README.md",
+        "heading": "2. The moved cells: registered 2026-11-20 13:00 PST, before any data"
       }
     },
     {
@@ -145,18 +145,18 @@
       "checkpoint": "phi3-mini-4k",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 112.6,
-      "peer": 125.8,
-      "runs": "112.7 / 112.5 / 112.6",
-      "peer_runs": "125.9 / 125.8 / 125.7",
-      "ratio_raw": "0.895",
-      "ratio": "0.90×",
+      "value": 114.4,
+      "peer": 126.0,
+      "runs": "114.5 / 114.4 / 114.3",
+      "peer_runs": "126.0 / 125.9 / 126.0",
+      "ratio_raw": "0.909",
+      "ratio": "0.91×",
       "verdict": "behind",
       "why": "At its default, --quant q4k. The earlier 1.14× compared a raw completion with broken output and is withdrawn.",
-      "date": "2026-09-29",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/README.md",
+        "heading": "Night 2, 2026-11-20 00:34–02:22 PST, graded 04:20 PST"
       }
     },
     {

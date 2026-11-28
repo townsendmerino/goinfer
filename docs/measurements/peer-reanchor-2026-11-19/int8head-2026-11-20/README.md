@@ -76,6 +76,13 @@ new head, and for the moved cells to be re-measured once it is on main.
 | e CPU 1.5B | **BEHIND** 0.927 (22.2 vs 23.9 tok/s) | LEVEL 1.012 (24.4 vs 24.1) |
 | e CPU 7B | **LEVEL** 0.991 (5.9 vs 6.0) | AHEAD 1.039 (6.2 vs 6.0) |
 
+**The CUDA cell the site's `claims.json` cites, in detail** (tok/s: each engine's three runs, their medians and the
+pairs against Ollama, as [`results/grade.jsonl`](results/grade.jsonl) records them; added 2026-11-27, no figure changed):
+
+| cell | goinfer runs | median | Ollama runs | median | pairs r | median r | outcome |
+|---|---|---:|---|---:|---|---:|---|
+| cuda 1.5B @128 greedy, int8 head | 259.8 / 259.5 / 259.8 | 259.8 | 183.5 / 183.4 / 183.6 | 183.5 | 1.416 / 1.415 / 1.415 | 1.415 | AHEAD |
+
 **Against llama.cpp `a37cc46`** (beside):
 - **The 1.5B:** AHEAD 1.118 / 1.067 at 128 / 2048, AMBIGUOUS-HIGH 1.032 at 3900, **BEHIND 0.954** at 8000.
 - **The 7B:** AHEAD 1.044 at 128, LEVEL 0.993 at 2048, **BEHIND** 0.969 at 3900 and 0.911 at 8000.
