@@ -33,6 +33,14 @@ func TestTemplateFromSchema_refsAndUnions(t *testing.T) {
 		{"one target under two spellings", `{"$defs":{"N":{"type":"object","properties":{"v":{"type":"integer"},"next":{"$ref":"#/%24defs/N"}}}},"$ref":"#/$defs/N"}`,
 			"{\n    \"v\": 0,\n    \"next\": {}\n}"},
 		{"a recursive array", `{"$defs":{"L":{"type":"array","items":{"$ref":"#/$defs/L"}}},"$ref":"#/$defs/L"}`, "[\n    []\n]"},
+		// A schema is an array when an array is what stands in its place, by a reference or as a union's alternative.
+		{"a recursive array, named by the reference to it", `{"$defs":{"L":{"type":"array","items":{"$ref":"#"}}},"$ref":"#/$defs/L"}`, "[\n    []\n]"},
+		{"a recursive array, named by a property that refers to it", `{"type":"object","properties":{"list":{"$ref":"#/$defs/L"}},"$defs":{"L":{"type":"array","items":{"$ref":"#/properties/list"}}}}`,
+			"{\n    \"list\": [\n        []\n    ]\n}"},
+		{"a recursive array, named by the union it is an alternative of", `{"anyOf":[{"type":"null"},{"type":"array","items":{"$ref":"#"}}]}`, "[\n    []\n]"},
+		{"a recursive array behind two references and a union", `{"$defs":{"A":{"$ref":"#/$defs/B"},"B":{"oneOf":[{"type":"array","items":{"$ref":"#"}},{"type":"null"}]}},"$ref":"#/$defs/A"}`, "[\n    []\n]"},
+		{"a recursive object, named by the reference to it", `{"$defs":{"N":{"type":"object","properties":{"next":{"$ref":"#"}}}},"$ref":"#/$defs/N"}`, "{\n    \"next\": {}\n}"},
+		{"a reference to itself and nothing else", `{"$ref":"#"}`, `{}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
