@@ -106,6 +106,38 @@ var okSchema = map[string]any{
 	"additionalProperties": false,
 }
 
+// refSchema is a schema as an SDK's schema generator writes one for a model with a nested model and optional fields:
+// the nested object behind a `$ref`, and two nullable fields, one as anyOf with null and one as a type list. Every
+// value is bounded, as in okSchema.
+var refSchema = map[string]any{
+	"$defs": map[string]any{"Flags": okSchema},
+	"type":  "object",
+	"properties": map[string]any{
+		"flags": map[string]any{"$ref": "#/$defs/Flags"},
+		"note":  map[string]any{"anyOf": []any{map[string]any{"enum": []string{"a", "b"}}, map[string]any{"type": "null"}}},
+		"seen":  map[string]any{"type": []string{"boolean", "null"}},
+	},
+	"required":             []string{"flags", "note", "seen"},
+	"additionalProperties": false,
+}
+
+// wantRef checks a reply against refSchema: flags is okSchema's object, note is "a", "b" or null, seen is a boolean
+// or null, and there is no other key.
+func wantRef(t *testing.T, raw string) {
+	t.Helper()
+	var v map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &v); err != nil || len(v) != 3 {
+		t.Fatalf("the reply %q is not the schema's object of three keys (%v)", raw, err)
+	}
+	wantOK(t, "flags", string(v["flags"]))
+	if note := string(v["note"]); note != `"a"` && note != `"b"` && note != "null" {
+		t.Errorf("note is %s; want \"a\", \"b\" or null", note)
+	}
+	if seen := string(v["seen"]); seen != "true" && seen != "false" && seen != "null" {
+		t.Errorf("seen is %s; want a boolean or null", seen)
+	}
+}
+
 func wantOK(t *testing.T, what, raw string) {
 	t.Helper()
 	var v struct {
@@ -122,7 +154,8 @@ func openaiClient(t *testing.T) openai.Client {
 }
 
 // The official OpenAI Go SDK against the in-process server: a chat completion, a stream, a forced tool call, a
-// schema-constrained reply, the Responses API, and a context overflow read back as the SDK's typed error.
+// schema-constrained reply, one whose schema has a `$ref` and nullable fields, the Responses API, and a context
+// overflow read back as the SDK's typed error.
 func TestOpenAISDK(t *testing.T) {
 	client := openaiClient(t)
 	ctx := context.Background()
@@ -176,6 +209,20 @@ func TestOpenAISDK(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantOK(t, "the reply", resp.Choices[0].Message.Content)
+	})
+	t.Run("structured output with a $ref and nullable fields", func(t *testing.T) {
+		resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model: "tiny", Messages: hi, MaxTokens: openai.Int(constrainedRoom), Temperature: openai.Float(0),
+			ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{Name: "answer", Schema: refSchema, Strict: openai.Bool(true)}}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Choices[0].FinishReason != "stop" {
+			t.Errorf("finish_reason %q; want stop, the reply closed by the grammar", resp.Choices[0].FinishReason)
+		}
+		wantRef(t, resp.Choices[0].Message.Content)
 	})
 	t.Run("responses", func(t *testing.T) {
 		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{Model: "tiny", MaxOutputTokens: openai.Int(4), Temperature: openai.Float(0),
