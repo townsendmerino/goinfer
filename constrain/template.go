@@ -167,8 +167,17 @@ func (t *templater) node(v any, depth int) (*tmplNode, error) {
 	if !ok {
 		return nil, fmt.Errorf("constrain: a schema node must be an object, got %T", v)
 	}
+	// A schema a reference entered can be met again as its enclosing schema's own child: it stays open, with the entry
+	// it had, when this writing of it is done.
+	outer := t.open[s]
 	t.open[s] = s
-	defer delete(t.open, s)
+	defer func() {
+		if outer != nil {
+			t.open[s] = outer
+		} else {
+			delete(t.open, s)
+		}
+	}()
 	if ref, has := s.vals["$ref"]; has {
 		return t.ref(s, ref, depth)
 	}

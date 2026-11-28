@@ -41,6 +41,12 @@ func TestTemplateFromSchema_refsAndUnions(t *testing.T) {
 		{"a recursive array behind two references and a union", `{"$defs":{"A":{"$ref":"#/$defs/B"},"B":{"oneOf":[{"type":"array","items":{"$ref":"#"}},{"type":"null"}]}},"$ref":"#/$defs/A"}`, "[\n    []\n]"},
 		{"a recursive object, named by the reference to it", `{"$defs":{"N":{"type":"object","properties":{"next":{"$ref":"#"}}}},"$ref":"#/$defs/N"}`, "{\n    \"next\": {}\n}"},
 		{"a reference to itself and nothing else", `{"$ref":"#"}`, `{}`},
+		// A schema a reference entered, met again as its enclosing schema's own child, is still being written out when
+		// the second writing of it is done.
+		{"a recursive array, entered by a reference into its items", `{"$defs":{"X":{"type":"array","items":{"type":"object","properties":{"a":{"$ref":"#/$defs/X"},"b":{"$ref":"#"}}}}},"$ref":"#/$defs/X/items/properties/a"}`,
+			"[\n    {\n        \"a\": [],\n        \"b\": []\n    }\n]"},
+		{"a recursive object, entered by a reference to one of its properties", `{"$defs":{"X":{"type":"object","properties":{"a":{"type":"object","properties":{"v":{"type":"integer"},"up":{"$ref":"#/$defs/X"}}},"b":{"$ref":"#/$defs/X/properties/a"}}}},"$ref":"#/$defs/X/properties/a"}`,
+			"{\n    \"v\": 0,\n    \"up\": {\n        \"a\": {\n            \"v\": 0,\n            \"up\": {}\n        },\n        \"b\": {}\n    }\n}"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
