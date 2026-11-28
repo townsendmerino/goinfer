@@ -12,6 +12,7 @@ func TestSchema_M27_hardening(t *testing.T) {
 	for _, s := range []string{
 		`{"type":"string","pattern":"^x$"}`,
 		`{"type":"integer","minimum":3}`,
+		`{"type":"number","maximum":5}`,
 		`{"type":"string","minLength":2}`,
 		`{"type":"string","maxLength":8}`,
 		`{"allOf":[{"type":"string"}]}`,
