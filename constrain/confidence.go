@@ -161,8 +161,9 @@ func (p *confPos) logitOf(id int) (float32, bool) {
 type confField struct {
 	path          string
 	n             *node
-	start, end    int // value bytes in the output
-	boundary      int // just after the ':' / ',' / '[' that precedes the value's leading whitespace
+	opts          [][]byte // an enum's literals on offer when the value began (schemaGrammar.options)
+	start, end    int      // value bytes in the output
+	boundary      int      // just after the ':' / ',' / '[' that precedes the value's leading whitespace
 	tokens        []int
 	free          []bool
 	firstTokStart []int // output offset where each of its tokens starts
@@ -234,7 +235,7 @@ func (m *Masker) FieldConfidence(generated []int) ([]FieldConfidence, error) {
 			}
 			f := fields[path]
 			if f == nil {
-				f = &confField{path: path, n: nd, start: pos, boundary: lastStruct}
+				f = &confField{path: path, n: nd, opts: g.options(nd), start: pos, boundary: lastStruct}
 				fields[path] = f
 				order = append(order, path)
 			}
@@ -253,7 +254,7 @@ func (m *Masker) FieldConfidence(generated []int) ([]FieldConfidence, error) {
 	var res []FieldConfidence
 	for _, path := range order {
 		f := fields[path]
-		kind := fieldKind(f.n)
+		kind := fieldKind(f.n, f.opts)
 		if kind == "" {
 			continue
 		}
@@ -299,7 +300,7 @@ func (m *Masker) FieldConfidence(generated []int) ([]FieldConfidence, error) {
 // decide fills an enum/boolean field's distribution from its deciding token. False if the replay found none (a
 // value the capture never read, or one decided by a forced token).
 func (m *Masker) decide(fc *FieldConfidence, f *confField, out []byte, generated []int, temp float64) bool {
-	opts := f.n.enum
+	opts := f.opts
 	valueText := func(tokStart int, tok []byte) (string, bool) {
 		// The value's bytes if this token were emitted at tokStart: the output between the preceding structural byte
 		// and the token, then the token, with the value's leading whitespace dropped.
@@ -390,17 +391,33 @@ func (m *Masker) decide(fc *FieldConfidence, f *confField, out []byte, generated
 	return false
 }
 
-// fieldKind names the reported kinds; "" for a kind that is not reported.
-func fieldKind(n *node) string {
+// options is the literals on offer for a value of n that has just begun: all of an enum's, and of a tagged enum's
+// the ones that belong to an alternative still live in the enclosing variant, whose frame is the one below the top.
+func (g *schemaGrammar) options(n *node) [][]byte {
+	if n.kind != kTagEnum {
+		return n.enum
+	}
+	live := g.enclosingLive()
+	var opts [][]byte
+	for i, lit := range n.enum {
+		if n.tags[i]&live != 0 {
+			opts = append(opts, lit)
+		}
+	}
+	return opts
+}
+
+// fieldKind names the reported kinds, opts being an enum's literals on offer; "" for a kind that is not reported.
+func fieldKind(n *node, opts [][]byte) string {
 	switch n.kind {
 	case kEnum, kTagEnum:
-		if len(n.enum) == 2 {
-			a, b := string(n.enum[0]), string(n.enum[1])
+		if len(opts) == 2 {
+			a, b := string(opts[0]), string(opts[1])
 			if (a == "true" && b == "false") || (a == "false" && b == "true") {
 				return "boolean"
 			}
 		}
-		for _, e := range n.enum {
+		for _, e := range opts {
 			if string(e) == "null" {
 				return ""
 			}

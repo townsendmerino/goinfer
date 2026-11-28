@@ -119,7 +119,8 @@ the subset is a 400 that names it, never a constraint dropped in silence:
   `minimum` for the value 0 only, and a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`.
 - **References:** `$defs` or `definitions` with a `$ref` into the same document (`#/$defs/Name`), which is how Pydantic
   writes a nested model. A reference may be recursive (a tree, a linked list): the grammar follows it down to its nesting
-  limit, 64 levels, so a reply nests no deeper than that.
+  limit, 64 levels, so a reply nests no deeper than that. Only the recursion is cut there: a schema whose own nesting
+  passes 64 levels is a 400, with a recursive reference in it or without.
 - **Nullable and multi-typed values:** `type` given as a list, and `anyOf` or `oneOf` between alternatives that a value's
   first character tells apart: a string or `null` (Pydantic's `Optional`), a number or a string, an object or `null`, an
   array or an enum.
@@ -162,6 +163,9 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
   - Number and string fields are not: the labelled set could not grade them yet.
   - A field whose value the schema forced (a one-option enum) is not reported either; its value says nothing about
     the model.
+  - The property that tells a union's objects apart (its `const` or `enum` in each alternative) is reported over the
+    values still possible when it is written, and `distribution` lists those only. Once the keys before it have left
+    it one value, that value is forced and the field is not reported.
   - A nullable integer (`anyOf` of an integer and `null`, or `type: ["integer", "null"]`) is reported when the reply
     holds a number, and the choice against `null` is in its first digit's probability. A nullable enum or boolean is
     not reported, as an enum that lists `null` is not, and neither is a `null`.
@@ -668,8 +672,9 @@ schema (`constrain.TemplateFromSchema`, one source with the grammar) and uses it
 
 The template convention: properties in the schema's order, every property shown (optional ones too), nested objects
 nested, `""` for a string, `0` for a number or integer, `false` for a boolean, one example element for an array (so a list of
-line items shows what one looks like), a `$ref`'s target in its place, and for a nullable or union value its first
-alternative that is not `null`. **Type the amounts as numbers.** The model answers a numeric column with a bare
+line items shows what one looks like), a `$ref`'s target in its place (a recursive one is shown once: where it leads back
+into a schema already being written out, the template has `{}`, or `[]` for an array), and for a nullable or union value
+its first alternative that is not `null`. **Type the amounts as numbers.** The model answers a numeric column with a bare
 number whatever the template shows for a string field, and a string grammar forbids a bare number: the only legal tokens
 left are whitespace, so on `"quantity": ""` the measured reply was whitespace until `max_tokens`, with no error
 (`docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt`). With `integer` and `number` fields the

@@ -281,6 +281,35 @@ level), so up to `maxSchemaDepth` times the document's size. `maxRefWork` caps i
 `neverNode` is produced only inside the expansion of a document whose references form a cycle; a document without one that
 nests too deep fails with the nesting error its inlined form gets (`TestSchema_refNestingErrorIsKept`).
 
+**Nesting a cycle does not account for.** The cut is for the levels that going round a cycle adds. Nesting the document
+writes out past `maxSchemaDepth` is the nesting error beside a cycle as it is without one: a definition of 70 nested arrays is
+refused whether or not another definition is recursive (`TestSchema_refNestingBesideACycle`). The place where the compiler
+passes the limit cannot tell the two apart, because a target is compiled once per level and not once per path that reaches
+it. So `compiler.overDepth` cuts there, and `refState.err` then judges the document once: it is refused when
+`refShape.plain`, counted from the level the root is compiled at, passes the limit.
+
+`plain` is read off the schemas the compiler would compile, grouped into strongly connected components (`refState.below`
+reads a schema as `compileStrict` does, so nesting under a keyword the compiler does not read is not counted:
+`TestSchema_refNestingCountsWhatIsCompiled`). It is the deepest nesting along a path from the root that
+
+- counts the nesting written out, through any reference that does not lead back into a cycle;
+- enters a cycle once, at no cost, at whichever of its schemas writes out the deepest nesting, and follows none of the
+  cycle's own references (`shapeReader.walked`).
+
+So a definition whose body is 70 arrays deep is refused wherever it stands: beside a cycle, below one, or in one, whichever
+definition the document enters the cycle by. What the count leaves out is the nesting between one schema of a cycle and
+another: two definitions of 40 levels each that refer to each other compile, and are cut at 64
+(`TestSchema_refNestingOwedToACycle`). Counting that takes the least nesting from each entry of a cycle to each of its
+schemas, a search per entry where this count is one pass over the document. The count does not depend on the order the
+definitions are written or reached in, and in a document without a cycle it is the deepest path's nesting
+(`TestSchema_refShapeOnRandomDocuments` checks it against a direct reading of this definition, and against the deepest
+path where there is no cycle). A cycle elsewhere in a document never changes whether nesting beside it compiles
+(`TestSchema_refNestingIgnoresAnUnrelatedCycle`).
+
+A lenient compile has no error to give and keeps the cut, so a tool whose parameters nest this way has arguments that stay
+held to their schema, down to the limit (`TestToolCallGrammar_refNestingBesideACycle`). The cut drops only documents that
+nest past the limit, which no grammar here can write, so freeing the arguments instead would loosen them and gain nothing.
+
 Refused, because each would need more than a pointer lookup: a reference out of the document or to an anchor, a reference
 in a document where a nested `$id` re-bases it, and an assertion beside `$ref` (2020-12 applies both, which is an
 intersection).
