@@ -266,6 +266,63 @@ func TestSchema_unionErrors(t *testing.T) {
 	}
 }
 
+// TestSchema_oneOfUntypedObject: a schema with `properties` and no `type` matches, as JSON Schema reads it, every value
+// that is not an object. The grammar offers its objects only, which is sound alone and inside anyOf. Inside oneOf a
+// sibling's values that are not objects match it too, so the two are not exclusive and the oneOf is refused.
+func TestSchema_oneOfUntypedObject(t *testing.T) {
+	const (
+		untyped = `{"properties":{"a":{"type":"string"}},"required":["a"]}`
+		typed   = `{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`
+	)
+	for _, schema := range []string{
+		`{"oneOf":[` + untyped + `,{"type":"integer"}]}`,
+		`{"oneOf":[{"type":"null"},` + untyped + `]}`,
+		`{"oneOf":[{"const":1},` + untyped + `]}`,
+		`{"oneOf":[{"type":"array","items":{"type":"string"}},` + untyped + `]}`,
+		// one level down: {"k":5} fits both alternatives, the first because 5 is not an object
+		`{"oneOf":[{"type":"object","properties":{"k":` + untyped + `},"required":["k"]},{"type":"object","properties":{"k":{"type":"integer"}},"required":["k"]}]}`,
+		// behind an anyOf, beside a typed object of the same structure
+		`{"oneOf":[{"anyOf":[` + typed + `,` + untyped + `]},{"type":"integer"}]}`,
+		`{"oneOf":[{"anyOf":[` + untyped + `,` + typed + `]},{"type":"integer"}]}`,
+		// behind a reference
+		`{"$defs":{"U":` + untyped + `},"oneOf":[{"$ref":"#/$defs/U"},{"type":"integer"}]}`,
+	} {
+		if _, err := JSONSchema([]byte(schema)); err == nil || !strings.Contains(err.Error(), "can both match") {
+			t.Errorf("%s: error %v, want the two alternatives reported as not exclusive", schema, err)
+		}
+	}
+	for _, schema := range []string{
+		`{"oneOf":[` + typed + `,{"type":"integer"}]}`,
+		`{"anyOf":[` + untyped + `,{"type":"integer"}]}`,
+		// two untyped objects: the grammar writes objects only, and a required key tells those apart
+		`{"oneOf":[` + untyped + `,{"properties":{"b":{"type":"string"}},"required":["b"]}]}`,
+	} {
+		if _, err := JSONSchema([]byte(schema)); err != nil {
+			t.Errorf("%s: %v, want it compiled", schema, err)
+		}
+	}
+	// A typed and an untyped object of one structure are one object to the grammar.
+	checkDocs(t, mustSchema(t, []byte(`{"anyOf":[`+typed+`,`+untyped+`,{"type":"null"}]}`)), []docCase{
+		{`{"a":"x"}`, true, "the object"}, {`null`, true, "the other alternative"},
+		{`{}`, false, "a is required"}, {`{"a":1}`, false, "a is a string"},
+		{`5`, false, "the grammar offers the untyped schema's objects only"},
+	})
+}
+
+// TestSchema_oneOfUntypedObjectCutByNesting: at the nesting limit of a reference cycle a schema with `properties` and
+// no `type` can have no object left to offer, while it still matches every value that is not an object. A oneOf in
+// such a document is refused; without a oneOf nothing counts matches, and the document compiles.
+func TestSchema_oneOfUntypedObjectCutByNesting(t *testing.T) {
+	const defs = `"$defs":{"T":{"properties":{"next":{"$ref":"#/$defs/T"}},"required":["next"]}}`
+	_, err := JSONSchema([]byte(`{` + defs + `,"oneOf":[{"$ref":"#/$defs/T"},{"type":"integer"}]}`))
+	if err == nil || !strings.Contains(err.Error(), `"type":"object"`) {
+		t.Errorf("a oneOf beside an untyped schema that no object fits: error %v, want one asking for \"type\":\"object\"", err)
+	}
+	if _, err := JSONSchema([]byte(`{` + defs + `,"anyOf":[{"$ref":"#/$defs/T"},{"type":"integer"}]}`)); err != nil {
+		t.Errorf("the same document with anyOf: %v, want it compiled", err)
+	}
+}
+
 // TestSchema_typeListBesideProperties: a `type` list beside `properties` is read. Such a schema used to compile as a
 // plain object, the list unread, so it could not say null and a list without "object" still forced an object.
 func TestSchema_typeListBesideProperties(t *testing.T) {

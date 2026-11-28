@@ -69,6 +69,11 @@ type node struct {
 	// free: an object whose keys are any strings and whose values are any JSON values (anyObjNode)
 	free bool
 
+	// untyped: an object compiled from a schema with `properties` and no `type`. The grammar offers its objects only,
+	// but as JSON Schema reads it the schema matches every value that is not an object, which unionState.excludes
+	// has to count
+	untyped bool
+
 	// string: the `format` the grammar holds it to (fmtNone: any string)
 	format strFormat
 
@@ -165,6 +170,9 @@ func compileDocument(doc map[string]any, lenient bool, depth int) (*node, error)
 	}
 	if err == nil && n == neverNode {
 		err = fmt.Errorf("constrain: no document fits the schema within %d levels of nesting: a $ref cycle runs through required values", maxSchemaDepth)
+	}
+	if err == nil && c.unions.oneOf && c.unions.untypedCut {
+		err = fmt.Errorf("constrain: oneOf is not supported in a document whose $ref cycle leaves a schema with \"properties\" and no \"type\" no object within %d levels of nesting: that schema still matches every value that is not an object, which no alternative is checked against; give it \"type\":\"object\"", maxSchemaDepth)
 	}
 	if err != nil {
 		if lenient {
@@ -283,7 +291,16 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 	}
 	// "properties" with no explicit type is conventionally an object.
 	if _, ok := s["properties"]; ok {
-		return c.compileObject(s, depth)
+		n, err := c.compileObject(s, depth)
+		switch {
+		case err != nil:
+			return nil, err
+		case n == neverNode:
+			c.unions.untypedCut = true
+		case !n.free:
+			n.untyped = true
+		}
+		return n, nil
 	}
 	return nil, fmt.Errorf("constrain: schema needs a \"type\", \"enum\", or \"const\"")
 }

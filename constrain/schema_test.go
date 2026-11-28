@@ -397,7 +397,14 @@ func conformsAt(root, schema map[string]any, val any, open bool) error {
 		}
 		return fmt.Errorf("no listed type matches (the first: %w)", first)
 	}
-	switch schema["type"] {
+	typ := schema["type"]
+	if _, has := schema["properties"]; has && typ == nil { // `properties` says nothing of a value that is not an object
+		if _, isObj := val.(map[string]any); !isObj {
+			return nil
+		}
+		typ = "object"
+	}
+	switch typ {
 	case "object":
 		m, ok := val.(map[string]any)
 		if !ok {
@@ -448,8 +455,8 @@ func conformsAt(root, schema map[string]any, val any, open bool) error {
 		}
 	case "integer", "number":
 		num, ok := val.(json.Number)
-		if !ok || (schema["type"] == "integer" && strings.ContainsAny(num.String(), ".eE")) {
-			return fmt.Errorf("want %s, got %v", schema["type"], val)
+		if !ok || (typ == "integer" && strings.ContainsAny(num.String(), ".eE")) {
+			return fmt.Errorf("want %s, got %v", typ, val)
 		}
 		if _, bounded := schema["minimum"]; bounded { // the grammar takes minimum 0 only
 			if f, err := num.Float64(); err != nil || f < 0 {

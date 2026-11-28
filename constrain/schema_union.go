@@ -118,6 +118,7 @@ func (c compiler) compileUnion(s map[string]any, key string, depth int) (*node, 
 		}
 	}
 	if key == "oneOf" && !c.lenient {
+		c.unions.oneOf = true
 		for i, a := range alts {
 			for _, b := range alts[i+1:] {
 				if c.unions.excludes(a.n, b.n) && c.unions.excludes(b.n, a.n) {
@@ -270,9 +271,14 @@ type unionState struct {
 	byKey    map[string]int
 	excluded map[[2]*node]bool
 	work     int // excludes calls, against maxUnionWork
+
+	// oneOf: a oneOf's alternatives were checked with excludes. untypedCut: a schema with `properties` and no `type`
+	// compiled to neverNode, which excludes cannot see. A document with both is refused (compileDocument).
+	oneOf, untypedCut bool
 }
 
-// id numbers a node by its structure: two nodes with one number accept the same documents.
+// id numbers a node by its structure: two nodes with one number accept the same documents, and excludes reads them
+// alike.
 func (u *unionState) id(n *node) int {
 	if id, ok := u.byNode[n]; ok {
 		return id
@@ -283,6 +289,9 @@ func (u *unionState) id(n *node) int {
 		k.WriteByte('O')
 		if n.free {
 			k.WriteByte('*')
+		}
+		if n.untyped {
+			k.WriteByte('?')
 		}
 		for i, p := range n.props {
 			k.WriteString(strconv.Quote(p.name))
@@ -359,9 +368,10 @@ func (u *unionState) covers(a, b *node) bool {
 	return false
 }
 
-// excludes reports that no value the grammar writes for a is accepted by the schema b was compiled from, with b's
-// objects read as JSON Schema reads them (keys they do not declare are allowed). It is conservative: false when the
-// two are not shown apart. It looks at types, literals, the keys objects require and declare, and array lengths.
+// excludes reports that no value the grammar writes for a is accepted by the schema b was compiled from, with b read
+// as JSON Schema reads it: an object's undeclared keys are allowed, and an untyped object schema matches whatever is
+// not an object. It is conservative: false when the two are not shown apart. It looks at types, literals, the keys
+// objects require and declare, and array lengths.
 func (u *unionState) excludes(a, b *node) bool {
 	if u.work++; u.work > maxUnionWork {
 		return false
@@ -375,6 +385,8 @@ func (u *unionState) excludes(a, b *node) bool {
 		return !slices.ContainsFunc(a.alts, func(alt *node) bool { return !u.excludes(alt, b) })
 	case isUnion(b):
 		return !slices.ContainsFunc(b.alts, func(alt *node) bool { return !u.excludes(a, alt) })
+	case b.untyped && a.kind != kObject:
+		return false // b's schema has no `type`, so it matches whatever is not an object
 	case a.kind == kEnum && b.kind == kEnum:
 		for _, la := range a.enum {
 			if slices.ContainsFunc(b.enum, func(lb []byte) bool { return !literalsDiffer(la, lb) }) {

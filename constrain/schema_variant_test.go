@@ -529,6 +529,7 @@ func TestSchema_variantRandomOneOf(t *testing.T) {
 		`{"type":"array","items":{"type":"integer"},"maxItems":1}`,
 		`{"type":"array","items":{"type":"string"},"minItems":2,"maxItems":2}`,
 		`{"anyOf":[{"type":"integer"},{"type":"null"}]}`,
+		`{"properties":{"p":{"type":"integer"}},"required":["p"]}`, // no type: it matches whatever is not an object too
 	}
 	names := []string{"a", "b", "k"}
 	rng := rand.New(rand.NewPCG(11, 2026))
