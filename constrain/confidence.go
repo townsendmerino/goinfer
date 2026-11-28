@@ -17,8 +17,8 @@ import (
 // value is wrong more often; docs/measurements/confidence-c0-2026-09-27.md), but its calibration was not measured.
 //
 // WHICH FIELDS. Only the kinds the confidence gates cleared are reported: enum, boolean and integer. Number and string fields
-// are omitted (parked for want of errors to judge them by), and so is any field with no free token — a
-// value the grammar forced says nothing about the model.
+// are omitted (parked for want of errors to judge them by), and so is any field with no free token or with one
+// option — a value the grammar forced says nothing about the model.
 //
 // HOW. CaptureConfidence makes Process record, at each position outside a free string, the normalizer of the
 // masked logits and the legal tokens' logits (every one when there are at most confCompleteMax, else the top
@@ -407,10 +407,15 @@ func (g *schemaGrammar) options(n *node) [][]byte {
 	return opts
 }
 
-// fieldKind names the reported kinds, opts being an enum's literals on offer; "" for a kind that is not reported.
+// fieldKind names the reported kinds, opts being an enum's literals on offer; "" for a kind that is not reported. An
+// enum with one literal on offer is not: its value is forced, and a free token it may still have (an array's first
+// item opens where the array could close) says whether the value is written, not which value.
 func fieldKind(n *node, opts [][]byte) string {
 	switch n.kind {
 	case kEnum, kTagEnum:
+		if len(opts) < 2 {
+			return ""
+		}
 		if len(opts) == 2 {
 			a, b := string(opts[0]), string(opts[1])
 			if (a == "true" && b == "false") || (a == "false" && b == "true") {

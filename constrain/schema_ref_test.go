@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -325,12 +326,66 @@ func TestSchema_refNestingOwedToACycle(t *testing.T) {
 		{doc(nodes, fit), true, "the member of a nested node, down to the nesting cap"},
 		{doc(nodes, fit+1), false, "one level past the nesting cap"},
 	})
-	// What the count leaves out: two definitions that each write out 40 levels and end in a reference to the other
-	// nest 80 levels on their first trip round, but that trip goes through the cycle's own references, so it is cut
-	// as any recursion is.
+	// What the two counts leave out: a path through several schemas of one cycle that passes the cap, where a shorter
+	// path reaches every schema on it. Two definitions that each write out 40 levels and end in a reference to the
+	// other, both referred to from the root, nest 80 levels from one into the other, and that trip is cut at the cap.
 	half := func(other string) string { return arraysOf(member, `{"$ref":"#/$defs/`+other+`"}`) }
-	if _, err := JSONSchema([]byte(`{"$ref":"#/$defs/A","$defs":{"A":` + half("B") + `,"B":` + half("A") + `}}`)); err != nil {
-		t.Errorf("two definitions of %d levels each that refer to each other: %v, want the cycle cut", member, err)
+	both := mustSchema(t, []byte(`{"type":"object","properties":{"a":{"$ref":"#/$defs/A"},"b":{"$ref":"#/$defs/B"}},"$defs":{"A":`+half("B")+`,"B":`+half("A")+`}}`))
+	under := func(key string, arrays int) string {
+		return `{"` + key + `":` + strings.Repeat(`[`, arrays) + strings.Repeat(`]`, arrays) + `}`
+	}
+	checkDocs(t, both, []docCase{
+		{under("a", member), true, "the first definition written out in full"},
+		{under("b", member), true, "the second definition written out in full"},
+		{under("a", maxSchemaDepth), true, "one definition into the other, down to the nesting cap"},
+		{under("a", maxSchemaDepth+1), false, "one level past the nesting cap"},
+		{under("b", maxSchemaDepth+1), false, "nor from the second definition into the first"},
+	})
+}
+
+// objectsOf is n objects nested in each other through a required property, around leaf.
+func objectsOf(n int, leaf string) string {
+	for range n {
+		leaf = `{"type":"object","properties":{"n":` + leaf + `},"required":["n"]}`
+	}
+	return leaf
+}
+
+// TestSchema_refNestingOutOfReach: a schema that no path reaches within the cap is nesting written out, also where the
+// path to it runs through a cycle's own references. The cut would keep it out of the grammar and out of the compile,
+// so nothing it holds would be read; the document is the nesting error instead.
+func TestSchema_refNestingOutOfReach(t *testing.T) {
+	const half = 40
+	// mutual is a document that enters definition A: a levels of arrays around a reference to B, which is b levels
+	// around end.
+	mutual := func(a, b int, end string) string {
+		return `{"$ref":"#/$defs/A","$defs":{"A":` + arraysOf(a, `{"$ref":"#/$defs/B"}`) + `,"B":` + arraysOf(b, end) + `}}`
+	}
+	const back = `{"$ref":"#/$defs/A"}`
+	beside := func(prop string) string { return `{"type":"object","properties":{"a":` + back + `,"s":` + prop + `}}` }
+	for _, c := range []struct{ name, schema string }{
+		{"the reference back to the first", mutual(half, half, back)},
+		{"a keyword the grammar does not enforce", mutual(half, half, beside(`{"type":"string","pattern":"x"}`))},
+		{"a reference that names nothing", mutual(half, half, beside(`{"$ref":"#/$defs/Missing"}`))},
+		{"a nested $id", mutual(half, half, beside(`{"$id":"https://example.com/s","type":"string"}`))},
+		{"required values all the way down", `{"$ref":"#/$defs/A","$defs":{"A":` + objectsOf(half, `{"$ref":"#/$defs/B"}`) +
+			`,"B":` + objectsOf(half, `{"type":"object","properties":{"a":`+back+`}}`) + `}}`},
+	} {
+		if _, err := JSONSchema([]byte(c.schema)); err == nil || !strings.Contains(err.Error(), "nesting exceeds") {
+			t.Errorf("two definitions of %d levels each, the second ending in %s past the cap: got %v, want the nesting error", half, c.name, err)
+		}
+	}
+	// The count is of levels: the second definition's last schema is the one furthest from the root, and the document
+	// compiles while that schema sits within the cap, from the level the document itself is compiled at.
+	for _, base := range []int{0, 3} {
+		for _, b := range []int{maxSchemaDepth - base - half, maxSchemaDepth - base - half + 1} {
+			_, err := compileDocument(mustMap(mutual(half, b, back)), false, base)
+			if fits := base+half+b <= maxSchemaDepth; (err == nil) != fits {
+				t.Errorf("definitions of %d and %d levels, compiled at level %d: %v; want it to compile: %v", half, b, base, err, fits)
+			} else if err != nil && !strings.Contains(err.Error(), "nesting exceeds") {
+				t.Errorf("definitions of %d and %d levels, compiled at level %d: %v, want the nesting error", half, b, base, err)
+			}
+		}
 	}
 }
 
@@ -360,12 +415,13 @@ func TestSchema_refNestingCountsWhatIsCompiled(t *testing.T) {
 }
 
 // TestSchema_refShapeOnRandomDocuments: on small random documents, refShape is what its definition gives when read off
-// directly, with a cycle found by following every path, and in a document without a cycle plain is the nesting of the
-// deepest path.
+// directly, with a cycle found by following every path and the nearest path to a schema by relaxing every edge until
+// nothing changes. In a document without a cycle plain is the nesting of the deepest path, which far never passes.
 func TestSchema_refShapeOnRandomDocuments(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 14))
 	const rounds = 500
 	cyclicDocs := 0
+	stepped := false // some schema is nearer the root by another path than by a schema that holds it
 	for range rounds {
 		defs := 1 + rng.IntN(4)
 		var gen func(level int) string
@@ -379,6 +435,9 @@ func TestSchema_refShapeOnRandomDocuments(t *testing.T) {
 				return `{"type":"object","properties":{"p":` + gen(level+1) + `,"q":` + gen(level+1) + `}}`
 			case pick == 4 && level < 4:
 				return `{"anyOf":[` + gen(level+1) + `,{"type":"null"}]}`
+			case pick == 5:
+				// Into a definition: a schema that is one level down by the definition and none by this reference.
+				return fmt.Sprintf(`{"$ref":"#/$defs/D%d/%s"}`, rng.IntN(defs), []string{"items", "properties/p", "anyOf/0"}[rng.IntN(3)])
 			}
 			return fmt.Sprintf(`{"$ref":"#/$defs/D%d"}`, rng.IntN(defs))
 		}
@@ -472,6 +531,30 @@ func TestSchema_refShapeOnRandomDocuments(t *testing.T) {
 		if want := counted(r.root); sh.plain != want {
 			t.Fatalf("plain is %d, its definition read directly gives %d\n%s", sh.plain, want, b.String())
 		}
+		// near is the least nesting a path from the root reaches each schema by.
+		near := map[uintptr]int{id(r.root): 0}
+		for changed := true; changed; {
+			changed = false
+			for a, s := range schemas {
+				at, reached := near[a]
+				if !reached {
+					continue
+				}
+				for _, kid := range r.below(s) {
+					if was, ok := near[id(kid.s)]; !ok || at+levels(kid) < was {
+						near[id(kid.s)], changed = at+levels(kid), true
+					}
+				}
+			}
+		}
+		furthest := 0
+		for a, s := range schemas {
+			furthest = max(furthest, near[a])
+			stepped = stepped || slices.ContainsFunc(r.below(s), func(kid refKid) bool { return kid.nested && near[id(kid.s)] <= near[a] })
+		}
+		if sh.far != furthest {
+			t.Fatalf("far is %d, the schema furthest by its nearest path is at level %d\n%s", sh.far, furthest, b.String())
+		}
 		if anyCycle {
 			cyclicDocs++
 			continue
@@ -488,9 +571,38 @@ func TestSchema_refShapeOnRandomDocuments(t *testing.T) {
 		if want := longest(r.root); sh.plain != want {
 			t.Fatalf("no cycle: plain is %d, the deepest path nests %d\n%s", sh.plain, want, b.String())
 		}
+		if sh.far > sh.plain {
+			t.Fatalf("no cycle: far is %d, past the deepest path's %d\n%s", sh.far, sh.plain, b.String())
+		}
 	}
 	if cyclicDocs < rounds/5 || cyclicDocs > rounds*4/5 {
 		t.Errorf("%d of %d documents had a cycle: the test wants both kinds", cyclicDocs, rounds)
+	}
+	if !stepped {
+		t.Error("no document had a schema nearer the root by a reference than by the schema that holds it: the test wants one")
+	}
+}
+
+// TestSchema_refShapeNearestPath: far takes each schema at the least nesting a path reaches it by, whether the
+// reference that reaches it sooner is read before the schema that holds it or after.
+func TestSchema_refShapeNearestPath(t *testing.T) {
+	const defs = `"$defs":{"W":{"type":"array","items":{"type":"array","items":{"type":"string"}}},"V":{"$ref":"#/$defs/W/items"}}`
+	for _, c := range []struct {
+		name, schema string
+		far, plain   int
+	}{
+		{"by the schema that holds it only", `{"$ref":"#/$defs/W",` + defs + `}`, 2, 2},
+		{"by a reference read after the schema that holds it", `{"anyOf":[{"$ref":"#/$defs/W"},{"$ref":"#/$defs/V"}],` + defs + `}`, 1, 2},
+		{"by a reference read before it", `{"anyOf":[{"$ref":"#/$defs/V"},{"$ref":"#/$defs/W"}],` + defs + `}`, 1, 2},
+		{"by a reference from one level down", `{"type":"object","properties":{"a":{"$ref":"#/$defs/W"},"b":{"$ref":"#/$defs/V"}},` + defs + `}`, 2, 3},
+	} {
+		sh, err := newRefState(mustMap(c.schema), false, 0).readShape()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sh.far != c.far || sh.plain != c.plain {
+			t.Errorf("a definition's items reached %s: far %d and plain %d, want %d and %d", c.name, sh.far, sh.plain, c.far, c.plain)
+		}
 	}
 }
 

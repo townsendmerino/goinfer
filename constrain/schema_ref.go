@@ -67,13 +67,14 @@ func (r *refState) enter(s map[string]any) error {
 
 // err is the document-level refusal. A reference in a document that re-bases references is one this package would
 // resolve against the wrong root. And a strict compile whose cycle was cut still refuses a document that nests past
-// maxSchemaDepth on a path the cycle does not account for (refShape.plain), as its inlined form would be refused. A
-// lenient compile keeps the cut, which drops only documents that nest past maxSchemaDepth.
+// maxSchemaDepth with no cycle to account for it: on a path that writes the nesting out (refShape.plain), as its
+// inlined form would be refused, or on the way to a schema no path reaches sooner (refShape.far), which the cut kept
+// out of the compile. A lenient compile keeps the cut, which drops only documents that nest past maxSchemaDepth.
 func (r *refState) err() error {
 	if r.used && r.rebased {
 		return fmt.Errorf("constrain: $ref in a document with a nested $id is not supported: the $id re-bases the references under it")
 	}
-	if sh := r.shape; sh != nil && sh.cyclic && !r.lenient && r.base+sh.plain > maxSchemaDepth {
+	if sh := r.shape; sh != nil && sh.cyclic && !r.lenient && r.base+max(sh.plain, sh.far) > maxSchemaDepth {
 		return fmt.Errorf("constrain: schema nesting exceeds %d levels, not counting what its $ref cycles repeat; a cycle is cut at that depth, nesting written out past it is not", maxSchemaDepth)
 	}
 	return nil
@@ -210,11 +211,13 @@ func pointerStep(cur any, tok string) (next any, found bool) {
 
 // refShape is what the compiler asks of a document's references. plain is the levels the document nests with no cycle
 // to account for them: the deepest path from the root that counts the nesting written out, enters a cycle at whichever
-// of its schemas writes out most, and follows none of the cycle's own references
-// (docs/code-notes/constrain.md#Local references).
+// of its schemas writes out most, and follows none of the cycle's own references. far is the level of the schema
+// furthest from the root, each schema taken at the least nesting a path reaches it by: a schema past maxSchemaDepth
+// by that count is one the compiler never reaches (docs/code-notes/constrain.md#Local references).
 type refShape struct {
 	cyclic bool // the references form a cycle
 	plain  int
+	far    int
 }
 
 // readShape reads the shape once: Tarjan's algorithm over the schemas the compiler would compile, which closes a
@@ -226,7 +229,7 @@ func (r *refState) readShape() (*refShape, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.shape = &refShape{cyclic: a.cyclic, plain: root.plain}
+		r.shape = &refShape{cyclic: a.cyclic, plain: root.plain, far: farthest(root)}
 	}
 	return r.shape, nil
 }
@@ -242,10 +245,11 @@ type shapeReader struct {
 // shapeNode is a schema, with an edge to each schema the compiler compiles from it.
 type shapeNode struct {
 	edges      []shapeEdge
-	index, low int // Tarjan's numbering, from 1
-	comp       int // its component, from 1, once that is closed
-	plain      int // refShape.plain of the document from this schema down
-	walk       int // walked's result plus 1; negative while it is being computed
+	index, low int  // Tarjan's numbering, from 1
+	comp       int  // its component, from 1, once that is closed
+	plain      int  // refShape.plain of the document from this schema down
+	walk       int  // walked's result plus 1; negative while it is being computed
+	reached    bool // farthest has come to it
 }
 
 type shapeEdge struct {
@@ -336,6 +340,34 @@ func (a *shapeReader) walked(v *shapeNode) int {
 	}
 	v.walk = deep + 1
 	return deep
+}
+
+// farthest is refShape.far for the document whose root schema is root: the last level a search by levels comes to, a
+// reference's target and a union's alternatives being of the level they are met at.
+func farthest(root *shapeNode) int {
+	far := 0
+	level := []*shapeNode{root}
+	for depth := 0; len(level) > 0; depth++ {
+		var deeper []*shapeNode
+		for i := 0; i < len(level); i++ { // level grows while it is read
+			v := level[i]
+			if v.reached {
+				continue
+			}
+			v.reached, far = true, depth
+			for _, e := range v.edges {
+				switch {
+				case e.to.reached:
+				case e.nested:
+					deeper = append(deeper, e.to)
+				default:
+					level = append(level, e.to)
+				}
+			}
+		}
+		level = deeper
+	}
+	return far
 }
 
 // refKid is a schema the compiler compiles from another one.

@@ -32,7 +32,7 @@ import (
 //	array           ONE example element in brackets (the element's own template), so a list of line items shows what
 //	                one line item looks like. An array of strings is [""].
 //	$ref            the referenced schema's template. A reference back into a schema that is being written out
-//	                (a recursive definition) is {}, or [] when that schema is an array.
+//	                (a recursive definition) is {}, or [] when that schema is being written out as an array.
 //	anyOf, oneOf    the first alternative that is not null, as a `type` list is its first entry that is not "null"
 //
 // Output is indented four spaces, as the card's example is. A key that spells a keyword ("type", "properties",
@@ -60,7 +60,7 @@ func TemplateFromSchema(schema []byte) (string, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
-	t := &templater{root: doc, open: map[*orderedObj]bool{}}
+	t := &templater{root: doc, open: map[*orderedObj]*orderedObj{}}
 	n, err := t.node(doc, 0)
 	if err != nil {
 		return "", err
@@ -73,10 +73,11 @@ func TemplateFromSchema(schema []byte) (string, error) {
 const maxTemplateValues = 1 << 16
 
 // templater renders one schema document: root is what a `$ref` is read from, open the schemas being written out,
-// and values the count against maxTemplateValues.
+// and values the count against maxTemplateValues. An open schema is kept with the schema written in its place: itself,
+// or the one its reference or its union stands for.
 type templater struct {
 	root   any
-	open   map[*orderedObj]bool
+	open   map[*orderedObj]*orderedObj
 	values int
 }
 
@@ -166,14 +167,23 @@ func (t *templater) node(v any, depth int) (*tmplNode, error) {
 	if !ok {
 		return nil, fmt.Errorf("constrain: a schema node must be an object, got %T", v)
 	}
-	t.open[s] = true
-	defer delete(t.open, s)
+	// A schema a reference entered can be met again as its enclosing schema's own child: it stays open, with the entry
+	// it had, when this writing of it is done.
+	outer := t.open[s]
+	t.open[s] = s
+	defer func() {
+		if outer != nil {
+			t.open[s] = outer
+		} else {
+			delete(t.open, s)
+		}
+	}()
 	if ref, has := s.vals["$ref"]; has {
-		return t.ref(ref, depth)
+		return t.ref(s, ref, depth)
 	}
 	for _, key := range []string{"anyOf", "oneOf"} {
 		if alts, ok := s.vals[key].([]any); ok && len(alts) > 0 {
-			return t.firstNotNull(alts, depth)
+			return t.firstNotNull(s, alts, depth)
 		}
 	}
 	if c, has := s.vals["const"]; has {
@@ -221,8 +231,8 @@ func (t *templater) node(v any, depth int) (*tmplNode, error) {
 	return &tmplNode{kind: 'l', lit: `""`}, nil
 }
 
-// ref renders the schema a local `$ref` names, in the reference's place.
-func (t *templater) ref(raw any, depth int) (*tmplNode, error) {
+// ref renders the schema that the `$ref` of the schema from names, in the reference's place.
+func (t *templater) ref(from *orderedObj, raw any, depth int) (*tmplNode, error) {
 	ref, ok := raw.(string)
 	if !ok {
 		return nil, fmt.Errorf("constrain: $ref must be a string")
@@ -239,19 +249,35 @@ func (t *templater) ref(raw any, depth int) (*tmplNode, error) {
 		}
 		target = next
 	}
-	if s, ok := target.(*orderedObj); ok && t.open[s] {
-		if schemaType(s) == "array" {
-			return &tmplNode{kind: 'l', lit: "[]"}, nil
+	if s, ok := target.(*orderedObj); ok {
+		if t.open[s] != nil {
+			if schemaType(t.writtenAs(s)) == "array" {
+				return &tmplNode{kind: 'l', lit: "[]"}, nil
+			}
+			return &tmplNode{kind: 'o'}, nil
 		}
-		return &tmplNode{kind: 'o'}, nil
+		t.open[from] = s
 	}
 	return t.node(target, depth)
 }
 
-// firstNotNull renders a union as its first alternative whose template is not null; null when every one is.
-func (t *templater) firstNotNull(alts []any, depth int) (*tmplNode, error) {
+// writtenAs is the schema being written out in the place of the open schema s: s, or the one that the references and
+// unions from s lead to.
+func (t *templater) writtenAs(s *orderedObj) *orderedObj {
+	for next := t.open[s]; next != nil && next != s; next = t.open[s] {
+		s = next
+	}
+	return s
+}
+
+// firstNotNull renders the union of the schema from as its first alternative whose template is not null; null when
+// every one is.
+func (t *templater) firstNotNull(from *orderedObj, alts []any, depth int) (*tmplNode, error) {
 	var n *tmplNode
 	for _, alt := range alts {
+		if s, ok := alt.(*orderedObj); ok {
+			t.open[from] = s
+		}
 		var err error
 		if n, err = t.node(alt, depth); err != nil || n.kind != 'l' || n.lit != "null" {
 			return n, err
