@@ -49,7 +49,7 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	if array {
 		depth = 2
 	}
-	args, _ := compiler{lenient: true}.compile(mustMap(string(paramSchema)), depth)
+	args, _ := compileDocument(mustMap(string(paramSchema)), true, depth)
 	if args.kind == kAny {
 		args = anyObjNode // a call's arguments are an object, whatever the schema could not say
 	}

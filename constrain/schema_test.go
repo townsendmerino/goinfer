@@ -334,7 +334,18 @@ func TestSchema_rejectsInvalid(t *testing.T) {
 
 // --- independent oracle: validate a parsed value against a schema doc ---
 
-func conforms(schema map[string]any, val any) error {
+// conforms validates val against a schema document. conformsAt validates against one schema of it; root is the
+// document, which a `$ref` is resolved in.
+func conforms(schema map[string]any, val any) error { return conformsAt(schema, schema, val) }
+
+func conformsAt(root, schema map[string]any, val any) error {
+	if ref, ok := schema["$ref"].(string); ok {
+		target, err := oracleResolve(root, ref)
+		if err != nil {
+			return err
+		}
+		return conformsAt(root, target, val)
+	}
 	if c, ok := schema["const"]; ok {
 		return eqJSON(c, val)
 	}
@@ -367,7 +378,7 @@ func conforms(schema map[string]any, val any) error {
 		}
 		for k, sub := range props {
 			if v, present := m[k]; present {
-				if err := conforms(sub.(map[string]any), v); err != nil {
+				if err := conformsAt(root, sub.(map[string]any), v); err != nil {
 					return fmt.Errorf("property %q: %w", k, err)
 				}
 			}
@@ -385,7 +396,7 @@ func conforms(schema map[string]any, val any) error {
 		}
 		items, _ := schema["items"].(map[string]any)
 		for i, e := range a {
-			if err := conforms(items, e); err != nil {
+			if err := conformsAt(root, items, e); err != nil {
 				return fmt.Errorf("item %d: %w", i, err)
 			}
 		}

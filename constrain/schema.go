@@ -21,6 +21,7 @@ import (
 //   - enum, const
 //   - minimum, for the value 0 only (no leading '-')
 //   - array: items (one schema), minItems, maxItems
+//   - $defs / definitions with a local $ref, recursive ones included (schema_ref.go)
 //   - arbitrary nesting of the above
 //
 // Unsupported keywords are a compile error rather than a silent no-op, so a
@@ -37,6 +38,7 @@ const (
 	kNumber // integer is kNumber with intOnly
 	kEnum   // enum / const / boolean / null: match one of a fixed literal set
 	kAny    // any JSON value: the lenient tool-argument compile's node for a schema it cannot enforce
+	kNever  // no value: a reference cycle cut at maxSchemaDepth. Compile-time only, never part of a grammar
 )
 
 // node is a compiled schema node (immutable after compile; shared across frames).
@@ -76,19 +78,29 @@ var (
 	anyLitNode = &node{kind: kEnum, enum: [][]byte{[]byte("true"), []byte("false"), []byte("null")}}
 )
 
+// neverNode is what a schema compiles to when no value fits it within maxSchemaDepth (compiler.overDepth). Whatever
+// holds it drops it: an optional property is left out, an array takes no items, and a required property or a required
+// item makes its parent neverNode in turn.
+var neverNode = &node{kind: kNever}
+
 // compiler compiles a schema strictly (JSONSchema: an unsupported keyword or shape is an error) or leniently (a tool's
 // parameters: what the grammar cannot enforce is left to the tool). Lenient compiling never fails, and differs from strict
 // only where strict would fail:
 //   - an assertion the grammar does not check (maximum, pattern, minLength, ...) is not enforced;
-//   - a value with no type, an unknown or multi-valued type, or a composite keyword (anyOf, $ref, ...) is any JSON value;
+//   - a value with no type, an unknown or multi-valued type, or a composite keyword (anyOf, allOf, ...) is any JSON value;
 //   - an object with no declared properties, or one past the grammar's limits, is any object;
 //   - an object that allows undeclared keys is held to its declared ones.
-type compiler struct{ lenient bool }
+//
+// A `$ref` is held to its target in both modes; one the compiler cannot follow is a strict failure like any other.
+type compiler struct {
+	lenient bool
+	refs    *refState // the document's local references (schema_ref.go)
+}
 
 // compositeKeywords change a value's shape in ways the grammar does not model; lenient compiling makes such a value any
 // JSON value rather than ignoring the keyword.
 var compositeKeywords = map[string]bool{
-	"anyOf": true, "oneOf": true, "allOf": true, "not": true, "$ref": true, "$dynamicRef": true, "if": true, "then": true,
+	"anyOf": true, "oneOf": true, "allOf": true, "not": true, "$dynamicRef": true, "if": true, "then": true,
 	"else": true, "patternProperties": true, "prefixItems": true, "dependentSchemas": true, "propertyNames": true,
 	"contains": true, "unevaluatedProperties": true, "unevaluatedItems": true, "additionalItems": true,
 }
@@ -118,7 +130,7 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
-	n, err := compile(doc, 0)
+	n, err := compileDocument(doc, false, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -127,32 +139,55 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	return g, nil
 }
 
+// compileDocument compiles a whole schema document, the root its local references are read from, with the document
+// itself at nesting level depth. A lenient compile never fails: a document it cannot compile is any JSON value.
+func compileDocument(doc map[string]any, lenient bool, depth int) (*node, error) {
+	c := compiler{lenient: lenient, refs: newRefState(doc)}
+	n, err := c.compile(doc, depth)
+	if err == nil {
+		err = c.refs.err()
+	}
+	if err == nil && n == neverNode {
+		err = fmt.Errorf("constrain: no document fits the schema within %d levels of nesting: a $ref cycle runs through required values", maxSchemaDepth)
+	}
+	if err != nil {
+		if lenient {
+			return anyNode, nil
+		}
+		return nil, err
+	}
+	return n, nil
+}
+
 // maxSchemaDepth caps object/array nesting. Unbounded depth would let a several-MB
 // `response_format` body drive one mask step's frame-stack copy to O(vocab × depth). 64 is
 // generous against any schema a human writes (the package's own >64 properties/enum-entries
 // caps are the same order of magnitude) and small against that attack shape.
 const maxSchemaDepth = 64
 
-// schemaKeywords are the keywords compile enforces plus the annotation-only keywords it may
-// safely ignore. Any other keyword is an assertion this package does NOT enforce (pattern,
-// maxLength, oneOf, $ref, uniqueItems, …): the package contract is that it is a compile error,
-// not a silent no-op, so a caller cannot believe a constraint is in force that isn't. `format`
-// is enforced on a string for the formats stringFormats names; any other value is an annotation,
-// as JSON Schema 2020-12 defines it, and is allowed and ignored.
+// schemaKeywords are the keywords compile enforces. With annotationKeywords they are every keyword a schema may
+// carry: any other is an assertion this package does NOT enforce (pattern, maxLength, oneOf, uniqueItems, …), and the
+// package contract is that it is a compile error, not a silent no-op, so a caller cannot believe a constraint is in
+// force that isn't. `format` is enforced on a string for the formats stringFormats names; any other value is an
+// annotation, as JSON Schema 2020-12 defines it, and is allowed and ignored.
 var schemaKeywords = map[string]bool{
-	// enforced
 	"type": true, "enum": true, "const": true,
 	"properties": true, "required": true, "additionalProperties": true, "items": true,
-	"minItems": true, "maxItems": true, "minimum": true, "format": true,
-	// annotation-only — allowed, not enforced
+	"minItems": true, "maxItems": true, "minimum": true, "format": true, "$ref": true,
+}
+
+// annotationKeywords assert nothing about a value: they are allowed and ignored, beside a `$ref` too. `$defs` and
+// `definitions` hold schemas that only a `$ref` reaches, so what they hold is compiled where it is referenced.
+var annotationKeywords = map[string]bool{
 	"title": true, "description": true, "default": true, "examples": true,
 	"$schema": true, "$id": true, "$comment": true,
 	"deprecated": true, "readOnly": true, "writeOnly": true,
+	"$defs": true, "definitions": true,
 }
 
 func checkSchemaKeys(s map[string]any) error {
 	for k := range s {
-		if !schemaKeywords[k] {
+		if !schemaKeywords[k] && !annotationKeywords[k] {
 			return fmt.Errorf("constrain: unsupported schema keyword %q — it would be silently ignored, so the constraint the caller expects is not enforced; remove it or use a supported keyword", k)
 		}
 	}
@@ -162,8 +197,6 @@ func checkSchemaKeys(s map[string]any) error {
 // compile turns one JSON Schema object into a node. depth is the nesting level this call
 // compiles AT (0 for the top-level object), threaded through compileObject and compileArray so
 // every object property and array items schema counts, not just object-under-object nesting.
-func compile(s map[string]any, depth int) (*node, error) { return compiler{}.compile(s, depth) }
-
 func (c compiler) compile(s map[string]any, depth int) (*node, error) {
 	n, err := c.compileStrict(s, depth)
 	if err != nil && c.lenient {
@@ -174,7 +207,10 @@ func (c compiler) compile(s map[string]any, depth int) (*node, error) {
 
 func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 	if depth > maxSchemaDepth {
-		return nil, fmt.Errorf("constrain: schema nesting exceeds %d levels", maxSchemaDepth)
+		return c.overDepth()
+	}
+	if err := c.refs.enter(s); err != nil {
+		return nil, err
 	}
 	if c.lenient {
 		for k := range s {
@@ -184,6 +220,9 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 		}
 	} else if err := checkSchemaKeys(s); err != nil {
 		return nil, err
+	}
+	if _, ok := s["$ref"]; ok {
+		return c.compileRef(s, depth)
 	}
 	// enum / const first — they pin a fixed set of literals regardless of type.
 	if c, ok := s["const"]; ok {
@@ -323,7 +362,7 @@ func (c compiler) compileObject(s map[string]any, depth int) (*node, error) {
 		}
 	}
 	n := &node{kind: kObject}
-	for i, name := range names {
+	for _, name := range names {
 		ps, ok := propsRaw[name].(map[string]any)
 		if !ok && !c.lenient {
 			return nil, fmt.Errorf("constrain: property %q is not a schema object", name)
@@ -332,10 +371,16 @@ func (c compiler) compileObject(s map[string]any, depth int) (*node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("constrain: property %q: %w", name, err)
 		}
-		n.props = append(n.props, propNode{name: name, schema: child})
-		if req[name] {
-			n.requiredMask |= 1 << uint(i)
+		if child == neverNode {
+			if req[name] {
+				return neverNode, nil
+			}
+			continue
 		}
+		if req[name] {
+			n.requiredMask |= 1 << uint(len(n.props))
+		}
+		n.props = append(n.props, propNode{name: name, schema: child})
 	}
 	return n, nil
 }
@@ -368,6 +413,12 @@ func (c compiler) compileArray(s map[string]any, depth int) (*node, error) {
 			return nil, fmt.Errorf("constrain: maxItems %d < minItems %d (unsatisfiable)", v, n.minItems)
 		}
 		n.maxItems = v
+	}
+	if items == neverNode {
+		if n.minItems > 0 {
+			return neverNode, nil
+		}
+		n.items, n.maxItems = anyNode, 0
 	}
 	return n, nil
 }

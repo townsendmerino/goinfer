@@ -15,7 +15,8 @@ func TestSchema_M27_hardening(t *testing.T) {
 		`{"type":"string","minLength":2}`,
 		`{"type":"string","maxLength":8}`,
 		`{"oneOf":[{"type":"string"}]}`,
-		`{"$ref":"#/$defs/x"}`,
+		`{"$ref":"https://example.com/x.json"}`,
+		`{"$dynamicRef":"#x"}`,
 		`{"type":"array","items":{"type":"integer"},"uniqueItems":true}`,
 	} {
 		if _, err := JSONSchema([]byte(s)); err == nil {
