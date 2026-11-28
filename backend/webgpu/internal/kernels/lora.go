@@ -5,6 +5,8 @@ package kernels
 import (
 	"fmt"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
@@ -28,70 +30,6 @@ type loraPipes struct {
 	loraUpLayout     *wgpu.BindGroupLayout
 }
 
-const loraDeltaDownWGSL = `
-struct PDown { k: u32, r: u32, _p0: u32, _p1: u32 };
-@group(0) @binding(0) var<storage, read>       aq: array<vec4<u32>>;   // [kp/16] int8 act (kp >= k)
-@group(0) @binding(1) var<storage, read>       ascale: array<f32>;     // [1]
-@group(0) @binding(2) var<storage, read>       amat: array<f32>;       // [r, k] row-major
-@group(0) @binding(3) var<storage, read_write> tout: array<f32>;       // [r]
-@group(0) @binding(4) var<uniform>             p: PDown;
-
-fn get_aq_i8(k: u32) -> i32 {
-    let v = aq[k >> 4u];
-    var word: u32;
-    let wi = (k >> 2u) & 3u;
-    if (wi == 0u) { word = v.x; } else if (wi == 1u) { word = v.y; } else if (wi == 2u) { word = v.z; } else { word = v.w; }
-    let shifted = word << (24u - (k & 3u) * 8u);
-    return i32(shifted) >> 24u;
-}
-
-var<workgroup> red: array<f32, 64>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
-    let t = lid.x;
-    let sc = ascale[0];
-    for (var r: u32 = 0u; r < p.r; r = r + 1u) {
-        let base = r * p.k;
-        var part: f32 = 0.0;
-        for (var k: u32 = t; k < p.k; k = k + 64u) {
-            part = part + amat[base + k] * (f32(get_aq_i8(k)) * sc);
-        }
-        red[t] = part;
-        workgroupBarrier();
-        var stride: u32 = 32u;
-        loop {
-            if (stride == 0u) { break; }
-            if (t < stride) { red[t] = red[t] + red[t + stride]; }
-            workgroupBarrier();
-            stride = stride / 2u;
-        }
-        if (t == 0u) { tout[r] = red[0]; }
-        workgroupBarrier();
-    }
-}
-`
-
-const loraDeltaUpWGSL = `
-struct PUp { r: u32, outn: u32, scale: f32, _pad: u32 };
-@group(0) @binding(0) var<storage, read>       bmat: array<f32>;  // [outn, r] row-major
-@group(0) @binding(1) var<storage, read>       tin:  array<f32>;  // [r]
-@group(0) @binding(2) var<storage, read_write> dst:  array<f32>;  // [outn], accumulated into
-@group(0) @binding(3) var<uniform>             p:    PUp;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let row = gid.x;
-    if (row >= p.outn) { return; }
-    let base = row * p.r;
-    var acc: f32 = 0.0;
-    for (var r: u32 = 0u; r < p.r; r = r + 1u) {
-        acc = acc + bmat[base + r] * tin[r];
-    }
-    dst[row] = dst[row] + p.scale * acc;
-}
-`
-
 func (c *Context) ensureLora() error {
 	if c.loraDownPipeline != nil {
 		return nil
@@ -114,11 +52,11 @@ func (c *Context) ensureLora() error {
 		}
 		return sh, pl, nil
 	}
-	dsh, dpl, err := mk("loraDeltaDown", loraDeltaDownWGSL)
+	dsh, dpl, err := mk("loraDeltaDown", wgsl.LoraDeltaDownWGSL)
 	if err != nil {
 		return err
 	}
-	ush, upl, err := mk("loraDeltaUp", loraDeltaUpWGSL)
+	ush, upl, err := mk("loraDeltaUp", wgsl.LoraDeltaUpWGSL)
 	if err != nil {
 		dsh.Release()
 		dpl.Release()

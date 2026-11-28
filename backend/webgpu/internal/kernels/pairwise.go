@@ -2,7 +2,10 @@
 
 package kernels
 
-import "github.com/oliverbestmann/webgpu/wgpu"
+import (
+	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/wgsl"
+)
 
 // GPT-J pairwise RoPE (decoder.FeatPairwiseRoPE: Cohere, Cohere2, GLM-OCR's text decoder) rotates the adjacent pair
 // (2d, 2d+1) of each head by pos·invFreq[d], where the NeoX kernels rotate (d, half+d). The twins below are the decode
@@ -100,11 +103,11 @@ func (c *Context) ensurePairwise() error {
 		label, src string
 		edits      []srcEdit
 	}{
-		{&p.rope, "rope-pairwise", ropeShaderWGSL, pairwiseIndexEdits(2)},
-		{&p.ropeStore, "rope-store-pairwise", ropeStoreShaderWGSL, pairwiseIndexEdits(2)},
-		{&p.qkvFin, "qkvFinalize-pairwise", qkvFinalizeShaderWGSL, pairwiseIndexEdits(4)},
-		{&p.ropeStoreF16, "rope-store-f16-pairwise", ropeStoreF16ShaderWGSL, []srcEdit{{neoxF16ElemRot, pairwiseElemRot, 1}}},
-		{&p.ropeStoreI8, "rope-store-i8-pairwise", ropeStoreI8ShaderWGSL, []srcEdit{{neoxI8ElemRot, pairwiseI8ElemRot, 1}}},
+		{&p.rope, "rope-pairwise", wgsl.RopeShaderWGSL, pairwiseIndexEdits(2)},
+		{&p.ropeStore, "rope-store-pairwise", wgsl.RopeStoreShaderWGSL, pairwiseIndexEdits(2)},
+		{&p.qkvFin, "qkvFinalize-pairwise", wgsl.QkvFinalizeShaderWGSL, pairwiseIndexEdits(4)},
+		{&p.ropeStoreF16, "rope-store-f16-pairwise", wgsl.RopeStoreF16ShaderWGSL, []srcEdit{{neoxF16ElemRot, pairwiseElemRot, 1}}},
+		{&p.ropeStoreI8, "rope-store-i8-pairwise", wgsl.RopeStoreI8ShaderWGSL, []srcEdit{{neoxI8ElemRot, pairwiseI8ElemRot, 1}}},
 	} {
 		code, err := editSource(k.label, k.src, k.edits)
 		if err != nil {
