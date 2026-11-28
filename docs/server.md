@@ -194,6 +194,12 @@ the web UI finishes loading, the serving watch takes a new baseline, so swap tha
 not count against serving. `GOINFER_SWAP_GUARD`
 sets the threshold in MB or `off` (`docs/env-vars.md`); `goinfer-chat` has the load-time half only.
 
+**`GET /health` says whether the server is taking work.** Its `status` is `ok` while the generation routes accept
+requests and `halted` while they answer 503 `{"error":"halted",…}`: after an admin halt, which `halted`, `halt_reason`
+and `halt_at` describe, or while the swap guard is tripped, which `swap_guard_tripped` reports. `/health` itself answers
+200 in every state, so a probe reads `status`, not the status code. `GET /admin/status` carries `halted` and
+`swap_guard_tripped` too.
+
 On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for
 `role: "system"`**. OpenAI's newer APIs send the system prompt under that role for
 reasoning-class models, and agent harnesses have followed. **Several system messages are all
