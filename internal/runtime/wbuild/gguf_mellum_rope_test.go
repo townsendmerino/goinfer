@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import "testing"
 
@@ -7,8 +7,8 @@ import "testing"
 // rotary pairs: the model still emits finite, code-shaped text, so only a check on the permutation itself catches it.
 func TestGGUFQKPermuted_mellumIsNEOX(t *testing.T) {
 	for arch, want := range map[string]bool{"llama": true, "granite": true, "mellum": false, "qwen3": false} {
-		if got := ggufQKPermuted(arch); got != want {
-			t.Errorf("ggufQKPermuted(%q) = %v, want %v", arch, got, want)
+		if got := GGUFQKPermuted(arch); got != want {
+			t.Errorf("GGUFQKPermuted(%q) = %v, want %v", arch, got, want)
 		}
 	}
 }

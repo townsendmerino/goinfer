@@ -57,10 +57,6 @@ func streamLayers(w *darch.Weights, arch *darch.Architecture, sink *giwWriter, l
 	return wbuild.StreamLayers(w, arch, &sink.StreamWriter, load)
 }
 
-func parallelLayers(n int, abort <-chan struct{}, fn func(i int) error) error {
-	return wbuild.ParallelLayers(n, abort, fn)
-}
-
 func wantsRow4Fallback(backendName string) bool { return wbuild.WantsRow4Fallback(backendName) }
 
 func isBatchedProjTensor(name string) bool { return wbuild.IsBatchedProjTensor(name) }
@@ -106,16 +102,6 @@ func fakeQuantInt4(scheme string, w []float32, rows, cols, group int) []float32 
 	return wbuild.FakeQuantInt4(scheme, w, rows, cols, group)
 }
 
-func reorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
-	return wbuild.ReorderVHeads(src, lead, outer, inner, hd, trail)
-}
-
-func untileVHeads(src []float32, lead, numKHeads, numVPerK, hd, trail int) []float32 {
-	return wbuild.UntileVHeads(src, lead, numKHeads, numVPerK, hd, trail)
-}
-
-func ggufQKPermuted(archName string) bool { return wbuild.GGUFQKPermuted(archName) }
-
 func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*darch.Weights, error) {
 	var sw *wbuild.StreamWriter
 	if sink != nil {
@@ -125,7 +111,3 @@ func buildWeightsFromGGUF(cfg *Config, arch *darch.Architecture, g *embed.GGUFFi
 }
 
 func tensorName(layer int, suffix string) string { return wbuild.TensorName(layer, suffix) }
-
-func ggufInvPermute(w []float32, out, in, nHead int) []float32 {
-	return wbuild.GGUFInvPermute(w, out, in, nHead)
-}

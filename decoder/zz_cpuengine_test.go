@@ -172,19 +172,12 @@ func gemma4MoEFFN(be Backend, arch *darch.Architecture, h []float32, w *archpart
 	return cpuengine.Gemma4MoEFFN(be, arch, h, w, ep)
 }
 
-func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64, nGroup, topkGroup int) ([]int, []float32) {
-	return cpuengine.RouteExperts(logits, bias, k, sigmoid, norm, scale, nGroup, topkGroup)
-}
-
 func swiglu(gate, up []float32)               { cpuengine.Swiglu(gate, up) }
 func softmaxF32(x []float32) []float32        { return cpuengine.SoftmaxF32(x) }
 func addScaled(dst, src []float32, s float32) { cpuengine.AddScaled(dst, src, s) }
 func addResidual(h, sub []float32)            { cpuengine.AddResidual(h, sub) }
 func addResidual2(h, sub, sub2 []float32)     { cpuengine.AddResidual2(h, sub, sub2) }
 func addBias(x, b []float32)                  { cpuengine.AddBias(x, b) }
-func addDeepstack(h []float32, ds *deepstackRows, l, startPos, K, hidden int) {
-	cpuengine.AddDeepstack(h, ds, l, startPos, K, hidden)
-}
 func applyNorm(p normParams, dst, src, w, b []float32, dim int) {
 	cpuengine.ApplyNorm(p, dst, src, w, b, dim)
 }
@@ -234,18 +227,13 @@ func kdaLowerBoundGate(rawGate, dtBias []float32, aLog, lowerBound float32) []fl
 func kdaRecurrentStep(q, k, v, decay []float32, beta float32, S []float32) []float32 {
 	return cpuengine.KDARecurrentStep(q, k, v, decay, beta, S)
 }
-func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
-	cpuengine.DequantHeads(q, scales, nKV, headDim, dst)
-}
 func dequantKVRows(dstK, dstV []float32, kq, vq []int8, ksc, vsc []float32, rows, cols int) {
 	cpuengine.DequantKVRows(dstK, dstV, kq, vq, ksc, vsc, rows, cols)
 }
-func topK(scores []float32, k int) ([]int, []float32)   { return cpuengine.TopK(scores, k) }
-func softcapParallel(logits []float32, softcap float32) { cpuengine.SoftcapParallel(logits, softcap) }
-func costStart(cache *KVCache) time.Time                { return cpuengine.CostStart(unwrapCache(cache)) }
-func routerCaptureReset()                               { cpuengine.RouterCaptureReset() }
-func routerCaptureDo(fn func())                         { cpuengine.RouterCaptureDo(fn) }
-func cpuBatchCacheEligible(c *KVCache) error            { return cpuengine.CPUBatchCacheEligible(unwrapCache(c)) }
+func costStart(cache *KVCache) time.Time     { return cpuengine.CostStart(unwrapCache(cache)) }
+func routerCaptureReset()                    { cpuengine.RouterCaptureReset() }
+func routerCaptureDo(fn func())              { cpuengine.RouterCaptureDo(fn) }
+func cpuBatchCacheEligible(c *KVCache) error { return cpuengine.CPUBatchCacheEligible(unwrapCache(c)) }
 
 func gatedDeltaNetStep(be Backend, h []float32, w *archparts.DeltaNetWeights, p archparts.Qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
 	syncCPUHooks()

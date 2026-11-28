@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import (
 	"reflect"
@@ -9,13 +9,13 @@ import (
 // The inverse V-head reorder must be bit-clean. llama.cpp's converter tiles HF's grouped-by-K V heads when num_v_heads
 // > num_k_heads; the GGUF loader must undo it exactly or it silently corrupts every linear-attn layer. This replicates
 // the converter's FORWARD with an INDEPENDENT permutation-index reference (gather, not the production copy loop), then
-// requires untileVHeads to recover the original bit-for-bit across every tensor block geometry the loader will touch,
+// requires UntileVHeads to recover the original bit-for-bit across every tensor block geometry the loader will touch,
 // with the real ratio num_k=16, num_v=32 (num_v_per_k=2), head_dim=128. No download needed.
 
 // fwdReorderRef is an independent reference for the converter's forward
 // (HF grouped → GGUF tiled): it builds the permutation index the way llama.cpp's
 // reorder_rows does (row_perm = _reorder_v_heads(arange) ; index_select) and
-// gathers, rather than reusing the production reorderVHeads copy loop.
+// gathers, rather than reusing the production ReorderVHeads copy loop.
 func fwdReorderRef(src []float32, lead, numK, numVPerK, hd, trail int) []float32 {
 	mid := numK * numVPerK * hd
 	// perm[destRow] = srcRow, matching grouped[k,v]→tiled[v,k].
@@ -59,12 +59,12 @@ func TestVReorder_tinyHandComputed(t *testing.T) {
 		t.Fatalf("forward ref tiled = %v, want %v", gotTiled, wantTiled)
 	}
 	// production helper must produce the same forward...
-	if got := reorderVHeads(grouped, 1, 2, 2, 1, 1); !reflect.DeepEqual(got, wantTiled) {
-		t.Fatalf("reorderVHeads forward = %v, want %v", got, wantTiled)
+	if got := ReorderVHeads(grouped, 1, 2, 2, 1, 1); !reflect.DeepEqual(got, wantTiled) {
+		t.Fatalf("ReorderVHeads forward = %v, want %v", got, wantTiled)
 	}
 	// ...and untile must invert it.
-	if got := untileVHeads(wantTiled, 1, 2, 2, 1, 1); !reflect.DeepEqual(got, grouped) {
-		t.Fatalf("untileVHeads = %v, want %v", got, grouped)
+	if got := UntileVHeads(wantTiled, 1, 2, 2, 1, 1); !reflect.DeepEqual(got, grouped) {
+		t.Fatalf("UntileVHeads = %v, want %v", got, grouped)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestVReorder_roundTripAllBlocks(t *testing.T) {
 
 			// Production inverse on the V block must recover the original exactly.
 			got := slices.Clone(tiled)
-			inv := untileVHeads(got[c.off:c.off+c.blk], c.lead, numK, vpk, c.hd, c.trail)
+			inv := UntileVHeads(got[c.off:c.off+c.blk], c.lead, numK, vpk, c.hd, c.trail)
 			copy(got[c.off:c.off+c.blk], inv)
 
 			if !reflect.DeepEqual(got, orig) {

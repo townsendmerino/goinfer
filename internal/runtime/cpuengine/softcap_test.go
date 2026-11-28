@@ -1,4 +1,4 @@
-package decoder
+package cpuengine
 
 import (
 	"math"
@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// softcapSerial is the pre-parallel reference: the exact expression logitsFromHidden used
-// before softcapParallel existed.
+// softcapSerial is the pre-parallel reference: the exact expression LogitsFromHidden used
+// before SoftcapParallel existed.
 func softcapSerial(logits []float32, sc float32) {
 	for j, v := range logits {
 		logits[j] = sc * float32(math.Tanh(float64(v/sc)))
@@ -31,7 +31,7 @@ func TestSoftcapParallel_bitIdentical(t *testing.T) {
 			want := slices.Clone(a)
 			got := slices.Clone(a)
 			softcapSerial(want, sc)
-			softcapParallel(got, sc)
+			SoftcapParallel(got, sc)
 			for i := range want {
 				if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
 					t.Fatalf("n=%d sc=%g idx=%d: parallel=%v (0x%x) != serial=%v (0x%x)",
@@ -53,7 +53,7 @@ func benchSoftcap(b *testing.B, n int, parallel bool) {
 	for b.Loop() {
 		copy(buf, base)
 		if parallel {
-			softcapParallel(buf, sc)
+			SoftcapParallel(buf, sc)
 		} else {
 			softcapSerial(buf, sc)
 		}

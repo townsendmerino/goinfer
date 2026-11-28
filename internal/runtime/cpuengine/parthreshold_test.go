@@ -1,4 +1,4 @@
-package decoder
+package cpuengine
 
 import (
 	"math/rand/v2"
@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/wbuild"
 )
 
-// TestInt4ParThreshold_qwen05bShapesFanOut pins int4ParThreshold's effect on qwen2.5 0.5B's decode projections: aikit runs
+// TestInt4ParThreshold_qwen05bShapesFanOut pins Int4ParThreshold's effect on qwen2.5 0.5B's decode projections: aikit runs
 // an M=1 int4 call serial when M*totalN*K < the Workspace threshold, so the q/k/v batch and the o projection must clear
 // it, and the fanned-out batch must equal the serial one bit for bit.
 func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
@@ -21,8 +22,8 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 		{"q/k/v batch", (qN + 2*kvN) * hidden},
 		{"o projection", qN * hidden},
 	} {
-		if sh.macs < int4ParThreshold {
-			t.Errorf("qwen2.5 0.5B %s: %d MACs < int4ParThreshold %d, so it runs on one core", sh.name, sh.macs, int4ParThreshold)
+		if sh.macs < Int4ParThreshold {
+			t.Errorf("qwen2.5 0.5B %s: %d MACs < Int4ParThreshold %d, so it runs on one core", sh.name, sh.macs, Int4ParThreshold)
 		}
 	}
 
@@ -38,7 +39,7 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 			for i := range wf {
 				wf[i] = float32(rng.NormFloat64()) * 0.05
 			}
-			wm := linalg.QuantizeInt4(wf, n, hidden, int4GroupSize)
+			wm := linalg.QuantizeInt4(wf, n, hidden, wbuild.Int4GroupSize)
 			if !wm.IsInt4() {
 				t.Fatal("QuantizeInt4 did not yield an int4 WeightMat")
 			}
@@ -60,7 +61,7 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 		}
 		return res
 	}
-	serial, fanned := run(1<<24), run(int4ParThreshold)
+	serial, fanned := run(1<<24), run(Int4ParThreshold)
 	for i := range serial {
 		for j := range serial[i] {
 			if serial[i][j] != fanned[i][j] {
