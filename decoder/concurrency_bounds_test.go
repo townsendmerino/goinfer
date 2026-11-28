@@ -100,7 +100,10 @@ func TestBatcher_claimExclusiveAndAdaptiveMutualExclusion(t *testing.T) {
 }
 
 func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
-	b := testResidentBatcher(2, 2)
+	const deadline = 3 * time.Second
+	// The straggler window outlasts the deadline, so a run starts only once both tokens are pending and both go through Step.
+	// Inside a short window, a goroutine scheduled late leaves the first token to run alone through Solo, which returns nil.
+	b := residency.NewTestBatcher(2, 2, 2*deadline)
 	b.Step = func([]*batchReq) { panic("boom in StepBatch") }
 	b.EnterDecode()
 	b.EnterDecode()
@@ -119,7 +122,7 @@ func TestBatcher_serveLockedRecoversStepPanic(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(3 * time.Second):
+	case <-time.After(deadline):
 		t.Fatal("serveLocked deadlocked after step panic")
 	}
 	if err1 == nil || !strings.Contains(err1.Error(), "boom in StepBatch") {
