@@ -5,9 +5,14 @@ of dispatch sites, a switch's case labels, every route's guard. Selecting tests 
 it, because the test lives elsewhere, often in another package or module. SCANS lists each one with the paths it reads;
 select() maps a set of changed paths to the tests to run. scripts/test_touched.py fails on a test that reads Go source and is
 in neither SCANS nor EXCLUDED, so a new scanner cannot be missed silently.
+
+SCANS also lists the censuses and gates that read no source but pin, from one package, what another declares (the cache's
+fields, the family registry, a generated table): the package they live in is not the one that changes. problems() names every
+entry the tree has moved away from, and touched.py fails on one, so a moved file cannot leave its scan unselected.
 """
 import fnmatch
 import os
+import re
 import subprocess
 
 SKIP_DIRS = ("testdata/", "node_modules/", ".git/", "apps/site/")
@@ -33,6 +38,14 @@ def CU(*dirs):
     return [("cu", d) for d in dirs]
 
 
+def UNDER(*dirs):
+    """Every non-test .go file under each dir, subdirectories included."""
+    return [("under_nt", d) for d in dirs]
+
+
+WHOLE = "*"  # in place of a test name: the package's whole test run
+
+
 TREE_NT = [("tree_nt", "")]  # every non-test .go file in the repository, outside SKIP_DIRS
 TREE_T = [("tree_t", "")]    # every _test.go file in the repository, outside SKIP_DIRS
 TREE_GO = TREE_NT + TREE_T
@@ -54,12 +67,17 @@ def _matches(kind, arg, path):
     if kind == "cu":
         return d == arg and base.endswith(".cu")
     skipped = any(path.startswith(s) or ("/" + s) in path for s in SKIP_DIRS)
+    if kind == "under_nt":
+        return not skipped and path.startswith(arg + "/") and path.endswith(".go") and not path.endswith("_test.go")
     if kind == "tree_nt":
         return not skipped and path.endswith(".go") and not path.endswith("_test.go")
     if kind == "tree_t":
         return not skipped and path.endswith("_test.go")
     raise ValueError(kind)
 
+
+# decoder and the runtime packages split out of it: where the families, the forward, the cache and their pricing are declared.
+RUNTIME_NT = UNDER("decoder", "internal/runtime")
 
 SCANS = [
     # decoder
@@ -101,11 +119,10 @@ SCANS = [
     Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go", "internal/runtime/sidecar/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go", "internal/runtime/sidecar/sidecar.go")),
-    Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
     Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go", "internal/runtime/wbuild/gguf.go", "internal/runtime/wbuild/gguf_build*.go")),
     Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder", "internal/runtime/wbuild")),
     Scan("decoder", "TestProgram_noFamilyLoopAndEveryFamilyWalks", NT("decoder", "internal/runtime/cpuengine")),
-    Scan("decoder", "TestFP8_shapeCheckDistinguishesTranspose", F("decoder/fp8.go")),
+    Scan("decoder", "TestFP8_shapeCheckDistinguishesTranspose", F("decoder/quant/fp8.go")),
     Scan("decoder", "TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams", NT("decoder")),
     Scan("decoder", "TestBackendBanner_usesTheReport", TREE_NT),
     Scan("decoder", "TestEnvVars_docAndCodeAgree", TREE_GO + F("docs/env-vars.md", "testdata/env_reads.txt")),
@@ -130,7 +147,7 @@ SCANS = [
     # decoder's config tests exercise decoder/config through decoder's wrappers (loadConfig, resolveEOSIDs) and real fixtures, so an
     # edit in decoder/config runs them; touched.py alone would run only decoder/config's own tests (where Config's validator tests live).
     *[Scan("decoder", n, NT("decoder/config")) for n in (
-        "TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation", "TestGGUFLayerCount_boundsTheLagunaPath", "FuzzLoadConfig",
+        "TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation", "FuzzLoadConfig",
         "TestConfigSnapshot_M23", "TestLagunaArchitecture_realConfigs", "TestMellum21_configResolves", "TestNemotronH_attentionHeadDim",
         "TestRecommendedSampling_sources", "TestQwen3ASR_loadedModelDoesNotStopOnIDZero")],
     # The parity key's and the program fingerprints' guards: Config and the program's types, methods and constants are builders or
@@ -144,8 +161,45 @@ SCANS = [
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
     Scan("decoder", "TestParityEmit_methodVocabulary", TREE_T),
-    Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("backend/webgpu/moe.go", "backend/cuda/moe.cu")),
+    Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("backend/webgpu/internal/kernels/moe.go", "backend/cuda/moe.cu")),
     Scan("decoder", "TestResidentMoECap_runtimeDeclineReadsTheDeclaration", F("backend/webgpu/residency.go")),
+    # Censuses and generated tables over the family registry and the cache's declarations. Each compares what the code declares
+    # with a table, a golden or a generated doc and reads no Go source, so the reader check in scripts/test_touched.py does not
+    # find it; decoder is a slow package, so touched.py runs them only from here.
+    *[Scan("decoder", n, RUNTIME_NT + F(*also)) for n, also in (
+        ("TestKVCache_everyFieldHasAState", ()),
+        ("TestKVCache_recurrentKindsResetAndRewindHonestly", ()),
+        ("TestResidentAdmission_registryCovered", ()),
+        ("TestResidentAdmission_matrix", ()),
+        ("TestHardwareMatrix_fresh", ("docs/hardware-matrix.md", "docs/hardware-coverage.json")),
+        ("TestHardwareMatrix_declineReasonsNotHidden", ()),
+        ("TestVerifiedOn_followsTheCensus", ("docs/hardware-coverage.json",)),
+        ("TestKVBytesForCtx_isTheDeclaredRows", ()),
+        ("TestKVBytesForRows_plantedShortRowGoesRed", ()),
+        ("TestWebGPUKV_isTheDeclaredRows", ()),
+        ("TestKVPrecisionMatrix_fresh", ("docs/kv-precision-matrix.md",)),
+        ("TestLoaderIdentity_table", ("testdata/loader_identity.json",)),
+        ("TestCapabilityMatrix", ("docs/capability-matrix.json", "docs/capability-matrix.md", "docs/hardware-coverage.json",
+                                  "pull/capability-matrix.json")),
+        ("TestCapabilityMatrix_checkpointLabels", ()),
+        ("TestCapabilityMatrix_siteDocsAreUsable", ()),
+        ("TestCapabilityMatrix_CoverageComplete", ()),
+        ("TestSupportTable_fresh", ("README.md", "docs/multimodal.md")),
+        ("TestSerializeCensus_noSilentFieldDrop", ()),
+        ("TestGIWCopiedF32_everyFamily", ()),
+        ("TestEmbedInt4_reachesEveryFamilyLoader", ()),
+        ("TestExpertPaging_touchesEveryFamilyThatBuildsAPager", ()),
+    )],
+    # MM7's CPU gate loads every census fixture and holds the plan's KV and state lines to what a forward leaves allocated.
+    *[Scan("internal/guard/memgate", n, RUNTIME_NT + F("testdata/*/config.json", "testdata/sb2_admission_census.*.txt.gz"))
+      for n in ("TestMemGate_cpu", "TestMemGate_cpuPlantsThroughTheTable", "TestMemGate_cpuRingsAcrossTheWindow")],
+    # Every parity-manifest family has an identity asset or a recorded reason for none.
+    Scan("internal/guard/gateidentity", "TestIdentityAssets_coverTheManifest", F("testdata/parity/*.json")),
+    # The README's family count is the generated capability matrix's length.
+    Scan("pull", "TestReadme_familyCountMatchesTheMatrix", F("README.md", "docs/capability-matrix.json")),
+    # The ratchets the lint lane holds every pull request to (function and file length, decoder's ceilings, forwarding shims and
+    # the rest): each parses Go files from disk, in every module, and its allowlist may only shrink.
+    Scan("internal/guard/qualityscan", WHOLE, TREE_GO + F("internal/guard/qualityscan/testdata/*")),
     # internal/app/serveapp
     Scan("internal/app/serveapp", "TestBanner_contextIsTheEnforcedWindow", F("internal/app/serveapp/banner.go", "internal/app/serveapp/model_load.go")),
     Scan("internal/app/serveapp", "TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt", F("internal/app/serveapp/vision_serve.go")),
@@ -245,8 +299,8 @@ SCANS = [
     Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
-    Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/attention.go")),
-    Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
+    Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/internal/kernels/attention.go")),
+    Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/internal/kernels/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go", "backend/webgpu/residency_build.go")),
     # metal module
     Scan("backend/metal", "TestAttnFABlkIsTheGradedKernel", F("backend/metal/kernels/decode_attention_fa_blk.metal")),
@@ -335,17 +389,6 @@ EXCLUDED = {
     "TestIdentity_determinismCatchesANondeterministicDumper": "git clone of the tree",
     "TestIdentityGiw_bytesCommentOnlyChangeIsIdentical": "git clone of the tree",
     "TestIdentityGiw_headerChangeIsDifferentBytesAndIdenticalLogits": "git clone of the tree",
-    # The quality_scan-tagged scans (internal/guard/qualityscan) run nightly by design, never in the day loop.
-    "TestQualityScan_readsEveryModule": "nightly quality scan",
-    "TestQualityScan_testSwitchAssignmentsRatchet": "nightly quality scan",
-    "TestQualityScan_heavyGateReadsRatchet": "nightly quality scan",
-    "TestQualityScan_receiverUnpackingRatchet": "nightly quality scan",
-    "TestQualityScan_functionLengthRatchet": "nightly quality scan",
-    "TestQualityScan_noSameNameForwardingShims": "nightly quality scan",
-    "TestQualityScan_noRunsOfBoolLiteralArguments": "nightly quality scan",
-    "TestQualityScan_committedFixtureLoadsFailNotSkip": "nightly quality scan",
-    "TestQualityScan_userStringsCarryNoTrackerIDs": "nightly quality scan",
-    "TestQualityScan_memorySizesUseTheGiBFormatter": "nightly quality scan",
 }
 
 
@@ -378,8 +421,59 @@ def notes_changes(root):
     return out
 
 
+def _selects_a_file(kind, arg, files, bydir):
+    if kind in ("nt", "t", "cu"):
+        return any(_matches(kind, arg, os.path.join(arg, b)) for b in bydir.get(arg, ()))
+    if kind == "file":
+        head = re.split(r"[*?\[]", arg, maxsplit=1)[0]
+        return any(fnmatch.fnmatch(p, arg) for p in files if p.startswith(head))
+    return any(_matches(kind, arg, p) for p in files)
+
+
+def problems(root):
+    """What in SCANS no longer matches the tree at root, a line each. A scope that selects no file: the file it names was moved,
+    renamed or deleted, so a change at its new home never runs the scan. A test that is not declared in the package it is
+    listed under: go test -run matches nothing there. Files are the tracked and the new ones that exist on disk."""
+    ls = subprocess.run(["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"], capture_output=True, text=True)
+    if ls.returncode != 0:  # an unlisted tree is not a tree with every file gone
+        return [f"cannot list the files at {root}: {ls.stderr.strip()[:200]}"]
+    files = sorted({f for f in ls.stdout.split("\n") if f and os.path.exists(os.path.join(root, f))})
+    bydir = {}
+    for f in files:
+        d, base = os.path.split(f)
+        bydir.setdefault(d, []).append(base)
+    declared = {}
+
+    def tests_of(pkg):
+        if pkg not in declared:
+            names = set()
+            for base in bydir.get(pkg, ()):
+                if base.endswith("_test.go"):
+                    with open(os.path.join(root, pkg, base), encoding="utf-8", errors="replace") as fh:
+                        names |= set(re.findall(r"^func ((?:Test|Fuzz)\w+)\(", fh.read(), re.M))
+            declared[pkg] = names
+        return declared[pkg]
+
+    live = {}  # (kind, arg) -> whether it selects a file: many scans share a scope
+    out = []
+    for s in SCANS:
+        what = f"{s.pkg} {'(whole package)' if s.test == WHOLE else s.test}"
+        if s.test == WHOLE:
+            if not tests_of(s.pkg):
+                out.append(f"{what}: {s.pkg} declares no test")
+        elif s.test not in tests_of(s.pkg):
+            out.append(f"{what}: not declared in {s.pkg} (moved, renamed or deleted)")
+        for scope in s.scopes:
+            if scope not in live:
+                live[scope] = _selects_a_file(*scope, files, bydir)
+            if not live[scope]:
+                out.append(f"{what}: its scope {scope[0]} {scope[1]!r} selects no file (moved, renamed or deleted)")
+    return out
+
+
 def select(changed):
-    """{package dir: sorted test names} for the scan tests that read any of the changed paths."""
+    """{package dir: sorted test names} for the scan tests that read any of the changed paths. WHOLE among a package's names
+    stands for its whole test run."""
     out = {}
     for s in SCANS:
         if any(_matches(k, a, p) for k, a in s.scopes for p in changed):

@@ -1,9 +1,10 @@
 // Package qualityscan holds the scans that keep a code-quality pattern from coming back once it has been fixed, and the
-// ratchets that keep one from growing. They run nightly and by hand, never per push or in the day loop:
+// ratchets that keep one from growing. CI's lint lane runs them on every pull request, the day loop (scripts/touched.py)
+// whenever a Go file changes, and .github/workflows/quality-scans.yml nightly:
 //
 //	go test -tags quality_scan -v ./internal/guard/qualityscan/
 //
-// (.github/workflows/quality-scans.yml). Each scan is a test in a quality_scan-tagged file. A deliberate exception is a line
+// Each scan is a test in a quality_scan-tagged file. A deliberate exception is a line
 // in the scan's allowlist under testdata/, with its reason; a ratchet's line also carries the ceiling the site may not
 // exceed, so the scan fails on growth and only reports shrinkage (the file-length ratchet fails on both).
 package qualityscan

@@ -6,10 +6,13 @@
     python3 scripts/touched.py --wait 600                   # wait up to 600 s for a timed run to release the timing lock
     python3 scripts/touched.py --ignore-timing-lock         # run beside a timed run anyway (emergencies; it contaminates that run)
 
-For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs); per touched package: go test. A package whose
+For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs; the root module whole, under the lint lane's
+tag sets); per touched package: go test. A package whose
 cold test run is over a minute (SLOW) runs only the tests declared in the touched test files and in the test file beside each touched source file (foo.go -> foo_test.go),
-or the -run you name. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
-whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included.
+or the -run you name. A file that was split out of a slow package leaves its test behind: a change to leaf/foo.go also runs slow/foo_test.go, in each slow package
+of the module that imports the leaf. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
+whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included. An entry of that table the tree has moved away from
+(touched_scans.problems) fails the run.
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
 The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
@@ -25,6 +28,8 @@ import timing_lock  # noqa: E402  (a build and test run loads the box, so it mus
 import touched_scans  # noqa: E402
 SLOW = {"decoder", "internal/runtime/sampling", "backend/cuda", "internal/app/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"backend/cuda": "cuda goinfer_testhooks", "backend/webgpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
+PKG_TAGS = {"internal/guard/qualityscan": "quality_scan"}  # a package whose tests CI runs under its own tag, in place of its module's
+VET_WHOLE = {"": ("goinfer_testhooks", "realckpt goinfer_testhooks")}  # a module vetted whole, once per tag set CI's lint lane vets it under
 
 
 def sh(*a, **k):
@@ -145,10 +150,48 @@ def workspace_modules():
     return {"" if r == "." else r for r in rels}
 
 
+def test_names(path):
+    """The Test functions a _test.go file declares (path is repo-relative)."""
+    with open(os.path.join(ROOT, path), encoding="utf-8", errors="replace") as fh:
+        return set(re.findall(r"^func (Test\w+)\(", fh.read(), re.M))
+
+
+def imported_dirs(d):
+    """The repo-relative dirs of this repository's packages that the .go files directly in dir d import."""
+    with open(os.path.join(ROOT, "go.mod")) as fh:
+        root_mod = re.search(r"^module\s+(\S+)", fh.read(), re.M).group(1)
+    out = set()
+    for base in os.listdir(os.path.join(ROOT, d)):
+        if base.endswith(".go"):
+            with open(os.path.join(ROOT, d, base), encoding="utf-8", errors="replace") as fh:
+                head = re.split(r"^func ", fh.read(), maxsplit=1, flags=re.M)[0]  # imports come before the first func
+            out |= set(re.findall(r'"' + re.escape(root_mod) + r'/([^"]+)"', head))
+    return out
+
+
+def left_behind(gofiles):
+    """{slow package: test names} for the tests that stayed in a slow package when the file they test was split out of it: for a
+    changed leaf/foo.go, the tests of slow/foo_test.go, in each slow package of the same module that imports the leaf."""
+    out = {}
+    moved = [f for f in gofiles if not f.endswith("_test.go") and os.path.dirname(f) not in SLOW]
+    for slow in sorted(SLOW):
+        if not moved or not os.path.isdir(os.path.join(ROOT, slow)):
+            continue
+        mine = [f for f in moved if module_of(os.path.dirname(f)) == module_of(slow)
+                and os.path.exists(os.path.join(ROOT, slow, os.path.basename(f)[:-3] + "_test.go"))]
+        if not mine:
+            continue
+        deps = imported_dirs(slow)
+        for f in mine:
+            if os.path.dirname(f) in deps:
+                out.setdefault(slow, set()).update(test_names(os.path.join(slow, os.path.basename(f)[:-3] + "_test.go")))
+    return out
+
+
 def plan(changed, run_for=None):
     """What to test for a set of changed paths: {(module, package dir): -run regex, or None for the whole package}, and the
-    packages skipped with why. A package in SLOW runs the tests beside its touched files; every package also runs the
-    source-scan tests (touched_scans.select) that read any changed path."""
+    packages skipped with why. A package in SLOW runs the tests beside its touched files and the ones a split-out file left
+    behind in it (left_behind); every package also runs the source-scan tests (touched_scans.select) that read any changed path."""
     run_for = run_for or {}
     tests, skipped = {}, []
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(os.path.join(ROOT, f)))
@@ -157,23 +200,24 @@ def plan(changed, run_for=None):
     for f in gofiles + embedfiles:
         bydir.setdefault(os.path.dirname(f), []).append(f)
     scans = touched_scans.select(changed)
-    for d in sorted(set(bydir) | set(scans)):
+    behind = left_behind(gofiles)
+    for d in sorted(set(bydir) | set(scans) | set(behind)):
         name = d or "."
         key = (module_of(d), d)
         if name in run_for:
             tests[key] = run_for[name]
             continue
-        names = set(scans.get(d, []))
-        if d in bydir and name not in SLOW:
+        names = set(scans.get(d, [])) | behind.get(d, set())
+        if (d in bydir or touched_scans.WHOLE in names) and name not in SLOW:
             tests[key] = None  # the whole package already runs every scan test in it
             continue
+        names.discard(touched_scans.WHOLE)  # a slow package never runs whole from here
         for f in bydir.get(d, []):
             if not f.endswith(".go"):
                 continue
             tf = f if f.endswith("_test.go") else f[:-3] + "_test.go"
             if os.path.exists(os.path.join(ROOT, tf)):
-                with open(os.path.join(ROOT, tf)) as fh:
-                    names |= set(re.findall(r"^func (Test\w+)\(", fh.read(), re.M))
+                names |= test_names(tf)
         if names:
             tests[key] = "^(" + "|".join(sorted(names)) + ")$"
         else:
@@ -244,7 +288,12 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
                 bad += not step(f"list {label}/{os.path.normpath(a)}", lambda k=k: (False, k))
             else:
                 live.append(a)
-        if live:
+        if live and mod in VET_WHOLE:
+            # Whole, not the touched packages: a type or a test hook that moved breaks the packages that still use it, and the
+            # files only a tag compiles.
+            for tags in VET_WHOLE[mod]:
+                bad += not step(f"vet {label} (./..., -tags '{tags}')", lambda tags=tags: mrun("go", "vet", "-tags", tags, "./..."))
+        elif live:
             bad += not step(f"vet {label} ({len(live)} pkg)", lambda: mrun("go", "vet", *tagarg, *live))
         if mod == "backend/cuda":
             # The other OS's build of the CUDA backend, module-wide (go vet type-checks _test.go files too; go build does not). Off linux:
@@ -259,7 +308,8 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
         if m != mod:
             continue
         name = d or "."
-        k = kind(classify(mod, [rel(d)], tagarg, env), rel(d))
+        targ = ["-tags", PKG_TAGS[name]] if name in PKG_TAGS else tagarg
+        k = kind(classify(mod, [rel(d)], targ, env), rel(d))
         if k == "empty":
             print(f"  skip test {name}: build constraints exclude all its files for {target_os}")
             skips.append(f"test {name} (no files for {target_os})")
@@ -277,7 +327,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
             skips.append(f"test {name} (cross target {target_os})")
             continue
         runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
-        bad += test_step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)), skips)
+        bad += test_step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *targ, "-count=1", *runarg, rel(d)), skips)
     return bad
 
 
@@ -291,7 +341,8 @@ def run(args, run_for):
     changed |= touched_scans.notes_changes(ROOT)  # the notes checkout's docs, as the docs/ paths the scans read
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(f))
     tests, skipped = plan(changed, run_for)
-    if not gofiles and not tests:
+    stale = touched_scans.problems(ROOT)
+    if not gofiles and not tests and not stale:
         print(verdict("n/a", "no .go file in the diff, and no source-scan test reads a changed file"))
         return 0
     mods = {}
@@ -304,6 +355,8 @@ def run(args, run_for):
     RAN.clear()
     if gofiles and not step("gofmt", lambda: (lambda r: (not r.stdout.strip(), r.stdout))(sh("gofmt", "-l", *gofiles))):
         bad += 1
+    if stale:  # counted only when it fails: a clean table judges nothing about the diff
+        bad += not step("scan table (scripts/touched_scans.py names what the tree no longer has)", lambda: (False, "\n".join(stale)))
     for name in skipped:
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
         skips.append(f"test {name}")
