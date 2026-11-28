@@ -34,9 +34,9 @@ and runs them **in-process**. What makes it different — you don't have to choo
   see `docs/measurements/cuda-pairwise-rope-2026-10-01.md`; update 2026-11-03: Olmo 3, Olmo Hybrid and SmolLM3 also run resident on
   WebGPU, with Olmo Hybrid on Metal at int4 only and on WebGPU read only on the M1 Pro's adapter); DeepSeek-V2/V3 (MLA) and Nemotron-H run resident on Metal and CUDA as well as WebGPU (Kimi K2 stays on the CPU on Metal); Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
   run on the CPU path everywhere. Going fast never costs you the single binary.
-- **36 model families, one binary.** All six attention / sequence-mixing families —
+- **45 model families, one binary.** All six attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet, KDA), state-space (Mamba-2), short-conv (LFM2),
-  latent-KV (MLA) — plus dense and sparse-MoE, across 36 model families as of 2026-09-12 —
+  latent-KV (MLA) — plus dense and sparse-MoE, across 45 model families as of 2026-11-27 —
   the count is generated, not
   maintained by hand: `docs/capability-matrix.md` is emitted from the `decoder` registry, so it
   cannot drift from the code (Gemma 3/4, Qwen 2.5/3/3.5/3.8/Next and the Qwen VL pair, Llama and
@@ -125,7 +125,8 @@ all-experts-on-GPU, not that peers can't run it —
 [docs/completed/task-moe-streaming.md](completed/task-moe-streaming.md). Ollama was the faster of the two
 at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep, re-run 2026-09-29, measured goinfer
 39.3 tok/s against Ollama 22.3 at ctx 2048 (graded AMBIGUOUS-HIGH on goinfer's own 5.3% run spread), an architecture comparison on different checkpoints —
-[docs/measurements/peer-sweep-2026-09-29.md](measurements/peer-sweep-2026-09-29.md), cell c.)*
+[docs/measurements/peer-sweep-2026-09-29.md](measurements/peer-sweep-2026-09-29.md), cell c. The 2026-11-20 re-anchor measured 50.2 against 22.2, graded AHEAD —
+[docs/measurements/peer-reanchor-2026-11-19/README.md](measurements/peer-reanchor-2026-11-19/README.md), cell c.)*
 
 > **Running a model larger than your card is opt-in, and the runtime does the sizing.** Gemma 4
 > residency is on by default; host→VRAM expert streaming is not. Without it the 26B's experts must
@@ -135,7 +136,7 @@ at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep, re-ru
 > another process, a longer `--ctx` all shrink it), capped to what fits rather than to a number you
 > chose; on a bare 8 GB card that is 30–33 slots today. `goinfer-chat fit` answers "does this fit,
 > and how fast" before anything loads. The measured slot ladder — from an inert cache at the old
-> default of 8 to **16.12 tok/s at 30** (before the DMA overlap; 39.3 tok/s as of 2026-09-29) — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
+> default of 8 to **16.12 tok/s at 30** (before the DMA overlap; 50.2 tok/s as of 2026-11-20) — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
 > read the slot count as part of any number quoted from it. The remaining work to make this
 > invisible is [`docs/tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md).
 
