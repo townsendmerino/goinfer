@@ -1,4 +1,4 @@
-package decoder
+package wbuild
 
 import "testing"
 
@@ -8,7 +8,7 @@ import "testing"
 // HF [a,c,b,d].
 func TestGGUFInvPermute(t *testing.T) {
 	gguf := []float32{10, 11, 12, 13} // rows a,b,c,d (in=1)
-	got := ggufInvPermute(gguf, 4 /*out*/, 1 /*in*/, 1 /*nHead*/)
+	got := GGUFInvPermute(gguf, 4 /*out*/, 1 /*in*/, 1 /*nHead*/)
 	want := []float32{10, 12, 11, 13}
 	for i := range want {
 		if got[i] != want[i] {
@@ -28,7 +28,7 @@ func TestGGUFInvPermute_bijection(t *testing.T) {
 			src[r*in+c] = float32(r*100 + c) // row r encodes its index
 		}
 	}
-	got := ggufInvPermute(src, out, in, nHead)
+	got := GGUFInvPermute(src, out, in, nHead)
 	seen := make([]bool, out)
 	for r := range out {
 		srcRow := int(got[r*in]) / 100 // recover which source row landed here

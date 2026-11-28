@@ -1,4 +1,4 @@
-package decoder
+package f16
 
 import (
 	"math"
@@ -8,15 +8,15 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestF16Rules_agree pins that aikit's int4 scale storage (linalg.F32ToF16) and goinfer's F16Bits, the rule every
+// TestF16Rules_agree pins that aikit's int4 scale storage (linalg.F32ToF16) and goinfer's Bits, the rule every
 // resident GPU backend converts int4 scales with, are the same conversion, bit for bit, so a CPU weight and a GPU
 // upload of the same tensor carry identical scales.
 func TestF16Rules_agree(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	check := func(f float32) {
-		a, c := F16Bits(f), linalg.F32ToF16(f)
+		a, c := Bits(f), linalg.F32ToF16(f)
 		if a != c {
-			t.Fatalf("%g (%#08x): F16Bits %#04x, linalg.F32ToF16 %#04x", f, math.Float32bits(f), a, c)
+			t.Fatalf("%g (%#08x): Bits %#04x, linalg.F32ToF16 %#04x", f, math.Float32bits(f), a, c)
 		}
 	}
 	for range 5_000_000 {

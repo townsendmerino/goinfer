@@ -1,14 +1,14 @@
-package decoder
+package cpuengine
 
 import (
 	"math"
 	"testing"
 )
 
-// TestDequantHeads_bitIdenticalToAikit is the gate that licensed replacing dequantHeads' arithmetic with
+// TestDequantHeads_bitIdenticalToAikit is the gate that licensed replacing DequantHeads' arithmetic with
 // linalg.DequantizeRowsInt8Into (aikit docs/task-goinfer-kernel-moves.md, M5).
 //
-// It stays after the swap on purpose. dequantHeads now *is* the aikit call, so this compares aikit against a frozen
+// It stays after the swap on purpose. DequantHeads now *is* the aikit call, so this compares aikit against a frozen
 // copy of the body goinfer used to own, which is what makes it a regression gate rather than a tautology: if an aikit
 // bump changes DequantizeRowsInt8Into's bits, this fails here, in goinfer, where the KV cache contract lives, instead
 // of surfacing as a moved golden downstream.
@@ -48,7 +48,7 @@ func TestDequantHeads_bitIdenticalToAikit(t *testing.T) {
 			want := make([]float32, n)
 			got := make([]float32, n)
 			ref(q, scales, nKV, headDim, want)
-			dequantHeads(q, scales, nKV, headDim, got)
+			DequantHeads(q, scales, nKV, headDim, got)
 			for i := range want {
 				if math.Float32bits(want[i]) != math.Float32bits(got[i]) {
 					t.Fatalf("%dx%d si=%d idx=%d: frozen ref %08x != aikit %08x",
