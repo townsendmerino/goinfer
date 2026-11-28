@@ -285,10 +285,10 @@ goinfer-serve -stream-weights -weight-cache 6 -model ~/models/gpt-oss-20b-MXFP4.
 This applies to `goinfer-serve`; `goinfer-chat` holds all weights resident.
 
 **GPU — `-moe-cache-experts`.** The non-expert core stays in VRAM and experts stream host→VRAM on
-demand: 39.3 tok/s at ctx 2048 for `gemma-4-26b-a4b` on an 8 GB RTX 2070 SUPER (2026-09-29, median
-of three; [docs/benchmarks.md](docs/benchmarks.md) §B4/§B4.1,
-[peer sweep](docs/measurements/peer-sweep-2026-09-29.md) cell c). That figure is bound by PCIe
-transfer. A dense model bigger than your card has no partial-GPU path here.
+demand: 50.2 tok/s at ctx 2048 for `gemma-4-26b-a4b` on an 8 GB RTX 2070 SUPER (2026-11-20;
+[docs/benchmarks.md](docs/benchmarks.md) §B4,
+[peer re-anchor](docs/measurements/peer-reanchor-2026-11-19/README.md) cell c; 39.3 on 2026-09-29).
+That figure is bound by PCIe transfer. A dense model bigger than your card has no partial-GPU path here.
 
 ```bash
 # <!-- smoke-model --> the checkpoint this project has the most measurements on at this size

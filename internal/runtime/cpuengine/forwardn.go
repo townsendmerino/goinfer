@@ -32,7 +32,7 @@ func CPUFastAttention() bool { return knobCPUFastAttention(nil) }
 
 // CPUFastAttention is the per-model form: off when this model was loaded with Options.ExactPrefill or its attention carries learned
 // sinks (gpt-oss), else the env var's answer. gpt-oss's f32 batched attention failed its fidelity gate against the exact path
-// (docs/measurements/gptoss-cpu-prefill-2026-11-23, G3), so its batched prefill always runs the exact kernel.
+// (docs/measurements/gptoss-cpu-prefill-2026-11-23, the f32-attention gate), so its batched prefill always runs the exact kernel.
 func (m *Engine) CPUFastAttention() bool {
 	if m.W != nil && m.W.Arch != nil && m.W.Arch.HasAttnSinks() {
 		return false

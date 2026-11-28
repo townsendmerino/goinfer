@@ -290,6 +290,7 @@ SCANS = [
     Scan("internal/guard/gateidentity", "TestIdentityAssets_coverTheManifest", F("testdata/parity/*.json")),
     # The README's family count is the generated capability matrix's length.
     Scan("pull", "TestReadme_familyCountMatchesTheMatrix", F("README.md", "docs/capability-matrix.json")),
+    Scan("pull", "TestBenchmarks_architectureCountMatchesTheMatrix", F("docs/benchmarks.md", "docs/capability-matrix.json")),
     # The ratchets the lint lane holds every pull request to (function and file length, decoder's ceilings, forwarding shims and
     # the rest): each parses Go files from disk, in every module, and its allowlist may only shrink.
     Scan("internal/guard/qualityscan", WHOLE, TREE_GO + F("internal/guard/qualityscan/testdata/*")),
