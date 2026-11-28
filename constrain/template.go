@@ -31,6 +31,9 @@ import (
 //	const           the constant itself
 //	array           ONE example element in brackets (the element's own template), so a list of line items shows what
 //	                one line item looks like. An array of strings is [""].
+//	$ref            the referenced schema's template. A reference back into a schema that is being written out
+//	                (a recursive definition) is {}.
+//	anyOf, oneOf    the first alternative that is not null, as a `type` list is its first entry that is not "null"
 //
 // Output is indented four spaces, as the card's example is. A key that spells a keyword ("type", "properties",
 // "items", "required", "enum") is an ordinary key: only a schema node's own keywords are read as keywords.
@@ -57,11 +60,24 @@ func TemplateFromSchema(schema []byte) (string, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
-	n, err := templateNode(doc, 0)
+	t := &templater{root: doc, open: map[string]bool{}}
+	n, err := t.node(doc, 0)
 	if err != nil {
 		return "", err
 	}
 	return n.render(), nil
+}
+
+// maxTemplateValues caps the values one template holds. References make a schema a graph, and its template is that
+// graph written out in full, so a small document can ask for a very large one.
+const maxTemplateValues = 1 << 16
+
+// templater renders one schema document: root is what a `$ref` is read from, open the references being written out,
+// and values the count against maxTemplateValues.
+type templater struct {
+	root   any
+	open   map[string]bool
+	values int
 }
 
 // TemplateFromStruct returns the JSON template of a Go struct type, in the struct's field order: the zero value's shape
@@ -139,13 +155,24 @@ func readOrdered(dec *json.Decoder) (any, error) {
 	return nil, fmt.Errorf("unexpected delimiter %v", d)
 }
 
-func templateNode(v any, depth int) (*tmplNode, error) {
+func (t *templater) node(v any, depth int) (*tmplNode, error) {
 	if depth > maxSchemaDepth {
 		return nil, fmt.Errorf("constrain: schema nests deeper than %d levels", maxSchemaDepth)
+	}
+	if t.values++; t.values > maxTemplateValues {
+		return nil, fmt.Errorf("constrain: the schema's template passes %d values", maxTemplateValues)
 	}
 	s, ok := v.(*orderedObj)
 	if !ok {
 		return nil, fmt.Errorf("constrain: a schema node must be an object, got %T", v)
+	}
+	if ref, has := s.vals["$ref"]; has {
+		return t.ref(ref, depth)
+	}
+	for _, key := range []string{"anyOf", "oneOf"} {
+		if alts, ok := s.vals[key].([]any); ok && len(alts) > 0 {
+			return t.firstNotNull(alts, depth)
+		}
 	}
 	if c, has := s.vals["const"]; has {
 		return &tmplNode{kind: 'l', lit: literalOf(c)}, nil
@@ -164,7 +191,7 @@ func templateNode(v any, depth int) (*tmplNode, error) {
 			return n, nil
 		}
 		for _, k := range props.keys {
-			kid, err := templateNode(props.vals[k], depth+1)
+			kid, err := t.node(props.vals[k], depth+1)
 			if err != nil {
 				return nil, fmt.Errorf("property %q: %w", k, err)
 			}
@@ -177,7 +204,7 @@ func templateNode(v any, depth int) (*tmplNode, error) {
 		if !ok {
 			return nil, fmt.Errorf("constrain: array needs an \"items\" schema")
 		}
-		el, err := templateNode(items, depth+1)
+		el, err := t.node(items, depth+1)
 		if err != nil {
 			return nil, fmt.Errorf("array items: %w", err)
 		}
@@ -190,6 +217,44 @@ func templateNode(v any, depth int) (*tmplNode, error) {
 		return &tmplNode{kind: 'l', lit: "null"}, nil
 	}
 	return &tmplNode{kind: 'l', lit: `""`}, nil
+}
+
+// ref renders the schema a local `$ref` names, in the reference's place.
+func (t *templater) ref(raw any, depth int) (*tmplNode, error) {
+	ref, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("constrain: $ref must be a string")
+	}
+	toks, err := pointerTokens(ref)
+	if err != nil {
+		return nil, err
+	}
+	target := t.root
+	for _, tok := range toks {
+		next, found := pointerStep(target, tok)
+		if !found {
+			return nil, fmt.Errorf("constrain: $ref %q: nothing in the document at %q", ref, tok)
+		}
+		target = next
+	}
+	if t.open[ref] {
+		return &tmplNode{kind: 'o'}, nil
+	}
+	t.open[ref] = true
+	defer delete(t.open, ref)
+	return t.node(target, depth)
+}
+
+// firstNotNull renders a union as its first alternative whose template is not null; null when every one is.
+func (t *templater) firstNotNull(alts []any, depth int) (*tmplNode, error) {
+	var n *tmplNode
+	for _, alt := range alts {
+		var err error
+		if n, err = t.node(alt, depth); err != nil || n.kind != 'l' || n.lit != "null" {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 // schemaType is the node's type: its "type" (the first non-null entry of a list), else inferred from the keywords

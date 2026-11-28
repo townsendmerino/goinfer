@@ -110,6 +110,36 @@ recommends none; …`. With `-log-requests`, a request that took fields from the
 `sampling_from_model=temperature,top_p,top_k`, naming them. `goinfer-chat --batch` applies the same rule, except that an
 explicit flag (`--temp`, `--top-p`, …) wins over the model.
 
+**What a `json_schema` may contain.** The grammar enforces a subset of JSON Schema, on every route that takes a schema
+(`response_format`, `/v1/responses`' `text.format` and `/v1/messages`' `output_config.format`). A keyword or shape outside
+the subset is a 400 that names it, never a constraint dropped in silence:
+
+- **Values:** objects (`properties` and `required`, held to the keys they declare, up to 64 of them), arrays (`items`,
+  `minItems`, `maxItems`), `string`, `number`, `integer`, `boolean`, `null`, `enum` and `const` (up to 64 values),
+  `minimum` for the value 0 only, and a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`.
+- **References:** `$defs` or `definitions` with a `$ref` into the same document (`#/$defs/Name`), which is how Pydantic
+  writes a nested model. A reference may be recursive (a tree, a linked list): the grammar follows it down to its nesting
+  limit, 64 levels, so a reply nests no deeper than that.
+- **Nullable and multi-typed values:** `type` given as a list, and `anyOf` or `oneOf` between alternatives that a value's
+  first character tells apart: a string or `null` (Pydantic's `Optional`), a number or a string, an object or `null`, an
+  array or an enum.
+- **Unions of objects:** `anyOf` or `oneOf` between several objects, with a `discriminator` or without one. The keys and
+  values written so far decide which alternatives the object can still be: `"kind": "circle"` leaves only the
+  alternatives whose `kind` allows it, and the object may close only once one of them has every key it requires.
+
+Still refused:
+
+- `allOf`, `not`, `if`/`then`/`else`, `pattern`, `minLength`/`maxLength`, `maximum` and the other numeric bounds, and
+  `additionalProperties` as anything but `false`;
+- a `$ref` out of the document or to an anchor, and an assertion written beside a `$ref`, `anyOf` or `oneOf` instead of
+  inside it;
+- a union whose alternatives neither a first character nor an object's keys tell apart: two arrays with different `items`
+  or two string formats (unless one takes everything the other does), or objects that give one key two different arrays;
+- a `oneOf` whose alternatives are not shown to exclude each other, by type, by literal, by a required key or by array
+  length. The grammar does not count matches, so the 400 says to make the alternatives exclusive or to write `anyOf`.
+  An object alternative needs its `"type": "object"` for this: with `properties` alone, JSON Schema lets it match every
+  value that is not an object, a sibling's number or `null` included.
+
 **Per-field confidence (`goinfer_confidence`, opt-in).** Add `"goinfer_confidence": true` to a
 `/v1/chat/completions` or `/v1/completions` request that carries `response_format: {"type": "json_schema", …}`,
 and the response gains a top-level `goinfer_confidence` array, one record per reported field. Streaming sends the
@@ -132,6 +162,9 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
   - Number and string fields are not: the labelled set could not grade them yet.
   - A field whose value the schema forced (a one-option enum) is not reported either; its value says nothing about
     the model.
+  - A nullable integer (`anyOf` of an integer and `null`, or `type: ["integer", "null"]`) is reported when the reply
+    holds a number, and the choice against `null` is in its first digit's probability. A nullable enum or boolean is
+    not reported, as an enum that lists `null` is not, and neither is a `null`.
 - **Enum and boolean** fields carry `distribution`, the mass of every legal token summed by the option it spells,
   so a literal split across tokens does not dilute it. `undecided` is the mass that did not yet pick an option.
   **Integer** fields report the lowest probability among their digits.
@@ -464,7 +497,12 @@ The field is absent for a model whose template takes no tools.
 constrained. Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot check is the
 tool's to validate:
 - numeric bounds other than `minimum: 0`, string length and pattern, and similar assertions are not enforced;
-- a value with no type, several types, or a composite keyword (`anyOf`, `oneOf`, `$ref`, …) may be any JSON value;
+- a value with no type, or under a composite keyword the grammar does not follow (`allOf`, `not`, `if`, …), may be any
+  JSON value;
+- a `type` list, `anyOf`, `oneOf` and a `$ref` into the tool's own schema are followed as they are for `response_format`
+  (above), with `oneOf` held as `anyOf`: a parameter declared `["array", "null"]` of strings takes an array of strings or
+  `null`, and nothing else. Where one cannot be followed (a `$ref` out of the schema, alternatives the grammar cannot tell
+  apart, an assertion beside the union), that value may be any JSON value. Until 2026-11 every such value could be;
 - an object that declares no properties may be any object, and one that also allows undeclared keys is held to its declared
   ones.
 
@@ -630,7 +668,8 @@ schema (`constrain.TemplateFromSchema`, one source with the grammar) and uses it
 
 The template convention: properties in the schema's order, every property shown (optional ones too), nested objects
 nested, `""` for a string, `0` for a number or integer, `false` for a boolean, one example element for an array (so a list of
-line items shows what one looks like). **Type the amounts as numbers.** The model answers a numeric column with a bare
+line items shows what one looks like), a `$ref`'s target in its place, and for a nullable or union value its first
+alternative that is not `null`. **Type the amounts as numbers.** The model answers a numeric column with a bare
 number whatever the template shows for a string field, and a string grammar forbids a bare number: the only legal tokens
 left are whitespace, so on `"quantity": ""` the measured reply was whitespace until `max_tokens`, with no error
 (`docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt`). With `integer` and `number` fields the

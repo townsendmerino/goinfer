@@ -1,0 +1,29 @@
+{
+  "$defs": {
+    "LinkedNode": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LinkedNode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "LinkedNode",
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/LinkedNode"
+}

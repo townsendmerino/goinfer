@@ -1,0 +1,72 @@
+{
+  "properties": {
+    "v": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "title": "V"
+    },
+    "w": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "W"
+    },
+    "x": {
+      "enum": [
+        "a",
+        "b"
+      ],
+      "title": "X",
+      "type": "string"
+    },
+    "y": {
+      "anyOf": [
+        {
+          "enum": [
+            "a",
+            "b"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Y"
+    },
+    "z": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "title": "Z"
+    }
+  },
+  "required": [
+    "v",
+    "w",
+    "x",
+    "z"
+  ],
+  "title": "Mixed",
+  "type": "object"
+}

@@ -258,6 +258,116 @@ all, so every schema carrying it already errored; this only ever widens what com
 SchemaFromStruct emits minimum:0 for the unsigned Go kinds (M-28).
 ```
 
+## Local references
+
+Written with `constrain/schema_ref.go` (2026-11); the comment above its declarations keeps the contract.
+
+A `$ref` compiles as its target would in the reference's place, so a document with references accepts what its inlined form
+accepts (`TestSchema_refBehavesAsInlined`). A reference cycle has no finite inlined form, and there were two places to bound
+it:
+
+- **At mask time:** let the compiled nodes point back at each other and refuse a push past a depth limit. The grammar would
+  then offer an opening it cannot always close: at the limit a required recursive value has no legal continuation, and the
+  mask leaves the model no token, mid-document.
+- **At compile time (chosen):** expand the cycle down to `maxSchemaDepth` and cut it there (`compiler.overDepth`). The cut
+  is `neverNode`, which whatever holds it drops: an optional property is not offered, an array takes no items, a union loses
+  the alternative, and a required property or item makes its parent `neverNode` in turn. So the grammar never opens a level
+  it cannot finish, the compiled nodes stay a finite acyclic graph for everything that walks them, and a mask step runs the
+  code it ran before. A document that cannot be finished at any depth (a cycle through required values only) is a compile
+  error.
+
+The price is compile work: a target is compiled once per nesting level it is reached at (the memo is keyed by pointer and
+level), so up to `maxSchemaDepth` times the document's size. `maxRefWork` caps it (`TestSchema_refExpansionIsBounded`).
+`neverNode` is produced only inside the expansion of a document whose references form a cycle; a document without one that
+nests too deep fails with the nesting error its inlined form gets (`TestSchema_refNestingErrorIsKept`).
+
+Refused, because each would need more than a pointer lookup: a reference out of the document or to an anchor, a reference
+in a document where a nested `$id` re-bases it, and an assertion beside `$ref` (2020-12 applies both, which is an
+intersection).
+
+## Unions by first byte
+
+Written with `constrain/schema_union.go` (2026-11).
+
+The grammar is deterministic: one frame per open value, and `TryBytes` copies the frame stack once per candidate token. A
+union could have been run as a set of stacks, one per alternative still possible, the way `ToolCallsGrammar` runs one
+grammar per tool. That multiplies the stack copies of every mask step inside a union, and the plain-string fast path and
+the confidence capture read the top of one stack. So a union is held only in a form one stack can follow:
+compiling merges the alternatives until the value's first byte picks at most one (`compiler.merge`), and the frame then
+becomes that alternative's. A JSON value's first byte gives five classes: an object, an array, a string, a number, and the
+literals `true`, `false` and `null`.
+
+- Unions inside unions are flattened.
+- Two typed alternatives of one class collapse into one when it accepts everything the other does (`unionState.covers`: a
+  number covers an integer, a plain string covers a formatted one). When neither covers the other the union is refused,
+  except for objects, which become a variant (below).
+- Literals from every `enum`, `const`, `boolean` and `null` alternative pool into one enum. A literal that a typed
+  alternative accepts is dropped from the pool; one that begins as a typed alternative's values do and is refused by it
+  makes the union an error, because after that first byte the frame could not hold both. A negative literal beside a
+  number type that takes no minus sign is the one case a first byte still splits.
+
+## oneOf: what is checked
+
+Written with `constrain/schema_union.go` (2026-11).
+
+`oneOf` is valid when exactly one alternative matches. The grammar accepts a value when some alternative's grammar does,
+which is `anyOf`. The two agree when no value the grammar writes for one alternative also validates against another, and
+`unionState.excludes` is the proof of that for a pair, asked in both directions. It compares the first alternative as the
+grammar writes it (objects held to their declared keys) with the second as JSON Schema reads it (keys an object does not
+declare are allowed, because the schema allows them even though this grammar never writes one). It is conservative: it looks
+at types, literals, array lengths, and the keys objects declare and require, and answers "not shown" for anything else,
+such as two strings or two numbers.
+
+A schema with `properties` and no `type` gets the same reading. The grammar offers its objects only, which is sound alone
+and under `anyOf`, but JSON Schema lets it match every value that is not an object, so a sibling alternative that writes
+a number or `null` is not exclusive with it (`node.untyped`, `TestSchema_oneOfUntypedObject`). At the nesting limit of a
+reference cycle such a schema can compile to `neverNode`, which carries no such mark; a document that has both that and a
+`oneOf` is refused rather than checked against less than the schema says (`TestSchema_oneOfUntypedObjectCutByNesting`).
+
+A strict compile refuses a `oneOf` with a pair not shown apart, and says to use `anyOf`: accepting it would let through a
+value two alternatives match, which is the silent weakening this package's contract rules out. A lenient compile holds
+`oneOf` as `anyOf`. That never refuses a value the `oneOf` allows, it is tighter than the any-value fallback, and a tool
+validates its own arguments. The comparisons a document may cost are capped by `maxUnionWork`
+(`TestSchema_unionWorkIsBounded`). `discriminator` is read as an annotation: it names the property that tells the
+alternatives apart and asserts nothing they do not, and what the grammar reads is the alternatives' own `const` or `enum`
+on that property.
+
+## Variants: a union of objects
+
+Written with `constrain/schema_variant.go` (2026-11).
+
+Objects all begin with `{`, so a union of objects needs more than a first byte. It compiles to one node whose property
+table is the alternatives' tables merged, with each alternative's declared and required keys as bit masks over it. The
+frame is an object's frame plus the set of alternatives still live, which is kept in `count` and `num` (an object's frame
+uses neither), so a frame is the size it was (`TestSchema_variantStackAndFrame`) and a schema with no union runs the states
+it ran before.
+
+- A key is offered when a live alternative declares it; writing it drops the alternatives that do not.
+- `}` is legal when a live alternative has every key it requires. `,` is legal only when a live alternative still has a
+  key to write, so the grammar never strands the model after a comma.
+- A property whose schema is the same wherever it is declared is compiled once. One whose schema differs must say, once
+  its value is written, which alternatives that value fits (`compiler.tagged`): the first byte when the schemas are of
+  different types, the literal when they are `enum` or `const` (the discriminator), the nested object's own keys when they
+  are objects. Schemas that need more than that to tell apart (two arrays, an integer and a number, a literal beside a
+  string) are a compile error naming the property and the alternatives.
+
+The language is the union of the alternatives' languages, checked by running each union beside its alternatives compiled
+one by one (`TestSchema_variantIsItsAlternatives`, and `TestSchema_variantRandomIsItsAlternatives` on random unions). The
+limits are an object's: 64 alternatives once nested unions are flattened, and 64 property names between them.
+
+## Lenient compiling of references and unions
+
+Written with `constrain/schema.go` (2026-11); decided for the change that added these keywords.
+
+A tool's parameters compile leniently: what the grammar cannot enforce becomes any JSON value instead of an error. `$ref`,
+a `type` list, `anyOf` and `oneOf` used to be among those, and are now followed in both modes, with `oneOf` held as
+`anyOf`. The reason is the one behind constraining tool calls at all: a parameter the schema declares as a string or
+`null` should not come back as an array. The lenient compile keeps its rule that it differs from the strict one only where
+the strict one fails, so a union or reference the compiler cannot follow is still any JSON value at that level. The effect
+on existing tool lists is that a value under these keywords is now held to its schema
+(`TestToolCallGrammar_typeListIsHeldToItsTypes` has a real tool's parameter), and an object inside an alternative is held
+to its declared keys as any lenient object is.
+
 ## schemaGrammar.CanEnd
 
 Moved from `constrain/schema_grammar.go` (the comment above `schemaGrammar.CanEnd`) on 2026-10-09.
