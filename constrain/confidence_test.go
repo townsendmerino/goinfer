@@ -1,6 +1,7 @@
 package constrain
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -231,6 +232,52 @@ func TestFieldConfidence_skipsFreeStrings(t *testing.T) {
 			}
 		}
 		out += string(tokens[id])
+	}
+}
+
+// TestFieldConfidence_oneOption: a value with one option is forced, so it is not reported, also where one of its tokens
+// is free. An array's first item is such a value: its opening quote stands where the closing bracket could, and that
+// token says whether there is an item, not what the item is.
+func TestFieldConfidence_oneOption(t *testing.T) {
+	for _, c := range []struct {
+		name, schema, target, at string
+		reported                 []string
+	}{
+		{"an array's items", `{"type":"object","properties":{"tags":{"type":"array","items":{"enum":["x"]}}},"required":["tags"]}`,
+			`{"tags":["x","x"]}`, `{"tags":[`, nil},
+		{"an array's items, a const", `{"type":"object","properties":{"tags":{"type":"array","items":{"const":"x"}}},"required":["tags"]}`,
+			`{"tags":["x"]}`, `{"tags":[`, nil},
+		{"an array's items, a const that is not a string", `{"type":"object","properties":{"flags":{"type":"array","items":{"const":true}}},"required":["flags"]}`,
+			`{"flags":[true]}`, ``, nil},
+		{"a required property", `{"type":"object","properties":{"tag":{"enum":["x"]}},"required":["tag"]}`, `{"tag":"x"}`, ``, nil},
+		{"two options are still reported", `{"type":"object","properties":{"tags":{"type":"array","items":{"enum":["x","y"]}}},"required":["tags"]}`,
+			`{"tags":["x"]}`, `{"tags":[`, []string{"tags[0]"}},
+	} {
+		tokens, ids, eos := confVocab()
+		g, err := JSONSchema([]byte(c.schema))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := NewMasker(g, tokens, []int{eos}).StopWhenComplete().CaptureConfidence(ConfidenceOptions{})
+		design := map[string]map[string]float64{}
+		if c.at != "" { // the item's opening quote against the bracket that would close the array empty
+			design[c.at] = map[string]float64{`"`: 0.7, `]`: 0.3}
+		}
+		fcs, err := m.FieldConfidence(runConfTarget(t, m, c.schema, c.target, tokens, ids, eos, design))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, fc := range fcs {
+			got = append(got, fmt.Sprintf("%s (%s, confidence %.3f, %d free)", fc.Path, fc.Kind, fc.Confidence, fc.FreeTokens))
+		}
+		paths := make([]string, len(fcs))
+		for i, fc := range fcs {
+			paths[i] = fc.Path
+		}
+		if !slices.Equal(paths, c.reported) {
+			t.Errorf("%s: reported %v, want %v", c.name, got, c.reported)
+		}
 	}
 }
 

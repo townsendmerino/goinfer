@@ -161,8 +161,8 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
 - **Which fields.**
   - Enum, boolean and integer fields are reported, at any depth (`items[2].status`).
   - Number and string fields are not: the labelled set could not grade them yet.
-  - A field whose value the schema forced (a one-option enum) is not reported either; its value says nothing about
-    the model.
+  - A field whose value the schema forced (a `const`, or an enum with one option) is not reported either, as an
+    array's item or anywhere else; its value says nothing about the model.
   - The property that tells a union's objects apart (its `const` or `enum` in each alternative) is reported over the
     values still possible when it is written, and `distribution` lists those only. Once the keys before it have left
     it one value, that value is forced and the field is not reported.
