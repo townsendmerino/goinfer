@@ -163,19 +163,17 @@
       "id": "gemma-4-26b-a4b/cuda/decode",
       "checkpoint": "gemma-4-26b-a4b",
       "machine": "cuda",
-      "basis": "median-of-3",
-      "value": 39.3,
-      "peer": 22.3,
-      "runs": "39.4 / 39.3 / 37.3",
-      "peer_runs": "22.3 / 22.3 / 22.3",
-      "ratio_raw": "1.763",
-      "ratio": "1.76× Ollama, graded ambiguous",
-      "verdict": "level",
-      "why": "Every pair was above 1.67×, but goinfer's own runs spread 5.3%, over the 5% cap set before the run, so it is not graded ahead. goinfer keeps every expert on the card; Ollama offloads to the CPU. Different checkpoints, so this compares approaches, not kernels. Context capped at 2,048.",
-      "date": "2026-09-29",
+      "basis": "none",
+      "value": 50.2,
+      "peer": 22.2,
+      "ratio_raw": "2.266",
+      "ratio": "2.27×",
+      "verdict": "ahead",
+      "why": "Graded ahead of Ollama on every pair of runs. goinfer runs every expert on the card, with 41 cached per layer and the rest copied from host memory as they are needed; Ollama offloads to the CPU. Different checkpoints (goinfer's int4 bundle against the Q4_K_M GGUF), so this compares approaches, not kernels. Context capped at 2,048. On 2026-09-29 the same cell read 39.3 against 22.3.",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/README.md",
+        "heading": "Night 2, 2026-11-20 00:34–02:22 PST, graded 04:20 PST"
       }
     },
     {

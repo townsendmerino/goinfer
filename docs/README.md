@@ -30,7 +30,7 @@ These are the pages to trust, and to update when reality moves.
 | | |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how the pieces fit: the forward pass, loading and memory, the GPU backends and how residency is admitted, serving, configuration, modules and where cgo is quarantined |
-| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 39 model families as of 2026-09-30. The registry is the source of truth; do not hand-edit |
+| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 45 model families as of 2026-11-27. The registry is the source of truth; do not hand-edit |
 | [option-state-grid.md](option-state-grid.md) | **generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` — every load option × execution path (tested, declined, admitted untested, n/a) and every kind of cache state × lifecycle path. The untested count only falls; do not hand-edit |
 | [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — the commit citations of the queue with the subject each resolved to. The lint's state, not reading material; do not edit or cite |
 | [tool-call-coverage.md](tool-call-coverage.md) | per family: tool calls **constrained**, parsed only, or none — from a census of real checkpoints through `chat.Detect` (2026-09-24). What "tools: yes" does and does not promise |
