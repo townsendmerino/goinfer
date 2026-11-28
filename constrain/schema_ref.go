@@ -133,48 +133,71 @@ func (c compiler) compileRef(s map[string]any, depth int) (*node, error) {
 
 // resolve returns the schema a local reference names, and the pointer to it in canonical form.
 func (r *refState) resolve(ref string) (target map[string]any, ptr string, err error) {
-	frag, local := strings.CutPrefix(ref, "#")
-	if !local {
-		return nil, "", fmt.Errorf("constrain: $ref %q is not supported: only a reference into the same document (\"#/$defs/Name\") is", ref)
-	}
-	if frag != "" && frag[0] != '/' {
-		return nil, "", fmt.Errorf("constrain: $ref %q is not supported: it names an anchor, not a JSON Pointer (\"#/$defs/Name\")", ref)
-	}
-	path, err := url.PathUnescape(frag)
+	toks, err := pointerTokens(ref)
 	if err != nil {
-		return nil, "", fmt.Errorf("constrain: $ref %q: %w", ref, err)
+		return nil, "", err
 	}
 	var cur any = r.root
 	var canon strings.Builder
-	if path != "" {
-		for tok := range strings.SplitSeq(path[1:], "/") {
-			tok = strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
-			var next any
-			found := false
-			switch v := cur.(type) {
-			case map[string]any:
-				if _, has := v["$id"].(string); has && !sameMap(v, r.root) {
-					r.rebased = true
-				}
-				next, found = v[tok]
-			case []any:
-				if i, err := strconv.Atoi(tok); err == nil && i >= 0 && i < len(v) && strconv.Itoa(i) == tok {
-					next, found = v[i], true
-				}
+	for _, tok := range toks {
+		if m, ok := cur.(map[string]any); ok {
+			if _, has := m["$id"].(string); has && !sameMap(m, r.root) {
+				r.rebased = true
 			}
-			if !found {
-				return nil, "", fmt.Errorf("constrain: $ref %q: nothing in the document at %q", ref, tok)
-			}
-			cur = next
-			canon.WriteByte('/')
-			canon.WriteString(strings.ReplaceAll(strings.ReplaceAll(tok, "~", "~0"), "/", "~1"))
 		}
+		next, found := pointerStep(cur, tok)
+		if !found {
+			return nil, "", fmt.Errorf("constrain: $ref %q: nothing in the document at %q", ref, tok)
+		}
+		cur = next
+		canon.WriteByte('/')
+		canon.WriteString(strings.ReplaceAll(strings.ReplaceAll(tok, "~", "~0"), "/", "~1"))
 	}
 	target, ok := cur.(map[string]any)
 	if !ok {
 		return nil, "", fmt.Errorf("constrain: $ref %q does not name a schema object", ref)
 	}
 	return target, canon.String(), nil
+}
+
+// pointerTokens splits a local reference ("#/$defs/Name") into the tokens of its JSON Pointer, decoded. A reference
+// out of the document, or one by anchor, is refused.
+func pointerTokens(ref string) ([]string, error) {
+	frag, local := strings.CutPrefix(ref, "#")
+	if !local {
+		return nil, fmt.Errorf("constrain: $ref %q is not supported: only a reference into the same document (\"#/$defs/Name\") is", ref)
+	}
+	if frag != "" && frag[0] != '/' {
+		return nil, fmt.Errorf("constrain: $ref %q is not supported: it names an anchor, not a JSON Pointer (\"#/$defs/Name\")", ref)
+	}
+	path, err := url.PathUnescape(frag)
+	if err != nil {
+		return nil, fmt.Errorf("constrain: $ref %q: %w", ref, err)
+	}
+	if path == "" {
+		return nil, nil
+	}
+	toks := strings.Split(path[1:], "/")
+	for i, tok := range toks {
+		toks[i] = strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
+	}
+	return toks, nil
+}
+
+// pointerStep follows one pointer token from cur: a key of an object (decoded as a map, or as the template's ordered
+// object) or an index of an array.
+func pointerStep(cur any, tok string) (next any, found bool) {
+	switch v := cur.(type) {
+	case map[string]any:
+		next, found = v[tok]
+	case *orderedObj:
+		next, found = v.vals[tok]
+	case []any:
+		if i, err := strconv.Atoi(tok); err == nil && i >= 0 && i < len(v) && strconv.Itoa(i) == tok {
+			next, found = v[i], true
+		}
+	}
+	return next, found
 }
 
 // hasCycle reports whether the references reachable from the root lead back to a schema they started in. It reads the
