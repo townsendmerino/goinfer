@@ -35,16 +35,22 @@ func confVocab() (tokens [][]byte, ids map[string]int, eos int) {
 	return tokens, ids, eos
 }
 
-// runConf drives a greedy generation of confTarget through a Masker. At each step every token gets logit −30 unless a
-// design for the output so far says otherwise; with no design, the longest legal token that continues the target gets
-// 0. Designs give exact probabilities (the −30 mass is < 1e-10).
+// runConf drives a greedy generation of confTarget through a Masker (runConfTarget).
 func runConf(t *testing.T, m *Masker, tokens [][]byte, ids map[string]int, eos int, design map[string]map[string]float64) []int {
+	t.Helper()
+	return runConfTarget(t, m, confSchema, confTarget, tokens, ids, eos, design)
+}
+
+// runConfTarget drives a greedy generation of target through a Masker over schema. At each step every token gets
+// logit −30 unless a design for the output so far says otherwise; with no design, the longest legal token that
+// continues the target gets 0. Designs give exact probabilities (the −30 mass is < 1e-10).
+func runConfTarget(t *testing.T, m *Masker, schema, confTarget string, tokens [][]byte, ids map[string]int, eos int, design map[string]map[string]float64) []int {
 	t.Helper()
 	var gen []int
 	var out string
 	// The driver's own copy of the grammar, advanced as tokens are picked: the Masker commits a token only at the
 	// next Process call, so its own state lags one token behind the driver's.
-	replica, err := JSONSchema([]byte(confSchema))
+	replica, err := JSONSchema([]byte(schema))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,5 +231,69 @@ func TestFieldConfidence_skipsFreeStrings(t *testing.T) {
 			}
 		}
 		out += string(tokens[id])
+	}
+}
+
+// TestFieldConfidence_unionTag: the property that tells a union's object alternatives apart is reported as the enum of
+// the literals still on offer when its value begins. Keys written before it can have ruled alternatives out: their
+// literals are then not in the distribution, and a tag left with one literal is forced, so it is not reported.
+func TestFieldConfidence_unionTag(t *testing.T) {
+	const pets = `{"type":"object","properties":{"pet":{"oneOf":[
+		{"type":"object","properties":{"pet_type":{"const":"cat"},"meows":{"type":"integer"}},"required":["pet_type","meows"]},
+		{"type":"object","properties":{"pet_type":{"const":"dog"},"legs":{"type":"integer"}},"required":["pet_type","legs"]},
+		{"type":"object","properties":{"pet_type":{"const":"bird"},"legs":{"type":"integer"},"wings":{"type":"integer"}},"required":["pet_type","legs","wings"]}]}},"required":["pet"]}`
+	const result = `{"type":"object","properties":{"r":{"anyOf":[
+		{"type":"object","properties":{"ok":{"const":true},"value":{"type":"integer"}},"required":["ok","value"]},
+		{"type":"object","properties":{"ok":{"const":false},"error":{"type":"integer"}},"required":["ok","error"]}]}},"required":["r"]}`
+	type want struct {
+		kind string
+		conf float64
+		dist map[string]float64
+	}
+	for _, c := range []struct {
+		name, schema, target string
+		design               map[string]map[string]float64
+		tag                  string
+		want                 *want // nil: the tag is not reported
+	}{
+		{"every alternative on offer", pets, `{"pet":{"pet_type":"dog","legs":4}}`,
+			map[string]map[string]float64{`{"pet":{"pet_type":"`: {"d": 0.5, "c": 0.3, "b": 0.2}},
+			"pet.pet_type", &want{"enum", 0.5, map[string]float64{"dog": 0.5, "cat": 0.3, "bird": 0.2}}},
+		{"an earlier key left two alternatives", pets, `{"pet":{"legs":4,"pet_type":"dog"}}`,
+			map[string]map[string]float64{`{"pet":{"legs":4,"pet_type":"`: {"d": 0.6, "b": 0.4}},
+			"pet.pet_type", &want{"enum", 0.6, map[string]float64{"dog": 0.6, "bird": 0.4}}},
+		{"an earlier key left one alternative", pets, `{"pet":{"meows":2,"pet_type":"cat"}}`, nil, "pet.pet_type", nil},
+		{"a tag of true and false is a boolean", result, `{"r":{"ok":true,"value":1}}`,
+			map[string]map[string]float64{`{"r":{"ok":`: {"t": 0.8, "f": 0.2}},
+			"r.ok", &want{"boolean", 0.8, map[string]float64{"true": 0.8, "false": 0.2}}},
+		{"and is forced once a key has said which", result, `{"r":{"error":7,"ok":false}}`, nil, "r.ok", nil},
+	} {
+		tokens, ids, eos := confVocab()
+		g, err := JSONSchema([]byte(c.schema))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := NewMasker(g, tokens, []int{eos}).StopWhenComplete().CaptureConfidence(ConfidenceOptions{})
+		fcs, err := m.FieldConfidence(runConfTarget(t, m, c.schema, c.target, tokens, ids, eos, c.design))
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(fcs, func(fc FieldConfidence) bool { return fc.Path == c.tag })
+		switch {
+		case c.want == nil && i >= 0:
+			t.Errorf("%s: %s was reported (%s, confidence %v, %v); its value was forced", c.name, c.tag, fcs[i].Kind, fcs[i].Confidence, fcs[i].Distribution)
+		case c.want != nil && i < 0:
+			t.Errorf("%s: %s was not reported", c.name, c.tag)
+		case c.want != nil:
+			fc := fcs[i]
+			if fc.Kind != c.want.kind || math.Abs(fc.Confidence-c.want.conf) > 1e-6 || len(fc.Distribution) != len(c.want.dist) {
+				t.Errorf("%s: %s is %s at %v over %v, want %s at %v over %v", c.name, c.tag, fc.Kind, fc.Confidence, fc.Distribution, c.want.kind, c.want.conf, c.want.dist)
+			}
+			for k, p := range c.want.dist {
+				if got, ok := fc.Distribution[k]; !ok || math.Abs(got-p) > 1e-6 {
+					t.Errorf("%s: p(%s) = %v, want %v (distribution %v)", c.name, k, got, p, fc.Distribution)
+				}
+			}
+		}
 	}
 }

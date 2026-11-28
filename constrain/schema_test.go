@@ -273,6 +273,7 @@ func TestSchema_rejectsUnsatisfiable(t *testing.T) {
 		`{"type":"object","properties":{"a":{"type":"string"}},"required":[1]}`,
 		// array bounds: maxItems < minItems can never close.
 		`{"type":"array","items":{"type":"integer"},"minItems":5,"maxItems":2}`,
+		`{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":0}`,
 		// negative bounds are not valid non-negative integers.
 		`{"type":"array","items":{"type":"integer"},"maxItems":-1}`,
 		`{"type":"array","items":{"type":"integer"},"minItems":-3}`,

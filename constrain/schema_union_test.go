@@ -302,7 +302,7 @@ func TestSchema_oneOfUntypedObject(t *testing.T) {
 			t.Errorf("%s: %v, want it compiled", schema, err)
 		}
 	}
-	// A typed and an untyped object of one structure are one object to the grammar.
+	// A typed and an untyped object of one structure accept the same documents, so their union accepts what one does.
 	checkDocs(t, mustSchema(t, []byte(`{"anyOf":[`+typed+`,`+untyped+`,{"type":"null"}]}`)), []docCase{
 		{`{"a":"x"}`, true, "the object"}, {`null`, true, "the other alternative"},
 		{`{}`, false, "a is required"}, {`{"a":1}`, false, "a is a string"},
