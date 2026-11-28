@@ -393,15 +393,33 @@ func TestSchema_variantStackAndFrame(t *testing.T) {
 // TestFieldConfidence_variant: a union's tag is reported as the enum it is, at its path, with the probability the
 // model gave the alternative it wrote; a field of the chosen alternative is reported at its path too.
 func TestFieldConfidence_variant(t *testing.T) {
-	schema := pydanticSchema(t, "discriminated_union")
-	target := `{"pet":{"pet_type":"dog","barks":2},"n":17}`
-	design := map[string]map[byte]float64{
-		`{"pet":{"pet_type":"`:                      {'d': 0.75, 'c': 0.25},
-		`{"pet":{"pet_type":"dog","barks":2},"n":1`: {'7': 0.6, '8': 0.4},
+	got := designedConfidence(t, pydanticSchema(t, "discriminated_union"), `{"pet":{"pet_type":"dog","barks":2},"n":17}`,
+		map[string]map[byte]float64{
+			`{"pet":{"pet_type":"`:                      {'d': 0.75, 'c': 0.25},
+			`{"pet":{"pet_type":"dog","barks":2},"n":1`: {'7': 0.6, '8': 0.4},
+		})
+	tag, ok := got["pet.pet_type"]
+	if !ok || tag.Kind != "enum" || string(tag.Value) != `"dog"` {
+		t.Fatalf("the tag is not reported as an enum at pet.pet_type: %+v (all: %+v)", tag, got)
 	}
+	if math.Abs(tag.Confidence-0.75) > 1e-6 || math.Abs(tag.Distribution["cat"]-0.25) > 1e-6 {
+		t.Errorf("tag confidence %v with distribution %v, want 0.75 with cat at 0.25", tag.Confidence, tag.Distribution)
+	}
+	if n, ok := got["n"]; !ok || n.Kind != "integer" || math.Abs(n.Confidence-0.6) > 1e-6 {
+		t.Errorf("n is reported as %+v, want an integer at confidence 0.6", n)
+	}
+	if _, ok := got["pet.barks"]; ok {
+		t.Errorf("pet.barks is a number, which is not a reported kind: %+v", got["pet.barks"])
+	}
+}
+
+// designedConfidence generates target under schema, one byte a token, with confidence capture on, and returns the
+// reported fields by path. design gives, for a prefix of target, the probability of each next byte it names; anywhere
+// else the next byte of target has all the mass.
+func designedConfidence(t *testing.T, schema []byte, target string, design map[string]map[byte]float64) map[string]FieldConfidence {
+	t.Helper()
 	tokens, eos := fullByteVocab()
-	g := mustSchema(t, schema)
-	m := NewMasker(g, tokens, []int{eos}).StopWhenComplete().CaptureConfidence(ConfidenceOptions{})
+	m := NewMasker(mustSchema(t, schema), tokens, []int{eos}).StopWhenComplete().CaptureConfidence(ConfidenceOptions{})
 	var gen []int
 	out := ""
 	for range 200 {
@@ -443,19 +461,7 @@ func TestFieldConfidence_variant(t *testing.T) {
 	for _, f := range fields {
 		got[f.Path] = f
 	}
-	tag, ok := got["pet.pet_type"]
-	if !ok || tag.Kind != "enum" || string(tag.Value) != `"dog"` {
-		t.Fatalf("the tag is not reported as an enum at pet.pet_type: %+v (all: %+v)", tag, fields)
-	}
-	if math.Abs(tag.Confidence-0.75) > 1e-6 || math.Abs(tag.Distribution["cat"]-0.25) > 1e-6 {
-		t.Errorf("tag confidence %v with distribution %v, want 0.75 with cat at 0.25", tag.Confidence, tag.Distribution)
-	}
-	if n, ok := got["n"]; !ok || n.Kind != "integer" || math.Abs(n.Confidence-0.6) > 1e-6 {
-		t.Errorf("n is reported as %+v, want an integer at confidence 0.6", n)
-	}
-	if _, ok := got["pet.barks"]; ok {
-		t.Errorf("pet.barks is a number, which is not a reported kind: %+v", got["pet.barks"])
-	}
+	return got
 }
 
 // TestSchema_variantRandomIsItsAlternatives builds unions of random small objects (and now and then a scalar) and, for

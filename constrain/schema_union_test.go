@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"maps"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -406,6 +407,28 @@ func checkGenerates(t *testing.T, name string, schema []byte, n int) {
 		}
 		if err := conforms(doc, val); err != nil {
 			t.Fatalf("%s seed %d: output %q does not conform: %v", name, i, out, err)
+		}
+	}
+}
+
+// TestFieldConfidence_nullable: a nullable integer is reported as an integer when the reply holds a number, at the
+// probability its first digit had against `null`. A nullable enum or boolean is an enum that lists null, which is not
+// a reported kind, and neither is a null.
+func TestFieldConfidence_nullable(t *testing.T) {
+	schema := `{"type":"object","required":["n","e","b","m"],"properties":{
+		"n":{"anyOf":[{"type":"integer"},{"type":"null"}]},
+		"e":{"anyOf":[{"enum":["a","b"]},{"type":"null"}]},
+		"b":{"type":["boolean","null"]},
+		"m":{"type":["integer","null"]}}}`
+	got := designedConfidence(t, []byte(schema), `{"n":17,"e":"a","b":true,"m":null}`, map[string]map[byte]float64{
+		`{"n":`: {'1': 0.6, 'n': 0.4},
+	})
+	if n, ok := got["n"]; !ok || n.Kind != "integer" || string(n.Value) != "17" || math.Abs(n.Confidence-0.6) > 1e-6 {
+		t.Errorf("n is reported as %+v, want the integer 17 at confidence 0.6", n)
+	}
+	for _, path := range []string{"e", "b", "m"} {
+		if f, ok := got[path]; ok {
+			t.Errorf("%s is reported (%+v); an enum that lists null, and a null, are not reported kinds", path, f)
 		}
 	}
 }
