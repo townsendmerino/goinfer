@@ -179,6 +179,15 @@ each step; this one did not.
 - **d started at load 1.95** (night 1, above). That is inside the void rule's cap of 8.0.
 - No move is attributed to a lever (see *Decision rule*).
 
+**The cells the site's `claims.json` cites, in detail** (tok/s: each engine's three runs, their medians and the pairs
+against Ollama, as [`results/grade-2026-11-20.jsonl`](results/grade-2026-11-20.jsonl) records them; added 2026-11-27,
+no figure changed):
+
+| cell | goinfer runs | median | Ollama runs | median | pairs r | median r | outcome |
+|---|---|---:|---|---:|---|---:|---|
+| cuda 0.5B @128 greedy | 515.0 / 515.3 / 514.7 | 515.0 | 265.0 / 264.6 / 264.9 | 264.9 | 1.943 / 1.947 / 1.943 | 1.943 | AHEAD |
+| cuda phi3-mini (`q4k`) @128 greedy | 114.5 / 114.4 / 114.3 | 114.4 | 126.0 / 125.9 / 126.0 | 126.0 | 0.909 / 0.909 / 0.907 | 0.909 | BEHIND |
+
 **Against llama.cpp `a37cc46`** (beside; no claim names it):
 - **CUDA a, AHEAD in 9 cells:** 0.5B 1.363 / 1.211 / 1.15 at 128 / 2048 / 3900; 1.5B 1.198 / 1.122 / 1.086; 7B 1.091 /
   1.032 at 128 / 2048.
