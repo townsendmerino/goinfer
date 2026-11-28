@@ -194,6 +194,10 @@ jobs:
       # allowlist in internal/guard/qualityscan/testdata may only shrink, so a new site fails here, on the PR.
       - name: quality scan
         run: go test -count=1 -tags quality_scan ./internal/guard/qualityscan/
+      # Tracker ids in exported declarations' doc comments, held per file to testdata/comment_trackers.ratchet. A file
+      # that moves takes its ids to a path the ratchet does not list, so the move fails here, on the PR.
+      - name: comment census (tree)
+        run: python3 -B scripts/comment_census.py tree
 
       # The release parity sweep builds with `-tags realckpt`, and CI never did — so a
       # realckpt-only compile error reached main and broke the sweep before it could run a

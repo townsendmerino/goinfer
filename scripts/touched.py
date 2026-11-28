@@ -14,7 +14,7 @@ of the module that imports the leaf. A source-scan test (scripts/touched_scans.p
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included. An entry of that table the tree has moved away from
 (touched_scans.problems) fails the run. The site module's tests are in that table: they run for a path site.yml runs for and for a path a site page or data file names.
 A script test a workflow runs (scripts/test_*.py) runs when it changed, or when it names a changed file under scripts/ or .github/workflows/, by the file's
-name or by importing it (script_tests); a changed changelog fragment runs the lint lane's render (LINT_STEPS).
+name or by importing it (script_tests); a changed changelog fragment runs the lint lane's render, and a changed Go file its comment census (LINT_STEPS).
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
 The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
@@ -34,7 +34,13 @@ PKG_TAGS = {"internal/guard/qualityscan": "quality_scan"}  # a package whose tes
 VET_WHOLE = {"": ("goinfer_testhooks", "realckpt goinfer_testhooks")}  # a module vetted whole, once per tag set CI's lint lane vets it under
 SCRIPT_TIMEOUT_S = 900  # one script test or lint step: a run past it is a hang, and fails
 # The lint lane's script steps that have no test file to select: (the paths each one checks, its name, its command after python3 -B).
-LINT_STEPS = [("changelog.d/", "changelog fragments", ["scripts/changelog.py", "render"])]
+# (pattern, name, command): a changed path the pattern matches from its start runs the lint lane's step. The census reads
+# the non-test Go files outside testdata, against its ratchet.
+LINT_STEPS = [
+    (r"changelog\.d/", "changelog fragments", ["scripts/changelog.py", "render"]),
+    (r"(?:(?!.*testdata/).*(?<!_test)\.go|testdata/comment_trackers\.ratchet|scripts/comment_census\.py)\Z",
+     "comment census", ["scripts/comment_census.py", "tree"]),
+]
 NESTED = "TOUCHED_NESTED"  # set for the script tests this script runs, so that one of them running this script does not start them again
 
 
@@ -426,7 +432,7 @@ def run(args, run_for):
     stale = touched_scans.problems(ROOT)
     scripts = {} if os.environ.get(NESTED) else script_tests(changed)
     unrun = tests_no_workflow_runs(changed)
-    lint = [(name, argv) for prefix, name, argv in LINT_STEPS if any(p.startswith(prefix) for p in changed)]
+    lint = [(name, argv) for pattern, name, argv in LINT_STEPS if any(re.match(pattern, p) for p in changed)]
     if not gofiles and not tests and not stale and not scripts and not unrun and not lint:
         print(verdict("n/a", "no .go file in the diff, and no source-scan test, script test or lint step reads a changed file"))
         return 0

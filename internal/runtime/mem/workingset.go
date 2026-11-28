@@ -12,7 +12,7 @@ const MoESlowTokPerSecFloor = 2.0
 
 // MoEHitRatePrior maps a residency fraction (pager budget / total mapped expert bytes) to a predicted LRU cache hit
 // rate, piecewise-linearly between calibration points taken from the measured hit-rate curve on CUDA's expert cache
-// over Gemma 4 26B-A4B int4 (docs/benchmarks.md §B4.1).
+// over Gemma 4 26B-A4B int4 (docs/benchmarks.md, "Host↔VRAM MoE streaming", the slot-count sweep).
 //
 // It is a borrowed prior, not a measurement of the host pager: a different transport with the same eviction discipline
 // (LRU over routed-expert demand), so the shape is expected to transfer and the exact numbers are not. Any user-facing
