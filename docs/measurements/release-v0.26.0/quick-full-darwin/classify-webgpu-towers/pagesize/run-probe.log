@@ -1,0 +1,26 @@
+go:      go version go1.27.4 darwin/arm64
+machine: Apple M1 Pro, macOS 26.7.3, native page size 16384
+started: 2026-11-28 08:36:10 PST
+== arm64
+  TestSliceForm_large (OS page 16384 bytes, 08:36:12): 2 of 30 survive
+      deaths: 25 fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+      deaths: 3 fatal error: found pointer to free object
+  TestSliceForm_small (OS page 16384 bytes, 08:36:13): 0 of 30 survive
+      deaths: 1 SIGSEGV: segmentation violation
+      deaths: 23 fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+      deaths: 6 fatal error: found pointer to free object
+  TestSliceForm_mixed (OS page 16384 bytes, 08:36:14): 0 of 30 survive
+      deaths: 2 SIGSEGV: segmentation violation
+      deaths: 21 fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+      deaths: 7 fatal error: found pointer to free object
+  TestIntForm_large (OS page 16384 bytes, 08:36:17): 30 of 30 survive
+  TestIntForm_small (OS page 16384 bytes, 08:36:19): 30 of 30 survive
+  TestIntForm_mixed (OS page 16384 bytes, 08:36:21): 30 of 30 survive
+== amd64
+  TestSliceForm_large (OS page 4096 bytes, 08:36:28): 30 of 30 survive
+  TestSliceForm_small (OS page 4096 bytes, 08:36:31): 30 of 30 survive
+  TestSliceForm_mixed (OS page 4096 bytes, 08:36:34): 30 of 30 survive
+  TestIntForm_large (OS page 4096 bytes, 08:36:41): 30 of 30 survive
+  TestIntForm_small (OS page 4096 bytes, 08:36:44): 30 of 30 survive
+  TestIntForm_mixed (OS page 4096 bytes, 08:36:47): 30 of 30 survive
+finished: 2026-11-28 08:36:47 PST

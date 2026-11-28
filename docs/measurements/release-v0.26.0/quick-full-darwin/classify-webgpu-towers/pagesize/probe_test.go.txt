@@ -1,0 +1,102 @@
+// A standalone probe, no goinfer import: does the towers test helper's defect depend on the OS page size?
+// run-probe.sh copies this file to a scratch module as probe_test.go and runs each test in its own process, natively
+// (darwin/arm64, 16 KiB pages) and as amd64 under Rosetta (4 KiB pages). The Go runtime's own page is 8 KiB on both.
+package probe
+
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"unsafe"
+)
+
+// sliceForm is makeWritable as backend/webgpu/internal/towers and backend/cuda/internal/towers carry it at bfce89962:
+// the page-rounded range goes to mprotect as a []byte, so a Go pointer to the rounded-down address is live in the frame.
+func sliceForm(xs ...[]float32) {
+	pg := uintptr(syscall.Getpagesize())
+	for _, x := range xs {
+		if len(x) == 0 {
+			continue
+		}
+		p := unsafe.Pointer(&x[0])
+		off := uintptr(p) & (pg - 1)
+		n := (off + uintptr(len(x))*4 + pg - 1) &^ (pg - 1)
+		b := unsafe.Slice((*byte)(unsafe.Add(p, -int(off))), n)
+		if err := syscall.Mprotect(b, syscall.PROT_READ|syscall.PROT_WRITE); err != nil {
+			panic(fmt.Sprintf("makeWritable: mprotect %d bytes: %v", n, err))
+		}
+	}
+}
+
+// intForm is makeWritable as backend/metal/internal/towers carries it: the range goes to mprotect as integers.
+func intForm(xs ...[]float32) {
+	pg := uintptr(syscall.Getpagesize())
+	for _, x := range xs {
+		if len(x) == 0 {
+			continue
+		}
+		p := uintptr(unsafe.Pointer(&x[0]))
+		base := p &^ (pg - 1)
+		n := (p - base + uintptr(len(x))*4 + pg - 1) &^ (pg - 1)
+		_, _, errno := syscall.Syscall(syscall.SYS_MPROTECT, base, n, syscall.PROT_READ|syscall.PROT_WRITE)
+		runtime.KeepAlive(x)
+		if errno != 0 {
+			panic(fmt.Sprintf("makeWritable: mprotect %d bytes: %v", n, errno))
+		}
+	}
+}
+
+// large is the size the Metal backend's regression test allocates: 20 to 45 KB, around the 32 KiB small-object limit.
+func large(i int) int { return 5000 + (i%7)*1024 }
+
+// small is 64 bytes to 7.3 KB: objects that share a size-class span with others.
+func small(i int) int { return 16 + (i%13)*150 }
+
+// underGC calls mw on heap slices while the collector runs continuously, and passes by surviving. With pointers set, it
+// also allocates and drops pointer-carrying objects between them, so spans the collector scans, with free slots in them,
+// lie among the float32 spans.
+func underGC(mw func(...[]float32), size func(int) int, pointers bool) {
+	fmt.Fprintf(os.Stderr, "probe: GOARCH=%s, OS page %d bytes, %s\n", runtime.GOARCH, syscall.Getpagesize(), runtime.Version())
+	var stop atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !stop.Load() {
+			runtime.GC()
+		}
+	}()
+	defer func() { stop.Store(true); <-done }()
+	var keep [][]float32
+	var keepPtrs [][]*int
+	for i := range 20000 {
+		if pointers {
+			ps := make([]*int, 80+(i%11)*60)
+			if i%3 == 0 {
+				keepPtrs = append(keepPtrs, ps)
+				if len(keepPtrs) > 64 {
+					keepPtrs = keepPtrs[1:]
+				}
+			}
+		}
+		x := make([]float32, size(i))
+		if i%2 == 0 {
+			keep = append(keep, x)
+			if len(keep) > 64 {
+				keep = keep[1:]
+			}
+		}
+		mw(x)
+		x[len(x)-1] = 1
+	}
+	runtime.KeepAlive(keepPtrs)
+}
+
+func TestSliceForm_large(t *testing.T) { underGC(sliceForm, large, false) }
+func TestSliceForm_small(t *testing.T) { underGC(sliceForm, small, false) }
+func TestSliceForm_mixed(t *testing.T) { underGC(sliceForm, small, true) }
+func TestIntForm_large(t *testing.T)   { underGC(intForm, large, false) }
+func TestIntForm_small(t *testing.T)   { underGC(intForm, small, false) }
+func TestIntForm_mixed(t *testing.T)   { underGC(intForm, small, true) }

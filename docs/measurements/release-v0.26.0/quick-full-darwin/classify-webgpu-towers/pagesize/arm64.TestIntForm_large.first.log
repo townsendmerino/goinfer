@@ -1,0 +1,4 @@
+=== RUN   TestIntForm_large
+probe: GOARCH=arm64, OS page 16384 bytes, go1.27.4
+--- PASS: TestIntForm_large (0.13s)
+PASS

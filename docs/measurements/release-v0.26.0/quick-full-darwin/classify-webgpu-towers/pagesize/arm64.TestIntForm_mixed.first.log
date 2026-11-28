@@ -1,0 +1,4 @@
+=== RUN   TestIntForm_mixed
+probe: GOARCH=arm64, OS page 16384 bytes, go1.27.4
+--- PASS: TestIntForm_mixed (0.05s)
+PASS

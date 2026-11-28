@@ -1,0 +1,18 @@
+go:      go version go1.27.4 darwin/arm64
+machine: Apple M1 Pro, macOS 26.7.3, native page size 16384
+started: 2026-11-28 08:35:07 PST
+== arm64
+  TestSliceForm_large (OS page 16384 bytes, 08:35:12): 1 of 3 survive; first death: fatal error: found pointer to free object
+  TestSliceForm_small (OS page 16384 bytes, 08:35:12): 0 of 3 survive; first death: fatal error: found pointer to free object
+  TestSliceForm_mixed (OS page 16384 bytes, 08:35:12): 0 of 3 survive; first death: fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+  TestIntForm_large (OS page 16384 bytes, 08:35:12): 3 of 3 survive
+  TestIntForm_small (OS page 16384 bytes, 08:35:12): 3 of 3 survive
+  TestIntForm_mixed (OS page 16384 bytes, 08:35:13): 3 of 3 survive
+== amd64
+  TestSliceForm_large (OS page 4096 bytes, 08:35:14): 3 of 3 survive
+  TestSliceForm_small (OS page 4096 bytes, 08:35:14): 3 of 3 survive
+  TestSliceForm_mixed (OS page 4096 bytes, 08:35:14): 3 of 3 survive
+  TestIntForm_large (OS page 4096 bytes, 08:35:15): 3 of 3 survive
+  TestIntForm_small (OS page 4096 bytes, 08:35:15): 3 of 3 survive
+  TestIntForm_mixed (OS page 4096 bytes, 08:35:16): 3 of 3 survive
+finished: 2026-11-28 08:35:16 PST

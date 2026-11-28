@@ -1,0 +1,4 @@
+=== RUN   TestSliceForm_small
+probe: GOARCH=amd64, OS page 4096 bytes, go1.27.4
+--- PASS: TestSliceForm_small (0.08s)
+PASS

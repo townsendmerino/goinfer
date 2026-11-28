@@ -1,0 +1,4 @@
+go:      go version go1.27.4 darwin/arm64
+machine: Apple M1 Pro, macOS 26.7.3, native page size 16384
+started: 2026-11-28 08:36:10 PST
+finished: 2026-11-28 08:36:47 PST

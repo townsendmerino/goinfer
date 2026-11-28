@@ -66,11 +66,34 @@ the test files, so the tree was not edited):
 So the red is the test helper, not the WebGPU tower: no product code is on the faulting path, the tower's own comparison passes
 in every run that completes, and the planted test reproduces the fault on demand and stops reproducing it with the fix.
 
-**Class:** `test-bug`. A fix is two test files (the WebGPU copy and the CUDA copy) plus the regression test in each package.
+**The page size decides it** (`classify-webgpu-towers/pagesize/`, 08:36:10 to 08:36:47 PST, go1.27.4). A standalone test with
+both forms of the helper and no goinfer import, each cell 30 runs in separate processes, natively and as amd64 under Rosetta.
+Three cells a form: 20 to 45 KB slices (the sizes of the Metal backend's test), 64-byte to 7 KB slices, and those with
+pointer-carrying objects allocated between them.
+
+| helper form | 16 KiB pages (darwin/arm64) | 4 KiB pages (darwin/amd64 under Rosetta) |
+|---|---|---|
+| a `[]byte` to `syscall.Mprotect`, as the WebGPU and CUDA copies have it | survives **2 of 90** runs (2, 0 and 0 of 30) | survives 90 of 90 |
+| integers to `mprotect`, the Metal backend's form | survives 90 of 90 | survives 90 of 90 |
+
+The 88 deaths are 69 `found bad pointer in Go heap`, 16 `found pointer to free object` and 3 SIGSEGVs at `addr=0x14` in
+`runtime.getGCMask` under `scanObject`, which is the gate's signature (`arm64.TestSliceForm_mixed.sigsegv.log` is one). A first
+pass of 3 runs a cell split the same way (`run-probe-first-pass.log`).
+
+The reason is the Go runtime's own page. A span starts on an 8 KiB boundary, so on a 4 KiB-page host the rounded-down address
+cannot leave the slice's own span, which for a float32 slice is one the collector does not scan. **So an amd64 Linux box cannot
+hit this crash,** and the CUDA copy's defect is out of reach on the CUDA box. An earlier version of this record said the Linux
+row could hit it too; that was wrong. The 4 KiB arm ran under Rosetta, not on Linux.
+
+**Class:** `test-bug`. The fix is pull request #1462, open and not set to merge: both copies of the helper in the Metal
+backend's form, and the regression test in the WebGPU package, with small slices as well as large. Against the helper as it was
+that test dies in 20 of 20 runs on this machine; against the fixed helper it passes in 20 of 20. The CUDA package gets no test,
+because it could not fail there.
 
 **What a fix costs before the tag.** It changes files under `backend/webgpu/` and `backend/cuda/`, so by step 8 it voids the GPU
 gate's record and this row's, on every box. The other way is an entry in `docs/releases/v0.26.0-accepted.json` naming this
-record, which only the maintainer adds. The CUDA copy has the same defect, on 4 KiB pages, so the Linux row can hit it too.
+record, which only the maintainer adds. The Linux row cannot hit this crash (above), so it does not depend on which way this
+goes.
 
 ## The cells where every test skipped
 
@@ -82,7 +105,8 @@ A skip is not a pass. These are the same two cells as in v0.25.0's darwin row.
   `TestBuildPrompt_rendersOnlyOneLeadingBOS` names its committed fixture one directory short
   (`../../tokenizer/testdata/chatml-tiny.gguf` from `apps/examples/embed/`), so it skips on every machine, CI included. With
   the path corrected through an overlay it **passes** at `bfce89962`, so the behaviour it pins holds; the test itself has
-  not been running. The one-line fix is a test-file change and waits for after the tag, for the reason above.
+  not been running. Pull request #1462 corrects the path and makes a fixture that does not load a failure; with the defect the
+  test pins planted, it fails at its count assertion.
 
 ## Files
 
@@ -90,4 +114,6 @@ A skip is not a pass. These are the same two cells as in v0.25.0's darwin row.
 - `cells/`: the failing cell's log and the two all-skip cells' logs.
 - `classify-webgpu-towers/`: `run-classify.sh`, its summary (`run-classify.log`), the ten re-runs, `plant.log`, `fixed-gc.log`,
   `fixed-cell.log`, and under `overlay/` the two generated test files as text.
+- `classify-webgpu-towers/pagesize/`: the probe (`probe_test.go.txt`, `run-probe.sh`), its summary (`run-probe.log`), each
+  cell's first log, the first death's log for the three cells that died, and one SIGSEGV death.
 - `aborted-before-start/`: the stopped first launch.
