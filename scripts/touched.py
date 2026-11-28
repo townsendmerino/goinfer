@@ -12,7 +12,9 @@ cold test run is over a minute (SLOW) runs only the tests declared in the touche
 or the -run you name. A file that was split out of a slow package leaves its test behind: a change to leaf/foo.go also runs slow/foo_test.go, in each slow package
 of the module that imports the leaf. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included. An entry of that table the tree has moved away from
-(touched_scans.problems) fails the run.
+(touched_scans.problems) fails the run. The site module's tests are in that table: they run for a path site.yml runs for and for a path a site page or data file names.
+A script test a workflow runs (scripts/test_*.py) runs when it changed, or when it names a changed file under scripts/ or .github/workflows/, by the file's
+name or by importing it (script_tests); a changed changelog fragment runs the lint lane's render (LINT_STEPS).
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
 The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
@@ -30,6 +32,10 @@ SLOW = {"decoder", "internal/runtime/sampling", "backend/cuda", "internal/app/se
 TAGS = {"backend/cuda": "cuda goinfer_testhooks", "backend/webgpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 PKG_TAGS = {"internal/guard/qualityscan": "quality_scan"}  # a package whose tests CI runs under its own tag, in place of its module's
 VET_WHOLE = {"": ("goinfer_testhooks", "realckpt goinfer_testhooks")}  # a module vetted whole, once per tag set CI's lint lane vets it under
+SCRIPT_TIMEOUT_S = 900  # one script test or lint step: a run past it is a hang, and fails
+# The lint lane's script steps that have no test file to select: (the paths each one checks, its name, its command after python3 -B).
+LINT_STEPS = [("changelog.d/", "changelog fragments", ["scripts/changelog.py", "render"])]
+NESTED = "TOUCHED_NESTED"  # set for the script tests this script runs, so that one of them running this script does not start them again
 
 
 def sh(*a, **k):
@@ -132,6 +138,82 @@ def test_step(name, fn, skips):
     return not ok
 
 
+def script_step(name, argv, skips):
+    """step() for a python script, run from the repository root as the lint lane runs it. Its line adds the tests the script
+    ran and skipped, and a run past SCRIPT_TIMEOUT_S fails. A run whose every test was skipped is a named skip, not a pass, and
+    does not count as a step run. Returns whether it failed."""
+    t = time.time()
+    try:
+        r = sh(sys.executable, "-B", *argv, cwd=ROOT, env=dict(os.environ, **{NESTED: "1"}), timeout=SCRIPT_TIMEOUT_S)
+        ok, out = r.returncode == 0, r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        ok, out = False, f"timed out after {SCRIPT_TIMEOUT_S} s"
+    ran = sum(int(n) for n in re.findall(r"^Ran (\d+) tests?\b", out, re.M))
+    skipped = sum(int(n) for n in re.findall(r"\bskipped=(\d+)", out))
+    if ok and ran and skipped >= ran:
+        print(f"  skip {name}: each of its {ran} test(s) was skipped here ({time.time() - t:.1f}s)", flush=True)
+        skips.append(f"{name} (every test skipped)")
+        return False
+    RAN.append(name)
+    counts = f": {ran} test{'s' if ran != 1 else ''}" + (f", {skipped} skipped" if skipped else "") if ran else ""
+    print(f"  {'ok  ' if ok else 'FAIL'} {name}{counts} ({time.time() - t:.1f}s)", flush=True)
+    if not ok:
+        print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
+    return not ok
+
+
+def _read(path):
+    with open(os.path.join(ROOT, path), encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def _names(text, base):
+    """Whether text names the file base as a whole name: not inside a longer one (tool.py in test_tool.py or in tool.pyc)."""
+    return re.search(r"(?<![\w.-])" + re.escape(base) + r"(?![\w-])", text) is not None
+
+
+def _imports(text, module):
+    """Whether python source text imports module by name: import module, import a, module, or from module import x."""
+    m = re.escape(module)
+    return re.search(r"^\s*(?:from\s+" + m + r"\b|import\s+(?:[\w.]+(?:\s+as\s+\w+)?\s*,\s*)*" + m + r"\b)", text, re.M) is not None
+
+
+def workflow_tests():
+    """The script tests (scripts/test_*.py) a workflow under .github/workflows names: the ones CI runs."""
+    flows, scripts = os.path.join(ROOT, ".github", "workflows"), os.path.join(ROOT, "scripts")
+    if not os.path.isdir(flows) or not os.path.isdir(scripts):
+        return []
+    text = "\n".join(_read(os.path.join(".github", "workflows", f)) for f in sorted(os.listdir(flows)) if f.endswith((".yml", ".yaml")))
+    return ["scripts/" + f for f in sorted(os.listdir(scripts)) if re.fullmatch(r"test_\w+\.py", f) and _names(text, f)]
+
+
+def script_tests(changed):
+    """{script test: the changed path that selects it}, among the script tests CI runs (workflow_tests): one that changed, and
+    one that names a changed file under scripts/ or .github/workflows/, by the file's name or by importing it. The test named
+    after a script is not the only one a change to it can break: the lock's tests run this script in a scratch repository."""
+    triggers = sorted(p for p in changed if p.startswith(("scripts/", ".github/workflows/")))
+    if not triggers:
+        return {}
+    out = {}
+    for test in workflow_tests():
+        if test in changed:
+            out[test] = test
+            continue
+        text = _read(test)
+        for p in triggers:
+            base = os.path.basename(p)
+            if _names(text, base) or (p.startswith("scripts/") and base.endswith(".py") and _imports(text, base[:-3])):
+                out[test] = p
+                break
+    return out
+
+
+def tests_no_workflow_runs(changed):
+    """The changed script tests that no workflow names: CI does not run one, and neither does this script."""
+    run = set(workflow_tests())
+    return sorted(p for p in changed if re.fullmatch(r"scripts/test_\w+\.py", p) and p not in run and os.path.exists(os.path.join(ROOT, p)))
+
+
 def module_of(d):
     """The module root (a repo-relative dir, "" for the root module) that contains dir d."""
     while d and not os.path.exists(os.path.join(ROOT, d, "go.mod")):
@@ -199,7 +281,7 @@ def plan(changed, run_for=None):
     bydir = {}
     for f in gofiles + embedfiles:
         bydir.setdefault(os.path.dirname(f), []).append(f)
-    scans = touched_scans.select(changed)
+    scans = touched_scans.select(changed, ROOT)
     behind = left_behind(gofiles)
     for d in sorted(set(bydir) | set(scans) | set(behind)):
         name = d or "."
@@ -342,15 +424,19 @@ def run(args, run_for):
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(f))
     tests, skipped = plan(changed, run_for)
     stale = touched_scans.problems(ROOT)
-    if not gofiles and not tests and not stale:
-        print(verdict("n/a", "no .go file in the diff, and no source-scan test reads a changed file"))
+    scripts = {} if os.environ.get(NESTED) else script_tests(changed)
+    unrun = tests_no_workflow_runs(changed)
+    lint = [(name, argv) for prefix, name, argv in LINT_STEPS if any(p.startswith(prefix) for p in changed)]
+    if not gofiles and not tests and not stale and not scripts and not unrun and not lint:
+        print(verdict("n/a", "no .go file in the diff, and no source-scan test, script test or lint step reads a changed file"))
         return 0
     mods = {}
     for f in gofiles:
         mods.setdefault(module_of(os.path.dirname(f)), []).append(f)
     for mod, _ in tests:
         mods.setdefault(mod, [])
-    print(f"touched: {len(gofiles)} .go file(s), {len(changed)} changed path(s), {len(mods)} module(s), base {base[:8]}")
+    print(f"touched: {len(gofiles)} .go file(s), {len(changed)} changed path(s), {len(mods)} module(s)"
+          + (f", {len(scripts)} script test(s)" if scripts else "") + f", base {base[:8]}", flush=True)
     bad, skips = 0, []
     RAN.clear()
     if gofiles and not step("gofmt", lambda: (lambda r: (not r.stdout.strip(), r.stdout))(sh("gofmt", "-l", *gofiles))):
@@ -370,6 +456,13 @@ def run(args, run_for):
             skips.append(label)
             continue
         bad += check_module(mod, label, files, tests, target_os, skips)
+    for test, why in sorted(scripts.items()):
+        bad += script_step(f"script test {test} ({'changed' if why == test else 'names ' + why})", [test], skips)
+    for test in unrun:
+        print(f"  skip script test {test}: no workflow runs it, so neither CI nor this run does (by hand: python3 -B {test})")
+        skips.append(f"script test {test} (no workflow runs it)")
+    for name, argv in lint:
+        bad += script_step(f"{name} ({' '.join(argv)})", argv, skips)
     head, line, rc = summary(bad, RAN, skips)
     print(head)
     print(line)
