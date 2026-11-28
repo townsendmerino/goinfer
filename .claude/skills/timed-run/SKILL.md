@@ -70,8 +70,9 @@ the CUDA suite twice, and most of it re-checked what the previous run had alread
   from fails the run. The site's tests are in that table: they run for a path `site.yml` runs for and for a file a site page or data file names (a
   page lists its sources, and the site build fails when one moves). A change to a script or a workflow runs the script tests CI runs that name it, by
   its file name or by importing it (`script_tests` in `touched.py`): a change to `touched.py` runs the lock's and the day tools' tests too, not only
-  `test_touched.py`. A changed test that no workflow runs is a named skip, a changed changelog fragment runs the lint lane's render, and a
-  changed Go file its comment census. It takes seconds (about 40 for a change under `internal/runtime`); a script change takes as long as the
+  `test_touched.py`. A changed test that no workflow runs is a named skip. A test CI's runner cannot run for want of a module (`LOCAL_ONLY` in
+  `touched.py`: the vision bench test needs Pillow) is selected like the others, runs where that module imports, and is a named skip where it
+  does not. A changed changelog fragment runs the lint lane's render, and a changed Go file its comment census. It takes seconds (about 40 for a change under `internal/runtime`); a script change takes as long as the
   tests that name it (about a minute for `touched.py`: 41 s, 13 s and 4 s). It is not a gate.
 - **Do not run `go run ./cmd/gate quick`, a whole-module or whole-package `go test`, or the CUDA suite by day.** CI runs them on every push, and the heavy tier is
   its own run with a stated wall time (see "Run budget"). `gate quick` is the pre-tag tier (RELEASING.md): run it when cutting a release or when the owner asks.

@@ -14,14 +14,15 @@ of the module that imports the leaf. A source-scan test (scripts/touched_scans.p
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included. An entry of that table the tree has moved away from
 (touched_scans.problems) fails the run. The site module's tests are in that table: they run for a path site.yml runs for and for a path a site page or data file names.
 A script test a workflow runs (scripts/test_*.py) runs when it changed, or when it names a changed file under scripts/ or .github/workflows/, by the file's
-name or by importing it (script_tests); a changed changelog fragment runs the lint lane's render, and a changed Go file its comment census (LINT_STEPS).
+name or by importing it (script_tests); one CI's runner cannot run for want of a module (LOCAL_ONLY) is selected the same way and runs where that
+module imports. A changed changelog fragment runs the lint lane's render, and a changed Go file its comment census (LINT_STEPS).
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
 The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
 check (0), INCONCLUSIVE when a timed run holds the timing lock (75) or when every build, vet and test the diff needed was skipped, so
 only gofmt or nothing ran (2).
 """
-import json, os, re, subprocess, sys, time
+import importlib.util, json, os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
@@ -42,6 +43,9 @@ LINT_STEPS = [
      "comment census", ["scripts/comment_census.py", "tree"]),
 ]
 NESTED = "TOUCHED_NESTED"  # set for the script tests this script runs, so that one of them running this script does not start them again
+# {a script test CI's runner cannot run: the module it needs and the runner lacks}. No workflow names one. This script selects it
+# like a test CI runs, runs it where that module imports, and names it as a skip where it does not.
+LOCAL_ONLY = {"scripts/test_bench_peer_vision.py": "PIL"}
 
 
 def sh(*a, **k):
@@ -194,14 +198,14 @@ def workflow_tests():
 
 
 def script_tests(changed):
-    """{script test: the changed path that selects it}, among the script tests CI runs (workflow_tests): one that changed, and
+    """{script test: the changed path that selects it}, among the script tests CI runs (workflow_tests) and the LOCAL_ONLY ones: one that changed, and
     one that names a changed file under scripts/ or .github/workflows/, by the file's name or by importing it. The test named
     after a script is not the only one a change to it can break: the lock's tests run this script in a scratch repository."""
     triggers = sorted(p for p in changed if p.startswith(("scripts/", ".github/workflows/")))
     if not triggers:
         return {}
     out = {}
-    for test in workflow_tests():
+    for test in sorted(set(workflow_tests()) | {t for t in LOCAL_ONLY if os.path.exists(os.path.join(ROOT, t))}):
         if test in changed:
             out[test] = test
             continue
@@ -215,8 +219,8 @@ def script_tests(changed):
 
 
 def tests_no_workflow_runs(changed):
-    """The changed script tests that no workflow names: CI does not run one, and neither does this script."""
-    run = set(workflow_tests())
+    """The changed script tests that no workflow names and LOCAL_ONLY does not list: CI does not run one, and neither does this script."""
+    run = set(workflow_tests()) | set(LOCAL_ONLY)
     return sorted(p for p in changed if re.fullmatch(r"scripts/test_\w+\.py", p) and p not in run and os.path.exists(os.path.join(ROOT, p)))
 
 
@@ -463,7 +467,12 @@ def run(args, run_for):
             continue
         bad += check_module(mod, label, files, tests, target_os, skips)
     for test, why in sorted(scripts.items()):
-        bad += script_step(f"script test {test} ({'changed' if why == test else 'names ' + why})", [test], skips)
+        name, need = f"script test {test} ({'changed' if why == test else 'names ' + why})", LOCAL_ONLY.get(test)
+        if need and importlib.util.find_spec(need) is None:
+            print(f"  skip {name}: it needs {need}, which this python lacks, and no workflow runs it")
+            skips.append(f"script test {test} (needs {need})")
+            continue
+        bad += script_step(name, [test], skips)
     for test in unrun:
         print(f"  skip script test {test}: no workflow runs it, so neither CI nor this run does (by hand: python3 -B {test})")
         skips.append(f"script test {test} (no workflow runs it)")
