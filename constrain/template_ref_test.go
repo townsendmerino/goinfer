@@ -24,6 +24,15 @@ func TestTemplateFromSchema_refsAndUnions(t *testing.T) {
 		{"a union of nulls is null", `{"anyOf":[{"type":"null"}]}`, `null`},
 		{"a recursive optional", `{"$defs":{"N":{"type":"object","properties":{"v":{"type":"integer"},"next":{"anyOf":[{"$ref":"#/$defs/N"},{"type":"null"}]}}}},"$ref":"#/$defs/N"}`,
 			"{\n    \"v\": 0,\n    \"next\": {}\n}"},
+		// A schema is being written out however the template came to it: as the root, by a property, or by a reference
+		// spelled another way.
+		{"a reference back to the root", `{"type":"object","properties":{"name":{"type":"string"},"kids":{"type":"array","items":{"$ref":"#"}}}}`,
+			"{\n    \"name\": \"\",\n    \"kids\": [\n        {}\n    ]\n}"},
+		{"a reference back to an enclosing property", `{"type":"object","properties":{"a":{"type":"object","properties":{"v":{"type":"integer"},"again":{"$ref":"#/properties/a"}}}}}`,
+			"{\n    \"a\": {\n        \"v\": 0,\n        \"again\": {}\n    }\n}"},
+		{"one target under two spellings", `{"$defs":{"N":{"type":"object","properties":{"v":{"type":"integer"},"next":{"$ref":"#/%24defs/N"}}}},"$ref":"#/$defs/N"}`,
+			"{\n    \"v\": 0,\n    \"next\": {}\n}"},
+		{"a recursive array", `{"$defs":{"L":{"type":"array","items":{"$ref":"#/$defs/L"}}},"$ref":"#/$defs/L"}`, "[\n    []\n]"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -38,8 +47,9 @@ func TestTemplateFromSchema_refsAndUnions(t *testing.T) {
 	}
 }
 
-// A reference the grammar would refuse is refused here too, and a document whose references fan out is refused by a
-// count: a template is the schema written out in full, so it has no memo to keep it small.
+// A reference that cannot be followed is refused: one that names nothing, one out of the document, one that is not a
+// string. A document whose references fan out is refused by a count: a template is the schema written out in full, so
+// it has no memo to keep it small.
 func TestTemplateFromSchema_refErrors(t *testing.T) {
 	var fan strings.Builder
 	fan.WriteString(`{"$defs":{"L0":{"type":"string"}`)

@@ -32,7 +32,7 @@ import (
 //	array           ONE example element in brackets (the element's own template), so a list of line items shows what
 //	                one line item looks like. An array of strings is [""].
 //	$ref            the referenced schema's template. A reference back into a schema that is being written out
-//	                (a recursive definition) is {}.
+//	                (a recursive definition) is {}, or [] when that schema is an array.
 //	anyOf, oneOf    the first alternative that is not null, as a `type` list is its first entry that is not "null"
 //
 // Output is indented four spaces, as the card's example is. A key that spells a keyword ("type", "properties",
@@ -60,7 +60,7 @@ func TemplateFromSchema(schema []byte) (string, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
-	t := &templater{root: doc, open: map[string]bool{}}
+	t := &templater{root: doc, open: map[*orderedObj]bool{}}
 	n, err := t.node(doc, 0)
 	if err != nil {
 		return "", err
@@ -72,11 +72,11 @@ func TemplateFromSchema(schema []byte) (string, error) {
 // graph written out in full, so a small document can ask for a very large one.
 const maxTemplateValues = 1 << 16
 
-// templater renders one schema document: root is what a `$ref` is read from, open the references being written out,
+// templater renders one schema document: root is what a `$ref` is read from, open the schemas being written out,
 // and values the count against maxTemplateValues.
 type templater struct {
 	root   any
-	open   map[string]bool
+	open   map[*orderedObj]bool
 	values int
 }
 
@@ -166,6 +166,8 @@ func (t *templater) node(v any, depth int) (*tmplNode, error) {
 	if !ok {
 		return nil, fmt.Errorf("constrain: a schema node must be an object, got %T", v)
 	}
+	t.open[s] = true
+	defer delete(t.open, s)
 	if ref, has := s.vals["$ref"]; has {
 		return t.ref(ref, depth)
 	}
@@ -237,11 +239,12 @@ func (t *templater) ref(raw any, depth int) (*tmplNode, error) {
 		}
 		target = next
 	}
-	if t.open[ref] {
+	if s, ok := target.(*orderedObj); ok && t.open[s] {
+		if schemaType(s) == "array" {
+			return &tmplNode{kind: 'l', lit: "[]"}, nil
+		}
 		return &tmplNode{kind: 'o'}, nil
 	}
-	t.open[ref] = true
-	defer delete(t.open, ref)
 	return t.node(target, depth)
 }
 
