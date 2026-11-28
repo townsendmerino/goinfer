@@ -1,0 +1,30 @@
+go:      go version go1.27.4 darwin/arm64
+machine: Apple M1 Pro, macOS 26.7.3, native page size 16384
+started: 2026-11-28 08:51:25 PST
+== arm64
+  TestSliceFormSettled_96 (OS page 16384 bytes, 08:51:26): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestSliceFormSettled_400 (OS page 16384 bytes, 08:51:27): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestSliceFormSettled_4096 (OS page 16384 bytes, 08:51:28): 0 of 10 survive
+      deaths: 3 fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)
+      deaths: 7 fatal error: found pointer to free object
+  TestSliceFormSettled_6000 (OS page 16384 bytes, 08:51:28): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestIntFormSettled_96 (OS page 16384 bytes, 08:51:38): 10 of 10 survive
+  TestIntFormSettled_400 (OS page 16384 bytes, 08:51:49): 10 of 10 survive
+  TestIntFormSettled_4096 (OS page 16384 bytes, 08:51:59): 10 of 10 survive
+  TestIntFormSettled_6000 (OS page 16384 bytes, 08:52:09): 10 of 10 survive
+== amd64
+  TestSliceFormSettled_96 (OS page 4096 bytes, 08:52:10): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestSliceFormSettled_400 (OS page 4096 bytes, 08:52:11): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestSliceFormSettled_4096 (OS page 4096 bytes, 08:52:22): 10 of 10 survive
+  TestSliceFormSettled_6000 (OS page 4096 bytes, 08:52:23): 0 of 10 survive
+      deaths: 10 fatal error: found pointer to free object
+  TestIntFormSettled_96 (OS page 4096 bytes, 08:52:34): 10 of 10 survive
+  TestIntFormSettled_400 (OS page 4096 bytes, 08:52:44): 10 of 10 survive
+  TestIntFormSettled_4096 (OS page 4096 bytes, 08:52:55): 10 of 10 survive
+  TestIntFormSettled_6000 (OS page 4096 bytes, 08:53:05): 10 of 10 survive
+finished: 2026-11-28 08:53:05 PST

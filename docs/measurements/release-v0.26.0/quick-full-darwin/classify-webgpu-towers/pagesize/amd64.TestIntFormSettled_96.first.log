@@ -1,0 +1,5 @@
+=== RUN   TestIntFormSettled_96
+probe: GOARCH=amd64, OS page 4096 bytes, go1.27.4, 96-byte slices
+probe: survived 918574 calls on 19969 slices
+--- PASS: TestIntFormSettled_96 (1.04s)
+PASS

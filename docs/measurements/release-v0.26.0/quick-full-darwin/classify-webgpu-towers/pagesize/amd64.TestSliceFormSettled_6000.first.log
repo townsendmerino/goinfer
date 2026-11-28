@@ -1,0 +1,289 @@
+=== RUN   TestSliceFormSettled_6000
+probe: GOARCH=amd64, OS page 4096 bytes, go1.27.4, 6000-byte slices
+runtime: marked free object in span 0x4cfe83a0, elemsize=6144 freeindex=0 (bad use of unsafe.Pointer or having race conditions? try -d=checkptr or -race)
+0x17216772c000 alloc marked  
+0x17216772d800 free  unmarked
+0x17216772f000 free  marked   zombie
+                   7 6 5 4  3 2 1 0   f e d c  b a 9 8  0123456789abcdef
+000017216772f000: 00000000 00000000  00000000 00000000  ................
+000017216772f010: 00000000 00000000  00000000 00000000  ................
+000017216772f020: 00000000 00000000  00000000 00000000  ................
+000017216772f030: 00000000 00000000  00000000 00000000  ................
+000017216772f040: 00000000 00000000  00000000 00000000  ................
+000017216772f050: 00000000 00000000  00000000 00000000  ................
+000017216772f060: 00000000 00000000  00000000 00000000  ................
+000017216772f070: 00000000 00000000  00000000 00000000  ................
+000017216772f080: 00000000 00000000  00000000 00000000  ................
+000017216772f090: 00000000 00000000  00000000 00000000  ................
+000017216772f0a0: 00000000 00000000  00000000 00000000  ................
+000017216772f0b0: 00000000 00000000  00000000 00000000  ................
+000017216772f0c0: 00000000 00000000  00000000 00000000  ................
+000017216772f0d0: 00000000 00000000  00000000 00000000  ................
+000017216772f0e0: 00000000 00000000  00000000 00000000  ................
+000017216772f0f0: 00000000 00000000  00000000 00000000  ................
+000017216772f100: 00000000 00000000  00000000 00000000  ................
+000017216772f110: 00000000 00000000  00000000 00000000  ................
+000017216772f120: 00000000 00000000  00000000 00000000  ................
+000017216772f130: 00000000 00000000  00000000 00000000  ................
+000017216772f140: 00000000 00000000  00000000 00000000  ................
+000017216772f150: 00000000 00000000  00000000 00000000  ................
+000017216772f160: 00000000 00000000  00000000 00000000  ................
+000017216772f170: 00000000 00000000  00000000 00000000  ................
+000017216772f180: 00000000 00000000  00000000 00000000  ................
+000017216772f190: 00000000 00000000  00000000 00000000  ................
+000017216772f1a0: 00000000 00000000  00000000 00000000  ................
+000017216772f1b0: 00000000 00000000  00000000 00000000  ................
+000017216772f1c0: 00000000 00000000  00000000 00000000  ................
+000017216772f1d0: 00000000 00000000  00000000 00000000  ................
+000017216772f1e0: 00000000 00000000  00000000 00000000  ................
+000017216772f1f0: 00000000 00000000  00000000 00000000  ................
+000017216772f200: 00000000 00000000  00000000 00000000  ................
+000017216772f210: 00000000 00000000  00000000 00000000  ................
+000017216772f220: 00000000 00000000  00000000 00000000  ................
+000017216772f230: 00000000 00000000  00000000 00000000  ................
+000017216772f240: 00000000 00000000  00000000 00000000  ................
+000017216772f250: 00000000 00000000  00000000 00000000  ................
+000017216772f260: 00000000 00000000  00000000 00000000  ................
+000017216772f270: 00000000 00000000  00000000 00000000  ................
+000017216772f280: 00000000 00000000  00000000 00000000  ................
+000017216772f290: 00000000 00000000  00000000 00000000  ................
+000017216772f2a0: 00000000 00000000  00000000 00000000  ................
+000017216772f2b0: 00000000 00000000  00000000 00000000  ................
+000017216772f2c0: 00000000 00000000  00000000 00000000  ................
+000017216772f2d0: 00000000 00000000  00000000 00000000  ................
+000017216772f2e0: 00000000 00000000  00000000 00000000  ................
+000017216772f2f0: 00000000 00000000  00000000 00000000  ................
+000017216772f300: 00000000 00000000  00000000 00000000  ................
+000017216772f310: 00000000 00000000  00000000 00000000  ................
+000017216772f320: 00000000 00000000  00000000 00000000  ................
+000017216772f330: 00000000 00000000  00000000 00000000  ................
+000017216772f340: 00000000 00000000  00000000 00000000  ................
+000017216772f350: 00000000 00000000  00000000 00000000  ................
+000017216772f360: 00000000 00000000  00000000 00000000  ................
+000017216772f370: 00000000 00000000  00000000 00000000  ................
+000017216772f380: 00000000 00000000  00000000 00000000  ................
+000017216772f390: 00000000 00000000  00000000 00000000  ................
+000017216772f3a0: 00000000 00000000  00000000 00000000  ................
+000017216772f3b0: 00000000 00000000  00000000 00000000  ................
+000017216772f3c0: 00000000 00000000  00000000 00000000  ................
+000017216772f3d0: 00000000 00000000  00000000 00000000  ................
+000017216772f3e0: 00000000 00000000  00000000 00000000  ................
+000017216772f3f0: 00000000 00000000  00000000 00000000  ................
+0x172167730800 alloc marked  
+fatal error: found pointer to free object
+
+goroutine 3 gp=0x17215ed2ad20 m=6 mp=0x17215ee86008 [running]:
+runtime.throw({0x3c291a4?, 0x400?})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/panic.go:1245 +0x48 fp=0x172164384d90 sp=0x172164384d60 pc=0x3b59008
+runtime.(*mspan).reportZombies(0x4cfe83a0)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcsweep.go:893 +0x325 fp=0x172164384e10 sp=0x172164384d90 pc=0x3b0d1a5
+runtime.(*sweepLocked).sweep(0x3dd2ce0?, 0x0)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcsweep.go:668 +0x4e5 fp=0x172164384f38 sp=0x172164384e10 pc=0x3b0c385
+runtime.sweepone()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcsweep.go:396 +0xdd fp=0x172164384f88 sp=0x172164384f38 pc=0x3b0bbdd
+runtime.bgsweep(0x17215ed9a000)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcsweep.go:300 +0xa6 fp=0x172164384fc8 sp=0x172164384f88 pc=0x3b0b966
+runtime.gcenable.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:214 +0x17 fp=0x172164384fe0 sp=0x172164384fc8 pc=0x3b4feb7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x172164384fe8 sp=0x172164384fe0 pc=0x3b5f981
+created by runtime.gcenable in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:214 +0x66
+
+goroutine 1 gp=0x17215ed2a1e0 m=nil [chan receive]:
+runtime.gopark(0x7ace2786?, 0x60d7420?, 0x48?, 0x79?, 0x3d84f28?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ede7908 sp=0x17215ede78e8 pc=0x3b5912a
+runtime.chanrecv(0x17215ed9a400, 0x17215ede79ef, 0x1)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/chan.go:667 +0x4ae fp=0x17215ede7980 sp=0x17215ede7908 pc=0x3aea60e
+runtime.chanrecv1(0x18?, 0x3d91fe0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/chan.go:509 +0x12 fp=0x17215ede79a8 sp=0x17215ede7980 pc=0x3aea152
+testing.(*T).Run(0x17215edf2008, {0x3c282fc?, 0x17215ede7aa0?}, 0x3da4e58)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2268 +0x4f2 fp=0x17215ede7a80 sp=0x17215ede79a8 pc=0x3bbb952
+testing.runTests.func1(0x17215edf2008)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2744 +0x37 fp=0x17215ede7ac0 sp=0x17215ede7a80 pc=0x3bc0e97
+testing.tRunner(0x17215edf2008, 0x17215ede7bc8)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2195 +0xea fp=0x17215ede7b10 sp=0x17215ede7ac0 pc=0x3bbb3ea
+testing.runTests({0x3c22bd6, 0x5}, {0x3c22bd6, 0x5}, 0x17215ed36078, {0x3dc4490, 0xe, 0xe}, {0xc2badfdc8dd6c538, 0x45d967e140, ...})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2742 +0x510 fp=0x17215ede7bf8 sp=0x17215ede7b10 pc=0x3bbd930
+testing.(*M).Run(0x17215edb2140)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2602 +0x6af fp=0x17215ede7e38 sp=0x17215ede7bf8 pc=0x3bbc4ef
+main.main()
+	_testmain.go:72 +0x9b fp=0x17215ede7eb8 sp=0x17215ede7e38 pc=0x3c1211b
+runtime.main()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:302 +0x427 fp=0x17215ede7fe0 sp=0x17215ede7eb8 pc=0x3b21787
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ede7fe8 sp=0x17215ede7fe0 pc=0x3b5f981
+
+goroutine 2 gp=0x17215ed2a780 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed84fa8 sp=0x17215ed84f88 pc=0x3b5912a
+runtime.goparkunlock(...)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:480
+runtime.forcegchelper()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:387 +0xb3 fp=0x17215ed84fe0 sp=0x17215ed84fa8 pc=0x3b21a53
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed84fe8 sp=0x17215ed84fe0 pc=0x3b5f981
+created by runtime.init.7 in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:375 +0x1a
+
+goroutine 4 gp=0x17215ed2af00 m=nil [GC scavenge wait]:
+runtime.gopark(0x10000?, 0x3c30758?, 0x0?, 0x0?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed85f78 sp=0x17215ed85f58 pc=0x3b5912a
+runtime.goparkunlock(...)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:480
+runtime.(*scavengerState).park(0x3dc9900)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcscavenge.go:425 +0x49 fp=0x17215ed85fa8 sp=0x17215ed85f78 pc=0x3b094e9
+runtime.bgscavenge(0x17215ed9a000)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgcscavenge.go:658 +0x59 fp=0x17215ed85fc8 sp=0x17215ed85fa8 pc=0x3b09a59
+runtime.gcenable.gowrap2()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:215 +0x17 fp=0x17215ed85fe0 sp=0x17215ed85fc8 pc=0x3b4fe77
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed85fe8 sp=0x17215ed85fe0 pc=0x3b5f981
+created by runtime.gcenable in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:215 +0xa5
+
+goroutine 5 gp=0x17215ed2b4a0 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed86788 sp=0x17215ed86768 pc=0x3b5912a
+runtime.goparkunlock(...)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:480
+runtime.updateMaxProcsGoroutine()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:7146 +0xe7 fp=0x17215ed867e0 sp=0x17215ed86788 pc=0x3b2ed07
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed867e8 sp=0x17215ed867e0 pc=0x3b5f981
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:7134 +0x37
+
+goroutine 6 gp=0x17215ed2b680 m=nil [finalizer wait]:
+runtime.gopark(0x70?, 0x3dcac20?, 0x0?, 0x80?, 0x17215ed84668?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed84620 sp=0x17215ed84600 pc=0x3b5912a
+runtime.runFinalizers()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mfinal.go:210 +0x107 fp=0x17215ed847e0 sp=0x17215ed84620 pc=0x3afcae7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed847e8 sp=0x17215ed847e0 pc=0x3b5f981
+created by runtime.createfing in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mfinal.go:172 +0x3d
+
+goroutine 7 gp=0x17215ed2b860 m=nil [runnable]:
+runtime.mallocgcSmallScanNoHeaderSC3(0x18, 0x3d707e8, 0x1?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/malloc_generated.go:319 +0x3e6 fp=0x17215edaedc8 sp=0x17215edaedc0 pc=0x3af3606
+probe.settled(0x3da4f08, 0x5dc, 0x3b9aca00)
+	/Users/francistownsend-merino/goinfer-work/eval-followup/pagesize-probe/work-settled/probe_settled_test.go:45 +0x4cc fp=0x17215edaef48 sp=0x17215edaedc8 pc=0x3c10e6c
+probe.TestSliceFormSettled_6000(0x17215edf2248?)
+	/Users/francistownsend-merino/goinfer-work/eval-followup/pagesize-probe/work-settled/probe_settled_test.go:60 +0x25 fp=0x17215edaef70 sp=0x17215edaef48 pc=0x3c110a5
+testing.tRunner(0x17215edf2248, 0x3da4e58)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2195 +0xea fp=0x17215edaefc0 sp=0x17215edaef70 pc=0x3bbb3ea
+testing.(*T).Run.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2260 +0x1b fp=0x17215edaefe0 sp=0x17215edaefc0 pc=0x3bc0c1b
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215edaefe8 sp=0x17215edaefe0 pc=0x3b5f981
+created by testing.(*T).Run in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/testing/testing.go:2260 +0x4d4
+
+goroutine 8 gp=0x17215ed2ba40 m=nil [GC worker (idle)]:
+runtime.gopark(0x3c110a5?, 0x3da4f08?, 0xdc?, 0x5?, 0x3b9aca00?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed86f40 sp=0x17215ed86f20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215ed86fc8 sp=0x17215ed86f40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215ed86fe0 sp=0x17215ed86fc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed86fe8 sp=0x17215ed86fe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 9 gp=0x17215ed2bc20 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed87740 sp=0x17215ed87720 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215ed877c8 sp=0x17215ed87740 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215ed877e0 sp=0x17215ed877c8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed877e8 sp=0x17215ed877e0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 17 gp=0x17215ee043c0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215ed80740 sp=0x17215ed80720 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215ed807c8 sp=0x17215ed80740 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215ed807e0 sp=0x17215ed807c8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215ed807e8 sp=0x17215ed807e0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 18 gp=0x17215ee045a0 m=nil [GC worker (idle)]:
+runtime.gopark(0xd51b82977337?, 0x3?, 0xb1?, 0xfc?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215edb1f40 sp=0x17215edb1f20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215edb1fc8 sp=0x17215edb1f40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215edb1fe0 sp=0x17215edb1fc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215edb1fe8 sp=0x17215edb1fe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 19 gp=0x17215ee04780 m=nil [GC worker (idle)]:
+runtime.gopark(0xd51b828fbe8f?, 0x3?, 0x9c?, 0x2c?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215edadf40 sp=0x17215edadf20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215edadfc8 sp=0x17215edadf40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215edadfe0 sp=0x17215edadfc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215edadfe8 sp=0x17215edadfe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 20 gp=0x17215ee04960 m=nil [GC worker (idle)]:
+runtime.gopark(0xd51b828fba01?, 0x1?, 0x47?, 0x94?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x172164385f40 sp=0x172164385f20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x172164385fc8 sp=0x172164385f40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x172164385fe0 sp=0x172164385fc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x172164385fe8 sp=0x172164385fe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 21 gp=0x17215ee04b40 m=nil [GC worker (idle)]:
+runtime.gopark(0xd51b8205a8f3?, 0x1?, 0x27?, 0x73?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215edabf40 sp=0x17215edabf20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215edabfc8 sp=0x17215edabf40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215edabfe0 sp=0x17215edabfc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215edabfe8 sp=0x17215edabfe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 22 gp=0x17215ee04d20 m=nil [GC worker (idle)]:
+runtime.gopark(0xd51b82983c10?, 0x1?, 0x97?, 0x89?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:474 +0xca fp=0x17215edaaf40 sp=0x17215edaaf20 pc=0x3b5912a
+runtime.gcBgMarkWorker(0x17215eda8230)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1807 +0xeb fp=0x17215edaafc8 sp=0x17215edaaf40 pc=0x3affe8b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0x17 fp=0x17215edaafe0 sp=0x17215edaafc8 pc=0x3b503b7
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x17215edaafe8 sp=0x17215edaafe0 pc=0x3b5f981
+created by runtime.gcBgMarkStartWorkers in goroutine 7
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 23 gp=0x17215ee052c0 m=nil [runnable]:
+runtime.Gosched(...)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/proc.go:403
+runtime.GC()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/mgc.go:580 +0x8b fp=0x1721643647a8 sp=0x172164364770 pc=0x3afdaab
+probe.settled.func1()
+	/Users/francistownsend-merino/goinfer-work/eval-followup/pagesize-probe/work-settled/probe_settled_test.go:38 +0x4e fp=0x1721643647e0 sp=0x1721643647a8 pc=0x3c11e4e
+runtime.goexit({})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.darwin-arm64/src/runtime/asm_amd64.s:1264 +0x1 fp=0x1721643647e8 sp=0x1721643647e0 pc=0x3b5f981
+created by probe.settled in goroutine 7
+	/Users/francistownsend-merino/goinfer-work/eval-followup/pagesize-probe/work-settled/probe_settled_test.go:35 +0x38b

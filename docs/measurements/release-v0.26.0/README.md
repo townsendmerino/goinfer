@@ -19,7 +19,7 @@ yet. Nothing is tagged.
   (`run-relgate-gpu-mac.sh`); the run above is the re-run. The newest record at the same code decides.
 - **The deferred-tests row is red until its one failing cell is fixed or accepted.** A fix changes test files under
   `backend/webgpu/` and `backend/cuda/`, which voids both records above; an acceptance is an entry in the release's accepted
-  file, which only the maintainer adds. The fix is pull request #1462, open and not set to merge. The crash needs an OS page
-  larger than 8 KiB, so the Linux CUDA box's row cannot hit it (`quick-full-darwin/README.md`, "The page size decides it").
+  file, which only the maintainer adds. The fix is pull request #1462, open and not set to merge. The Linux CUDA
+  box's rows are exposed to the same crash (`quick-full-darwin/README.md`, "It is not a matter of page size").
 
 `qf-mac.sh` and `run-relgate-gpu-mac.sh` are the two launchers.

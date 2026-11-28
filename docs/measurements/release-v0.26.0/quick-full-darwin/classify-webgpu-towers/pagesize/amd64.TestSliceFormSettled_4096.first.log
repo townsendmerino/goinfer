@@ -1,0 +1,5 @@
+=== RUN   TestSliceFormSettled_4096
+probe: GOARCH=amd64, OS page 4096 bytes, go1.27.4, 4096-byte slices
+probe: survived 1138233 calls on 19969 slices
+--- PASS: TestSliceFormSettled_4096 (1.05s)
+PASS

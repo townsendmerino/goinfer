@@ -1,0 +1,64 @@
+// The second probe, for the case the first one cannot produce: long-lived small slices. The first probe calls the helper
+// on a slice it has just allocated, and a slot below a fresh allocation in its own span still counts as allocated. Here
+// the slices are allocated first, a random half is dropped, and two collections sweep their spans, so the dropped slots
+// are free. Only then is the helper called on the survivors, again and again, while the collector runs. A slice whose
+// page-rounded start lies in a dropped slot of its own span makes the collector mark a free object.
+// run-probe-settled.sh copies this file beside probe_test.go, whose sliceForm and intForm it calls.
+package probe
+
+import (
+	"fmt"
+	"math/rand/v2"
+	"os"
+	"runtime"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// settled calls mw on long-lived heap slices of the given length for budget, and passes by surviving.
+func settled(mw func(...[]float32), floats int, budget time.Duration) {
+	fmt.Fprintf(os.Stderr, "probe: GOARCH=%s, OS page %d bytes, %s, %d-byte slices\n", runtime.GOARCH, syscall.Getpagesize(), runtime.Version(), floats*4)
+	rng := rand.New(rand.NewPCG(1, 2))
+	var keep [][]float32
+	for range 40000 {
+		x := make([]float32, floats)
+		if rng.IntN(2) == 0 {
+			keep = append(keep, x)
+		}
+	}
+	runtime.GC()
+	runtime.GC()
+	var stop atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !stop.Load() {
+			runtime.GC()
+		}
+	}()
+	defer func() { stop.Store(true); <-done }()
+	calls := 0
+	for start := time.Now(); time.Since(start) < budget; {
+		for _, x := range keep {
+			mw(x)
+			x[len(x)-1] = 1
+		}
+		calls += len(keep)
+	}
+	fmt.Fprintf(os.Stderr, "probe: survived %d calls on %d slices\n", calls, len(keep))
+}
+
+const budget = time.Second
+
+// 96 bytes, 400 bytes and 6,000 bytes: size classes whose slots do not start on a 4 KiB boundary.
+// 4,096 bytes is the control: its slots start on one, so the rounded start is the slice's own.
+func TestSliceFormSettled_96(t *testing.T)   { settled(sliceForm, 24, budget) }
+func TestSliceFormSettled_400(t *testing.T)  { settled(sliceForm, 100, budget) }
+func TestSliceFormSettled_4096(t *testing.T) { settled(sliceForm, 1024, budget) }
+func TestSliceFormSettled_6000(t *testing.T) { settled(sliceForm, 1500, budget) }
+func TestIntFormSettled_96(t *testing.T)     { settled(intForm, 24, budget) }
+func TestIntFormSettled_400(t *testing.T)    { settled(intForm, 100, budget) }
+func TestIntFormSettled_4096(t *testing.T)   { settled(intForm, 1024, budget) }
+func TestIntFormSettled_6000(t *testing.T)   { settled(intForm, 1500, budget) }
