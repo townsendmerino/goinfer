@@ -6,10 +6,15 @@
     python3 scripts/touched.py --wait 600                   # wait up to 600 s for a timed run to release the timing lock
     python3 scripts/touched.py --ignore-timing-lock         # run beside a timed run anyway (emergencies; it contaminates that run)
 
-For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs); per touched package: go test. A package whose
+For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs; the root module whole, under the lint lane's
+tag sets); per touched package: go test. A package whose
 cold test run is over a minute (SLOW) runs only the tests declared in the touched test files and in the test file beside each touched source file (foo.go -> foo_test.go),
-or the -run you name. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
-whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included.
+or the -run you name. A file that was split out of a slow package leaves its test behind: a change to leaf/foo.go also runs slow/foo_test.go, in each slow package
+of the module that imports the leaf. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
+whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included. An entry of that table the tree has moved away from
+(touched_scans.problems) fails the run. The site module's tests are in that table: they run for a path site.yml runs for and for a path a site page or data file names.
+A script test a workflow runs (scripts/test_*.py) runs when it changed, or when it names a changed file under scripts/ or .github/workflows/, by the file's
+name or by importing it (script_tests); a changed changelog fragment runs the lint lane's render (LINT_STEPS).
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
 The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
@@ -25,6 +30,12 @@ import timing_lock  # noqa: E402  (a build and test run loads the box, so it mus
 import touched_scans  # noqa: E402
 SLOW = {"decoder", "internal/runtime/sampling", "backend/cuda", "internal/app/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"backend/cuda": "cuda goinfer_testhooks", "backend/webgpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
+PKG_TAGS = {"internal/guard/qualityscan": "quality_scan"}  # a package whose tests CI runs under its own tag, in place of its module's
+VET_WHOLE = {"": ("goinfer_testhooks", "realckpt goinfer_testhooks")}  # a module vetted whole, once per tag set CI's lint lane vets it under
+SCRIPT_TIMEOUT_S = 900  # one script test or lint step: a run past it is a hang, and fails
+# The lint lane's script steps that have no test file to select: (the paths each one checks, its name, its command after python3 -B).
+LINT_STEPS = [("changelog.d/", "changelog fragments", ["scripts/changelog.py", "render"])]
+NESTED = "TOUCHED_NESTED"  # set for the script tests this script runs, so that one of them running this script does not start them again
 
 
 def sh(*a, **k):
@@ -127,6 +138,82 @@ def test_step(name, fn, skips):
     return not ok
 
 
+def script_step(name, argv, skips):
+    """step() for a python script, run from the repository root as the lint lane runs it. Its line adds the tests the script
+    ran and skipped, and a run past SCRIPT_TIMEOUT_S fails. A run whose every test was skipped is a named skip, not a pass, and
+    does not count as a step run. Returns whether it failed."""
+    t = time.time()
+    try:
+        r = sh(sys.executable, "-B", *argv, cwd=ROOT, env=dict(os.environ, **{NESTED: "1"}), timeout=SCRIPT_TIMEOUT_S)
+        ok, out = r.returncode == 0, r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        ok, out = False, f"timed out after {SCRIPT_TIMEOUT_S} s"
+    ran = sum(int(n) for n in re.findall(r"^Ran (\d+) tests?\b", out, re.M))
+    skipped = sum(int(n) for n in re.findall(r"\bskipped=(\d+)", out))
+    if ok and ran and skipped >= ran:
+        print(f"  skip {name}: each of its {ran} test(s) was skipped here ({time.time() - t:.1f}s)", flush=True)
+        skips.append(f"{name} (every test skipped)")
+        return False
+    RAN.append(name)
+    counts = f": {ran} test{'s' if ran != 1 else ''}" + (f", {skipped} skipped" if skipped else "") if ran else ""
+    print(f"  {'ok  ' if ok else 'FAIL'} {name}{counts} ({time.time() - t:.1f}s)", flush=True)
+    if not ok:
+        print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
+    return not ok
+
+
+def _read(path):
+    with open(os.path.join(ROOT, path), encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def _names(text, base):
+    """Whether text names the file base as a whole name: not inside a longer one (tool.py in test_tool.py or in tool.pyc)."""
+    return re.search(r"(?<![\w.-])" + re.escape(base) + r"(?![\w-])", text) is not None
+
+
+def _imports(text, module):
+    """Whether python source text imports module by name: import module, import a, module, or from module import x."""
+    m = re.escape(module)
+    return re.search(r"^\s*(?:from\s+" + m + r"\b|import\s+(?:[\w.]+(?:\s+as\s+\w+)?\s*,\s*)*" + m + r"\b)", text, re.M) is not None
+
+
+def workflow_tests():
+    """The script tests (scripts/test_*.py) a workflow under .github/workflows names: the ones CI runs."""
+    flows, scripts = os.path.join(ROOT, ".github", "workflows"), os.path.join(ROOT, "scripts")
+    if not os.path.isdir(flows) or not os.path.isdir(scripts):
+        return []
+    text = "\n".join(_read(os.path.join(".github", "workflows", f)) for f in sorted(os.listdir(flows)) if f.endswith((".yml", ".yaml")))
+    return ["scripts/" + f for f in sorted(os.listdir(scripts)) if re.fullmatch(r"test_\w+\.py", f) and _names(text, f)]
+
+
+def script_tests(changed):
+    """{script test: the changed path that selects it}, among the script tests CI runs (workflow_tests): one that changed, and
+    one that names a changed file under scripts/ or .github/workflows/, by the file's name or by importing it. The test named
+    after a script is not the only one a change to it can break: the lock's tests run this script in a scratch repository."""
+    triggers = sorted(p for p in changed if p.startswith(("scripts/", ".github/workflows/")))
+    if not triggers:
+        return {}
+    out = {}
+    for test in workflow_tests():
+        if test in changed:
+            out[test] = test
+            continue
+        text = _read(test)
+        for p in triggers:
+            base = os.path.basename(p)
+            if _names(text, base) or (p.startswith("scripts/") and base.endswith(".py") and _imports(text, base[:-3])):
+                out[test] = p
+                break
+    return out
+
+
+def tests_no_workflow_runs(changed):
+    """The changed script tests that no workflow names: CI does not run one, and neither does this script."""
+    run = set(workflow_tests())
+    return sorted(p for p in changed if re.fullmatch(r"scripts/test_\w+\.py", p) and p not in run and os.path.exists(os.path.join(ROOT, p)))
+
+
 def module_of(d):
     """The module root (a repo-relative dir, "" for the root module) that contains dir d."""
     while d and not os.path.exists(os.path.join(ROOT, d, "go.mod")):
@@ -145,10 +232,48 @@ def workspace_modules():
     return {"" if r == "." else r for r in rels}
 
 
+def test_names(path):
+    """The Test functions a _test.go file declares (path is repo-relative)."""
+    with open(os.path.join(ROOT, path), encoding="utf-8", errors="replace") as fh:
+        return set(re.findall(r"^func (Test\w+)\(", fh.read(), re.M))
+
+
+def imported_dirs(d):
+    """The repo-relative dirs of this repository's packages that the .go files directly in dir d import."""
+    with open(os.path.join(ROOT, "go.mod")) as fh:
+        root_mod = re.search(r"^module\s+(\S+)", fh.read(), re.M).group(1)
+    out = set()
+    for base in os.listdir(os.path.join(ROOT, d)):
+        if base.endswith(".go"):
+            with open(os.path.join(ROOT, d, base), encoding="utf-8", errors="replace") as fh:
+                head = re.split(r"^func ", fh.read(), maxsplit=1, flags=re.M)[0]  # imports come before the first func
+            out |= set(re.findall(r'"' + re.escape(root_mod) + r'/([^"]+)"', head))
+    return out
+
+
+def left_behind(gofiles):
+    """{slow package: test names} for the tests that stayed in a slow package when the file they test was split out of it: for a
+    changed leaf/foo.go, the tests of slow/foo_test.go, in each slow package of the same module that imports the leaf."""
+    out = {}
+    moved = [f for f in gofiles if not f.endswith("_test.go") and os.path.dirname(f) not in SLOW]
+    for slow in sorted(SLOW):
+        if not moved or not os.path.isdir(os.path.join(ROOT, slow)):
+            continue
+        mine = [f for f in moved if module_of(os.path.dirname(f)) == module_of(slow)
+                and os.path.exists(os.path.join(ROOT, slow, os.path.basename(f)[:-3] + "_test.go"))]
+        if not mine:
+            continue
+        deps = imported_dirs(slow)
+        for f in mine:
+            if os.path.dirname(f) in deps:
+                out.setdefault(slow, set()).update(test_names(os.path.join(slow, os.path.basename(f)[:-3] + "_test.go")))
+    return out
+
+
 def plan(changed, run_for=None):
     """What to test for a set of changed paths: {(module, package dir): -run regex, or None for the whole package}, and the
-    packages skipped with why. A package in SLOW runs the tests beside its touched files; every package also runs the
-    source-scan tests (touched_scans.select) that read any changed path."""
+    packages skipped with why. A package in SLOW runs the tests beside its touched files and the ones a split-out file left
+    behind in it (left_behind); every package also runs the source-scan tests (touched_scans.select) that read any changed path."""
     run_for = run_for or {}
     tests, skipped = {}, []
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(os.path.join(ROOT, f)))
@@ -156,24 +281,25 @@ def plan(changed, run_for=None):
     bydir = {}
     for f in gofiles + embedfiles:
         bydir.setdefault(os.path.dirname(f), []).append(f)
-    scans = touched_scans.select(changed)
-    for d in sorted(set(bydir) | set(scans)):
+    scans = touched_scans.select(changed, ROOT)
+    behind = left_behind(gofiles)
+    for d in sorted(set(bydir) | set(scans) | set(behind)):
         name = d or "."
         key = (module_of(d), d)
         if name in run_for:
             tests[key] = run_for[name]
             continue
-        names = set(scans.get(d, []))
-        if d in bydir and name not in SLOW:
+        names = set(scans.get(d, [])) | behind.get(d, set())
+        if (d in bydir or touched_scans.WHOLE in names) and name not in SLOW:
             tests[key] = None  # the whole package already runs every scan test in it
             continue
+        names.discard(touched_scans.WHOLE)  # a slow package never runs whole from here
         for f in bydir.get(d, []):
             if not f.endswith(".go"):
                 continue
             tf = f if f.endswith("_test.go") else f[:-3] + "_test.go"
             if os.path.exists(os.path.join(ROOT, tf)):
-                with open(os.path.join(ROOT, tf)) as fh:
-                    names |= set(re.findall(r"^func (Test\w+)\(", fh.read(), re.M))
+                names |= test_names(tf)
         if names:
             tests[key] = "^(" + "|".join(sorted(names)) + ")$"
         else:
@@ -244,7 +370,12 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
                 bad += not step(f"list {label}/{os.path.normpath(a)}", lambda k=k: (False, k))
             else:
                 live.append(a)
-        if live:
+        if live and mod in VET_WHOLE:
+            # Whole, not the touched packages: a type or a test hook that moved breaks the packages that still use it, and the
+            # files only a tag compiles.
+            for tags in VET_WHOLE[mod]:
+                bad += not step(f"vet {label} (./..., -tags '{tags}')", lambda tags=tags: mrun("go", "vet", "-tags", tags, "./..."))
+        elif live:
             bad += not step(f"vet {label} ({len(live)} pkg)", lambda: mrun("go", "vet", *tagarg, *live))
         if mod == "backend/cuda":
             # The other OS's build of the CUDA backend, module-wide (go vet type-checks _test.go files too; go build does not). Off linux:
@@ -259,7 +390,8 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
         if m != mod:
             continue
         name = d or "."
-        k = kind(classify(mod, [rel(d)], tagarg, env), rel(d))
+        targ = ["-tags", PKG_TAGS[name]] if name in PKG_TAGS else tagarg
+        k = kind(classify(mod, [rel(d)], targ, env), rel(d))
         if k == "empty":
             print(f"  skip test {name}: build constraints exclude all its files for {target_os}")
             skips.append(f"test {name} (no files for {target_os})")
@@ -277,7 +409,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
             skips.append(f"test {name} (cross target {target_os})")
             continue
         runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
-        bad += test_step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)), skips)
+        bad += test_step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *targ, "-count=1", *runarg, rel(d)), skips)
     return bad
 
 
@@ -291,19 +423,26 @@ def run(args, run_for):
     changed |= touched_scans.notes_changes(ROOT)  # the notes checkout's docs, as the docs/ paths the scans read
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(f))
     tests, skipped = plan(changed, run_for)
-    if not gofiles and not tests:
-        print(verdict("n/a", "no .go file in the diff, and no source-scan test reads a changed file"))
+    stale = touched_scans.problems(ROOT)
+    scripts = {} if os.environ.get(NESTED) else script_tests(changed)
+    unrun = tests_no_workflow_runs(changed)
+    lint = [(name, argv) for prefix, name, argv in LINT_STEPS if any(p.startswith(prefix) for p in changed)]
+    if not gofiles and not tests and not stale and not scripts and not unrun and not lint:
+        print(verdict("n/a", "no .go file in the diff, and no source-scan test, script test or lint step reads a changed file"))
         return 0
     mods = {}
     for f in gofiles:
         mods.setdefault(module_of(os.path.dirname(f)), []).append(f)
     for mod, _ in tests:
         mods.setdefault(mod, [])
-    print(f"touched: {len(gofiles)} .go file(s), {len(changed)} changed path(s), {len(mods)} module(s), base {base[:8]}")
+    print(f"touched: {len(gofiles)} .go file(s), {len(changed)} changed path(s), {len(mods)} module(s)"
+          + (f", {len(scripts)} script test(s)" if scripts else "") + f", base {base[:8]}", flush=True)
     bad, skips = 0, []
     RAN.clear()
     if gofiles and not step("gofmt", lambda: (lambda r: (not r.stdout.strip(), r.stdout))(sh("gofmt", "-l", *gofiles))):
         bad += 1
+    if stale:  # counted only when it fails: a clean table judges nothing about the diff
+        bad += not step("scan table (scripts/touched_scans.py names what the tree no longer has)", lambda: (False, "\n".join(stale)))
     for name in skipped:
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
         skips.append(f"test {name}")
@@ -317,6 +456,13 @@ def run(args, run_for):
             skips.append(label)
             continue
         bad += check_module(mod, label, files, tests, target_os, skips)
+    for test, why in sorted(scripts.items()):
+        bad += script_step(f"script test {test} ({'changed' if why == test else 'names ' + why})", [test], skips)
+    for test in unrun:
+        print(f"  skip script test {test}: no workflow runs it, so neither CI nor this run does (by hand: python3 -B {test})")
+        skips.append(f"script test {test} (no workflow runs it)")
+    for name, argv in lint:
+        bad += script_step(f"{name} ({' '.join(argv)})", argv, skips)
     head, line, rc = summary(bad, RAN, skips)
     print(head)
     print(line)

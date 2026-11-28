@@ -32,8 +32,8 @@ func TestResidentMoECap_pinsKernelConstant(t *testing.T) {
 		t.Errorf("cuda cap %+v != kernel (experts %d, groups %d) — one-source-of-truth broken (M-17)", got, cudaE, cudaG)
 	}
 	// webgpu: array<f32, 256> score / array<f32, 32> gscore
-	wE := grep("../backend/webgpu/internal/kernels/moe.go", `var score: array<f32, (\d+)>`)
-	wG := grep("../backend/webgpu/internal/kernels/moe.go", `var gscore: array<f32, (\d+)>`)
+	wE := grep("../backend/webgpu/internal/wgsl/moe.go", `var score: array<f32, (\d+)>`)
+	wG := grep("../backend/webgpu/internal/wgsl/moe.go", `var gscore: array<f32, (\d+)>`)
 	if got := residentBackendMoECap["webgpu"]; got.experts != wE || got.groups != wG {
 		t.Errorf("webgpu cap %+v != kernel (experts %d, groups %d) (M-17)", got, wE, wG)
 	}

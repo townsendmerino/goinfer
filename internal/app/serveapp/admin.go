@@ -88,11 +88,12 @@ func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func
 	mux.HandleFunc("GET /admin/status", wrap(s.handleAdminStatus))
 }
 
-// handleAdminStatus is GET /admin/status: the current halt state (mirroring /health's halted/halt_reason/halt_at) plus
-// the live generation count, so `serve status` has something to report without /health on the same listener.
+// handleAdminStatus is GET /admin/status: the current halt state and whether the swap guard is tripped (mirroring
+// /health's fields) plus the live generation count, so `serve status` has something to report without /health on the
+// same listener.
 func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	hi := s.haltState()
-	resp := map[string]any{"halted": hi != nil, "generations_inflight": s.gens.Count()}
+	resp := map[string]any{"halted": hi != nil, "swap_guard_tripped": s.swapGuardTripped.Load(), "generations_inflight": s.gens.Count()}
 	if hi != nil {
 		resp["halt_reason"] = hi.reason
 		resp["halt_trigger"] = hi.trigger

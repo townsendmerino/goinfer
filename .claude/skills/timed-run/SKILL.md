@@ -61,10 +61,18 @@ Measured cost: on 2026-10-12/13 a CUDA-only feature ran `gate quick` twice (9–
 the CUDA suite twice, and most of it re-checked what the previous run had already shown.
 
 - **Check a change with `python3 scripts/touched.py`.** It gofmts the touched files, builds and vets the touched modules (the tagged variants they
-  need) and tests the touched packages; in a package whose cold run is over a minute (`decoder`: 310 s) it runs the tests of the test file beside each
-  touched file, or the `-run` you name. It also runs every source-scan test that reads a changed file, from any package or module and for any kind of
-  file (`scripts/touched_scans.py`: a census, a switch's case labels, every route's guard; a `.cu` or a doc counts). A new test that reads the repo's
-  own source goes in that table, or `scripts/test_touched.py` fails. It takes seconds. It is not a gate.
+  need; the root module whole, under the lint lane's two tag sets) and tests the touched packages; in a package whose cold run is over a minute
+  (`decoder`: 310 s) it runs the tests of the test file beside each touched file, the tests a file split out of it left behind (a change to
+  `leaf/foo.go` runs `decoder/foo_test.go`), or the `-run` you name. It also runs every source-scan test that reads a changed file, from any package or
+  module and for any kind of file (`scripts/touched_scans.py`: a census, a switch's case labels, every route's guard; a `.cu` or a doc counts), and the
+  quality scans on any Go change. A new test that reads the repo's own source goes in that table, or `scripts/test_touched.py` fails. A census that
+  pins another package's declarations without reading source goes there too, and nothing finds that one for you. An entry the tree has moved away
+  from fails the run. The site's tests are in that table: they run for a path `site.yml` runs for and for a file a site page or data file names (a
+  page lists its sources, and the site build fails when one moves). A change to a script or a workflow runs the script tests CI runs that name it, by
+  its file name or by importing it (`script_tests` in `touched.py`): a change to `touched.py` runs the lock's and the day tools' tests too, not only
+  `test_touched.py`. A changed test that no workflow runs is a named skip, and a changed changelog fragment runs the lint lane's render. It takes
+  seconds (about 40 for a change under `internal/runtime`); a script change takes as long as the tests that name it (about a minute for
+  `touched.py`: 41 s, 13 s and 4 s). It is not a gate.
 - **Do not run `go run ./cmd/gate quick`, a whole-module or whole-package `go test`, or the CUDA suite by day.** CI runs them on every push, and the heavy tier is
   its own run with a stated wall time (see "Run budget"). `gate quick` is the pre-tag tier (RELEASING.md): run it when cutting a release or when the owner asks.
 - **One run of each thing a push requires, once, immediately before the push, after the last merge of `main`.** The parity refresh

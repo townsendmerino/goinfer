@@ -70,8 +70,8 @@ class PlanSelectsTheScanTests(unittest.TestCase):
         # 352fea05: a new file in decoder/ added two type switches, and the census that counts them did not run.
         self.assertIn(("decoder", "TestDispatchCensus"), selected(["decoder/recommended_sampling.go"]))
 
-    def test_gguf_go_selects_the_case_label_scan(self):
-        self.assertIn(("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions"), selected(["decoder/gguf.go"]))
+    def test_a_file_read_from_another_package_selects_its_reader(self):
+        self.assertIn(("decoder", "TestFP8_shapeCheckDistinguishesTranspose"), selected(["decoder/quant/fp8.go"]))
 
     def test_a_scanner_in_an_untouched_package_runs(self):
         self.assertIn(("internal/app/cliutil", "TestLdflagsTargetsExist"), selected(["internal/app/serveapp/openai.go"]))
@@ -107,7 +107,35 @@ class PlanSelectsTheScanTests(unittest.TestCase):
             self.assertIn(t, got)
 
     def test_an_unscanned_change_selects_nothing_extra(self):
-        self.assertEqual(selected(["README.md"]), set())
+        self.assertEqual(selected(["LICENSE"]), set())
+
+    def test_a_runtime_change_selects_the_censuses_that_pin_it_from_decoder(self):
+        # The cache's fields are declared in a leaf and classified in decoder; a family is registered in a leaf and profiled in
+        # decoder. Any non-test file under decoder/ or internal/runtime/ selects them, whatever its package is called.
+        for changed in ("internal/runtime/cpuengine/kvcache.go", "internal/runtime/a_new_leaf/x.go", "decoder/arch/arch.go"):
+            got = selected([changed])
+            for t in ("TestKVCache_everyFieldHasAState", "TestResidentAdmission_registryCovered", "TestHardwareMatrix_fresh",
+                      "TestLoaderIdentity_table", "TestKVBytesForCtx_isTheDeclaredRows"):
+                self.assertIn(("decoder", t), got, changed)
+            self.assertIn(("internal/guard/memgate", "TestMemGate_cpu"), got, changed)
+        got = selected(["internal/runtime/cpuengine/kvcache_test.go", "internal/app/serveapp/openai.go", "internal/runtime/x/testdata/y.go"])
+        self.assertNotIn(("internal/guard/memgate", "TestMemGate_cpu"), got, "a test file, another tree and a fixture are not the runtime's code")
+
+    def test_a_generated_table_selects_its_freshness_check(self):
+        self.assertIn(("decoder", "TestHardwareMatrix_fresh"), selected(["docs/hardware-matrix.md"]))
+        self.assertIn(("pull", "TestReadme_familyCountMatchesTheMatrix"), selected(["README.md"]))
+        self.assertIn(("internal/guard/gateidentity", "TestIdentityAssets_coverTheManifest"), selected(["testdata/parity/qwen2.json"]))
+
+    def test_any_go_change_runs_the_pull_request_lanes_quality_scans(self):
+        # The lint lane runs the package whole under its own tag on every pull request, so the day loop does too: a ratchet a
+        # change breaks is red here first.
+        for changed in ("cmd/gate/main.go", "backend/metal/x_test.go", "internal/guard/qualityscan/testdata/funclen.allow"):
+            tests, _ = touched.plan({changed})
+            self.assertIn(("", "internal/guard/qualityscan"), tests, changed)
+            self.assertIsNone(tests[("", "internal/guard/qualityscan")], "the whole package, not a -run")
+        tag = touched.PKG_TAGS["internal/guard/qualityscan"]
+        ci = open(os.path.join(ROOT, ".github", "workflows", "ci.yml")).read()
+        self.assertIn(f"go test -count=1 -tags {tag} ./internal/guard/qualityscan/", ci, "the day loop's tag is the lint lane's")
 
 
 # Patterns that mark a function body as reading source from disk. A helper that matches marks every test in its package that
@@ -162,9 +190,12 @@ def functions(path):
 def unlisted():
     """{test name: file} for each test the patterns mark as reading source that no table names."""
     listed = {s.test for s in touched_scans.SCANS} | set(touched_scans.EXCLUDED) | set(NOT_SOURCE_READERS)
+    whole = {s.pkg for s in touched_scans.SCANS if s.test == touched_scans.WHOLE}  # every test of these is selected
     flagged = {}
     for dirpath, dirs, files in os.walk(ROOT):
         dirs[:] = [d for d in dirs if d not in (".git", "testdata", "node_modules")]
+        if os.path.relpath(dirpath, ROOT) in whole:
+            continue
         gos = [os.path.join(dirpath, f) for f in files if f.endswith(".go")]
         if not any(f.endswith("_test.go") for f in gos):
             continue
@@ -237,15 +268,10 @@ class TableIsComplete(unittest.TestCase):
         self.assertEqual(unlisted(), {}, "tests that read source and are in neither touched_scans.SCANS nor EXCLUDED "
                          "(add each to SCANS with the paths it reads, or to EXCLUDED or NOT_SOURCE_READERS with why)")
 
-    def test_every_listed_test_exists(self):
-        names = set()
-        for dirpath, dirs, files in os.walk(ROOT):
-            dirs[:] = [d for d in dirs if d not in (".git", "node_modules")]
-            for f in files:
-                if f.endswith("_test.go"):
-                    names |= {n for n, _ in functions(os.path.join(dirpath, f))}
-        missing = sorted(s.test for s in touched_scans.SCANS if s.test not in names)
-        self.assertEqual(missing, [], "SCANS names tests that do not exist (renamed or deleted)")
+    def test_every_entry_matches_the_tree(self):
+        self.maxDiff = None
+        self.assertEqual(touched_scans.problems(ROOT), [], "SCANS names a test its package does not declare, or a scope that "
+                         "selects no file: point each at where the test or the file is now, or drop it")
 
 
 class _KeepsRAN(unittest.TestCase):
@@ -509,6 +535,477 @@ class CrossTargetMessage(_KeepsRAN):
         self.assertEqual(bad, 0, text)
         self.assertNotIn("builds and vets", text)
         self.assertIn("runs nothing for it", text)
+
+
+class TableProblems(unittest.TestCase):
+    """touched_scans.problems() on a scratch repository: an entry whose file moved or whose test left its package is named,
+    and one the tree still matches is not. touched.py fails a run on any of them."""
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.root = self._td.name
+        _scratch(self.root, {
+            "a/a.go": "package a\n",
+            "a/a_test.go": "package a\n\nimport \"testing\"\n\nfunc TestHere(t *testing.T) {}\n",
+            "b/b_test.go": "package b\n\nimport \"testing\"\n\nfunc TestMoved(t *testing.T) {}\n",
+            "c/new.go": "package c\n",  # not added: a file the diff created counts
+            "kernels/k.cu": "",
+        })
+        git = lambda *a: subprocess.run(["git", "-C", self.root, *a], check=True, capture_output=True)
+        git("init", "-q")
+        git("add", "a", "b", "kernels")
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def problems(self, *scans):
+        from unittest import mock
+        with mock.patch.object(touched_scans, "SCANS", list(scans)):
+            return touched_scans.problems(self.root)
+
+    def test_an_entry_the_tree_matches_is_clean(self):
+        S, F, NT, T, CU, UNDER = (touched_scans.Scan, touched_scans.F, touched_scans.NT, touched_scans.T, touched_scans.CU,
+                                  touched_scans.UNDER)
+        self.assertEqual(self.problems(S("a", "TestHere", F("a/a.go", "c/*.go") + NT("a", "c") + T("b") + CU("kernels") + UNDER("a")),
+                                       S("a", touched_scans.WHOLE, touched_scans.TREE_GO)), [])
+
+    def test_a_scope_whose_file_moved_is_named(self):
+        S, F, NT, CU = touched_scans.Scan, touched_scans.F, touched_scans.NT, touched_scans.CU
+        got = self.problems(S("a", "TestHere", F("a/a.go", "a/gone.go")), S("a", "TestHere", NT("b") + CU("a")),
+                            S("a", "TestHere", F("gone/*.go") + touched_scans.UNDER("gone")))
+        self.assertEqual(len(got), 5, got)  # a/gone.go, no non-test file in b, no .cu in a, nothing under gone/ twice
+        self.assertIn("a TestHere: its scope file 'a/gone.go' selects no file (moved, renamed or deleted)", got)
+
+    def test_a_file_deleted_from_disk_but_still_tracked_does_not_count(self):
+        os.remove(os.path.join(self.root, "a", "a.go"))
+        got = self.problems(touched_scans.Scan("a", "TestHere", touched_scans.F("a/a.go")))
+        self.assertEqual(len(got), 1, got)
+
+    def test_a_test_listed_under_a_package_it_left_is_named(self):
+        got = self.problems(touched_scans.Scan("a", "TestMoved", touched_scans.F("a/a.go")),
+                            touched_scans.Scan("kernels", touched_scans.WHOLE, touched_scans.F("a/a.go")))
+        self.assertEqual(got, ["a TestMoved: not declared in a (moved, renamed or deleted)",
+                               "kernels (whole package): kernels declares no test"])
+
+    def test_a_tree_that_cannot_be_listed_is_one_problem_not_every_entry(self):
+        from unittest import mock
+        with mock.patch.object(touched_scans, "SCANS", [touched_scans.Scan("a", "TestHere", touched_scans.F("a/a.go"))] * 3):
+            got = touched_scans.problems(os.path.join(self.root, "no-such-dir"))
+        self.assertEqual(len(got), 1, got)
+        self.assertIn("cannot list the files", got[0])
+
+    def test_touched_fails_the_run_on_one(self):
+        """run() counts a stale entry as a failed step, and a clean table as nothing."""
+        import contextlib
+        import io
+        from unittest import mock
+        out = io.StringIO()
+        done = lambda *a, **k: subprocess.CompletedProcess(a, 0, "", "")
+        with mock.patch.object(touched, "sh", done), mock.patch.object(touched, "plan", lambda *a: ({}, [])), \
+                mock.patch.object(touched_scans, "notes_changes", lambda root: set()), \
+                mock.patch.object(touched_scans, "problems", lambda root: ["a TestHere: its scope file 'a/gone.go' selects no file"]), \
+                contextlib.redirect_stdout(out):
+            rc = touched.run([], {})
+        self.assertEqual(rc, 1, out.getvalue())
+        self.assertIn("a TestHere: its scope file 'a/gone.go' selects no file", out.getvalue())
+        self.assertTrue(out.getvalue().strip().splitlines()[-1].startswith("VERDICT: FAIL"), out.getvalue())
+        out = io.StringIO()
+        with mock.patch.object(touched, "sh", done), mock.patch.object(touched, "plan", lambda *a: ({}, [])), \
+                mock.patch.object(touched_scans, "notes_changes", lambda root: set()), \
+                mock.patch.object(touched_scans, "problems", lambda root: []), contextlib.redirect_stdout(out):
+            rc = touched.run([], {})
+        self.assertEqual(rc, 0, out.getvalue())
+        self.assertTrue(out.getvalue().strip().splitlines()[-1].startswith("VERDICT: n/a"), out.getvalue())
+
+
+class TestsLeftBehind(unittest.TestCase):
+    """A file split out of a slow package leaves its test there. plan() selects slow/foo_test.go's tests for a change to
+    leaf/foo.go when slow imports leaf and both are in one module, on a scratch tree."""
+
+    def setUp(self):
+        import tempfile
+        from unittest import mock
+        self._td = tempfile.TemporaryDirectory()
+        self.root = self._td.name
+        test = lambda pkg, *names: f"package {pkg}\n\nimport \"testing\"\n\n" + "".join(f"func {n}(t *testing.T) {{}}\n" for n in names)
+        _scratch(self.root, {
+            "go.mod": "module example.com/m\n\ngo 1.21\n",
+            "slow/slow.go": "package slow\n\nimport (\n\t\"example.com/m/leaf\"\n\t\"example.com/m/sub/other\"\n)\n\nfunc F() { leaf.F(); other.F() }\n",
+            "slow/foo_test.go": test("slow", "TestFoo", "TestFooEdge"),
+            "slow/bar_test.go": test("slow", "TestBar"),
+            "slow/own.go": "package slow\n",
+            "slow/own_test.go": test("slow", "TestOwn"),
+            "leaf/foo.go": "package leaf\n\nfunc F() {}\n",
+            "leaf/nothing.go": "package leaf\n",
+            "stranger/bar.go": "package stranger\n",  # slow does not import it
+            "sub/go.mod": "module example.com/m/sub\n\ngo 1.21\n",
+            "sub/other/foo.go": "package other\n\nfunc F() {}\n",  # imported, but another module's
+        })
+        self._patches = [mock.patch.object(touched, "ROOT", self.root), mock.patch.object(touched, "SLOW", {"slow"}),
+                         mock.patch.object(touched_scans, "SCANS", [])]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self._patches:
+            p.stop()
+        self._td.cleanup()
+
+    def test_a_leaf_change_selects_the_test_left_in_the_slow_package(self):
+        tests, skipped = touched.plan({"leaf/foo.go"})
+        self.assertEqual(tests[("", "slow")], "^(TestFoo|TestFooEdge)$")
+        self.assertIsNone(tests[("", "leaf")], "and the leaf's own package runs whole, as before")
+        self.assertEqual(skipped, [])
+
+    def test_it_adds_to_the_tests_beside_a_change_in_the_slow_package(self):
+        tests, _ = touched.plan({"leaf/foo.go", "slow/own.go"})
+        self.assertEqual(tests[("", "slow")], "^(TestFoo|TestFooEdge|TestOwn)$")
+
+    def test_only_a_package_the_slow_one_imports_and_only_in_its_module(self):
+        for changed in ({"stranger/bar.go"}, {"sub/other/foo.go"}, {"leaf/nothing.go"}, {"leaf/foo_test.go"}):
+            tests, _ = touched.plan(changed)
+            self.assertNotIn(("", "slow"), tests, changed)
+
+
+class PackageTags(_KeepsRAN):
+    """A package in touched.PKG_TAGS is listed and tested under its own tag, in place of its module's. Spies touched.sh."""
+
+    def test_the_test_run_carries_the_package_tag(self):
+        import contextlib
+        import io
+        from unittest import mock
+        calls = []
+
+        def spy(*a, **k):
+            calls.append(a)
+            return subprocess.CompletedProcess(a, 0, "", "")
+
+        seen = []
+
+        def classify(mod, args, targs, env):
+            seen.append((tuple(args), tuple(targs)))
+            return {os.path.normpath(a): "ok" for a in args}
+
+        tests = {("", "internal/guard/qualityscan"): None, ("", "chat"): None}
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", classify), \
+                contextlib.redirect_stdout(io.StringIO()):
+            bad = touched.check_module("", "root", [], tests, "linux", [], host_os="linux")
+        self.assertEqual(bad, 0)
+        self.assertIn(("go", "test", "-tags", "quality_scan", "-count=1", "./internal/guard/qualityscan"), calls)
+        self.assertIn(("go", "test", "-tags", "goinfer_testhooks", "-count=1", "./chat"), calls, "any other package keeps its module's tags")
+        self.assertIn((("./internal/guard/qualityscan",), ("-tags", "quality_scan")), seen, "and it is classified under the same tag")
+
+
+class WholeModuleVet(_KeepsRAN):
+    """The root module is vetted whole, under each tag set CI's lint lane vets it with: a type or a test hook that moved breaks the
+    packages that still use it and the files only a tag compiles, and the diff need touch none of them. Spies touched.sh."""
+
+    def _vets(self, mod, label, files):
+        import contextlib
+        import io
+        from unittest import mock
+        calls = []
+
+        def spy(*a, **k):
+            calls.append(a)
+            return subprocess.CompletedProcess(a, 0, "", "")
+
+        classify = lambda mod, args, targs, env: {os.path.normpath(a): "ok" for a in args}
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", classify), \
+                contextlib.redirect_stdout(io.StringIO()):
+            bad = touched.check_module(mod, label, files, {}, "linux", [], host_os="linux")
+        self.assertEqual(bad, 0)
+        return [c for c in calls if c[:2] == ("go", "vet")]
+
+    def test_the_root_module_is_vetted_whole_under_the_lint_lanes_tag_sets(self):
+        self.assertEqual(self._vets("", "root", ["chat/chat.go"]),
+                         [("go", "vet", "-tags", "goinfer_testhooks", "./..."), ("go", "vet", "-tags", "realckpt goinfer_testhooks", "./...")])
+        with open(os.path.join(ROOT, ".github", "workflows", "ci.yml")) as f:
+            ci = f.read()
+        for line in ("run: go vet -tags goinfer_testhooks ./...", "run: go vet -tags 'realckpt goinfer_testhooks' ./..."):
+            self.assertIn(line, ci, "touched.VET_WHOLE mirrors the lint lane's vet steps; change both together")
+
+    def test_any_other_module_vets_its_touched_packages(self):
+        self.assertEqual(self._vets("backend/webgpu", "webgpu", ["backend/webgpu/residency.go"]),
+                         [("go", "vet", "-tags", "gpu goinfer_testhooks", ".")])
+
+
+class ScriptTests(unittest.TestCase):
+    """touched.script_tests() on a scratch tree: a script test a workflow runs is selected when it changed, or when it names a
+    changed file under scripts/ or .github/workflows/, by the file's name or by importing it."""
+
+    def setUp(self):
+        import tempfile
+        from unittest import mock
+        self._td = tempfile.TemporaryDirectory()
+        self.root = self._td.name
+        _scratch(self.root, {
+            ".github/workflows/ci.yml": "      - run: python3 -B scripts/test_imports.py\n"
+                                        "      - run: cd scripts && python3 test_names.py && python3 test_reads.py\n"
+                                        "      - run: python3 -B scripts/test_neither.py\n"
+                                        "      - run: python3 -B scripts/test_from.py && python3 -B scripts/test_list.py\n",
+            "scripts/tool.py": "",
+            "scripts/run.sh": "",
+            "scripts/test_imports.py": "import os\nimport tool  # noqa: E402\n",
+            "scripts/test_from.py": "from tool import helper\n",
+            "scripts/test_list.py": "import json, tool\n",
+            "scripts/test_names.py": "TOOL = os.path.join(HERE, \"tool.py\")\n",
+            "scripts/test_reads.py": "subprocess.run([\"bash\", os.path.join(HERE, \"run.sh\")])\n"
+                                     "ci = open(\".github/workflows/ci.yml\").read()\n",
+            # Names that only contain the script's: this test's own, a longer module's, another file's, a compiled one's.
+            "scripts/test_neither.py": "\"\"\"Run: python3 -B scripts/test_tool.py\"\"\"\nimport toolbox\nOTHER = \"mytool.py\"\nPYC = \"tool.pyc\"\n",
+            "scripts/test_orphan.py": "import tool\n",  # no workflow runs it
+        })
+        self._patch = mock.patch.object(touched, "ROOT", self.root)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+        self._td.cleanup()
+
+    def test_a_changed_script_selects_the_tests_that_import_it_or_name_its_file(self):
+        self.assertEqual(touched.script_tests({"scripts/tool.py"}),
+                         {t: "scripts/tool.py" for t in ("scripts/test_imports.py", "scripts/test_from.py", "scripts/test_list.py",
+                                                         "scripts/test_names.py")})
+
+    def test_a_shell_script_and_a_workflow_select_the_test_that_names_them(self):
+        self.assertEqual(touched.script_tests({"scripts/run.sh"}), {"scripts/test_reads.py": "scripts/run.sh"})
+        self.assertEqual(touched.script_tests({".github/workflows/ci.yml"}), {"scripts/test_reads.py": ".github/workflows/ci.yml"})
+
+    def test_a_changed_test_runs_itself(self):
+        self.assertEqual(touched.script_tests({"scripts/test_neither.py"}), {"scripts/test_neither.py": "scripts/test_neither.py"})
+
+    def test_a_test_no_workflow_runs_is_not_selected_and_is_named_when_it_changed(self):
+        self.assertNotIn("scripts/test_orphan.py", touched.script_tests({"scripts/tool.py", "scripts/test_orphan.py"}))
+        changed = {"scripts/test_orphan.py", "scripts/test_names.py", "scripts/tool.py", "scripts/test_deleted.py"}
+        self.assertEqual(touched.tests_no_workflow_runs(changed), ["scripts/test_orphan.py"])
+
+    def test_a_change_outside_scripts_and_workflows_selects_nothing(self):
+        self.assertEqual(touched.script_tests({"docs/tool.py", "decoder/run.sh", "tool.py"}), {})
+
+    def test_a_tree_with_no_workflow_selects_nothing(self):
+        import shutil
+        shutil.rmtree(os.path.join(self.root, ".github"))
+        self.assertEqual(touched.script_tests({"scripts/tool.py", "scripts/test_names.py"}), {})
+        self.assertEqual(touched.tests_no_workflow_runs({"scripts/test_names.py"}), ["scripts/test_names.py"])
+
+
+class ScriptTestsOnThisTree(unittest.TestCase):
+    def test_a_day_loop_change_runs_the_tests_that_run_the_day_loop(self):
+        # scripts/test_timing_lock.py copies touched.py and touched_scans.py into a scratch repository and runs them, and
+        # scripts/test_day_loaders.py runs touched.py: neither is the test file named after the script.
+        got = touched.script_tests({"scripts/touched.py"})
+        for t in ("scripts/test_touched.py", "scripts/test_timing_lock.py", "scripts/test_day_loaders.py"):
+            self.assertIn(t, got)
+        got = touched.script_tests({"scripts/touched_scans.py"})
+        for t in ("scripts/test_touched.py", "scripts/test_timing_lock.py"):
+            self.assertIn(t, got)
+
+    def test_a_lint_step_is_the_lint_lanes_command(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "ci.yml")) as f:
+            ci = f.read()
+        self.assertTrue(touched.LINT_STEPS)
+        for _, _, argv in touched.LINT_STEPS:
+            self.assertIn("python3 -B " + " ".join(argv), ci, "touched.LINT_STEPS mirrors a lint lane step; change both together")
+
+
+class RunsScriptTests(_KeepsRAN):
+    """run() runs each selected script test the way the lint lane does and counts it as a check; a changed changelog fragment runs
+    the lane's render. Spies touched.sh, so nothing is executed."""
+
+    def _run(self, selected, python, changed=("scripts/x.py",), orphans=(), nested=False):
+        """run()'s exit code, its output and the commands it ran, with script_tests() giving selected and each python command
+        answered by python(argv). self.kw keeps each command's keyword arguments. nested: the run is told a script test started it."""
+        import contextlib
+        import io
+        from unittest import mock
+        calls, self.kw = [], {}
+
+        def spy(*a, **k):
+            calls.append(a)
+            self.kw[a] = k
+            if a[:2] == ("git", "diff"):
+                return subprocess.CompletedProcess(a, 0, "".join(c + "\n" for c in changed), "")
+            if a[0] == sys.executable:
+                return python(a)
+            return subprocess.CompletedProcess(a, 0, "", "")
+
+        out = io.StringIO()
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "plan", lambda *a: ({}, [])), \
+                mock.patch.object(touched, "script_tests", lambda changed: dict(selected)), \
+                mock.patch.object(touched, "tests_no_workflow_runs", lambda changed: list(orphans)), \
+                mock.patch.object(touched_scans, "notes_changes", lambda root: set()), \
+                mock.patch.object(touched_scans, "problems", lambda root: []), \
+                mock.patch.dict(os.environ, {"TOUCHED_BASE": "HEAD"}), contextlib.redirect_stdout(out):
+            os.environ.pop(touched.NESTED, None)  # the day loop runs this file as one of its script tests
+            if nested:
+                os.environ[touched.NESTED] = "1"
+            rc = touched.run([], {})
+        return rc, out.getvalue(), calls
+
+    ONE = {"scripts/test_x.py": "scripts/x.py"}
+
+    def test_a_script_test_that_runs_this_script_does_not_start_them_again(self):
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "", ".\nRan 1 test in 0.1s\n\nOK\n")
+        test = (sys.executable, "-B", "scripts/test_x.py")
+        rc, text, calls = self._run(self.ONE, ok)
+        self.assertIn(test, calls, text)
+        self.assertEqual(self.kw[test]["env"].get(touched.NESTED), "1", "a script test is told that a day-loop run started it")
+        rc, text, calls = self._run(self.ONE, ok, nested=True)
+        self.assertNotIn(test, calls, "and a run that is told so runs no script test")
+        self.assertEqual(rc, 0, text)
+
+    def test_a_failing_script_test_fails_the_run(self):
+        fail = lambda a: subprocess.CompletedProcess(a, 1, "", "F..\nAssertionError: 1 != 0\n\nRan 3 tests in 0.1s\n\nFAILED (failures=1)\n")
+        rc, text, calls = self._run(self.ONE, fail)
+        self.assertEqual(rc, 1, text)
+        self.assertRegex(text, r"FAIL script test scripts/test_x\.py")
+        self.assertIn("AssertionError: 1 != 0", text, "the failure's own output is shown")
+        self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: FAIL — touched: 1 of 1 checks failed"), text)
+
+    def test_a_passing_one_is_a_check_run_as_the_lint_lane_runs_it(self):
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "", "...\nRan 3 tests in 0.1s\n\nOK (skipped=2)\n")
+        rc, text, calls = self._run(self.ONE, ok)
+        self.assertEqual(rc, 0, text)
+        self.assertIn((sys.executable, "-B", "scripts/test_x.py"), calls)
+        self.assertRegex(text, r"ok\s+script test scripts/test_x\.py \(names scripts/x\.py\): 3 tests, 2 skipped")  # a skip is not a pass
+        self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: PASS — touched: 1 checks passed"), text)
+
+    def test_one_whose_every_test_was_skipped_is_a_named_skip_not_a_pass(self):
+        skipped = lambda a: subprocess.CompletedProcess(a, 0, "", "ss\nRan 2 tests in 0.1s\n\nOK (skipped=2)\n")
+        rc, text, _ = self._run(self.ONE, skipped)
+        self.assertRegex(text, r"skip script test scripts/test_x\.py \(names scripts/x\.py\): each of its 2 test\(s\) was skipped here")
+        self.assertEqual(rc, 2, text)  # nothing judged the change
+        self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: INCONCLUSIVE"), text)
+
+    def test_one_that_times_out_fails(self):
+        def hang(a):
+            raise subprocess.TimeoutExpired(a, touched.SCRIPT_TIMEOUT_S)
+        rc, text, _ = self._run(self.ONE, hang)
+        self.assertEqual(rc, 1, text)
+        self.assertIn(f"timed out after {touched.SCRIPT_TIMEOUT_S} s", text)
+
+    def test_a_changelog_fragment_runs_the_lanes_render(self):
+        render = (sys.executable, "-B", "scripts/changelog.py", "render")
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "- **x**\n", "")
+        rc, text, calls = self._run({}, ok, changed=("changelog.d/2026-01-01-x.md",))
+        self.assertEqual(rc, 0, text)
+        self.assertIn(render, calls)
+        bad = lambda a: subprocess.CompletedProcess(a, 1, "", "changelog: 2026-01-01-x.md: a fragment is one `- ` entry ending in a newline\n")
+        rc, text, _ = self._run({}, bad, changed=("changelog.d/2026-01-01-x.md",))
+        self.assertEqual(rc, 1, text)
+        self.assertIn("a fragment is one `- ` entry", text)
+        rc, text, calls = self._run({}, ok, changed=("docs/changelog.d/x.md",))
+        self.assertNotIn(render, calls, "only the repository's own changelog.d")
+
+    def test_a_changed_test_no_workflow_runs_is_a_named_skip_not_a_pass(self):
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "", "")
+        rc, text, calls = self._run({}, ok, changed=("scripts/test_orphan.py",), orphans=("scripts/test_orphan.py",))
+        self.assertIn("skip script test scripts/test_orphan.py: no workflow runs it", text)
+        self.assertFalse([c for c in calls if c[0] == sys.executable], "and the day loop does not run it either")
+        self.assertEqual(rc, 2, text)  # nothing judged the change
+        self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: INCONCLUSIVE"), text)
+
+    def test_no_script_named_is_still_nothing_to_do(self):
+        ok = lambda a: subprocess.CompletedProcess(a, 0, "", "")
+        rc, text, calls = self._run({}, ok, changed=("docs/x.md",))
+        self.assertEqual(rc, 0, text)
+        self.assertTrue(text.strip().splitlines()[-1].startswith("VERDICT: n/a — touched: no .go file"), text)
+
+
+class SiteScopes(unittest.TestCase):
+    """The two scopes that select the site's tests, on a scratch tree: PATHS_OF, the paths a workflow's pull_request trigger lists,
+    and NAMED_IN, the paths the text of a set of files names."""
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.root = self._td.name
+        _scratch(self.root, {
+            ".github/workflows/site.yml": "name: site\n\non:\n  push:\n    branches: [main]\n    paths:\n      - 'pushed/only.md'\n"
+                                          "  pull_request:\n    paths:\n      - 'apps/site/**'\n      - 'README.md'\n"
+                                          "      - \"docs/book/**\"\n  workflow_dispatch:\n\njobs:\n  build:\n    steps:\n"
+                                          "      - run: echo\n        with:\n          paths:\n            - 'not/a/trigger.md'\n",
+            "apps/site/different/01-page.md": "---\ntitle: x\nfigures:\n  - {text: \"12\", source: docs/record.md}\nsources:\n"
+                                              "  - pkg/source.go\n  - \"quoted/skill.md\"\n  - gonedir\n  - heredir\n---\n\n"
+                                              "See [the code](https://github.com/townsendmerino/goinfer/blob/main/linked/code.go).\n",
+            "apps/site/data/claims.json": "[{\"path\": \"docs/claimed.md\"}]\n",
+            "apps/site/different/notes.txt": "elsewhere/unread.go\n",  # not a page: the glob is *.md
+            "heredir/kept.go": "package heredir\n",
+        })
+        S = touched_scans
+        self.scans = [S.Scan("apps/site/internal/site", S.WHOLE, S.PATHS_OF(".github/workflows/site.yml")
+                             + S.NAMED_IN("apps/site/different/*.md", "apps/site/data/*.json"))]
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def picks(self, *changed):
+        from unittest import mock
+        with mock.patch.object(touched_scans, "SCANS", self.scans):
+            return touched_scans.select(set(changed), self.root) == {"apps/site/internal/site": [touched_scans.WHOLE]}
+
+    def test_the_paths_a_workflow_runs_pull_requests_for(self):
+        for p in ("apps/site/internal/site/site.go", "apps/site/go.mod", "README.md", "docs/book/ch1/intro.md"):
+            self.assertTrue(self.picks(p), p)
+        for p in ("pushed/only.md", "docs/README.md", "docs/booklet.md", "not/a/trigger.md"):
+            self.assertFalse(self.picks(p), p)
+
+    def test_the_paths_the_pages_and_the_data_name(self):
+        for p in ("pkg/source.go", "quoted/skill.md", "docs/record.md", "linked/code.go", "docs/claimed.md"):
+            self.assertTrue(self.picks(p), p)
+        self.assertFalse(self.picks("pkg/other.go", "docs/unclaimed.md", "elsewhere/unread.go"))
+
+    def test_a_named_directory_counts_once_it_is_gone(self):
+        # A page lists a directory by its name. A file under it is not named, until the directory itself has left the tree:
+        # its files are then in the diff as deletions.
+        self.assertTrue(self.picks("gonedir/inside/x.go"))
+        self.assertFalse(self.picks("heredir/kept.go"), "the directory is still there")
+        self.assertFalse(self.picks("heredir/removed.go"), "a file that left a directory that stayed")
+
+    def test_a_scope_with_nothing_to_read_is_a_problem(self):
+        from unittest import mock
+        subprocess.run(["git", "-C", self.root, "init", "-q"], check=True, capture_output=True)
+        S = touched_scans
+        gone = [S.Scan("apps/site/internal/site", S.WHOLE, S.PATHS_OF(".github/workflows/gone.yml") + S.NAMED_IN("apps/site/nowhere/*.md"))]
+        with mock.patch.object(S, "SCANS", self.scans + gone):
+            got = [p for p in S.problems(self.root) if "its scope" in p]
+        self.assertEqual(got, ["apps/site/internal/site (whole package): its scope workflow_paths '.github/workflows/gone.yml' selects no file (moved, renamed or deleted)",
+                               "apps/site/internal/site (whole package): its scope named_in 'apps/site/nowhere/*.md' selects no file (moved, renamed or deleted)"])
+
+
+class SiteTestsOnThisTree(unittest.TestCase):
+    """The lint lane runs the site module's tests on every pull request, and they read the rest of the repository. The day loop
+    runs them for a change to anything a page or a data file names and to anything site.yml runs for."""
+
+    SITE = ("apps/site", "apps/site/internal/site")
+
+    def whole(self, *changed):
+        tests, _ = touched.plan(set(changed))
+        return self.SITE in tests and tests[self.SITE] is None
+
+    def test_a_file_a_page_lists_as_a_source_runs_the_sites_tests(self):
+        # A source that moves away is in the diff under its old name, which the page still lists.
+        with open(os.path.join(ROOT, "apps", "site", "different", "15-upgrade-cant-change-answers.md")) as f:
+            front = f.read().split("\n---", 1)[0]
+        block = re.search(r"^sources:\n((?:[ \t]+-.*\n?)+)", front, re.M).group(1)
+        sources = re.findall(r"^[ \t]+-[ \t]+\"?([^\"\n]+?)\"?[ \t]*$", block, re.M)
+        self.assertGreater(len(sources), 2, sources)
+        for s in sources:
+            self.assertTrue(self.whole(s), s)
+
+    def test_what_site_yml_runs_for_runs_the_sites_tests(self):
+        for p in ("apps/site/different/a-new-page.md", "apps/site/internal/site/site.go", "docs/capability-matrix.json",
+                  "pull/curated.json", "README.md", "docs/book/a-new-chapter.md"):
+            self.assertTrue(self.whole(p), p)
+        self.assertFalse(self.whole("decoder/a_file_no_page_names.go", "docs/a-doc-no-page-names.md"))
+
+    def test_the_lint_lane_runs_them_too(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "ci.yml")) as f:
+            ci = f.read()
+        self.assertRegex(ci, r"working-directory: apps/site\n(?:.*\n){0,3}?\s+run: go test -count=1 -v \./\.\.\.",
+                         "the day loop mirrors the lint lane's site step; change both together")
 
 
 if __name__ == "__main__":

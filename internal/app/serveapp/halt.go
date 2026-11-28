@@ -60,22 +60,26 @@ func (s *server) resume(trigger string) {
 // this: an operator must always be able to resume a halted server and check its status.
 func (s *server) haltGate(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if hi := s.haltState(); hi != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})
-			return
-		}
-		// A second, independent condition at this same chokepoint (swapguard.go).
-		// Unlike a halt, a tripped swap guard never cancels anything already running; it only refuses NEW admissions, so
-		// this check does not touch s.gens.
-		if s.swapGuardTripped.Load() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":  "halted",
-				"reason": "swap guard tripped: swap grew past the guard threshold; refusing new requests until it recovers",
-			})
+		if reason, refusing := haltRefusal(s.haltState(), s.swapGuardTripped.Load()); refusing {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": reason})
 			return
 		}
 		h(w, r)
 	}
+}
+
+// haltRefusal says why the generation routes refuse new work, given the halt state and whether the swap guard is tripped
+// (swapguard.go); refusing is false when they accept it. A halt's reason comes first. haltGate answers 503 with it and
+// /health's status follows it, so the two cannot disagree. A tripped guard refuses new admissions only: unlike a halt
+// it cancels nothing that is running.
+func haltRefusal(hi *haltInfo, swapGuardTripped bool) (reason string, refusing bool) {
+	if hi != nil {
+		return hi.reason, true
+	}
+	if swapGuardTripped {
+		return "swap guard tripped: swap grew past the guard threshold; refusing new requests until it recovers", true
+	}
+	return "", false
 }
 
 type adminHaltReq struct {

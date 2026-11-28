@@ -209,6 +209,17 @@ jobs:
       - name: compile internal/vision (GOEXPERIMENT=simd)
         run: GOEXPERIMENT=simd go test -c -o /dev/null ./internal/vision
 
+      # The site's tests read the rest of the repository: a page under apps/site/different lists the files it rests on,
+      # links into the tree and names the record each of its figures comes from, and the build refuses a page whose file
+      # is gone or whose record no longer holds the figure. site.yml runs only for the paths it lists, and those cannot
+      # name every file a page cites, so a change that moves one would not run them: they run here, on every pull
+      # request and push. -v, so the log shows each test ran: the ones that read the tree skip when they cannot find it.
+      - name: site tests (the files the pages cite)
+        working-directory: apps/site
+        env:
+          GOWORK: "off"
+        run: go test -count=1 -v ./...
+
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
       # Built from source again since the move to Go 1.27.2 (2026-10-08): no staticcheck release reads its export data,
@@ -338,6 +349,7 @@ jobs:
           python3 -B scripts/test_device_suite_heartbeat.py
           python3 -B scripts/test_ci_test_summary.py
           python3 -B scripts/test_ci_skip_count.py
+          python3 -B scripts/test_ci_fail_summary.py
           python3 -B scripts/test_metal_device_suite.py
 
       # The Mac memory instrument (mem_darwin.py): its parsers on real macOS output, and whole cells against a fake serve and a fake
@@ -1090,8 +1102,8 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci_skip_count.sh test.json
-          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
-          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+          # -json hides go test's plain output: print what a red lane needs, the failed tests' names first
+          bash scripts/ci_fail_summary.sh test.json
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
@@ -1155,8 +1167,8 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci_skip_count.sh test.json
-          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
-          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+          # -json hides go test's plain output: print what a red lane needs, the failed tests' names first
+          bash scripts/ci_fail_summary.sh test.json
       - name: save the build and test cache (pushes to main only)
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -1165,7 +1177,7 @@ jobs:
             ~\AppData\Local\go-build
             ~\go\pkg\mod
           key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
-      # The grep above cuts at 300 lines, before a runtime fatal error on a crashed serveapp binary: keep the whole stream (issue 1078).
+      # The summary above keeps a bounded part of each failure: keep the whole stream too (issue 1078).
       - name: keep test.json of a red run
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -1219,9 +1231,9 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci_skip_count.sh test.json
-          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
-          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
-      # The grep above cuts at 300 lines, before a runtime fatal error on a crashed serveapp binary: keep the whole stream (issue 1078).
+          # -json hides go test's plain output: print what a red lane needs, the failed tests' names first
+          bash scripts/ci_fail_summary.sh test.json
+      # The summary above keeps a bounded part of each failure: keep the whole stream too (issue 1078).
       - name: keep test.json of a red run
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -1276,8 +1288,8 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci_skip_count.sh test.json
-          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
-          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+          # -json hides go test's plain output: print what a red lane needs, the failed tests' names first
+          bash scripts/ci_fail_summary.sh test.json
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
