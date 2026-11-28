@@ -32,8 +32,8 @@ figures:
   - {text: "0.897", source: ".claude/skills/model-bring-up/SKILL.md"}
   - {text: "93%", source: docs/parity-coverage-policy.md}
 sources:
-  - cmd/gate/identity.go
-  - cmd/gate/grade_identity.go
+  - internal/guard/gateidentity/identity.go
+  - internal/guard/gateidentity/grade_identity.go
   - docs/completed/task-test-efficiency-2026-09.md
   - docs/parity-coverage-policy.md
   - ".claude/skills/model-bring-up/SKILL.md"
